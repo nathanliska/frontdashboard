@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Lint and format staged files before commit
+
+set -e
+
+# Backend: run pre-commit framework (ruff lint + format)
+if command -v pre-commit &>/dev/null && [ -f ".pre-commit-config.yaml" ]; then
+  echo "[pre-commit] Running ruff..."
+  ( cd backend && uv run ruff check . )
+  ( cd backend && uv run ruff format --check . )
+fi
+
+# Frontend: run lint-staged
+if [ -f "frontend/package.json" ]; then
+  echo "[pre-commit] Running lint-staged..."
+  ( cd frontend && npx lint-staged )
+fi
+
+exit 0
