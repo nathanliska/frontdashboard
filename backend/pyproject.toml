@@ -10,7 +10,9 @@ dependencies = [
     "asyncpg>=0.29.0",
     "alembic>=1.13.0",
     "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
+    "argon2-cffi>=23.1.0",
+    "slowapi>=0.1.9",
+    "email-validator>=2.1.0",
     "sse-starlette>=2.1.0",
     "pydantic-settings>=2.3.0",
 ]
@@ -21,14 +23,19 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
+    "testcontainers>=4.0.0",
 ]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 150
+extend-exclude = ["alembic/versions"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+# B008: FastAPI requires Depends() calls in function signatures — this is intentional
+ignore = ["B008"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
