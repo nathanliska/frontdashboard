@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Run unit tests before push is allowed
+
+set -e
+
+echo "Running tests before push..."
+
+# Backend tests (skip if backend not yet set up)
+if [ -f "backend/pyproject.toml" ]; then
+  echo "  [backend] Running pytest..."
+  cd backend && uv run pytest -q && cd ..
+else
+  echo "  [backend] Skipping (not yet scaffolded)"
+fi
+
+# Frontend tests (skip if frontend not yet set up)
+if [ -f "frontend/package.json" ]; then
+  echo "  [frontend] Running vitest..."
+  cd frontend && npm run test:run && cd ..
+else
+  echo "  [frontend] Skipping (not yet scaffolded)"
+fi
+
+echo "All tests passed."
+exit 0

@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# uv
+.uv/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build artifacts
+frontend/dist/
+frontend/build/
+backend/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker volumes
+postgres-data/
+pgdata/
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+coverage/
+*.lcov
+
+# TypeScript
+*.tsbuildinfo
+
+# Alembic (keep versions, ignore cache)
+backend/alembic/__pycache__/
+
+# Uploads / file storage
+uploads/
+media/
+
+# Misc
+*.bak
+*.tmp
+.cache/
