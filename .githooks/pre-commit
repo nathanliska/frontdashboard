@@ -1,19 +1,31 @@
 #!/usr/bin/env bash
-# Lint and format staged files before commit
+# Run full backend lint and format check, then lint-staged frontend, before each commit
 
-set -e
-
-# Backend: run pre-commit framework (ruff lint + format)
-if command -v pre-commit &>/dev/null && [ -f ".pre-commit-config.yaml" ]; then
-  echo "[pre-commit] Running ruff..."
-  ( cd backend && uv run ruff check . )
-  ( cd backend && uv run ruff format --check . )
+# Block direct commits to main
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ "$branch" = "main" ]; then
+  echo "ERROR: Direct commits to main are not allowed. Use a feature branch."
+  exit 1
 fi
 
-# Frontend: run lint-staged
+# Backend: ruff lint + format check
+if [ -f "backend/pyproject.toml" ]; then
+  echo "[pre-commit] Running ruff check..."
+  ( cd backend && uv run ruff check . ) || exit 1
+
+  echo "[pre-commit] Running ruff format check..."
+  ( cd backend && uv run ruff format --check . ) || {
+    echo ""
+    echo "  Formatting issues found. Run: make format"
+    echo ""
+    exit 1
+  }
+fi
+
+# Frontend: lint-staged
 if [ -f "frontend/package.json" ]; then
   echo "[pre-commit] Running lint-staged..."
-  ( cd frontend && npx lint-staged )
+  ( cd frontend && npx lint-staged ) || exit 1
 fi
 
 exit 0

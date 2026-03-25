@@ -21,7 +21,7 @@ A self-hosted dashboard app that acts as a private household operating system. S
 |---|---|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 16 |
 | Frontend | React 18+, TypeScript, Vite, Tailwind CSS, Zustand, react-grid-layout |
-| Infra | Docker Compose, Caddy |
+| Infra | Docker Compose, Caddy (production reverse proxy) |
 
 ---
 
@@ -47,15 +47,15 @@ chmod +x .githooks/*
 # 3. Copy and fill in environment variables
 cp .env.example .env
 
-# 4. Install pre-commit hooks (backend linting)
-pip install pre-commit
-pre-commit install
-
-# 5. Start all services
+# 4. Start all services
 make dev-up
 ```
 
-The app will be available at `http://localhost`.
+In dev the services run directly without Caddy:
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8000`
+
+Caddy (`Caddyfile`) is for production — it unifies both behind port 80, adds security headers, and handles SSE flush.
 
 ---
 
