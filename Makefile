@@ -1,9 +1,8 @@
 .PHONY: dev-up dev-down logs test lint format migrate seed help
 
-# Default target
 help:
 	@echo ""
-	@echo "  make dev-up    Start all services (Docker Compose)"
+	@echo "  make dev-up    Start all services"
 	@echo "  make dev-down  Stop all services"
 	@echo "  make logs      Tail service logs"
 	@echo "  make test      Run all tests"
@@ -14,25 +13,28 @@ help:
 	@echo ""
 
 dev-up:
-	@echo "TODO: implement in step 2 (scaffolding)"
+	docker compose up --build
 
 dev-down:
-	@echo "TODO: implement in step 2 (scaffolding)"
+	docker compose down
 
 logs:
-	@echo "TODO: implement in step 2 (scaffolding)"
+	docker compose logs -f
 
 test:
-	@echo "TODO: implement once backend/frontend exist"
+	cd backend && uv run pytest -q
+	cd frontend && npm run test:run
 
 lint:
-	@echo "TODO: implement once backend/frontend exist"
+	cd backend && uv run ruff check .
+	cd frontend && npm run lint
 
 format:
-	@echo "TODO: implement once backend/frontend exist"
+	cd backend && uv run ruff format . && uv run ruff check --fix .
+	cd frontend && npm run format
 
 migrate:
-	@echo "TODO: implement in step 3 (database + migrations)"
+	docker compose exec backend uv run alembic upgrade head
 
 seed:
-	@echo "TODO: implement in step 3 (database + migrations)"
+	@echo "TODO: implement in step 3"

@@ -1,7 +1,7 @@
 # FrontDashboard — Working Context
 
 ## Current Phase
-**Step 1 of 19: Repository + git setup** (in progress)
+**Step 2 of 19: Project scaffolding**
 
 ## Implementation Order (from PLAN.md §13)
 - [x] 1. Repository + git setup
@@ -24,24 +24,18 @@
 - [ ] 18. Additional widgets (clock, welcome/status)
 - [ ] 19. Polish
 
-## Step 1 Checklist
-- [x] Git repo initialized
-- [x] GitHub remote set
-- [x] .gitignore
-- [x] .pre-commit-config.yaml (ruff + pre-commit-hooks; Husky added in step 2 when frontend exists)
-- [x] .githooks/commit-msg (conventional commits)
-- [ ] .githooks/pre-push (run unit tests)
-- [ ] PR template (.github/pull_request_template.md)
-- [ ] Issue templates (.github/ISSUE_TEMPLATE/)
-- [ ] README skeleton
-- [ ] Makefile with placeholder targets
-- [ ] git config core.hooksPath .githooks
-- [ ] Initial commit + push
+## Step 2 Checklist
+- [ ] `backend/` — FastAPI hello world, uv project, Ruff configured in pyproject.toml, Dockerfile
+- [ ] `frontend/` — Vite + React + TypeScript hello world, ESLint + Prettier configured, Dockerfile
+- [ ] `docker-compose.yml` — caddy, frontend, backend, db services
+- [ ] `Caddyfile` — reverse proxy, SSE passthrough, security headers
+- [ ] `.env.example` — all required vars documented
+- [ ] Populate Makefile targets (dev-up, dev-down, logs, lint, format)
+- [ ] Husky pre-commit hook wired up in frontend
+- [ ] `make dev-up` boots all four services cleanly
 
 ## Action Items
-- Run `git config core.hooksPath .githooks` after setup
-- Add GitHub username to README links (placeholder currently used)
-- Step 2 kicks off Docker Compose + scaffolding
+- Run `git config core.hooksPath .githooks && chmod +x .githooks/*` if not already done
 
 ## Open Questions / Decisions Pending
 - None currently
