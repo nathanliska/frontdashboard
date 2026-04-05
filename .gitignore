@@ -32,6 +32,7 @@ backend/dist/
 
 # Environment
 .env
+.env.prod
 .env.local
 .env.*.local
 
@@ -73,3 +74,4 @@ media/
 *.bak
 *.tmp
 .cache/
+.codex
