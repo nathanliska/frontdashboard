@@ -858,3 +858,142 @@ Suggested build sequence:
 17. **List widget**: Interactive list widget with inline check/uncheck and add item, size-aware rendering, link to full page, soft-fail on deleted lists
 18. **Additional widgets**: Clock widget, welcome/status widget
 19. **Polish**: Error handling, loading states, empty states, scope indicators, departed user display, responsive tweaks, security headers
+
+---
+
+## 14. Amendments
+
+### 14.1 Calendar Module Architecture Amendment
+
+The calendar module should follow the same two-surface model as lists:
+
+- A **full Calendar page** as the primary management surface
+- A **Calendar widget** as a dashboard summary/action surface
+
+The full page should land first. The widget should be built on top of the same backend models, API endpoints, Zustand store, and SSE event flow rather than introducing a separate widget-only data path.
+
+### 14.2 Calendar Widget Binding Amendment
+
+Unlike a list widget, a calendar widget should **not** be modeled as a widget bound to a single event record.
+
+Instead, the calendar widget should be a **config-driven scoped view** over a date range. This better matches the product goal of showing "today's agenda" or the next few days, and it fits the private-dashboard requirement that a user may mix multiple scopes on one dashboard.
+
+Recommended widget shape:
+
+```json
+{
+  "widget_type": "calendar",
+  "resource_type": null,
+  "resource_id": null,
+  "config": {
+    "scope": { "type": "private" },
+    "view": "agenda",
+    "horizon_days": 1,
+    "show_all_day": true
+  }
+}
+```
+
+Shared dashboards should default the widget scope to that dashboard's group. Private dashboards may add multiple calendar widgets, each pinned to a different scope.
+
+### 14.3 Calendar Data Model Amendment
+
+Recurring events should not be stored as permanently materialized rows for every occurrence.
+
+Use a series-based model:
+
+- `calendar_events`: single events and recurring series masters
+- `calendar_event_overrides`: per-occurrence changes and cancellations for recurring events
+- `calendar_reminders`: reminder definitions for one-time and recurring notifications
+
+`calendar_events` should include at minimum:
+
+- `id`
+- `group_id`
+- `created_by`
+- `updated_by`
+- `visibility`
+- `title`
+- `description`
+- `location`
+- `starts_at`
+- `ends_at`
+- `timezone`
+- `all_day`
+- `recurrence_rule` or structured recurrence JSON
+- `recurrence_until` and/or `recurrence_count`
+- `deleted_at`
+- timestamps
+
+`calendar_event_overrides` should support:
+
+- rescheduled single occurrences
+- edited single occurrences
+- cancelled/skipped occurrences
+
+This allows support for:
+
+- edit one occurrence
+- edit whole series
+- edit this and following
+
+without creating an unbounded number of stored occurrence rows.
+
+### 14.4 Query and Rendering Amendment
+
+Calendar reads should be **windowed queries**:
+
+- widget queries request a small date window such as today, next 3 days, or next 7 days
+- full page queries request the visible day/week/month window
+
+Occurrences should be expanded at read time from the event master plus overrides. The widget and full page should share the same occurrence expansion rules so the user sees the same schedule in both surfaces.
+
+### 14.5 Scope and Permissions Amendment
+
+Calendar records should follow the same explicit scope model already defined for lists:
+
+- `private` events belong only to the creating user
+- `shared` events belong to a specific group
+
+Action-type permissions should mirror the existing project model:
+
+- any active group member may create/contribute shared events
+- content edits follow creator/admin/owner rules unless later expanded
+- manage-container style powers do not apply unless calendar containers/calendars are introduced in a later version
+
+The calendar widget header and inline actions should visibly indicate the widget's scope, especially on private dashboards where multiple group contexts may appear side by side.
+
+### 14.6 Realtime and Notifications Amendment
+
+Calendar work should extend the existing SSE/activity/notification pipeline rather than bypassing it.
+
+Add calendar event types alongside list event types, including at minimum:
+
+- `calendar.event.created`
+- `calendar.event.updated`
+- `calendar.event.deleted`
+- `calendar.event.occurrence.updated`
+- `calendar.event.occurrence.cancelled`
+- reminder-related notification events as needed
+
+The frontend SSE router and calendar store should be updated so calendar widgets and the full page stay in sync in real time.
+
+Reminder delivery should be treated as a later layer on top of the base calendar module:
+
+1. ship event CRUD + recurrence + calendar page
+2. add calendar widget
+3. add reminder scheduling and inbox-worthy notification generation
+
+### 14.7 Frontend Rollout Amendment
+
+Recommended implementation order for calendar:
+
+1. Backend schema + Alembic migration for calendar events, overrides, and reminders
+2. Backend calendar API with scoped CRUD and windowed occurrence queries
+3. Frontend calendar API client and Zustand store
+4. `CalendarPage` route and sidebar entry with the same scope-switching pattern used by Lists
+5. Calendar SSE wiring
+6. Calendar widget type in the widget picker and renderer
+7. Reminder scheduling and notification UX
+
+This sequence keeps the widget dependent on a stable module foundation rather than forcing the widget to invent module behavior on its own.
