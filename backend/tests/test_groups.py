@@ -148,7 +148,10 @@ async def test_member_join_and_leave(auth_client: AsyncClient, db_session: Async
     second = await _register_second_user(db_session)
     try:
         # Join via invite
-        join_resp = await second.post(f"{_INVITES_URL}/{code}/join")
+        join_resp = await second.post(
+            f"{_INVITES_URL}/{code}/join",
+            headers={"X-CSRF-Token": second.cookies.get("csrf_token")},
+        )
         assert join_resp.status_code == 200
         assert join_resp.json()["role"] == "member"
 
@@ -162,6 +165,49 @@ async def test_member_join_and_leave(auth_client: AsyncClient, db_session: Async
             headers={"X-CSRF-Token": second.cookies.get("csrf_token")},
         )
         assert leave_resp.status_code == 204
+    finally:
+        await second.__aexit__(None, None, None)
+
+
+async def test_owner_can_update_and_remove_member(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    group = await _make_group(auth_client)
+    invite_resp = await auth_client.post(
+        f"{_GROUPS_URL}/{group['id']}/invites",
+        json={},
+        headers={"X-CSRF-Token": _csrf(auth_client)},
+    )
+    assert invite_resp.status_code == 201
+    code = invite_resp.json()["code"]
+
+    second = await _register_second_user(db_session)
+    try:
+        join_resp = await second.post(
+            f"{_INVITES_URL}/{code}/join",
+            headers={"X-CSRF-Token": second.cookies.get("csrf_token")},
+        )
+        assert join_resp.status_code == 200
+
+        me_resp = await second.get("/api/auth/me")
+        assert me_resp.status_code == 200
+        second_user_id = me_resp.json()["id"]
+
+        update_resp = await auth_client.patch(
+            f"{_GROUPS_URL}/{group['id']}/members/{second_user_id}",
+            json={"role": "admin"},
+            headers={"X-CSRF-Token": _csrf(auth_client)},
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["role"] == "admin"
+
+        remove_resp = await auth_client.delete(
+            f"{_GROUPS_URL}/{group['id']}/members/{second_user_id}",
+            headers={"X-CSRF-Token": _csrf(auth_client)},
+        )
+        assert remove_resp.status_code == 204
+
+        members_resp = await auth_client.get(f"{_GROUPS_URL}/{group['id']}/members")
+        assert members_resp.status_code == 200
+        assert len(members_resp.json()) == 1
     finally:
         await second.__aexit__(None, None, None)
 
@@ -220,7 +266,10 @@ async def test_revoke_invite(auth_client: AsyncClient) -> None:
 
 
 async def test_join_expired_or_invalid_invite(auth_client: AsyncClient) -> None:
-    resp = await auth_client.post(f"{_INVITES_URL}/doesnotexist/join")
+    resp = await auth_client.post(
+        f"{_INVITES_URL}/doesnotexist/join",
+        headers={"X-CSRF-Token": _csrf(auth_client)},
+    )
     assert resp.status_code == 404
 
 
@@ -235,9 +284,15 @@ async def test_join_already_member(auth_client: AsyncClient, db_session: AsyncSe
 
     second = await _register_second_user(db_session)
     try:
-        await second.post(f"{_INVITES_URL}/{code}/join")
+        await second.post(
+            f"{_INVITES_URL}/{code}/join",
+            headers={"X-CSRF-Token": second.cookies.get("csrf_token")},
+        )
         # Joining a second time should fail
-        resp = await second.post(f"{_INVITES_URL}/{code}/join")
+        resp = await second.post(
+            f"{_INVITES_URL}/{code}/join",
+            headers={"X-CSRF-Token": second.cookies.get("csrf_token")},
+        )
         assert resp.status_code == 409
     finally:
         await second.__aexit__(None, None, None)

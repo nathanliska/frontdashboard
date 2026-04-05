@@ -24,7 +24,7 @@ logs:
 
 # Testing
 test:
-	cd backend && uv run pytest -q
+	cd backend && uv run pytest
 	cd frontend && npm run test:run
 
 # Linting — check only, no modifications
