@@ -1,10 +1,45 @@
-import { render } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  createMockAuthState,
+  mockUseAuthStore,
+  resetMockAuthStore,
+  setMockAuthState,
+} from './test/auth-store'
 import App from './App'
 
+const init = vi.fn()
+
+vi.mock('./stores/auth', () => ({
+  useAuthStore: (selector: (state: ReturnType<typeof createMockAuthState>) => unknown) =>
+    mockUseAuthStore(selector),
+}))
+
 describe('App', () => {
-  it('renders without crashing', () => {
+  beforeEach(() => {
+    init.mockReset()
+    init.mockResolvedValue(undefined)
+    window.history.pushState({}, '', '/login')
+
+    const authState = createMockAuthState({
+      status: 'unauthenticated',
+      init,
+    })
+
+    setMockAuthState(authState)
+  })
+
+  afterEach(() => {
+    resetMockAuthStore()
+    window.history.pushState({}, '', '/')
+  })
+
+  it('renders the login route and kicks off auth initialization', async () => {
     render(<App />)
-    expect(document.body).toBeTruthy()
+
+    expect(screen.getByRole('heading', { name: 'FrontDashboard' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(init).toHaveBeenCalledTimes(1)
+    })
   })
 })
