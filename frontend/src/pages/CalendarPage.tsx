@@ -244,7 +244,7 @@ export function CalendarPage() {
                 setSearchParams({}, { replace: true })
               }
             }}
-            className="min-w-0 max-w-[11rem] sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
+            className="min-w-0 max-w-44 sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
           >
             <option value="">Select dashboard</option>
             {dashboards.map((dashboard) => (
