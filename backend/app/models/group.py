@@ -15,11 +15,6 @@ class GroupRole(enum.StrEnum):
     member = "member"
 
 
-class DashboardRole(enum.StrEnum):
-    viewer = "viewer"
-    editor = "editor"
-
-
 class Group(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "groups"
 
@@ -35,10 +30,5 @@ class GroupMember(UUIDPrimaryKeyMixin, Base):
     group_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("groups.id"), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     role: Mapped[GroupRole] = mapped_column(Enum(GroupRole, name="group_role"), nullable=False, server_default=GroupRole.member)
-    dashboard_role: Mapped[DashboardRole] = mapped_column(
-        Enum(DashboardRole, name="dashboard_role"),
-        nullable=False,
-        server_default=DashboardRole.viewer,
-    )
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

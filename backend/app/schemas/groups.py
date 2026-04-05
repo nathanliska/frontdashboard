@@ -27,10 +27,8 @@ class MemberResponse(BaseModel):
     display_name: str
     email: str
     role: str
-    dashboard_role: str
     joined_at: datetime
 
 
 class MemberRoleUpdate(BaseModel):
     role: Literal["owner", "admin", "member"] | None = None
-    dashboard_role: Literal["viewer", "editor"] | None = None

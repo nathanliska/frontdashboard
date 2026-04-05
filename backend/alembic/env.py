@@ -4,10 +4,14 @@ from logging.config import fileConfig
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import app.models.activity  # noqa: F401
 import app.models.dashboard  # noqa: F401
 import app.models.group  # noqa: F401
 import app.models.invite  # noqa: F401
+import app.models.list  # noqa: F401
+import app.models.notification  # noqa: F401
 import app.models.refresh_token  # noqa: F401
+import app.models.share  # noqa: F401
 import app.models.user  # noqa: F401
 from alembic import context
 from app.config import settings

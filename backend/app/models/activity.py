@@ -1,0 +1,75 @@
+"""ActivityEvent model — append-only log of all mutations.
+
+event_id is a BIGSERIAL-style incrementing integer (separate from UUID PK) used
+as the SSE Last-Event-ID for ordered replay and deduplication.
+"""
+
+import enum
+import uuid
+from datetime import datetime
+
+from sqlalchemy import BigInteger, DateTime, Index, Sequence, String, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.models.base import Base
+
+_event_id_seq = Sequence("activity_events_event_id_seq")
+
+
+class EventType(enum.StrEnum):
+    # Lists
+    list_created = "list.created"
+    list_updated = "list.updated"
+    list_archived = "list.archived"
+    list_deleted = "list.deleted"
+    # List items
+    list_item_created = "list.item.created"
+    list_item_updated = "list.item.updated"
+    list_item_checked = "list.item.checked"
+    list_item_deleted = "list.item.deleted"
+    # Membership
+    membership_added = "membership.added"
+    membership_removed = "membership.removed"
+    membership_role_changed = "membership.role_changed"
+    # Dashboards (wired in Step 14/16)
+    dashboard_layout_changed = "dashboard.layout_changed"
+    dashboard_widget_added = "dashboard.widget_added"
+    dashboard_widget_removed = "dashboard.widget_removed"
+    # Calendar
+    calendar_event_created = "calendar.event.created"
+    calendar_event_updated = "calendar.event.updated"
+    calendar_event_deleted = "calendar.event.deleted"
+    calendar_event_occurrence_updated = "calendar.event.occurrence.updated"
+    calendar_event_occurrence_cancelled = "calendar.event.occurrence.cancelled"
+
+
+class ActivityEvent(Base):
+    __tablename__ = "activity_events"
+    __table_args__ = (
+        Index("ix_activity_events_event_id", "event_id"),
+        Index("ix_activity_events_group", "group_id", "created_at"),
+        Index("ix_activity_events_actor", "actor_id", "created_at"),
+    )
+    __mapper_args__ = {"eager_defaults": True}
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Monotonically increasing integer; assigned by DB sequence; used as SSE Last-Event-ID
+    event_id: Mapped[int] = mapped_column(
+        BigInteger,
+        _event_id_seq,
+        nullable=False,
+        unique=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Null for private-scope events (not broadcast to any group)
+    group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # actor_id + actor_display_name snapshot — name preserved after user leaves/deletes
+    actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    actor_display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Polymorphic entity reference — no FK (can point to list, list_item, group_member, etc.)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    entity_version: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="1")
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), nullable=False)

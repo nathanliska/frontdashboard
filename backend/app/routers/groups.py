@@ -8,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
-from app.models.dashboard import Dashboard
-from app.models.group import DashboardRole, Group, GroupMember, GroupRole
+from app.models.group import Group, GroupMember, GroupRole
 from app.models.invite import Invite
 from app.models.user import User
 from app.schemas.groups import (
@@ -20,12 +19,17 @@ from app.schemas.groups import (
     MemberRoleUpdate,
 )
 from app.schemas.invites import InviteCreate, InviteResponse
+from app.services import permissions
+from app.services.activity import EventType, log_event
+from app.services.notifications import maybe_notify
+from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
+from app.sse.manager import manager
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
 
 # ---------------------------------------------------------------------------
-# Permission helpers
+# DB helpers (membership lookup, counts, response shaping)
 # ---------------------------------------------------------------------------
 
 
@@ -41,16 +45,6 @@ async def _get_membership(group_id: uuid.UUID, user: User, db: AsyncSession) -> 
     if not membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return membership
-
-
-def _assert_admin(membership: GroupMember) -> None:
-    if membership.role not in (GroupRole.admin, GroupRole.owner):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin or owner required")
-
-
-def _assert_owner(membership: GroupMember) -> None:
-    if membership.role != GroupRole.owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner required")
 
 
 async def _count_active_owners(group_id: uuid.UUID, db: AsyncSession) -> int:
@@ -109,7 +103,6 @@ async def create_group(
             joined_at=datetime.now(UTC),
         )
     )
-    db.add(Dashboard(group_id=group.id))
     await db.commit()
 
     return _group_response(group, 1)
@@ -166,7 +159,7 @@ async def update_group(
     db: AsyncSession = Depends(get_db),
 ) -> GroupResponse:
     membership = await _get_membership(group_id, current_user, db)
-    _assert_admin(membership)
+    permissions.assert_is_admin_or_owner(membership)
 
     result = await db.execute(select(Group).where(Group.id == group_id, Group.deleted_at.is_(None)))
     group = result.scalar_one_or_none()
@@ -188,7 +181,7 @@ async def delete_group(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     membership = await _get_membership(group_id, current_user, db)
-    _assert_owner(membership)
+    permissions.assert_is_owner(membership)
 
     result = await db.execute(select(Group).where(Group.id == group_id, Group.deleted_at.is_(None)))
     group = result.scalar_one_or_none()
@@ -224,7 +217,6 @@ async def list_members(
             display_name=u.display_name,
             email=u.email,
             role=m.role,
-            dashboard_role=m.dashboard_role,
             joined_at=m.joined_at,
         )
         for m, u in result.all()
@@ -246,8 +238,24 @@ async def leave_group(
             detail="Transfer ownership before leaving — you are the last owner",
         )
 
+    event = log_event(
+        db,
+        event_type=EventType.membership_removed,
+        actor_id=current_user.id,
+        actor_display_name=current_user.display_name,
+        entity_type="group_member",
+        entity_id=membership.id,
+        group_id=group_id,
+        payload={"user_id": str(current_user.id), "reason": "left"},
+    )
+    notifs = await maybe_notify(db, event)
     membership.left_at = datetime.now(UTC)
+    event_message = await build_activity_sse_dict(db, event)
+    notif_messages = await build_notification_sse_dicts(db, notifs)
     await db.commit()
+    await manager.broadcast(event_message, group_id=group_id, actor_id=current_user.id)
+    for notif, message in zip(notifs, notif_messages, strict=True):
+        await manager.broadcast(message, group_id=None, actor_id=notif.user_id)
 
 
 @router.patch("/{group_id}/members/{user_id}", response_model=MemberResponse)
@@ -273,16 +281,27 @@ async def update_member(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
 
     if body.role is not None:
-        _assert_owner(actor)
+        permissions.assert_is_owner(actor)
         if target.role == GroupRole.owner and body.role != GroupRole.owner and await _count_active_owners(group_id, db) <= 1:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot demote the last owner")
         target.role = GroupRole(body.role)
 
-    if body.dashboard_role is not None:
-        _assert_admin(actor)
-        target.dashboard_role = DashboardRole(body.dashboard_role)
-
+    event = log_event(
+        db,
+        event_type=EventType.membership_role_changed,
+        actor_id=current_user.id,
+        actor_display_name=current_user.display_name,
+        entity_type="group_member",
+        entity_id=target.id,
+        group_id=group_id,
+        payload={
+            "user_id": str(user_id),
+            **({"role": str(target.role)} if body.role is not None else {}),
+        },
+    )
+    event_message = await build_activity_sse_dict(db, event)
     await db.commit()
+    await manager.broadcast(event_message, group_id=group_id, actor_id=current_user.id)
 
     user_result = await db.execute(select(User).where(User.id == user_id))
     user = user_result.scalar_one()
@@ -292,7 +311,6 @@ async def update_member(
         display_name=user.display_name,
         email=user.email,
         role=target.role,
-        dashboard_role=target.dashboard_role,
         joined_at=target.joined_at,
     )
 
@@ -306,7 +324,7 @@ async def remove_member(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     actor = await _get_membership(group_id, current_user, db)
-    _assert_admin(actor)
+    permissions.assert_is_admin_or_owner(actor)
 
     target_result = await db.execute(
         select(GroupMember).where(
@@ -324,8 +342,24 @@ async def remove_member(
     if target.role == GroupRole.admin and actor.role != GroupRole.owner:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only owners can remove admins")
 
+    event = log_event(
+        db,
+        event_type=EventType.membership_removed,
+        actor_id=current_user.id,
+        actor_display_name=current_user.display_name,
+        entity_type="group_member",
+        entity_id=target.id,
+        group_id=group_id,
+        payload={"user_id": str(user_id), "reason": "removed"},
+    )
+    notifs = await maybe_notify(db, event)
     target.left_at = datetime.now(UTC)
+    event_message = await build_activity_sse_dict(db, event)
+    notif_messages = await build_notification_sse_dicts(db, notifs)
     await db.commit()
+    await manager.broadcast(event_message, group_id=group_id, actor_id=current_user.id)
+    for notif, message in zip(notifs, notif_messages, strict=True):
+        await manager.broadcast(message, group_id=None, actor_id=notif.user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +376,7 @@ async def create_invite(
     db: AsyncSession = Depends(get_db),
 ) -> InviteResponse:
     membership = await _get_membership(group_id, current_user, db)
-    _assert_admin(membership)
+    permissions.assert_is_admin_or_owner(membership)
 
     now = datetime.now(UTC)
     invite = Invite(
@@ -366,7 +400,7 @@ async def list_invites(
     db: AsyncSession = Depends(get_db),
 ) -> list[InviteResponse]:
     membership = await _get_membership(group_id, current_user, db)
-    _assert_admin(membership)
+    permissions.assert_is_admin_or_owner(membership)
 
     result = await db.execute(
         select(Invite)
@@ -392,7 +426,7 @@ async def revoke_invite(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     membership = await _get_membership(group_id, current_user, db)
-    _assert_admin(membership)
+    permissions.assert_is_admin_or_owner(membership)
 
     result = await db.execute(select(Invite).where(Invite.id == invite_id, Invite.group_id == group_id))
     invite = result.scalar_one_or_none()
