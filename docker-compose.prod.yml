@@ -1,0 +1,27 @@
+services:
+  frontend:
+    container_name: frontdashboard-frontend
+    image: heatslinger/frontdashboard-frontend:${TAG:-latest}
+    depends_on:
+      - backend
+    networks:
+      - internal
+      - edge
+    restart: unless-stopped
+
+  backend:
+    container_name: frontdashboard-backend
+    image: heatslinger/frontdashboard-backend:${TAG:-latest}
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      ENVIRONMENT: production
+    networks:
+      - internal
+    restart: unless-stopped
+
+networks:
+  internal:
+    external: true
+  edge:
+    external: true

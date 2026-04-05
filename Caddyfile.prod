@@ -1,0 +1,28 @@
+:80 {
+	# SSE: disable buffering so events are streamed immediately
+	handle /api/sse/* {
+		reverse_proxy frontdashboard-backend:8000 {
+			flush_interval -1
+		}
+	}
+
+	# API routes
+	handle /api/* {
+		reverse_proxy frontdashboard-backend:8000
+	}
+
+	# Static files with SPA fallback
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Security headers
+	header {
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
