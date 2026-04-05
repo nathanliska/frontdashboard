@@ -1,33 +1,30 @@
 import uuid
+from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
-_OWNER_CHECK = "(user_id IS NOT NULL AND group_id IS NULL) OR (user_id IS NULL AND group_id IS NOT NULL)"
-
 
 class Dashboard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "dashboards"
-    __table_args__ = (
-        CheckConstraint(_OWNER_CHECK, name="ck_dashboards_owner"),
-        Index(
-            "uq_dashboards_user",
-            "user_id",
-            unique=True,
-            postgresql_where="user_id IS NOT NULL",
-        ),
-        Index(
-            "uq_dashboards_group",
-            "group_id",
-            unique=True,
-            postgresql_where="group_id IS NOT NULL",
-        ),
-    )
 
-    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("groups.id"), nullable=True)
-    layout: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default='{"rows": []}')
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, server_default="My Dashboard")
+    is_favorite: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    layout: Mapped[Any] = mapped_column(JSONB, nullable=False, server_default="[]")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+
+class DashboardWidget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "dashboard_widgets"
+    __table_args__ = (Index("ix_dashboard_widgets_dashboard_id", "dashboard_id"),)
+
+    dashboard_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dashboards.id", ondelete="CASCADE"), nullable=False)
+    widget_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    widget_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
