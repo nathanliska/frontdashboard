@@ -1,7 +1,7 @@
 """ActivityEvent model — append-only log of all mutations.
 
 event_id is a BIGSERIAL-style incrementing integer (separate from UUID PK) used
-as the SSE Last-Event-ID for ordered replay and deduplication.
+as the SSE Last-Event-ID and a stable ordering key.
 """
 
 import enum
@@ -32,10 +32,10 @@ class EventType(enum.StrEnum):
     membership_added = "membership.added"
     membership_removed = "membership.removed"
     membership_role_changed = "membership.role_changed"
-    # Dashboards (wired in Step 14/16)
-    dashboard_layout_changed = "dashboard.layout_changed"
-    dashboard_widget_added = "dashboard.widget_added"
-    dashboard_widget_removed = "dashboard.widget_removed"
+    # Dashboards
+    dashboard_created = "dashboard.created"
+    dashboard_updated = "dashboard.updated"
+    dashboard_deleted = "dashboard.deleted"
     # Calendar
     calendar_event_created = "calendar.event.created"
     calendar_event_updated = "calendar.event.updated"

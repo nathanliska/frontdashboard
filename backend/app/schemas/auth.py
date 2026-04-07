@@ -1,11 +1,11 @@
 import uuid
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8, max_length=128)
     display_name: str
 
 
@@ -24,6 +24,7 @@ class UserPreferences(BaseModel):
     """
 
     home_dashboard_id: str | None = None
+    favorite_dashboard_ids: list[str] = Field(default_factory=list)
 
 
 class UserResponse(BaseModel):
@@ -47,6 +48,7 @@ class UserResponse(BaseModel):
 
 class PreferencesUpdate(BaseModel):
     home_dashboard_id: str | None = None
+    favorite_dashboard_ids: list[str] | None = None
 
 
 class ProfileUpdate(BaseModel):
@@ -56,4 +58,4 @@ class ProfileUpdate(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
-    new_password: str
+    new_password: str = Field(min_length=8, max_length=128)

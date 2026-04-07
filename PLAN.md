@@ -304,12 +304,12 @@ The core loop: auth, groups, customizable dashboards, and lists with real-time s
 - When user 1 checks a grocery item, user 2 sees it immediately on both widget and full page
 - Widget and full page views stay in sync through shared Zustand stores
 - Defined event types (list.created, list.item.checked, membership.added, etc.)
-- Reconnect with `Last-Event-ID` replay; full refetch on stale gap
+- Reconnect with `Last-Event-ID`; quiet resync on every reconnect
 
 **Data consistency rules for Zustand:**
 - REST is the authoritative source for initial data fetch
 - SSE events update stores incrementally; each event carries entity_version
-- On reconnect, client sends Last-Event-ID; server replays missed events or triggers resync
+- On reconnect, client sends Last-Event-ID; server quietly resyncs current state
 - Duplicate events are ignored (idempotent by event_id)
 - Optimistic updates are minimal in v1; server truth is preferred
 - Full store refetch is triggered on resync events or after prolonged disconnection
@@ -445,7 +445,7 @@ These tools are lightweight and self-contained. They can be added incrementally 
 
 Each event carries: `event_id` (incrementing), `event_type`, `group_id` (nullable), `entity_id`, `entity_version`, `changed_at`, `changed_by`, and `payload` (the changed data).
 
-**Reconnect behavior:** The native EventSource API sends `Last-Event-ID` on reconnect. The server replays all events since that ID. If the gap exceeds a threshold (e.g., 1000 events or 1 hour), the server sends a `resync` event and the client does a full refetch of its active stores. This prevents unbounded replay while keeping the common case (brief disconnects) seamless.
+**Reconnect behavior:** The native EventSource API sends `Last-Event-ID` on reconnect. The server treats that as a reconnect signal, sends a `resync` event, and the client quietly refetches the relevant stores. This keeps reconnect recovery simple and makes it behave like a soft page reload after brief disconnects.
 
 **Rationale for SSE over WebSocket:**
 - The data flow is primarily server -> client (broadcast changes to connected group members)
@@ -684,7 +684,7 @@ frontdashboard/
 │   │   │   └── notifications.py # Notification policy, coalescing
 │   │   ├── sse/                # SSE event broadcasting
 │   │   │   ├── manager.py      # Connection manager (multiplexed, per-user)
-│   │   │   └── events.py       # Event types, serialization, replay
+│   │   │   └── events.py       # Event types, serialization, reconnect helpers
 │   │   ├── auth/               # JWT, password hashing, CSRF, rate limiting
 │   │   └── middleware/         # CORS, security headers, error handling
 │   └── tests/
@@ -849,7 +849,7 @@ Suggested build sequence:
 8. **Lists module (backend)**: CRUD for lists and list items, visibility scoping, permission enforcement, soft delete
 9. **Lists module (frontend)**: List full page with list-type-tailored UI, create/edit forms, check/uncheck items, scope filter (Mine + per-group)
 10. **Activity events**: Backend activity_events table, logging on mutations, actor_display_name snapshot on write
-11. **SSE infrastructure**: Multiplexed connection manager, event types, group-tagged broadcasting, reconnect with Last-Event-ID replay, resync threshold
+11. **SSE infrastructure**: Multiplexed connection manager, event types, group-tagged broadcasting, reconnect with Last-Event-ID quiet resync
 12. **Real-time list sync**: Wire up list mutations to SSE broadcasts, frontend EventSource listener, Zustand store updates, duplicate event handling
 13. **Notifications**: Bell icon with unread badge, slide-out panel, inbox-worthy vs activity-only split, actor suppression, coalescing, notification history page with Notifications and Activity tabs
 14. **Dashboard system**: react-grid-layout integration, widget container, dashboard_widgets table, layout persistence, version conflict detection

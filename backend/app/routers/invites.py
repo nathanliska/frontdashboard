@@ -30,11 +30,13 @@ async def join_group(
 ) -> MemberResponse:
     now = datetime.now(UTC)
     invite_result = await db.execute(
-        select(Invite).where(
+        select(Invite)
+        .where(
             Invite.code == code,
             Invite.revoked.is_(False),
             Invite.expires_at > now,
         )
+        .with_for_update()
     )
     invite = invite_result.scalar_one_or_none()
     if not invite:

@@ -57,7 +57,8 @@ class DashboardCreate(BaseModel):
 
 class DashboardUpdate(BaseModel):
     name: str | None = None
-    is_favorite: bool | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class LayoutUpdate(BaseModel):

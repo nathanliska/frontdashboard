@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "format": "prettier --write .",
+    "format": "prettier --write --log-level warn .",
     "test": "vitest",
     "test:run": "vitest run",
     "preview": "vite preview"

@@ -35,6 +35,14 @@ const LOCAL_ITEM_EVENT_TTL_MS = 5000
 const recentLocalItemMutations = new Map<string, number>()
 let inFlightListsLoad: { dashboardId: string | null; promise: Promise<void> } | null = null
 
+type LoadListsOptions = {
+  background?: boolean
+}
+
+type SelectListOptions = {
+  background?: boolean
+}
+
 function markLocalItemMutation(itemId: string) {
   recentLocalItemMutations.set(itemId, Date.now())
 }
@@ -57,9 +65,9 @@ interface ListsState {
   detail: ListDetail | null
   loading: boolean
   dashboardId: string | null
-  loadLists: (dashboardId?: string | null) => Promise<void>
+  loadLists: (dashboardId?: string | null, options?: LoadListsOptions) => Promise<void>
   clearSelection: () => void
-  selectList: (id: string) => Promise<void>
+  selectList: (id: string, options?: SelectListOptions) => Promise<void>
   createList: (name: string, listType: ListType, dashboardId: string) => Promise<void>
   updateListName: (id: string, name: string) => Promise<void>
   deleteList: (id: string) => Promise<void>
@@ -78,20 +86,27 @@ export const useListsStore = create<ListsState>()((set, get) => ({
   loading: false,
   dashboardId: null,
 
-  async loadLists(dashboardId = null) {
+  async loadLists(dashboardId = null, options = {}) {
     if (inFlightListsLoad?.dashboardId === dashboardId) {
       return inFlightListsLoad.promise
     }
 
-    set({ loading: true, dashboardId })
+    const showLoading = !options.background
+    set(showLoading ? { loading: true, dashboardId } : { dashboardId })
 
     const promise = (async () => {
       try {
         const lists = await apiGetLists(dashboardId)
-        set({ lists, loading: false })
+        set((state) => ({
+          lists,
+          dashboardId,
+          ...(showLoading ? { loading: false } : { loading: state.loading }),
+        }))
       } catch {
-        set({ loading: false })
-        toast.error('Failed to load lists.')
+        if (showLoading) {
+          set({ loading: false })
+          toast.error('Failed to load lists.')
+        }
       } finally {
         if (inFlightListsLoad?.dashboardId === dashboardId) inFlightListsLoad = null
       }
@@ -105,17 +120,20 @@ export const useListsStore = create<ListsState>()((set, get) => ({
     set({ selectedId: null, detail: null })
   },
 
-  async selectList(id) {
-    set({ selectedId: id, detail: null })
+  async selectList(id, options = {}) {
+    const showLoading = !options.background
+    set(showLoading ? { selectedId: id, detail: null } : { selectedId: id })
     try {
       const detail = await apiGetList(id)
       set((s) => (s.selectedId === id ? { detail } : {}))
     } catch {
       // Ignore stale loads if the user has already selected a different list.
       if (get().selectedId !== id) return
-      // Keep selectedId set (row stays highlighted) but detail stays null.
-      // The detail panel renders a "could not load" message when selectedId is set + detail is null.
-      toast.error('Failed to load list.')
+      if (showLoading) {
+        // Keep selectedId set (row stays highlighted) but detail stays null.
+        // The detail panel renders a "could not load" message when selectedId is set + detail is null.
+        toast.error('Failed to load list.')
+      }
     }
   },
 
@@ -259,8 +277,8 @@ export const useListsStore = create<ListsState>()((set, get) => ({
 
     // Resync: full refetch of current view
     if (event.event_type === 'resync') {
-      await get().loadLists(dashboardId)
-      if (selectedId) await get().selectList(selectedId)
+      await get().loadLists(dashboardId, { background: true })
+      if (selectedId) await get().selectList(selectedId, { background: true })
       return
     }
 
@@ -289,13 +307,13 @@ export const useListsStore = create<ListsState>()((set, get) => ({
 
     const shouldReloadLists = !isItemEvent || ITEM_COUNT_EVENT_TYPES.has(event.event_type)
     if (shouldReloadLists) {
-      await get().loadLists(dashboardId)
+      await get().loadLists(dashboardId, { background: true })
     }
 
     // Refresh open detail if the event affects the currently selected list
     const currentSelected = get().selectedId
     if (currentSelected && affectedListId === currentSelected) {
-      await get().selectList(currentSelected)
+      await get().selectList(currentSelected, { background: true })
     }
   },
 }))

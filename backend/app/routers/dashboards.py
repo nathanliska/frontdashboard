@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import case, delete, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -28,6 +28,10 @@ from app.schemas.shares import ShareCreate, ShareResponse, ShareUpdate
 from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.calendar import expand_event_occurrences
+from app.services.preferences import (
+    favorite_dashboard_ids_from_preferences,
+    remove_dashboard_from_preferences,
+)
 from app.services.shares import (
     cleanup_resource_shares,
     create_share,
@@ -56,6 +60,8 @@ def _to_summary(
     dashboard: Dashboard,
     access_description: str | None = None,
     is_shared: bool = False,
+    *,
+    is_favorite: bool = False,
 ) -> DashboardSummary:
     return DashboardSummary.model_validate(
         {
@@ -64,7 +70,7 @@ def _to_summary(
             "name": dashboard.name,
             "access_description": access_description,
             "is_shared": is_shared,
-            "is_favorite": dashboard.is_favorite,
+            "is_favorite": is_favorite,
             "version": dashboard.version,
             "created_at": dashboard.created_at,
             "updated_at": dashboard.updated_at,
@@ -76,6 +82,8 @@ def _to_response(
     dashboard: Dashboard,
     widgets: list[DashboardWidget],
     is_shared: bool,
+    *,
+    is_favorite: bool = False,
 ) -> DashboardResponse:
     layout = dashboard.layout if isinstance(dashboard.layout, list) else []
     return DashboardResponse(
@@ -83,7 +91,7 @@ def _to_response(
         user_id=dashboard.user_id,
         name=dashboard.name,
         is_shared=is_shared,
-        is_favorite=dashboard.is_favorite,
+        is_favorite=is_favorite,
         layout=layout,
         version=dashboard.version,
         widgets=[WidgetResponse.model_validate(w) for w in widgets],
@@ -96,12 +104,22 @@ def _next_y(layout: list[dict[str, Any]]) -> int:
     return max(item.get("y", 0) + item.get("h", 1) for item in layout)
 
 
+def _dashboard_is_favorite_for_user(dashboard: Dashboard, favorite_dashboard_ids: set[uuid.UUID]) -> bool:
+    return dashboard.id in favorite_dashboard_ids
+
+
 async def _get_dashboard_access(
     dashboard_id: uuid.UUID,
     user: User,
     db: AsyncSession,
+    *,
+    lock_for_update: bool = False,
 ) -> tuple[Dashboard, list[ResourceShare], ShareRole | None]:
-    result = await db.execute(select(Dashboard).where(Dashboard.id == dashboard_id))
+    dashboard_query = select(Dashboard).where(Dashboard.id == dashboard_id)
+    if lock_for_update:
+        dashboard_query = dashboard_query.with_for_update()
+
+    result = await db.execute(dashboard_query)
     dashboard = result.scalar_one_or_none()
     if dashboard is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
@@ -116,24 +134,67 @@ async def _get_dashboard_access(
     return dashboard, shares, role
 
 
-async def _accessible_dashboard_query(user: User, db: AsyncSession) -> list[Dashboard]:
-    shared_ids = select(ResourceShare.resource_id).where(
-        ResourceShare.resource_type == ResourceType.dashboard,
-        ResourceShare.principal_type == PrincipalType.user,
-        ResourceShare.principal_id == user.id,
+async def _list_accessible_dashboard_summaries(
+    user: User,
+    db: AsyncSession,
+) -> list[DashboardSummary]:
+    favorite_dashboard_ids = favorite_dashboard_ids_from_preferences(user.preferences)
+    direct_share_exists = (
+        select(ResourceShare.id)
+        .where(
+            ResourceShare.resource_type == ResourceType.dashboard,
+            ResourceShare.resource_id == Dashboard.id,
+            ResourceShare.principal_type == PrincipalType.user,
+            ResourceShare.principal_id == user.id,
+        )
+        .exists()
     )
+    any_share_exists = (
+        select(ResourceShare.id)
+        .where(
+            ResourceShare.resource_type == ResourceType.dashboard,
+            ResourceShare.resource_id == Dashboard.id,
+        )
+        .exists()
+    )
+    access_description = case(
+        (Dashboard.user_id == user.id, literal("Owned by you")),
+        (direct_share_exists, literal("Shared directly with you")),
+        else_=literal("Shared with you"),
+    ).label("access_description")
+    favorite_for_user = (
+        case(
+            (Dashboard.id.in_(favorite_dashboard_ids), literal(True)),
+            else_=literal(False),
+        )
+        if favorite_dashboard_ids
+        else literal(False)
+    ).label("is_favorite")
 
     result = await db.execute(
-        select(Dashboard)
+        select(
+            Dashboard,
+            access_description,
+            any_share_exists.label("is_shared"),
+            favorite_for_user,
+        )
         .where(
             or_(
                 Dashboard.user_id == user.id,
-                Dashboard.id.in_(shared_ids),
+                direct_share_exists,
             )
         )
-        .order_by(Dashboard.is_favorite.desc(), Dashboard.updated_at.desc())
+        .order_by(favorite_for_user.desc(), Dashboard.updated_at.desc())
     )
-    return list(result.scalars().all())
+    return [
+        _to_summary(
+            dashboard,
+            access_description,
+            bool(is_shared),
+            is_favorite=bool(is_favorite),
+        )
+        for dashboard, access_description, is_shared, is_favorite in result.all()
+    ]
 
 
 async def _dashboard_access_descriptions(
@@ -186,6 +247,61 @@ async def _dashboard_audience_user_ids(
     return audience_user_ids
 
 
+async def _remove_dashboard_from_user_preferences(
+    dashboard: Dashboard,
+    shares: list[ResourceShare],
+    db: AsyncSession,
+) -> None:
+    candidate_user_ids: set[uuid.UUID] = {dashboard.user_id}
+    candidate_user_ids.update(share.principal_id for share in shares if share.principal_type == PrincipalType.user)
+    if not candidate_user_ids:
+        return
+
+    result = await db.execute(select(User).where(User.id.in_(candidate_user_ids)))
+    for user in result.scalars().all():
+        user.preferences = remove_dashboard_from_preferences(user.preferences, dashboard.id)
+
+
+async def _broadcast_dashboard_event(
+    message: dict,
+    dashboard: Dashboard,
+    shares: list[ResourceShare],
+    actor_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    await manager.broadcast(
+        message,
+        group_id=None,
+        user_ids=await _dashboard_audience_user_ids(dashboard, shares, db),
+        actor_id=actor_id,
+    )
+
+
+async def _build_dashboard_event_message(
+    db: AsyncSession,
+    *,
+    event_type: EventType,
+    current_user: User,
+    dashboard: Dashboard,
+    payload: dict[str, Any] | None = None,
+    entity_type: str = "dashboard",
+    entity_id: uuid.UUID | None = None,
+    entity_version: int = 1,
+) -> dict:
+    activity = log_event(
+        db,
+        event_type=event_type,
+        actor_id=current_user.id,
+        actor_display_name=current_user.display_name,
+        entity_type=entity_type,
+        entity_id=entity_id or dashboard.id,
+        group_id=None,
+        entity_version=entity_version,
+        payload={"dashboard_id": str(dashboard.id), **(payload or {})},
+    )
+    return await build_activity_sse_dict(db, activity)
+
+
 def _occurrence_response(occurrence) -> CalendarOccurrenceResponse:
     return CalendarOccurrenceResponse(
         event_id=occurrence.event_id,
@@ -227,27 +343,7 @@ async def list_dashboards(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[DashboardSummary]:
-    dashboards = await _accessible_dashboard_query(current_user, db)
-    descriptions = await _dashboard_access_descriptions(dashboards, current_user, db)
-    dashboard_ids = [dashboard.id for dashboard in dashboards if dashboard.user_id is not None]
-    shared_ids: set[uuid.UUID] = set()
-    if dashboard_ids:
-        share_result = await db.execute(
-            select(ResourceShare.resource_id).where(
-                ResourceShare.resource_type == ResourceType.dashboard,
-                ResourceShare.resource_id.in_(dashboard_ids),
-            )
-        )
-        shared_ids = {row[0] for row in share_result.all()}
-
-    return [
-        _to_summary(
-            dashboard,
-            descriptions.get(dashboard.id),
-            dashboard.id in shared_ids,
-        )
-        for dashboard in dashboards
-    ]
+    return await _list_accessible_dashboard_summaries(current_user, db)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=DashboardSummary)
@@ -261,9 +357,18 @@ async def create_dashboard(
     db.add(dashboard)
     await db.flush()
     await insert_shares(ResourceType.dashboard, dashboard.id, body.shares, current_user.id, db)
+    shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_created,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={"name": dashboard.name},
+    )
     await db.commit()
     await db.refresh(dashboard)
-    return _to_summary(dashboard, "Owned by you", bool(body.shares))
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    return _to_summary(dashboard, "Owned by you", bool(shares))
 
 
 @router.patch("/{dashboard_id}", response_model=DashboardSummary)
@@ -274,20 +379,33 @@ async def update_dashboard_meta(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
-    dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     if body.name is not None:
         permissions.assert_can_edit(role)
         dashboard.name = body.name
-    if body.is_favorite is not None:
-        dashboard.is_favorite = body.is_favorite
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_updated,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={
+            "name": dashboard.name,
+            "changed_fields": sorted(body.model_fields_set),
+        },
+    )
     await db.commit()
     await db.refresh(dashboard)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
     descriptions = await _dashboard_access_descriptions([dashboard], current_user, db)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
     return _to_summary(
         dashboard,
         descriptions.get(dashboard.id),
         _dashboard_is_shared(dashboard, current_shares),
+        is_favorite=_dashboard_is_favorite_for_user(
+            dashboard,
+            set(favorite_dashboard_ids_from_preferences(current_user.preferences)),
+        ),
     )
 
 
@@ -298,8 +416,15 @@ async def delete_dashboard(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_delete(role)
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_deleted,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={"name": dashboard.name},
+    )
 
     list_result = await db.execute(select(List.id).where(List.dashboard_id == dashboard.id))
     list_ids = [row[0] for row in list_result.all()]
@@ -316,10 +441,12 @@ async def delete_dashboard(
     if event_ids:
         await db.execute(delete(CalendarEvent).where(CalendarEvent.id.in_(event_ids)))
 
+    await _remove_dashboard_from_user_preferences(dashboard, shares, db)
     await db.execute(delete(DashboardWidget).where(DashboardWidget.dashboard_id == dashboard.id))
     await cleanup_resource_shares(ResourceType.dashboard, dashboard.id, db)
     await db.execute(delete(Dashboard).where(Dashboard.id == dashboard.id))
     await db.commit()
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
 
 
 @router.get("/default", response_model=DashboardResponse)
@@ -327,15 +454,29 @@ async def get_default_dashboard(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
+    favorite_dashboard_ids = favorite_dashboard_ids_from_preferences(current_user.preferences)
+    favorite_for_user = (
+        case(
+            (Dashboard.id.in_(favorite_dashboard_ids), literal(True)),
+            else_=literal(False),
+        )
+        if favorite_dashboard_ids
+        else literal(False)
+    )
     result = await db.execute(
-        select(Dashboard).where(Dashboard.user_id == current_user.id).order_by(Dashboard.is_favorite.desc(), Dashboard.created_at.asc()).limit(1)
+        select(Dashboard).where(Dashboard.user_id == current_user.id).order_by(favorite_for_user.desc(), Dashboard.created_at.asc()).limit(1)
     )
     dashboard = result.scalar_one_or_none()
     if dashboard is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
     widgets = await _load_widgets(dashboard.id, db)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    return _to_response(dashboard, widgets, _dashboard_is_shared(dashboard, current_shares))
+    return _to_response(
+        dashboard,
+        widgets,
+        _dashboard_is_shared(dashboard, current_shares),
+        is_favorite=_dashboard_is_favorite_for_user(dashboard, set(favorite_dashboard_ids)),
+    )
 
 
 @router.get("/{dashboard_id}", response_model=DashboardResponse)
@@ -346,7 +487,15 @@ async def get_dashboard(
 ) -> DashboardResponse:
     dashboard, shares, _role = await _get_dashboard_access(dashboard_id, current_user, db)
     widgets = await _load_widgets(dashboard.id, db)
-    return _to_response(dashboard, widgets, _dashboard_is_shared(dashboard, shares))
+    return _to_response(
+        dashboard,
+        widgets,
+        _dashboard_is_shared(dashboard, shares),
+        is_favorite=_dashboard_is_favorite_for_user(
+            dashboard,
+            set(favorite_dashboard_ids_from_preferences(current_user.preferences)),
+        ),
+    )
 
 
 @router.put("/{dashboard_id}/layout", response_model=DashboardResponse)
@@ -357,7 +506,13 @@ async def update_layout(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
-    dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    # Serialize layout/version mutations so optimistic conflict checks stay race-safe.
+    dashboard, shares, role = await _get_dashboard_access(
+        dashboard_id,
+        current_user,
+        db,
+        lock_for_update=True,
+    )
     permissions.assert_can_edit(role)
     if dashboard.version != body.version:
         raise HTTPException(
@@ -366,11 +521,28 @@ async def update_layout(
         )
     dashboard.layout = body.layout
     dashboard.version += 1
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_updated,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={"version": dashboard.version, "changed_fields": ["layout"]},
+        entity_version=dashboard.version,
+    )
     await db.commit()
     await db.refresh(dashboard)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
     widgets = await _load_widgets(dashboard.id, db)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    return _to_response(dashboard, widgets, _dashboard_is_shared(dashboard, current_shares))
+    return _to_response(
+        dashboard,
+        widgets,
+        _dashboard_is_shared(dashboard, current_shares),
+        is_favorite=_dashboard_is_favorite_for_user(
+            dashboard,
+            set(favorite_dashboard_ids_from_preferences(current_user.preferences)),
+        ),
+    )
 
 
 @router.post("/{dashboard_id}/widgets", status_code=status.HTTP_201_CREATED, response_model=DashboardResponse)
@@ -381,7 +553,13 @@ async def add_widget(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
-    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    # Lock the dashboard row so concurrent widget/layout mutations can't lose version/layout updates.
+    dashboard, shares, role = await _get_dashboard_access(
+        dashboard_id,
+        current_user,
+        db,
+        lock_for_update=True,
+    )
     permissions.assert_can_edit(role)
     is_shared_dashboard = _dashboard_is_shared(dashboard, shares)
     widget_policy = get_widget_policy(body.widget_type)
@@ -480,10 +658,33 @@ async def add_widget(
         }
     ]
     dashboard.version += 1
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_updated,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={
+            "widget_id": str(widget.id),
+            "widget_type": widget.widget_type,
+            "resource_type": widget.resource_type,
+            "resource_id": str(widget.resource_id) if widget.resource_id else None,
+            "changed_fields": ["widgets", "layout"],
+        },
+        entity_version=dashboard.version,
+    )
     await db.commit()
     await db.refresh(dashboard)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
     widgets = await _load_widgets(dashboard.id, db)
-    return _to_response(dashboard, widgets, is_shared_dashboard)
+    return _to_response(
+        dashboard,
+        widgets,
+        is_shared_dashboard,
+        is_favorite=_dashboard_is_favorite_for_user(
+            dashboard,
+            set(favorite_dashboard_ids_from_preferences(current_user.preferences)),
+        ),
+    )
 
 
 @router.post(
@@ -534,12 +735,7 @@ async def create_dashboard_calendar_event(
     event_message = await build_activity_sse_dict(db, activity)
     await db.commit()
     await db.refresh(event)
-    await manager.broadcast(
-        event_message,
-        group_id=None,
-        user_ids=await _dashboard_audience_user_ids(dashboard, shares, db),
-        actor_id=current_user.id,
-    )
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
     return _event_response(event)
 
 
@@ -615,7 +811,7 @@ async def update_widget(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> WidgetResponse:
-    dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
     result = await db.execute(
         select(DashboardWidget).where(
@@ -627,8 +823,20 @@ async def update_widget(
     if widget is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Widget not found")
     widget.config = body.config
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_updated,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={
+            "widget_id": str(widget.id),
+            "widget_type": widget.widget_type,
+            "changed_fields": ["widgets"],
+        },
+    )
     await db.commit()
     await db.refresh(widget)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
     return WidgetResponse.model_validate(widget)
 
 
@@ -640,7 +848,13 @@ async def delete_widget(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    # Lock the dashboard row so concurrent widget/layout mutations can't lose version/layout updates.
+    dashboard, shares, role = await _get_dashboard_access(
+        dashboard_id,
+        current_user,
+        db,
+        lock_for_update=True,
+    )
     permissions.assert_can_edit(role)
     result = await db.execute(
         select(DashboardWidget).where(
@@ -656,7 +870,20 @@ async def delete_widget(
     current_layout: list[dict[str, Any]] = dashboard.layout if isinstance(dashboard.layout, list) else []
     dashboard.layout = [item for item in current_layout if item.get("i") != str(widget_id)]
     dashboard.version += 1
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_updated,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={
+            "widget_id": str(widget.id),
+            "widget_type": widget.widget_type,
+            "changed_fields": ["widgets", "layout"],
+        },
+        entity_version=dashboard.version,
+    )
     await db.commit()
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
 
 
 @router.get("/{dashboard_id}/shares", response_model=list[ShareResponse])
@@ -719,5 +946,10 @@ async def delete_dashboard_share(
     share = await get_resource_share(ResourceType.dashboard, dashboard_id, share_id, db)
     if share is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
+    if share.principal_type == PrincipalType.user:
+        user_result = await db.execute(select(User).where(User.id == share.principal_id))
+        shared_user = user_result.scalar_one_or_none()
+        if shared_user is not None:
+            shared_user.preferences = remove_dashboard_from_preferences(shared_user.preferences, dashboard.id)
     await db.delete(share)
     await db.commit()

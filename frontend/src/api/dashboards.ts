@@ -46,6 +46,10 @@ export interface Dashboard {
   widgets: DashboardWidget[]
 }
 
+export type UpdateLayoutResult =
+  | { conflict: false; dashboard: Dashboard }
+  | { conflict: true; detail?: string }
+
 export async function apiListDashboards(): Promise<DashboardSummary[]> {
   const res = await apiFetch('/api/dashboards')
   if (!res.ok) throw new Error('Failed to load dashboards')
@@ -72,7 +76,7 @@ export async function apiCreateDashboard(data: {
 
 export async function apiUpdateDashboardMeta(
   id: string,
-  data: { name?: string; is_favorite?: boolean },
+  data: { name?: string },
 ): Promise<DashboardSummary> {
   const res = await apiFetch(`/api/dashboards/${id}`, {
     method: 'PATCH',
@@ -91,12 +95,20 @@ export async function apiUpdateLayout(
   dashboardId: string,
   layout: LayoutItem[],
   version: number,
-): Promise<{ data: Dashboard; status: number }> {
+): Promise<UpdateLayoutResult> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/layout`, {
     method: 'PUT',
     body: JSON.stringify({ layout, version }),
   })
-  return { data: (await res.json()) as Dashboard, status: res.status }
+  if (res.status === 409) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    return { conflict: true, detail: data.detail }
+  }
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(data.detail ?? 'Failed to save layout')
+  }
+  return { conflict: false, dashboard: (await res.json()) as Dashboard }
 }
 
 export async function apiAddWidget(

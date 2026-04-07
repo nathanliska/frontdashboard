@@ -12,9 +12,9 @@ from app.database import get_db
 from app.models.user import User
 
 
-async def get_current_user(
-    access_token: Annotated[str | None, Cookie()] = None,
-    db: AsyncSession = Depends(get_db),
+async def _resolve_current_user(
+    access_token: str | None,
+    db: AsyncSession,
 ) -> User:
     if not access_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -29,6 +29,21 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+async def get_current_user(
+    access_token: Annotated[str | None, Cookie()] = None,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    return await _resolve_current_user(access_token, db)
+
+
+async def get_current_user_for_stream(
+    access_token: Annotated[str | None, Cookie()] = None,
+    db: AsyncSession = Depends(get_db, scope="function"),
+) -> User:
+    """Authenticate long-lived streaming responses without holding the DB session open for the stream lifetime."""
+    return await _resolve_current_user(access_token, db)
 
 
 async def require_csrf(

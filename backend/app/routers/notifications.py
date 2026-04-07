@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import not_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -85,15 +85,16 @@ async def mark_all_read(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    result = await db.execute(
-        select(Notification).where(
+    now = datetime.now(UTC)
+    await db.execute(
+        update(Notification)
+        .where(
             Notification.user_id == current_user.id,
             Notification.read_at.is_(None),
         )
+        .values(read_at=now)
+        .execution_options(synchronize_session="fetch")
     )
-    now = datetime.now(UTC)
-    for notif in result.scalars().all():
-        notif.read_at = now
     await db.commit()
 
 
@@ -117,8 +118,10 @@ async def list_activity(
         ActivityEvent.actor_id == current_user.id,
     )
 
-    if event_type is not None:
-        q = q.where(ActivityEvent.event_type == event_type)
+    # Keep dashboard.* events in the activity log for SSE/resync, but
+    # hide them from the user-facing Activity tab unless a specific
+    # event_type filter is requested.
+    q = q.where(ActivityEvent.event_type == event_type) if event_type is not None else q.where(not_(ActivityEvent.event_type.like("dashboard.%")))
     if before_event_id is not None:
         q = q.where(ActivityEvent.event_id < before_event_id)
 

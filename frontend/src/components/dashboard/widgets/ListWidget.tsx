@@ -24,10 +24,16 @@ export function ListWidget({
   const [addText, setAddText] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(300)
+  const pendingLocalSyncSkips = useRef(0)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
   const listContentVersion = useDashboardStore((s) => s.listContentVersion)
 
   useEffect(() => {
+    if (pendingLocalSyncSkips.current > 0) {
+      pendingLocalSyncSkips.current -= 1
+      return
+    }
+
     apiGetList(listId)
       .then((data) => {
         setDetail(data)
@@ -60,20 +66,42 @@ export function ListWidget({
     return () => observer.disconnect()
   }, [])
 
+  function reserveLocalSyncSkip() {
+    pendingLocalSyncSkips.current += 1
+  }
+
+  function releaseLocalSyncSkip() {
+    pendingLocalSyncSkips.current = Math.max(0, pendingLocalSyncSkips.current - 1)
+  }
+
   async function handleToggle(item: ListItem) {
     if (!detail) return
-    const updated = await apiUpdateItem(listId, item.id, { checked: !item.checked })
-    setDetail((d) =>
-      d ? { ...d, items: d.items.map((i) => (i.id === item.id ? updated : i)) } : null,
-    )
+    reserveLocalSyncSkip()
+    try {
+      const updated = await apiUpdateItem(listId, item.id, { checked: !item.checked })
+      setDetail((d) =>
+        d ? { ...d, items: d.items.map((i) => (i.id === item.id ? updated : i)) } : null,
+      )
+    } catch (error) {
+      releaseLocalSyncSkip()
+      throw error
+    }
   }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     if (!addText.trim() || !detail) return
-    const item = await apiCreateItem(listId, addText.trim())
-    setDetail((d) => (d ? { ...d, items: [...d.items, item], item_count: d.item_count + 1 } : null))
-    setAddText('')
+    reserveLocalSyncSkip()
+    try {
+      const item = await apiCreateItem(listId, addText.trim())
+      setDetail((d) =>
+        d ? { ...d, items: [...d.items, item], item_count: d.item_count + 1 } : null,
+      )
+      setAddText('')
+    } catch (error) {
+      releaseLocalSyncSkip()
+      throw error
+    }
   }
 
   if (error) {

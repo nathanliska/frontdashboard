@@ -1,4 +1,4 @@
-"""SSE event serialisation and replay helpers."""
+"""SSE event serialisation helpers."""
 
 import json
 from collections.abc import Sequence
@@ -7,9 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent
 from app.models.notification import Notification
-
-# Resync is triggered when the gap exceeds either threshold
-RESYNC_THRESHOLD_EVENTS = 1000
 
 
 def activity_to_sse_dict(event: ActivityEvent) -> dict:
@@ -41,10 +38,19 @@ async def build_activity_sse_dict(db: AsyncSession, event: ActivityEvent) -> dic
     return activity_to_sse_dict(event)
 
 
+def connected_dict() -> dict:
+    """Prime EventSource with a Last-Event-ID even before domain events arrive."""
+    return {
+        "id": "connected",
+        "event": "connected",
+        "data": json.dumps({}),
+    }
+
+
 def resync_dict() -> dict:
     return {
         "event": "resync",
-        "data": json.dumps({"reason": "gap_too_large"}),
+        "data": json.dumps({"reason": "refresh_required"}),
     }
 
 
@@ -85,7 +91,3 @@ async def build_notification_sse_dicts(db: AsyncSession, notifications: Sequence
         await db.refresh(notif)
         messages.append(notification_to_sse_dict(notif))
     return messages
-
-
-def needs_resync(last_event_id: int, current_max_id: int) -> bool:
-    return (current_max_id - last_event_id) > RESYNC_THRESHOLD_EVENTS

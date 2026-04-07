@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 import { type ActivityEvent, type Notification, apiGetActivity } from '../api/notifications'
+import { APP_RESYNC_EVENT } from '../hooks/useSSE'
 import { useNotificationsStore } from '../stores/notifications'
 import { cn } from '../utils/cn'
 
@@ -36,8 +37,13 @@ export function NotificationsPage() {
     }
 
     void loadActivity()
+    function onResync() {
+      void loadActivity()
+    }
+    window.addEventListener(APP_RESYNC_EVENT, onResync)
     return () => {
       cancelled = true
+      window.removeEventListener(APP_RESYNC_EVENT, onResync)
     }
   }, [tab])
 

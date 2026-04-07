@@ -2,6 +2,7 @@ import { apiFetch } from './client'
 
 export interface UserPreferences {
   home_dashboard_id?: string | null
+  favorite_dashboard_ids?: string[]
 }
 
 export interface User {

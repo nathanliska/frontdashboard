@@ -62,8 +62,14 @@ async def _get_list_access(
     list_id: uuid.UUID,
     user: User,
     db: AsyncSession,
+    *,
+    lock_for_update: bool = False,
 ) -> tuple[List, Dashboard, list[ResourceShare], ShareRole | None]:
-    result = await db.execute(select(List).where(List.id == list_id, List.deleted_at.is_(None)))
+    list_query = select(List).where(List.id == list_id, List.deleted_at.is_(None))
+    if lock_for_update:
+        list_query = list_query.with_for_update()
+
+    result = await db.execute(list_query)
     lst = result.scalar_one_or_none()
     if lst is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="List not found")
@@ -282,7 +288,13 @@ async def create_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ListItemResponse:
-    lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
+    # Serialize append-order assignment within a list so concurrent creates don't pick the same sort_order.
+    lst, dashboard, shares, role = await _get_list_access(
+        list_id,
+        current_user,
+        db,
+        lock_for_update=True,
+    )
     permissions.assert_can_edit(role)
     if lst.archived:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot add items to an archived list")
