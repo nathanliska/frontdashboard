@@ -1,6 +1,6 @@
 :80 {
 	# SSE: disable buffering so events are streamed immediately
-	handle /api/sse/* {
+	handle /api/sse {
 		reverse_proxy frontdashboard-backend:8000 {
 			flush_interval -1
 		}
