@@ -10,5 +10,9 @@ RUN npm run build
 
 FROM caddy:alpine
 
+
 COPY --from=build /app/dist /srv
 COPY Caddyfile.prod /etc/caddy/Caddyfile
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1/ || exit 1
