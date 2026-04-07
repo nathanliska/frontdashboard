@@ -16,8 +16,10 @@
  */
 
 import { create } from 'zustand'
+import { apiUpdatePreferences } from '../api/auth'
 import type { ShareCreate } from '../api/shares'
 import type { SseEvent } from '../hooks/useSSE'
+import { useAuthStore } from './auth'
 import { toast } from './toast'
 import {
   type Dashboard,
@@ -37,10 +39,62 @@ import {
 
 let inFlightDashboardLoad: { id: string; promise: Promise<void> } | null = null
 let inFlightSummariesLoad: Promise<void> | null = null
+let scheduledSummariesRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let scheduledSummariesRefreshPromise: Promise<void> | null = null
+let resolveScheduledSummariesRefresh: (() => void) | null = null
+let rejectScheduledSummariesRefresh: ((error: unknown) => void) | null = null
+
+const DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS = 100
+
+function scheduleSummariesRefresh(run: () => Promise<void>): Promise<void> {
+  if (!scheduledSummariesRefreshPromise) {
+    scheduledSummariesRefreshPromise = new Promise<void>((resolve, reject) => {
+      resolveScheduledSummariesRefresh = resolve
+      rejectScheduledSummariesRefresh = reject
+    })
+  }
+
+  if (scheduledSummariesRefreshTimer) {
+    clearTimeout(scheduledSummariesRefreshTimer)
+  }
+
+  scheduledSummariesRefreshTimer = setTimeout(() => {
+    scheduledSummariesRefreshTimer = null
+
+    const resolve = resolveScheduledSummariesRefresh
+    const reject = rejectScheduledSummariesRefresh
+
+    scheduledSummariesRefreshPromise = null
+    resolveScheduledSummariesRefresh = null
+    rejectScheduledSummariesRefresh = null
+
+    void run().then(
+      () => resolve?.(),
+      (error) => reject?.(error),
+    )
+  }, DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS)
+
+  return scheduledSummariesRefreshPromise
+}
+
+function getEventDashboardId(event: SseEvent): string | null {
+  if (event.entity_type === 'dashboard') {
+    return event.entity_id
+  }
+
+  const payload = event.payload && typeof event.payload === 'object' ? event.payload : undefined
+  return typeof payload?.dashboard_id === 'string' ? payload.dashboard_id : null
+}
+
+type LoadDashboardOptions = {
+  background?: boolean
+  resetContentVersions?: boolean
+}
 
 interface DashboardState {
   // ── Listing ────────────────────────────────────────────────────────────────
   summaries: DashboardSummary[]
+  summariesLoaded: boolean
   summariesLoading: boolean
 
   // ── Active editor ──────────────────────────────────────────────────────────
@@ -52,14 +106,14 @@ interface DashboardState {
   conflict: boolean // true when a PUT /layout returns 409 (version mismatch)
 
   // ── Listing actions ────────────────────────────────────────────────────────
-  loadSummaries: () => Promise<void>
+  loadSummaries: (force?: boolean) => Promise<void>
   createDashboard: (data: { name: string; shares?: ShareCreate[] }) => Promise<DashboardSummary>
   deleteDashboard: (id: string) => Promise<void>
   toggleFavorite: (id: string, current: boolean) => Promise<void>
   renameDashboard: (id: string, name: string) => Promise<void>
 
   // ── Editor actions ─────────────────────────────────────────────────────────
-  loadDashboard: (id: string) => Promise<void>
+  loadDashboard: (id: string, options?: LoadDashboardOptions) => Promise<void>
   saveLayout: (layout: LayoutItem[]) => Promise<void>
   addWidget: (widget: {
     widget_type: string
@@ -69,12 +123,14 @@ interface DashboardState {
   }) => Promise<void>
   removeWidget: (widgetId: string) => Promise<void>
   updateWidget: (widgetId: string, config: Record<string, unknown>) => Promise<void>
+  handleDashboardEvent: (event: SseEvent) => Promise<void>
   handleContentEvent: (event: SseEvent) => void
   resolveConflict: () => void
 }
 
 export const useDashboardStore = create<DashboardState>()((set, get) => ({
   summaries: [],
+  summariesLoaded: false,
   summariesLoading: false,
   dashboard: null,
   listContentVersion: 0,
@@ -85,16 +141,16 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
   // ── Listing ────────────────────────────────────────────────────────────────
 
-  async loadSummaries() {
-    const { summaries, summariesLoading } = get()
-    if (summaries.length > 0 && !summariesLoading) return
+  async loadSummaries(force = false) {
+    const { summariesLoaded, summariesLoading } = get()
+    if (!force && summariesLoaded && !summariesLoading) return
     if (inFlightSummariesLoad) return inFlightSummariesLoad
 
     set({ summariesLoading: true })
     const promise = (async () => {
       try {
         const nextSummaries = await apiListDashboards()
-        set({ summaries: nextSummaries })
+        set({ summaries: nextSummaries, summariesLoaded: true })
       } catch {
         toast.error('Failed to load dashboards.')
       } finally {
@@ -129,8 +185,18 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
   async toggleFavorite(id, current) {
     try {
-      const updated = await apiUpdateDashboardMeta(id, { is_favorite: !current })
-      set((s) => ({ summaries: s.summaries.map((d) => (d.id === id ? updated : d)) }))
+      const authState = useAuthStore.getState()
+      const currentFavoriteIds = authState.user?.preferences.favorite_dashboard_ids ?? []
+      const nextFavoriteIds = current
+        ? currentFavoriteIds.filter((favoriteId) => favoriteId !== id)
+        : [...currentFavoriteIds.filter((favoriteId) => favoriteId !== id), id]
+
+      const updatedUser = await apiUpdatePreferences({ favorite_dashboard_ids: nextFavoriteIds })
+      useAuthStore.setState({ user: updatedUser })
+      set((s) => ({
+        dashboard: s.dashboard?.id === id ? { ...s.dashboard, is_favorite: !current } : s.dashboard,
+      }))
+      await get().loadSummaries(true)
     } catch {
       toast.error('Failed to update favorite.')
     }
@@ -150,22 +216,38 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
   // ── Editor ─────────────────────────────────────────────────────────────────
 
-  async loadDashboard(id) {
+  async loadDashboard(id, options = {}) {
     if (inFlightDashboardLoad?.id === id) {
       return inFlightDashboardLoad.promise
     }
 
-    set({ loading: true, loadError: false })
+    const showLoading = !options.background
+    const resetContentVersions = options.resetContentVersions ?? showLoading
+
+    if (showLoading) {
+      set({ loading: true, loadError: false })
+    }
 
     const promise = (async () => {
       try {
         const dashboard = await apiGetDashboard(id)
-        set({ dashboard, conflict: false, listContentVersion: 0, calendarContentVersion: 0 })
+        set((state) => ({
+          dashboard,
+          conflict: false,
+          loadError: false,
+          listContentVersion: resetContentVersions ? 0 : state.listContentVersion,
+          calendarContentVersion: resetContentVersions ? 0 : state.calendarContentVersion,
+          ...(showLoading ? { loading: false } : {}),
+        }))
       } catch {
-        // 404/403 land here — editor page reads loadError to show an error state
-        set({ loadError: true })
+        // 404/403 land here — editor page reads loadError to show an error state.
+        // For background SSE refreshes, keep the current dashboard visible instead
+        // of swapping to a full-page error on a transient fetch failure.
+        set(showLoading ? { loadError: true, loading: false } : {})
       } finally {
-        set({ loading: false })
+        if (showLoading) {
+          set({ loading: false })
+        }
         if (inFlightDashboardLoad?.id === id) {
           inFlightDashboardLoad = null
         }
@@ -180,14 +262,14 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     const { dashboard } = get()
     if (!dashboard) return
     try {
-      const { data, status } = await apiUpdateLayout(dashboard.id, layout, dashboard.version)
-      if (status === 409) {
+      const result = await apiUpdateLayout(dashboard.id, layout, dashboard.version)
+      if (result.conflict) {
         // Another editor saved a layout change between our load and this PUT.
         // Surface the conflict banner; user resolves by reloading.
         set({ conflict: true })
         return
       }
-      set({ dashboard: data })
+      set({ dashboard: result.dashboard, conflict: false })
     } catch {
       toast.error('Failed to save layout.')
     }
@@ -247,6 +329,41 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     }
   },
 
+  async handleDashboardEvent(event) {
+    const activeDashboardId = get().dashboard?.id ?? null
+    const eventDashboardId = getEventDashboardId(event)
+
+    const { summaries, summariesLoaded, summariesLoading } = get()
+    let summariesRefreshPromise: Promise<void> | null = null
+    if (summariesLoaded || summariesLoading || summaries.length > 0) {
+      summariesRefreshPromise =
+        event.event_type === 'resync'
+          ? get().loadSummaries(true)
+          : scheduleSummariesRefresh(() => get().loadSummaries(true))
+    }
+
+    if (
+      activeDashboardId &&
+      (event.event_type === 'resync' || eventDashboardId === activeDashboardId)
+    ) {
+      if (event.event_type === 'dashboard.deleted' && eventDashboardId === activeDashboardId) {
+        set({ dashboard: null, loadError: true, loading: false, conflict: false })
+        return
+      }
+
+      await Promise.all([
+        summariesRefreshPromise,
+        get().loadDashboard(activeDashboardId, {
+          background: true,
+          resetContentVersions: false,
+        }),
+      ])
+      return
+    }
+
+    await summariesRefreshPromise
+  },
+
   handleContentEvent(event) {
     if (event.event_type === 'resync') {
       set((state) => ({
@@ -261,8 +378,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     }
 
     const activeDashboardId = get().dashboard?.id
-    const eventDashboardId =
-      typeof event.payload.dashboard_id === 'string' ? event.payload.dashboard_id : null
+    const eventDashboardId = getEventDashboardId(event)
     if (!activeDashboardId || eventDashboardId !== activeDashboardId) return
 
     set((state) => {

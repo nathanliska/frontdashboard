@@ -32,7 +32,7 @@ async def _register_second_user(db_session: AsyncSession) -> AsyncClient:
     await c.__aenter__()
     resp = await c.post(
         _REGISTER_URL,
-        json={"email": "second@example.com", "password": "pw2", "display_name": "Second"},
+        json={"email": "second@example.com", "password": "password123", "display_name": "Second"},
     )
     assert resp.status_code == 201
     return c

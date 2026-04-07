@@ -2,7 +2,7 @@
 
 Unit tests cover the SseManager directly (no DB needed).
 Integration tests cover the /api/sse endpoint: auth guard, correct headers,
-replay, and resync threshold.
+reconnect resync behavior.
 """
 
 import json
@@ -12,7 +12,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.sse.events import needs_resync
+from app.routers.sse import _should_resync_on_connect
 from app.sse.manager import SseManager
 
 # ---------------------------------------------------------------------------
@@ -97,6 +97,26 @@ async def test_manager_broadcast_private_only_to_actor() -> None:
 
 
 @pytest.mark.asyncio
+async def test_manager_broadcast_targeted_users_reaches_non_actor() -> None:
+    mgr = SseManager()
+    actor_id = uuid.uuid4()
+    target_id = uuid.uuid4()
+    outsider_id = uuid.uuid4()
+
+    actor_client = mgr.connect(actor_id, set())
+    target_client = mgr.connect(target_id, set())
+    outsider_client = mgr.connect(outsider_id, set())
+
+    msg = {"data": "dashboard update", "event": "dashboard.updated"}
+    await mgr.broadcast(msg, group_id=None, user_ids={actor_id, target_id}, actor_id=actor_id)
+
+    assert actor_client.queue.qsize() == 1
+    assert target_client.queue.qsize() == 1
+    assert outsider_client.queue.qsize() == 0
+    assert await target_client.queue.get() == msg
+
+
+@pytest.mark.asyncio
 async def test_manager_multiple_connections_same_user() -> None:
     """Two open tabs for the same user both receive group events."""
     mgr = SseManager()
@@ -114,20 +134,16 @@ async def test_manager_multiple_connections_same_user() -> None:
 
 
 # ---------------------------------------------------------------------------
-# events.py unit tests
+# sse.py unit tests
 # ---------------------------------------------------------------------------
 
 
-def test_needs_resync_false_within_threshold() -> None:
-    assert not needs_resync(500, 600)
+def test_reconnect_with_last_event_id_resyncs() -> None:
+    assert _should_resync_on_connect("123") is True
 
 
-def test_needs_resync_true_exceeds_threshold() -> None:
-    assert needs_resync(0, 1001)
-
-
-def test_needs_resync_false_at_exact_threshold() -> None:
-    assert not needs_resync(0, 1000)
+def test_initial_connect_without_last_event_id_skips_resync() -> None:
+    assert _should_resync_on_connect(None) is False
 
 
 # ---------------------------------------------------------------------------
@@ -142,8 +158,11 @@ async def test_sse_requires_auth(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sse_replay_builds_correct_events(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    """Verify that activity events created by mutations can be found for replay.
+async def test_activity_events_build_correct_sse_payloads(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Verify that activity events created by mutations can be serialized for SSE.
 
     We don't test the full SSE streaming pipeline because httpx's ASGI transport
     cannot cleanly close infinite SSE generators. Instead we verify that the
@@ -162,7 +181,7 @@ async def test_sse_replay_builds_correct_events(db_client: AsyncClient, db_sessi
     dashboard_id = dash_resp.json()["id"]
 
     _csrf(db_client)
-    create_resp = await db_client.post("/api/lists", json={"name": "Replay Test", "list_type": "checklist", "dashboard_id": dashboard_id})
+    create_resp = await db_client.post("/api/lists", json={"name": "SSE Test List", "list_type": "checklist", "dashboard_id": dashboard_id})
     assert create_resp.status_code == 201
 
     # Verify the activity event exists and can be serialized for SSE
@@ -183,4 +202,15 @@ def test_resync_dict_has_correct_event_type() -> None:
     msg = resync_dict()
     assert msg["event"] == "resync"
     data = json.loads(msg["data"])
-    assert data["reason"] == "gap_too_large"
+    assert data["reason"] == "refresh_required"
+
+
+def test_connected_dict_primes_last_event_id() -> None:
+    """Verify the lightweight connect event carries a stable SSE id."""
+    from app.sse.events import connected_dict
+
+    msg = connected_dict()
+    assert msg["event"] == "connected"
+    assert msg["id"] == "connected"
+    data = json.loads(msg["data"])
+    assert data == {}

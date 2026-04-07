@@ -6,6 +6,8 @@ import { DashboardGrid } from '../components/dashboard/DashboardGrid'
 import { RenameDashboardModal } from '../components/dashboard/RenameDashboardModal'
 import { useDashboardStore } from '../stores/dashboard'
 
+const APP_TITLE = 'FrontDashboard'
+
 export function DashboardEditorPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -25,6 +27,13 @@ export function DashboardEditorPage() {
   useEffect(() => {
     if (id) void loadDashboard(id)
   }, [id, loadDashboard])
+
+  useEffect(() => {
+    document.title = dashboard?.name || APP_TITLE
+    return () => {
+      document.title = APP_TITLE
+    }
+  }, [dashboard?.name])
 
   if (loading && !dashboard) {
     return (

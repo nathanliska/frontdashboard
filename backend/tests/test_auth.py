@@ -28,7 +28,7 @@ async def test_register(db_client: AsyncClient) -> None:
 
 
 async def test_register_duplicate_email(db_client: AsyncClient) -> None:
-    payload = {"email": "dup@example.com", "password": "pw", "display_name": "Dup"}
+    payload = {"email": "dup@example.com", "password": "password123", "display_name": "Dup"}
     await db_client.post(_REGISTER_URL, json=payload)
     resp = await db_client.post(_REGISTER_URL, json=payload)
     assert resp.status_code == 409
@@ -194,6 +194,34 @@ async def test_update_preferences_rejects_inaccessible_dashboard(auth_client: As
         resp = await auth_client.patch(
             _PREFERENCES_URL,
             json={"home_dashboard_id": dashboard["id"]},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Access denied"
+    finally:
+        await other.__aexit__(None, None, None)
+
+
+async def test_update_preferences_accepts_accessible_favorite_dashboards(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client, name="Favorite Dashboard")
+
+    set_csrf(auth_client)
+    resp = await auth_client.patch(
+        _PREFERENCES_URL,
+        json={"favorite_dashboard_ids": [dashboard["id"]]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["preferences"]["favorite_dashboard_ids"] == [dashboard["id"]]
+
+
+async def test_update_preferences_rejects_inaccessible_favorite_dashboard(auth_client: AsyncClient) -> None:
+    other = await register_client("favorite-owner@example.com", display_name="Favorite Owner")
+    try:
+        dashboard = await create_dashboard(other, name="Other Favorite Dashboard")
+
+        set_csrf(auth_client)
+        resp = await auth_client.patch(
+            _PREFERENCES_URL,
+            json={"favorite_dashboard_ids": [dashboard["id"]]},
         )
         assert resp.status_code == 403
         assert resp.json()["detail"] == "Access denied"

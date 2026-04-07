@@ -75,6 +75,62 @@ def _set_access_cookie(response: Response, access_token: str) -> None:
     )
 
 
+async def _normalize_accessible_dashboard_ids(
+    dashboard_ids: list[str],
+    current_user: User,
+    db: AsyncSession,
+) -> list[str]:
+    normalized_ids: list[str] = []
+    dashboard_uuids: list[uuid.UUID] = []
+    seen: set[str] = set()
+
+    for dashboard_id in dashboard_ids:
+        try:
+            dashboard_uuid = uuid.UUID(dashboard_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Invalid dashboard ID",
+            ) from None
+
+        normalized_id = str(dashboard_uuid)
+        if normalized_id in seen:
+            continue
+        seen.add(normalized_id)
+        normalized_ids.append(normalized_id)
+        dashboard_uuids.append(dashboard_uuid)
+
+    if not dashboard_uuids:
+        return []
+
+    dashboard_result = await db.execute(select(Dashboard.id, Dashboard.user_id).where(Dashboard.id.in_(dashboard_uuids)))
+    dashboard_rows = dashboard_result.all()
+    owner_by_dashboard_id = {str(row.id): row.user_id for row in dashboard_rows}
+
+    if len(owner_by_dashboard_id) != len(normalized_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
+
+    direct_share_dashboard_ids = [
+        uuid.UUID(dashboard_id) for dashboard_id in normalized_ids if owner_by_dashboard_id[dashboard_id] != current_user.id
+    ]
+    if direct_share_dashboard_ids:
+        share_result = await db.execute(
+            select(ResourceShare.resource_id).where(
+                ResourceShare.resource_type == ResourceType.dashboard,
+                ResourceShare.resource_id.in_(direct_share_dashboard_ids),
+                ResourceShare.principal_type == PrincipalType.user,
+                ResourceShare.principal_id == current_user.id,
+            )
+        )
+        accessible_shared_ids = {str(row[0]) for row in share_result.all()}
+        if any(
+            dashboard_id not in accessible_shared_ids for dashboard_id in normalized_ids if owner_by_dashboard_id[dashboard_id] != current_user.id
+        ):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    return normalized_ids
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 @limiter.limit("5/minute")
 async def register(
@@ -99,7 +155,10 @@ async def register(
     # without needing an extra flush to retrieve the auto-generated ID.
     dashboard_id = uuid.uuid4()
     db.add(Dashboard(id=dashboard_id, user_id=user.id, name="My Dashboard"))
-    user.preferences = {"home_dashboard_id": str(dashboard_id)}
+    user.preferences = {
+        "home_dashboard_id": str(dashboard_id),
+        "favorite_dashboard_ids": [],
+    }
 
     raw_refresh, refresh_hash = create_opaque_token()
     csrf = generate_csrf_token()
@@ -291,37 +350,28 @@ async def update_preferences(
     Validates that home_dashboard_id (if provided) belongs to a dashboard
     the user can actually access, then merges the update into the JSONB column.
     """
+    validated_preferences = body.model_dump(exclude_unset=True)
     if body.home_dashboard_id is not None:
-        try:
-            dashboard_uuid = uuid.UUID(body.home_dashboard_id)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Invalid dashboard ID",
-            ) from None
-
-        result = await db.execute(select(Dashboard).where(Dashboard.id == dashboard_uuid))
-        dashboard = result.scalar_one_or_none()
-        if not dashboard:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
-
-        # Personal dashboard — must be owned by this user
-        if dashboard.user_id != current_user.id:
-            share_result = await db.execute(
-                select(ResourceShare.id).where(
-                    ResourceShare.resource_type == ResourceType.dashboard,
-                    ResourceShare.resource_id == dashboard.id,
-                    ResourceShare.principal_type == PrincipalType.user,
-                    ResourceShare.principal_id == current_user.id,
-                )
+        normalized_home_dashboard_ids = await _normalize_accessible_dashboard_ids(
+            [body.home_dashboard_id],
+            current_user,
+            db,
+        )
+        validated_preferences["home_dashboard_id"] = normalized_home_dashboard_ids[0]
+    if "favorite_dashboard_ids" in body.model_fields_set:
+        if body.favorite_dashboard_ids is None:
+            validated_preferences["favorite_dashboard_ids"] = []
+        else:
+            validated_preferences["favorite_dashboard_ids"] = await _normalize_accessible_dashboard_ids(
+                body.favorite_dashboard_ids,
+                current_user,
+                db,
             )
-            if share_result.scalar_one_or_none() is None:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     # Merge update into existing preferences so other keys are preserved.
     # exclude_unset=True ensures fields not sent in the request body don't overwrite existing prefs.
     current_prefs: dict = current_user.preferences or {}
-    current_user.preferences = {**current_prefs, **body.model_dump(exclude_unset=True)}
+    current_user.preferences = {**current_prefs, **validated_preferences}
     await db.commit()
     await db.refresh(current_user)
     return UserResponse.model_validate(current_user)

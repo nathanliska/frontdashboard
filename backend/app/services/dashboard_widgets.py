@@ -26,7 +26,9 @@ async def remove_resource_widgets(
     for widget in widgets:
         widget_ids_by_dashboard[widget.dashboard_id].append(str(widget.id))
 
-    dashboards_result = await db.execute(select(Dashboard).where(Dashboard.id.in_(widget_ids_by_dashboard.keys())))
+    dashboards_result = await db.execute(
+        select(Dashboard).where(Dashboard.id.in_(widget_ids_by_dashboard.keys())).order_by(Dashboard.id.asc()).with_for_update()
+    )
     dashboards = {dashboard.id: dashboard for dashboard in dashboards_result.scalars().all()}
 
     for dashboard_id, widget_ids in widget_ids_by_dashboard.items():

@@ -83,6 +83,10 @@ async def test_notification_endpoints(auth_client: AsyncClient, db_session: Asyn
     unread_count = await auth_client.get("/api/notifications/unread-count")
     assert unread_count.json() == {"count": 0}
 
+    list_resp = await auth_client.get("/api/notifications")
+    assert list_resp.status_code == 200
+    assert all(item["read_at"] is not None for item in list_resp.json())
+
 
 async def test_mark_read_returns_404_for_missing_notification(auth_client: AsyncClient) -> None:
     set_csrf(auth_client)

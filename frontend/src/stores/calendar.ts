@@ -14,6 +14,10 @@ import { toast } from './toast'
 
 let inFlightOccurrencesLoad: { key: string; promise: Promise<void> } | null = null
 
+type LoadOccurrencesOptions = {
+  background?: boolean
+}
+
 interface CalendarState {
   occurrences: CalendarOccurrence[]
   loading: boolean
@@ -24,6 +28,7 @@ interface CalendarState {
     windowStart: string,
     windowEnd: string,
     dashboardId?: string | null,
+    options?: LoadOccurrencesOptions,
   ) => Promise<void>
   createEvent: (input: CreateCalendarEventInput) => Promise<void>
   getEvent: (eventId: string) => Promise<CalendarEvent>
@@ -38,14 +43,19 @@ export const useCalendarStore = create<CalendarState>()((set, get) => ({
   windowEnd: null,
   dashboardId: null,
 
-  async loadOccurrences(windowStart, windowEnd, dashboardId = null) {
+  async loadOccurrences(windowStart, windowEnd, dashboardId = null, options = {}) {
     const scopeKey = `${dashboardId ?? 'personal'}:${windowStart}:${windowEnd}`
 
     if (inFlightOccurrencesLoad?.key === scopeKey) {
       return inFlightOccurrencesLoad.promise
     }
 
-    set({ loading: true, windowStart, windowEnd, dashboardId })
+    const showLoading = !options.background
+    set(
+      showLoading
+        ? { loading: true, windowStart, windowEnd, dashboardId }
+        : { windowStart, windowEnd, dashboardId },
+    )
 
     const promise = (async () => {
       try {
@@ -69,13 +79,17 @@ export const useCalendarStore = create<CalendarState>()((set, get) => ({
           s.windowEnd === windowEnd &&
           s.dashboardId === dashboardId
         ) {
-          toast.error(err instanceof Error ? err.message : 'Failed to load calendar events.')
+          if (showLoading) {
+            toast.error(err instanceof Error ? err.message : 'Failed to load calendar events.')
+          }
         }
       } finally {
         if (inFlightOccurrencesLoad?.key === scopeKey) {
           inFlightOccurrencesLoad = null
         }
-        set({ loading: false })
+        if (showLoading) {
+          set({ loading: false })
+        }
       }
     })()
 
