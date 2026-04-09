@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Plus } from 'lucide-react'
-import {
-  type ListDetail,
-  type ListItem,
-  apiCreateItem,
-  apiGetList,
-  apiUpdateItem,
-} from '../../../api/lists'
+import { type ListItem } from '../../../api/lists'
+import { addListItem, updateListItem, useListDetail } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
 import { cn } from '../../../utils/cn'
 
@@ -19,28 +14,11 @@ export function ListWidget({
   widgetId: string
   config: Record<string, unknown>
 }) {
-  const [detail, setDetail] = useState<ListDetail | null>(null)
-  const [error, setError] = useState(false)
   const [addText, setAddText] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(300)
-  const pendingLocalSyncSkips = useRef(0)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
-  const listContentVersion = useDashboardStore((s) => s.listContentVersion)
-
-  useEffect(() => {
-    if (pendingLocalSyncSkips.current > 0) {
-      pendingLocalSyncSkips.current -= 1
-      return
-    }
-
-    apiGetList(listId)
-      .then((data) => {
-        setDetail(data)
-        setError(false)
-      })
-      .catch(() => setError(true))
-  }, [listContentVersion, listId])
+  const { data: detail, error } = useListDetail(listId)
 
   useEffect(() => {
     if (!detail) return
@@ -66,42 +44,16 @@ export function ListWidget({
     return () => observer.disconnect()
   }, [])
 
-  function reserveLocalSyncSkip() {
-    pendingLocalSyncSkips.current += 1
-  }
-
-  function releaseLocalSyncSkip() {
-    pendingLocalSyncSkips.current = Math.max(0, pendingLocalSyncSkips.current - 1)
-  }
-
   async function handleToggle(item: ListItem) {
     if (!detail) return
-    reserveLocalSyncSkip()
-    try {
-      const updated = await apiUpdateItem(listId, item.id, { checked: !item.checked })
-      setDetail((d) =>
-        d ? { ...d, items: d.items.map((i) => (i.id === item.id ? updated : i)) } : null,
-      )
-    } catch (error) {
-      releaseLocalSyncSkip()
-      throw error
-    }
+    await updateListItem(listId, item.id, { checked: !item.checked })
   }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     if (!addText.trim() || !detail) return
-    reserveLocalSyncSkip()
-    try {
-      const item = await apiCreateItem(listId, addText.trim())
-      setDetail((d) =>
-        d ? { ...d, items: [...d.items, item], item_count: d.item_count + 1 } : null,
-      )
-      setAddText('')
-    } catch (error) {
-      releaseLocalSyncSkip()
-      throw error
-    }
+    await addListItem(listId, addText.trim())
+    setAddText('')
   }
 
   if (error) {
@@ -127,11 +79,7 @@ export function ListWidget({
   const total = detail.items.length
   const progress = total > 0 ? (checkedCount / total) * 100 : 0
 
-  // Size thresholds (px)
   const isTiny = containerWidth < 180
-  const maxItems = containerWidth < 240 ? 3 : containerWidth < 360 ? 6 : undefined
-  const visibleItems = maxItems != null ? detail.items.slice(0, maxItems) : detail.items
-  const hiddenCount = total - visibleItems.length
 
   return (
     <div ref={containerRef} className="flex flex-col gap-2 h-full">
@@ -154,7 +102,7 @@ export function ListWidget({
 
       {/* Item list */}
       <div className="flex-1 overflow-y-auto space-y-0.5 min-h-0">
-        {visibleItems.map((item) => (
+        {detail.items.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -181,10 +129,6 @@ export function ListWidget({
             </span>
           </button>
         ))}
-
-        {hiddenCount > 0 && (
-          <p className="text-[10px] text-zinc-600 px-0.5 pt-0.5">+{hiddenCount} more</p>
-        )}
 
         {total === 0 && <p className="text-xs text-zinc-700 px-0.5 py-1">No items yet.</p>}
       </div>

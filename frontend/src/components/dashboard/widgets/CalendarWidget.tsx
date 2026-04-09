@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Clock3 } from 'lucide-react'
-import { type CalendarOccurrence, apiListOccurrences } from '../../../api/calendar'
+import { type CalendarOccurrence } from '../../../api/calendar'
+import { useCalendarOccurrences } from '../../../resources/calendarData'
 import { useDashboardStore } from '../../../stores/dashboard'
 import { cn } from '../../../utils/cn'
 import {
@@ -29,20 +30,24 @@ export function CalendarWidget({
   dashboardId: string
   config: Record<string, unknown>
 }) {
-  const [occurrences, setOccurrences] = useState<CalendarOccurrence[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(300)
   const [containerHeight, setContainerHeight] = useState(320)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
-  const calendarContentVersion = useDashboardStore((s) => s.calendarContentVersion)
 
   const requestedView = typeof config.view === 'string' ? config.view : 'month'
   const view: CalendarWidgetView =
     requestedView === 'day' || requestedView === 'week' ? requestedView : 'month'
   const today = useMemo(() => startOfDay(new Date()), [])
   const ultraCompactMonth = view === 'month' && containerWidth < 280
+  const widgetWindow = useMemo(() => getWidgetWindow(view, today), [today, view])
+  const occurrencesQuery = useCalendarOccurrences(
+    widgetWindow.windowStart.toISOString(),
+    widgetWindow.windowEnd.toISOString(),
+    dashboardId,
+  )
+  const occurrences = occurrencesQuery.data ?? []
+  const { loading, error } = occurrencesQuery
 
   useEffect(() => {
     const el = containerRef.current
@@ -54,39 +59,6 @@ export function CalendarWidget({
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
-
-  useEffect(() => {
-    const { windowStart, windowEnd } = getWidgetWindow(view, today)
-    let cancelled = false
-
-    queueMicrotask(() => {
-      if (!cancelled) {
-        setLoading(true)
-        setError(false)
-      }
-    })
-
-    const loader = apiListOccurrences({
-      windowStart: windowStart.toISOString(),
-      windowEnd: windowEnd.toISOString(),
-      dashboardId,
-    })
-
-    loader
-      .then((data) => {
-        if (!cancelled) setOccurrences(data)
-      })
-      .catch(() => {
-        if (!cancelled) setError(true)
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [calendarContentVersion, dashboardId, today, view])
 
   const weekDays = useMemo(() => {
     const start = startOfWeek(today)

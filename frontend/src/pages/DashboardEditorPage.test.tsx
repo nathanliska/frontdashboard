@@ -12,8 +12,8 @@ vi.mock('../components/dashboard/AddWidgetModal', () => ({
   AddWidgetModal: () => null,
 }))
 
-vi.mock('../components/dashboard/RenameDashboardModal', () => ({
-  RenameDashboardModal: () => null,
+vi.mock('../components/dashboard/DashboardSettingsModal', () => ({
+  DashboardSettingsModal: () => null,
 }))
 
 describe('DashboardEditorPage', () => {
@@ -28,13 +28,13 @@ describe('DashboardEditorPage', () => {
         user_id: 'user-1',
         name: 'Product Roadmap',
         is_shared: false,
+        can_edit: true,
+        can_manage_shares: true,
         is_favorite: false,
         layout: [],
         version: 1,
         widgets: [],
       },
-      listContentVersion: 0,
-      calendarContentVersion: 0,
       loading: false,
       loadError: false,
       conflict: false,
@@ -69,5 +69,33 @@ describe('DashboardEditorPage', () => {
     view.unmount()
 
     expect(document.title).toBe('FrontDashboard')
+  })
+
+  it('hides edit controls for viewers', () => {
+    useDashboardStore.setState({
+      dashboard: {
+        id: 'dash-1',
+        user_id: 'user-1',
+        name: 'Read Only Board',
+        is_shared: true,
+        can_edit: false,
+        can_manage_shares: false,
+        is_favorite: false,
+        layout: [],
+        version: 1,
+        widgets: [],
+      },
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/dashboard/dash-1']}>
+        <Routes>
+          <Route path="/dashboard/:id" element={<DashboardEditorPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Edit dashboard' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add widget/i })).not.toBeInTheDocument()
   })
 })

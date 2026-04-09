@@ -12,10 +12,16 @@ import {
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { type CalendarOccurrence } from '../api/calendar'
+import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
+import {
+  createCalendarEvent,
+  deleteCalendarEvent,
+  getCalendarEvent,
+  updateCalendarEvent,
+  useCalendarOccurrences,
+} from '../resources/calendarData'
 import { confirm } from '../stores/confirm'
 import { useDashboardStore } from '../stores/dashboard'
-import { toast } from '../stores/toast'
-import { useCalendarStore } from '../stores/calendar'
 import { cn } from '../utils/cn'
 import {
   calendarWindow,
@@ -50,19 +56,16 @@ const WEEKDAY_PICKER_OPTIONS = [
 ] as const
 
 const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+const EMPTY_OCCURRENCES: CalendarOccurrence[] = []
 
 export function CalendarPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { occurrences, loading, loadOccurrences, createEvent, getEvent, updateEvent, deleteEvent } =
-    useCalendarStore()
   const dashboards = useDashboardStore((s) => s.summaries)
   const dashboardsLoading = useDashboardStore((s) => s.summariesLoading)
-  const loadSummaries = useDashboardStore((s) => s.loadSummaries)
   const [showEditor, setShowEditor] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>('create')
   const [editorEventId, setEditorEventId] = useState<string | null>(null)
   const [editorLoading, setEditorLoading] = useState(false)
-  const [activeDashboardId, setActiveDashboardId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [eventLocation, setEventLocation] = useState('')
@@ -76,26 +79,21 @@ export function CalendarPage() {
   const [monthCursor, setMonthCursor] = useState(() => startOfDay(new Date()))
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
   const requestedDashboardId = searchParams.get('dashboard_id')
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        await loadSummaries()
-        const items = useDashboardStore.getState().summaries
-        const nextDashboardId =
-          requestedDashboardId ?? items.find((item) => item.is_favorite)?.id ?? items[0]?.id ?? null
-        setActiveDashboardId(nextDashboardId)
-      } catch {
-        toast.error('Could not load dashboards for calendar.')
-      }
-    })()
-  }, [loadSummaries, requestedDashboardId])
-
-  useEffect(() => {
-    if (!activeDashboardId) return
-    const { start, end } = calendarWindow(monthCursor)
-    void loadOccurrences(start, end, activeDashboardId)
-  }, [activeDashboardId, loadOccurrences, monthCursor])
+  const [activeDashboardId, setActiveDashboardId] = useInitialDashboardSelection(
+    requestedDashboardId,
+    'Could not load dashboards for calendar.',
+  )
+  const occurrenceWindow = useMemo(() => {
+    if (!activeDashboardId) return null
+    return calendarWindow(monthCursor)
+  }, [activeDashboardId, monthCursor])
+  const occurrencesQuery = useCalendarOccurrences(
+    occurrenceWindow?.start ?? null,
+    occurrenceWindow?.end ?? null,
+    activeDashboardId,
+  )
+  const occurrences = occurrencesQuery.data ?? EMPTY_OCCURRENCES
+  const { loading } = occurrencesQuery
 
   useEffect(() => {
     if (recurrenceMode !== 'weekly' || recurrenceWeekdays.length > 0) return
@@ -157,7 +155,7 @@ export function CalendarPage() {
     setEditorLoading(true)
 
     try {
-      const event = await getEvent(eventId)
+      const event = await getCalendarEvent(eventId)
       setActiveDashboardId(event.dashboard_id)
       setTitle(event.title)
       setDescription(event.description ?? '')
@@ -197,7 +195,7 @@ export function CalendarPage() {
 
     try {
       if (editorMode === 'edit' && editorEventId) {
-        await updateEvent(editorEventId, {
+        await updateCalendarEvent(editorEventId, {
           title: trimmedTitle,
           description: description.trim() || undefined,
           location: eventLocation.trim() || undefined,
@@ -208,7 +206,7 @@ export function CalendarPage() {
           recurrence,
         })
       } else {
-        await createEvent({
+        await createCalendarEvent({
           dashboard_id: activeDashboardId,
           title: trimmedTitle,
           description: description.trim() || undefined,
@@ -653,7 +651,7 @@ export function CalendarPage() {
                         ? 'Delete this entire series?'
                         : 'Delete this event?'
                       if (await confirm(label)) {
-                        void deleteEvent(occurrence.event_id)
+                        void deleteCalendarEvent(occurrence.event_id, activeDashboardId)
                       }
                     }}
                   />

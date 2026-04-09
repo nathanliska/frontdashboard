@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { AddWidgetModal, type AddWidgetParams } from '../components/dashboard/AddWidgetModal'
 import { DashboardGrid } from '../components/dashboard/DashboardGrid'
-import { RenameDashboardModal } from '../components/dashboard/RenameDashboardModal'
+import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
 import { useDashboardStore } from '../stores/dashboard'
 
 const APP_TITLE = 'FrontDashboard'
@@ -23,6 +23,10 @@ export function DashboardEditorPage() {
   } = useDashboardStore()
   const [showAddWidget, setShowAddWidget] = useState(false)
   const [showEditDashboard, setShowEditDashboard] = useState(false)
+  const closeRestrictedModals = useEffectEvent(() => {
+    setShowAddWidget(false)
+    setShowEditDashboard(false)
+  })
 
   useEffect(() => {
     if (id) void loadDashboard(id)
@@ -34,6 +38,12 @@ export function DashboardEditorPage() {
       document.title = APP_TITLE
     }
   }, [dashboard?.name])
+
+  useEffect(() => {
+    if (!dashboard?.can_edit) {
+      closeRestrictedModals()
+    }
+  }, [dashboard?.can_edit])
 
   if (loading && !dashboard) {
     return (
@@ -60,9 +70,7 @@ export function DashboardEditorPage() {
 
   if (!dashboard) return null
 
-  // For now the user is always editor on their own dashboards;
-  // Shared dashboard edit rights are enforced by the backend.
-  const canEdit = true
+  const canEdit = dashboard.can_edit
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -148,8 +156,12 @@ export function DashboardEditorPage() {
       )}
 
       {showEditDashboard && (
-        <RenameDashboardModal
-          dashboard={{ id: dashboard.id, name: dashboard.name }}
+        <DashboardSettingsModal
+          dashboard={{
+            id: dashboard.id,
+            name: dashboard.name,
+            can_manage_shares: dashboard.can_manage_shares,
+          }}
           onClose={() => setShowEditDashboard(false)}
           onRename={renameDashboard}
         />
