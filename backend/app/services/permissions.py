@@ -4,18 +4,7 @@ import uuid
 
 from fastapi import HTTPException, status
 
-from app.models.group import GroupMember, GroupRole
 from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
-
-
-def assert_is_owner(membership: GroupMember) -> None:
-    if membership.role != GroupRole.owner:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner access required")
-
-
-def assert_is_admin_or_owner(membership: GroupMember) -> None:
-    if membership.role not in (GroupRole.owner, GroupRole.admin):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin or owner access required")
 
 
 def effective_role(

@@ -29,6 +29,8 @@ class DashboardSummary(BaseModel):
     name: str
     access_description: str | None = None
     is_shared: bool = False
+    can_edit: bool
+    can_manage_shares: bool
     is_favorite: bool
     version: int
     created_at: datetime
@@ -42,6 +44,8 @@ class DashboardResponse(BaseModel):
     user_id: uuid.UUID
     name: str
     is_shared: bool
+    can_edit: bool
+    can_manage_shares: bool
     is_favorite: bool
     layout: list[dict[str, Any]]
     version: int

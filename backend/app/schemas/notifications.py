@@ -11,7 +11,6 @@ class NotificationResponse(BaseModel):
     type: str
     title: str
     body: str
-    group_id: uuid.UUID | None
     reference_type: str | None
     reference_id: uuid.UUID | None
     read_at: datetime | None
@@ -23,7 +22,6 @@ class ActivityEventResponse(BaseModel):
 
     event_id: int
     event_type: str
-    group_id: uuid.UUID | None
     entity_type: str
     entity_id: uuid.UUID
     actor_id: uuid.UUID

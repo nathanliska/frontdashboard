@@ -17,7 +17,6 @@ class ResourceType(enum.StrEnum):
 
 class PrincipalType(enum.StrEnum):
     user = "user"
-    group = "group"
 
 
 class ShareRole(enum.StrEnum):

@@ -26,7 +26,7 @@ async def sse_stream(
 ) -> EventSourceResponse:
     """Open an SSE stream for the authenticated user."""
     send_resync = _should_resync_on_connect(request.headers.get("last-event-id"))
-    client = manager.connect(current_user.id, set())
+    client = manager.connect(current_user.id)
 
     async def _generate() -> AsyncGenerator[dict, None]:
         try:

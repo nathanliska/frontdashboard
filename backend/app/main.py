@@ -8,8 +8,6 @@ from app.limiter import limiter
 from app.routers.auth import router as auth_router
 from app.routers.calendar import router as calendar_router
 from app.routers.dashboards import router as dashboards_router
-from app.routers.groups import router as groups_router
-from app.routers.invites import router as invites_router
 from app.routers.lists import router as lists_router
 from app.routers.notifications import activity_router
 from app.routers.notifications import router as notifications_router
@@ -49,8 +47,6 @@ async def add_security_headers(request: Request, call_next: object) -> Response:
 app.include_router(auth_router)
 app.include_router(calendar_router)
 app.include_router(dashboards_router)
-app.include_router(groups_router)
-app.include_router(invites_router)
 app.include_router(lists_router)
 app.include_router(notifications_router)
 app.include_router(activity_router)

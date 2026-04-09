@@ -2,10 +2,18 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
-from tests.helpers import create_dashboard, create_list, create_list_item, current_user, set_csrf
+from tests.helpers import (
+    create_dashboard,
+    create_list,
+    create_list_item,
+    current_user,
+    register_client,
+    set_csrf,
+)
 
 
 async def test_notification_endpoints(auth_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -16,12 +24,11 @@ async def test_notification_endpoints(auth_client: AsyncClient, db_session: Asyn
     unread_newest = Notification(
         id=uuid.uuid4(),
         user_id=user_id,
-        group_id=None,
         activity_event_id=None,
-        type="membership.added",
+        type="dashboard.share_added",
         title="Newest unread",
         body="Body",
-        reference_type="group",
+        reference_type="dashboard",
         reference_id=uuid.uuid4(),
         read_at=None,
         created_at=now,
@@ -29,12 +36,11 @@ async def test_notification_endpoints(auth_client: AsyncClient, db_session: Asyn
     unread_older = Notification(
         id=uuid.uuid4(),
         user_id=user_id,
-        group_id=None,
         activity_event_id=None,
-        type="membership.added",
+        type="dashboard.share_updated",
         title="Older unread",
         body="Body",
-        reference_type="group",
+        reference_type="dashboard",
         reference_id=uuid.uuid4(),
         read_at=None,
         created_at=now - timedelta(minutes=2),
@@ -42,12 +48,11 @@ async def test_notification_endpoints(auth_client: AsyncClient, db_session: Asyn
     already_read = Notification(
         id=uuid.uuid4(),
         user_id=user_id,
-        group_id=None,
         activity_event_id=None,
-        type="membership.removed",
+        type="dashboard.share_removed",
         title="Already read",
         body="Body",
-        reference_type="group",
+        reference_type="dashboard",
         reference_id=uuid.uuid4(),
         read_at=now - timedelta(minutes=1),
         created_at=now - timedelta(minutes=1),
@@ -111,8 +116,99 @@ async def test_activity_endpoint_filters_and_paginates(auth_client: AsyncClient)
     latest_event_id = events[0]["event_id"]
     before_resp = await auth_client.get("/api/activity", params={"before_event_id": latest_event_id})
     assert before_resp.status_code == 200
-    assert [event["event_type"] for event in before_resp.json()] == ["list.created"]
+    assert [event["event_type"] for event in before_resp.json()] == [
+        "list.created",
+        "dashboard.created",
+    ]
 
     filter_resp = await auth_client.get("/api/activity", params={"event_type": "list.created"})
     assert filter_resp.status_code == 200
     assert [event["event_type"] for event in filter_resp.json()] == ["list.created"]
+
+
+async def test_dashboard_share_notifications_and_activity_filtering(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    dashboard = await create_dashboard(auth_client, name="Activity Notification Board")
+
+    viewer = await register_client("dashboard-notified@example.com", display_name="Viewer")
+    try:
+        viewer_user = await current_user(viewer)
+
+        set_csrf(auth_client)
+        add_share_resp = await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/shares",
+            json={"principal_type": "user", "principal_id": viewer_user["id"], "role": "viewer"},
+        )
+        assert add_share_resp.status_code == 201
+        share_id = add_share_resp.json()["id"]
+
+        set_csrf(auth_client)
+        update_share_resp = await auth_client.patch(
+            f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
+            json={"role": "editor"},
+        )
+        assert update_share_resp.status_code == 200
+
+        set_csrf(auth_client)
+        delete_share_resp = await auth_client.delete(
+            f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
+        )
+        assert delete_share_resp.status_code == 204
+
+        notification_resp = await viewer.get("/api/notifications")
+        assert notification_resp.status_code == 200
+        notifications = notification_resp.json()
+        assert [notification["type"] for notification in notifications] == [
+            "dashboard.share_removed",
+            "dashboard.share_updated",
+            "dashboard.share_added",
+        ]
+        notifications_by_type = {notification["type"]: notification["title"] for notification in notifications}
+        assert notifications_by_type["dashboard.share_removed"] == "Dashboard access removed"
+        assert notifications_by_type["dashboard.share_updated"] == "Dashboard access updated"
+        assert notifications_by_type["dashboard.share_added"] == "Dashboard shared with you"
+
+        unread_count_resp = await viewer.get("/api/notifications/unread-count")
+        assert unread_count_resp.status_code == 200
+        assert unread_count_resp.json() == {"count": 3}
+
+        owner_notifications = await auth_client.get("/api/notifications")
+        assert owner_notifications.status_code == 200
+        assert owner_notifications.json() == []
+
+        lst = await create_list(auth_client, dashboard["id"], name="Chores")
+        item = await create_list_item(auth_client, lst["id"], text="Vacuum")
+
+        set_csrf(auth_client)
+        check_resp = await auth_client.patch(
+            f"/api/lists/{lst['id']}/items/{item['id']}",
+            json={"checked": True},
+        )
+        assert check_resp.status_code == 200
+
+        set_csrf(auth_client)
+        rename_resp = await auth_client.patch(
+            f"/api/dashboards/{dashboard['id']}",
+            json={"name": "Renamed Activity Notification Board"},
+        )
+        assert rename_resp.status_code == 200
+
+        activity_resp = await auth_client.get("/api/activity")
+        assert activity_resp.status_code == 200
+        event_types = [event["event_type"] for event in activity_resp.json()]
+        assert "dashboard.share_added" in event_types
+        assert "dashboard.share_updated" in event_types
+        assert "dashboard.share_removed" in event_types
+        assert "list.created" in event_types
+        assert "list.item.created" in event_types
+        assert "dashboard.updated" not in event_types
+        assert "list.item.checked" not in event_types
+
+        notification_rows = (
+            (await db_session.execute(select(Notification).where(Notification.user_id == uuid.UUID(viewer_user["id"])))).scalars().all()
+        )
+        assert len(notification_rows) == 3
+    finally:
+        await viewer.__aexit__(None, None, None)

@@ -28,8 +28,6 @@ def pytest_configure(config: pytest.Config) -> None:
     import app.models.activity  # noqa: F401
     import app.models.calendar  # noqa: F401
     import app.models.dashboard  # noqa: F401
-    import app.models.group  # noqa: F401
-    import app.models.invite  # noqa: F401
     import app.models.list  # noqa: F401
     import app.models.notification  # noqa: F401
     import app.models.refresh_token  # noqa: F401

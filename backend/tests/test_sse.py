@@ -44,10 +44,9 @@ async def _register(client: AsyncClient, email: str = "alice@example.com", displ
 @pytest.mark.asyncio
 async def test_manager_connect_disconnect() -> None:
     mgr = SseManager()
-    g = uuid.uuid4()
     u = uuid.uuid4()
 
-    client = mgr.connect(u, {g})
+    client = mgr.connect(u)
     assert len(mgr._clients) == 1
 
     mgr.disconnect(client)
@@ -57,27 +56,9 @@ async def test_manager_connect_disconnect() -> None:
 @pytest.mark.asyncio
 async def test_manager_disconnect_idempotent() -> None:
     mgr = SseManager()
-    client = mgr.connect(uuid.uuid4(), set())
+    client = mgr.connect(uuid.uuid4())
     mgr.disconnect(client)
     mgr.disconnect(client)  # should not raise
-
-
-@pytest.mark.asyncio
-async def test_manager_broadcast_to_group_member() -> None:
-    mgr = SseManager()
-    group_id = uuid.uuid4()
-    actor_id = uuid.uuid4()
-    member_id = uuid.uuid4()
-
-    member_client = mgr.connect(member_id, {group_id})
-    outsider_client = mgr.connect(uuid.uuid4(), {uuid.uuid4()})
-
-    msg = {"data": "hello", "event": "test"}
-    await mgr.broadcast(msg, group_id=group_id, actor_id=actor_id)
-
-    assert member_client.queue.qsize() == 1
-    assert outsider_client.queue.qsize() == 0
-    assert await member_client.queue.get() == msg
 
 
 @pytest.mark.asyncio
@@ -86,11 +67,11 @@ async def test_manager_broadcast_private_only_to_actor() -> None:
     actor_id = uuid.uuid4()
     other_id = uuid.uuid4()
 
-    actor_client = mgr.connect(actor_id, set())
-    other_client = mgr.connect(other_id, set())
+    actor_client = mgr.connect(actor_id)
+    other_client = mgr.connect(other_id)
 
     msg = {"data": "private", "event": "test"}
-    await mgr.broadcast(msg, group_id=None, actor_id=actor_id)
+    await mgr.broadcast(msg, actor_id=actor_id)
 
     assert actor_client.queue.qsize() == 1
     assert other_client.queue.qsize() == 0
@@ -103,12 +84,12 @@ async def test_manager_broadcast_targeted_users_reaches_non_actor() -> None:
     target_id = uuid.uuid4()
     outsider_id = uuid.uuid4()
 
-    actor_client = mgr.connect(actor_id, set())
-    target_client = mgr.connect(target_id, set())
-    outsider_client = mgr.connect(outsider_id, set())
+    actor_client = mgr.connect(actor_id)
+    target_client = mgr.connect(target_id)
+    outsider_client = mgr.connect(outsider_id)
 
     msg = {"data": "dashboard update", "event": "dashboard.updated"}
-    await mgr.broadcast(msg, group_id=None, user_ids={actor_id, target_id}, actor_id=actor_id)
+    await mgr.broadcast(msg, user_ids={actor_id, target_id}, actor_id=actor_id)
 
     assert actor_client.queue.qsize() == 1
     assert target_client.queue.qsize() == 1
@@ -118,16 +99,15 @@ async def test_manager_broadcast_targeted_users_reaches_non_actor() -> None:
 
 @pytest.mark.asyncio
 async def test_manager_multiple_connections_same_user() -> None:
-    """Two open tabs for the same user both receive group events."""
+    """Two open tabs for the same user both receive targeted events."""
     mgr = SseManager()
-    group_id = uuid.uuid4()
     user_id = uuid.uuid4()
 
-    tab1 = mgr.connect(user_id, {group_id})
-    tab2 = mgr.connect(user_id, {group_id})
+    tab1 = mgr.connect(user_id)
+    tab2 = mgr.connect(user_id)
 
     msg = {"data": "update", "event": "list.updated"}
-    await mgr.broadcast(msg, group_id=group_id, actor_id=user_id)
+    await mgr.broadcast(msg, user_ids={user_id}, actor_id=user_id)
 
     assert tab1.queue.qsize() == 1
     assert tab2.queue.qsize() == 1
@@ -193,6 +173,7 @@ async def test_activity_events_build_correct_sse_payloads(
     sse_dict = activity_to_sse_dict(list_created_events[0])
     payload = json.loads(sse_dict["data"])
     assert payload["event_type"] == "list.created"
+    assert "group_id" not in payload
 
 
 def test_resync_dict_has_correct_event_type() -> None:

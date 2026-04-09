@@ -1,7 +1,8 @@
 import uuid
 from datetime import UTC, datetime
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +34,7 @@ from app.sse.events import build_activity_sse_dict
 from app.sse.manager import manager
 
 router = APIRouter(prefix="/api/lists", tags=["lists"])
+ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id")]
 
 
 def _dashboard_user_ids(
@@ -52,10 +54,35 @@ async def _broadcast_dashboard_event(
 ) -> None:
     await manager.broadcast(
         message,
-        group_id=None,
         user_ids=_dashboard_user_ids(dashboard, shares),
         actor_id=actor_id,
     )
+
+
+async def _build_list_event_message(
+    db: AsyncSession,
+    *,
+    event_type: EventType,
+    current_user: User,
+    dashboard: Dashboard,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    payload: dict[str, Any] | None = None,
+    client_mutation_id: str | None = None,
+) -> dict:
+    event_payload = {"dashboard_id": str(dashboard.id), **(payload or {})}
+    if client_mutation_id is not None:
+        event_payload["client_mutation_id"] = client_mutation_id
+    activity = log_event(
+        db,
+        event_type=event_type,
+        actor_id=current_user.id,
+        actor_display_name=current_user.display_name,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        payload=event_payload,
+    )
+    return await build_activity_sse_dict(db, activity)
 
 
 async def _get_list_access(
@@ -124,6 +151,7 @@ def _raise_dashboard_managed_permissions_error() -> None:
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ListResponse)
 async def create_list(
     body: ListCreate,
+    client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -141,17 +169,16 @@ async def create_list(
     db.add(lst)
     await db.flush()
 
-    event = log_event(
+    event_message = await _build_list_event_message(
         db,
         event_type=EventType.list_created,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
+        current_user=current_user,
+        dashboard=dashboard,
         entity_type="list",
         entity_id=lst.id,
-        group_id=None,
-        payload={"name": lst.name, "list_type": str(lst.list_type), "dashboard_id": str(dashboard.id)},
+        payload={"name": lst.name, "list_type": str(lst.list_type)},
+        client_mutation_id=client_mutation_id,
     )
-    event_message = await build_activity_sse_dict(db, event)
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     return await _mutated_list_response(db, lst, 0)
@@ -222,6 +249,7 @@ async def get_list(
 async def update_list(
     list_id: uuid.UUID,
     body: ListUpdate,
+    client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -235,17 +263,16 @@ async def update_list(
         lst.archived = body.archived
     lst.updated_by = current_user.id
 
-    event = log_event(
+    event_message = await _build_list_event_message(
         db,
         event_type=EventType.list_archived if body.archived is not None else EventType.list_updated,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
+        current_user=current_user,
+        dashboard=dashboard,
         entity_type="list",
         entity_id=lst.id,
-        group_id=None,
-        payload={"name": lst.name, "archived": lst.archived, "dashboard_id": str(dashboard.id)},
+        payload={"name": lst.name, "archived": lst.archived},
+        client_mutation_id=client_mutation_id,
     )
-    event_message = await build_activity_sse_dict(db, event)
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)))
@@ -255,6 +282,7 @@ async def update_list(
 @router.delete("/{list_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_list(
     list_id: uuid.UUID,
+    client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -263,18 +291,17 @@ async def delete_list(
     permissions.assert_can_edit(role)
     await remove_resource_widgets(ResourceType.list.value, lst.id, db)
 
-    event = log_event(
+    event_message = await _build_list_event_message(
         db,
         event_type=EventType.list_deleted,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
+        current_user=current_user,
+        dashboard=dashboard,
         entity_type="list",
         entity_id=lst.id,
-        group_id=None,
-        payload={"name": lst.name, "dashboard_id": str(dashboard.id)},
+        payload={"name": lst.name},
+        client_mutation_id=client_mutation_id,
     )
     lst.deleted_at = datetime.now(UTC)
-    event_message = await build_activity_sse_dict(db, event)
     await cleanup_resource_shares(ResourceType.list, lst.id, db)
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
@@ -284,6 +311,7 @@ async def delete_list(
 async def create_item(
     list_id: uuid.UUID,
     body: ListItemCreate,
+    client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -315,17 +343,16 @@ async def create_item(
     )
     db.add(item)
     await db.flush()
-    event = log_event(
+    event_message = await _build_list_event_message(
         db,
         event_type=EventType.list_item_created,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
+        current_user=current_user,
+        dashboard=dashboard,
         entity_type="list_item",
         entity_id=item.id,
-        group_id=None,
-        payload={"text": item.text, "list_id": str(list_id), "dashboard_id": str(dashboard.id)},
+        payload={"text": item.text, "list_id": str(list_id)},
+        client_mutation_id=client_mutation_id,
     )
-    event_message = await build_activity_sse_dict(db, event)
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     return await _item_response(db, item)
@@ -336,6 +363,7 @@ async def update_item(
     list_id: uuid.UUID,
     item_id: uuid.UUID,
     body: ListItemUpdate,
+    client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -359,17 +387,16 @@ async def update_item(
         setattr(item, field, getattr(body, field))
     item.updated_by = current_user.id
 
-    event = log_event(
+    event_message = await _build_list_event_message(
         db,
         event_type=EventType.list_item_checked if "checked" in body.model_fields_set else EventType.list_item_updated,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
+        current_user=current_user,
+        dashboard=dashboard,
         entity_type="list_item",
         entity_id=item.id,
-        group_id=None,
-        payload={"list_id": str(list_id), "dashboard_id": str(dashboard.id), "fields": list(body.model_fields_set)},
+        payload={"list_id": str(list_id), "fields": list(body.model_fields_set)},
+        client_mutation_id=client_mutation_id,
     )
-    event_message = await build_activity_sse_dict(db, event)
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     return await _item_response(db, item)
@@ -379,6 +406,7 @@ async def update_item(
 async def delete_item(
     list_id: uuid.UUID,
     item_id: uuid.UUID,
+    client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -397,18 +425,17 @@ async def delete_item(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    event = log_event(
+    event_message = await _build_list_event_message(
         db,
         event_type=EventType.list_item_deleted,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
+        current_user=current_user,
+        dashboard=dashboard,
         entity_type="list_item",
         entity_id=item.id,
-        group_id=None,
-        payload={"list_id": str(list_id), "dashboard_id": str(dashboard.id)},
+        payload={"list_id": str(list_id)},
+        client_mutation_id=client_mutation_id,
     )
     item.deleted_at = datetime.now(UTC)
-    event_message = await build_activity_sse_dict(db, event)
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
 

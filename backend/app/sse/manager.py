@@ -1,8 +1,8 @@
 """SSE connection manager.
 
 Maintains a registry of connected clients (one queue per open SSE connection).
-broadcast() fans out a pre-serialised message dict to every client that is
-subscribed to the relevant group (or to the actor only for private events).
+broadcast() fans out a pre-serialised message dict to targeted users, or to the
+actor only for private events.
 
 Thread-safety: the manager runs inside a single asyncio event loop. List
 mutations (append/remove) happen outside of await points, so no explicit lock
@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 @dataclass
 class _Client:
     user_id: uuid.UUID
-    group_ids: frozenset[uuid.UUID]
     queue: asyncio.Queue = field(default_factory=asyncio.Queue)
 
 
@@ -26,9 +25,9 @@ class SseManager:
     def __init__(self) -> None:
         self._clients: list[_Client] = []
 
-    def connect(self, user_id: uuid.UUID, group_ids: set[uuid.UUID]) -> _Client:
+    def connect(self, user_id: uuid.UUID) -> _Client:
         """Register a new SSE connection and return its client handle."""
-        client = _Client(user_id=user_id, group_ids=frozenset(group_ids))
+        client = _Client(user_id=user_id)
         self._clients.append(client)
         return client
 
@@ -41,26 +40,18 @@ class SseManager:
         self,
         message: dict,
         *,
-        group_id: uuid.UUID | None,
-        group_ids: set[uuid.UUID] | None = None,
         user_ids: set[uuid.UUID] | None = None,
         actor_id: uuid.UUID,
     ) -> None:
         """Fan out message to all eligible connected clients.
 
-        Shared events (group_id set): delivered to every client whose membership
-        set includes that group.
-        Multi-group / explicit-user events: delivered once to every client whose
-        membership set intersects the provided groups or whose user_id is targeted.
-        Private events (group_id None): delivered only to the actor.
+        Targeted events are delivered to every client whose user_id is in the
+        supplied audience set. Private events are delivered only to the actor.
         """
         # Snapshot the list so mutations during awaits don't cause issues
         for client in list(self._clients):
-            if group_ids or user_ids:
-                if (group_ids and client.group_ids.intersection(group_ids)) or (user_ids and client.user_id in user_ids):
-                    await client.queue.put(message)
-            elif group_id is not None:
-                if group_id in client.group_ids:
+            if user_ids:
+                if client.user_id in user_ids:
                     await client.queue.put(message)
             else:
                 if client.user_id == actor_id:
