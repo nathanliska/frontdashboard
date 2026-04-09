@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Check } from 'lucide-react'
-import { type ActivityEvent, type Notification, apiGetActivity } from '../api/notifications'
+import { type Notification, apiGetActivity } from '../api/notifications'
+import { ActivityFeed } from '../components/notifications/ActivityFeed'
+import { NotificationFeed } from '../components/notifications/NotificationFeed'
 import { APP_RESYNC_EVENT } from '../hooks/useSSE'
 import { useNotificationsStore } from '../stores/notifications'
 import { cn } from '../utils/cn'
+import { getNotificationDestination } from '../utils/notificationFeed'
 
 type Tab = 'notifications' | 'activity'
 
 export function NotificationsPage() {
   const [tab, setTab] = useState<Tab>('notifications')
+  const navigate = useNavigate()
   const { notifications, unreadCount, load, markRead, markAllRead } = useNotificationsStore()
 
-  const [activity, setActivity] = useState<ActivityEvent[]>([])
+  const [activity, setActivity] = useState<Awaited<ReturnType<typeof apiGetActivity>>>([])
   const [activityLoading, setActivityLoading] = useState(false)
 
   useEffect(() => {
@@ -46,6 +51,17 @@ export function NotificationsPage() {
       window.removeEventListener(APP_RESYNC_EVENT, onResync)
     }
   }, [tab])
+
+  function handleNotificationClick(notification: Notification) {
+    if (notification.read_at === null) {
+      void markRead(notification.id)
+    }
+
+    const destination = getNotificationDestination(notification)
+    if (destination) {
+      navigate(destination)
+    }
+  }
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -89,92 +105,20 @@ export function NotificationsPage() {
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === 'notifications' ? (
-          <NotificationsList notifications={notifications} onMarkRead={(id) => void markRead(id)} />
+          <NotificationFeed
+            notifications={notifications}
+            emptyMessage="No notifications yet."
+            onOpen={handleNotificationClick}
+          />
         ) : (
-          <ActivityList activity={activity} loading={activityLoading} />
+          <div className="flex flex-col gap-3">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+              <p className="text-xs text-zinc-500">Activity now shows your own timeline.</p>
+            </div>
+            <ActivityFeed activity={activity} loading={activityLoading} />
+          </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function NotificationsList({
-  notifications,
-  onMarkRead,
-}: {
-  notifications: Notification[]
-  onMarkRead: (id: string) => void
-}) {
-  if (notifications.length === 0) {
-    return <p className="text-sm text-zinc-600 py-6 text-center">No notifications yet.</p>
-  }
-
-  return (
-    <div className="space-y-1">
-      {notifications.map((n) => (
-        <div
-          key={n.id}
-          onClick={() => {
-            if (n.read_at === null) onMarkRead(n.id)
-          }}
-          className={cn(
-            'flex items-start gap-3 px-4 py-3 rounded-lg border transition-colors',
-            n.read_at === null
-              ? 'bg-blue-500/5 border-blue-500/20 cursor-pointer hover:bg-blue-500/10'
-              : 'bg-zinc-900 border-zinc-800',
-          )}
-        >
-          {n.read_at === null && (
-            <span className="mt-2 shrink-0 w-1.5 h-1.5 rounded-full bg-blue-500" />
-          )}
-          <div className={cn('flex-1 min-w-0', n.read_at !== null && 'pl-4')}>
-            <p className="text-sm font-medium text-zinc-200">{n.title}</p>
-            <p className="text-sm text-zinc-400 mt-0.5">{n.body}</p>
-            <p className="text-xs text-zinc-600 mt-1">{new Date(n.created_at).toLocaleString()}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ActivityList({ activity, loading }: { activity: ActivityEvent[]; loading: boolean }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2">
-        <p className="text-xs text-zinc-500">
-          Activity now shows your own timeline. Group activity feeds have been removed from the app.
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-6">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
-        </div>
-      ) : activity.length === 0 ? (
-        <p className="text-sm text-zinc-600 py-6 text-center">No activity yet.</p>
-      ) : (
-        <div className="space-y-1">
-          {activity.map((e) => (
-            <div
-              key={e.event_id}
-              className="flex items-start gap-3 px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-lg"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
-                    {e.event_type}
-                  </span>
-                  <span className="text-xs text-zinc-500 truncate">by {e.actor_display_name}</span>
-                </div>
-                <p className="text-xs text-zinc-600 mt-1">
-                  {new Date(e.created_at).toLocaleString()}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

@@ -5,7 +5,6 @@ export interface Notification {
   type: string
   title: string
   body: string
-  group_id: string | null
   reference_type: string | null
   reference_id: string | null
   read_at: string | null
@@ -15,7 +14,6 @@ export interface Notification {
 export interface ActivityEvent {
   event_id: number
   event_type: string
-  group_id: string | null
   entity_type: string
   entity_id: string
   actor_id: string
