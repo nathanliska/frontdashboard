@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Bell, Check, X } from 'lucide-react'
+import { NotificationFeed } from './NotificationFeed'
 import { useNotificationsStore } from '../../stores/notifications'
-import { cn } from '../../utils/cn'
+import { getNotificationDestination } from '../../utils/notificationFeed'
 
 export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
+  const navigate = useNavigate()
   const { notifications, unreadCount, panelOpen, setPanelOpen, markRead, markAllRead } =
     useNotificationsStore()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -20,6 +22,17 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [panelOpen, setPanelOpen])
+
+  function handleNotificationClick(notification: (typeof notifications)[number]) {
+    if (notification.read_at === null) {
+      void markRead(notification.id)
+    }
+    setPanelOpen(false)
+    const destination = getNotificationDestination(notification)
+    if (destination) {
+      navigate(destination)
+    }
+  }
 
   return (
     <div ref={panelRef} className="relative">
@@ -67,33 +80,12 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
 
           {/* List */}
           <div className="overflow-y-auto flex-1">
-            {notifications.length === 0 ? (
-              <p className="text-sm text-zinc-600 px-4 py-6 text-center">No notifications</p>
-            ) : (
-              notifications.map((n) => (
-                <div
-                  key={n.id}
-                  className={cn(
-                    'flex items-start gap-3 px-4 py-3 border-b border-zinc-800 last:border-0 cursor-pointer hover:bg-zinc-800/50 transition-colors',
-                    n.read_at === null && 'bg-blue-500/5',
-                  )}
-                  onClick={() => {
-                    if (n.read_at === null) void markRead(n.id)
-                  }}
-                >
-                  {n.read_at === null && (
-                    <span className="mt-1.5 shrink-0 w-1.5 h-1.5 rounded-full bg-blue-500" />
-                  )}
-                  <div className={cn('flex-1 min-w-0', n.read_at !== null && 'pl-4')}>
-                    <p className="text-xs font-medium text-zinc-200 truncate">{n.title}</p>
-                    <p className="text-xs text-zinc-500 mt-0.5 truncate">{n.body}</p>
-                    <p className="text-[10px] text-zinc-700 mt-1">
-                      {new Date(n.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              ))
-            )}
+            <NotificationFeed
+              notifications={notifications}
+              emptyMessage="No notifications"
+              onOpen={handleNotificationClick}
+              variant="panel"
+            />
           </div>
 
           {/* Footer */}
