@@ -100,7 +100,11 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
     return (
       <div className="flex flex-col items-center justify-center h-64 text-zinc-600">
         <p className="text-sm">No widgets yet.</p>
-        <p className="text-xs mt-1">Use the button above to add your first widget.</p>
+        <p className="text-xs mt-1">
+          {canEdit
+            ? 'Use the button above to add your first widget.'
+            : 'An editor can add widgets to this dashboard.'}
+        </p>
       </div>
     )
   }

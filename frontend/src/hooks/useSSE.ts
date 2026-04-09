@@ -1,15 +1,14 @@
 import { useEffect } from 'react'
 import type { Notification } from '../api/notifications'
+import { handleCalendarResourceEvent } from '../resources/calendarData'
+import { handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
-import { useCalendarStore } from '../stores/calendar'
 import { useDashboardStore } from '../stores/dashboard'
-import { useListsStore } from '../stores/lists'
 import { useNotificationsStore } from '../stores/notifications'
 
 export interface SseEvent {
   event_id: number
   event_type: string
-  group_id: string | null
   entity_type: string
   entity_id: string
   entity_version: number
@@ -44,23 +43,25 @@ const DASHBOARD_EVENT_TYPES = [
   'dashboard.created',
   'dashboard.updated',
   'dashboard.deleted',
+  'dashboard.share_added',
+  'dashboard.share_updated',
+  'dashboard.share_removed',
 ] as const
 
 /**
  * Opens a single SSE connection for the authenticated user and routes
- * incoming events to the appropriate Zustand store actions.
+ * incoming events to the dashboard store plus the shared list/calendar
+ * resource caches.
  *
  * Mount once inside the authenticated shell — closed automatically on logout.
  */
 export function useSSE(): void {
   const user = useAuthStore((s) => s.user)
-  const handleListEvent = useListsStore((s) => s.handleSseEvent)
   const handleDashboardEvent = useDashboardStore((s) => s.handleDashboardEvent)
   const handleDashboardContentEvent = useDashboardStore((s) => s.handleContentEvent)
   const addNotification = useNotificationsStore((s) => s.addFromSse)
   const loadNotifications = useNotificationsStore((s) => s.load)
   const loadUnreadCount = useNotificationsStore((s) => s.loadUnreadCount)
-  const reloadCalendarOccurrences = useCalendarStore((s) => s.loadOccurrences)
 
   useEffect(() => {
     if (!user) return
@@ -70,7 +71,7 @@ export function useSSE(): void {
     function onListEvent(e: MessageEvent<string>) {
       try {
         const data = JSON.parse(e.data) as SseEvent
-        void handleListEvent(data)
+        handleListResourceEvent(data)
         handleDashboardContentEvent(data)
       } catch {
         // malformed event — ignore
@@ -80,14 +81,9 @@ export function useSSE(): void {
     function onCalendarEvent(e: MessageEvent<string>) {
       try {
         const data = JSON.parse(e.data) as SseEvent
-        handleDashboardContentEvent(data)
+        handleCalendarResourceEvent(data)
       } catch {
         // malformed event — ignore
-      } finally {
-        const { windowStart, windowEnd, dashboardId } = useCalendarStore.getState()
-        if (windowStart && windowEnd) {
-          void reloadCalendarOccurrences(windowStart, windowEnd, dashboardId, { background: true })
-        }
       }
     }
 
@@ -111,17 +107,13 @@ export function useSSE(): void {
 
     function onResync() {
       const resyncEvent = { event_type: 'resync', payload: {} } as SseEvent
-      void handleListEvent(resyncEvent)
+      handleListResourceEvent(resyncEvent)
+      handleCalendarResourceEvent(resyncEvent)
       void handleDashboardEvent(resyncEvent)
-      handleDashboardContentEvent(resyncEvent)
       void loadUnreadCount()
       const { panelOpen } = useNotificationsStore.getState()
       if (panelOpen || window.location.pathname === '/notifications') {
         void loadNotifications()
-      }
-      const { windowStart, windowEnd, dashboardId } = useCalendarStore.getState()
-      if (windowStart && windowEnd) {
-        void reloadCalendarOccurrences(windowStart, windowEnd, dashboardId, { background: true })
       }
       window.dispatchEvent(new Event(APP_RESYNC_EVENT))
     }
@@ -143,12 +135,10 @@ export function useSSE(): void {
     }
   }, [
     user,
-    handleListEvent,
     handleDashboardEvent,
     handleDashboardContentEvent,
     addNotification,
     loadNotifications,
     loadUnreadCount,
-    reloadCalendarOccurrences,
   ])
 }

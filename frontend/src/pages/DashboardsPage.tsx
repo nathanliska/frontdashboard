@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Home, LayoutDashboard, Pencil, Plus, Star, Trash2 } from 'lucide-react'
 import type { DashboardSummary } from '../api/dashboards'
 import type { ShareCreate, ShareRole } from '../api/shares'
-import { RenameDashboardModal } from '../components/dashboard/RenameDashboardModal'
+import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
 import { SharePanel, type SharePanelItem, type ShareRoleOption } from '../components/ui/SharePanel'
 import { useAuthStore } from '../stores/auth'
 import { confirm } from '../stores/confirm'
@@ -39,12 +39,30 @@ export function DashboardsPage() {
   const homeDashboardId = user?.preferences?.home_dashboard_id ?? null
   const currentUserId = user?.id ?? null
   const [showCreate, setShowCreate] = useState(false)
-  const [editingDashboard, setEditingDashboard] = useState<DashboardSummary | null>(null)
+  const [editingDashboardId, setEditingDashboardId] = useState<string | null>(null)
   const navigate = useNavigate()
+  const closeEditingDashboard = useEffectEvent(() => {
+    setEditingDashboardId(null)
+  })
 
   useEffect(() => {
     void loadSummaries()
   }, [loadSummaries])
+
+  const editingDashboard = useMemo(
+    () =>
+      editingDashboardId
+        ? (summaries.find((dashboard) => dashboard.id === editingDashboardId) ?? null)
+        : null,
+    [editingDashboardId, summaries],
+  )
+
+  useEffect(() => {
+    if (!editingDashboardId) return
+    if (!editingDashboard || !editingDashboard.can_edit) {
+      closeEditingDashboard()
+    }
+  }, [editingDashboard, editingDashboardId])
 
   const favorites = summaries.filter((dashboard) => dashboard.is_favorite)
   const rest = summaries.filter((dashboard) => !dashboard.is_favorite)
@@ -85,7 +103,7 @@ export function DashboardsPage() {
                 void toggleFavorite(dashboard.id, dashboard.is_favorite)
               }
               onSetHome={(dashboard) => void updatePreferences({ home_dashboard_id: dashboard.id })}
-              onRename={setEditingDashboard}
+              onRename={(dashboard) => setEditingDashboardId(dashboard.id)}
               onDelete={async (dashboard) => {
                 if (await confirm(`Delete "${dashboard.name}"? This cannot be undone.`)) {
                   void deleteDashboard(dashboard.id)
@@ -111,7 +129,7 @@ export function DashboardsPage() {
                 void toggleFavorite(dashboard.id, dashboard.is_favorite)
               }
               onSetHome={(dashboard) => void updatePreferences({ home_dashboard_id: dashboard.id })}
-              onRename={setEditingDashboard}
+              onRename={(dashboard) => setEditingDashboardId(dashboard.id)}
               onDelete={async (dashboard) => {
                 if (await confirm(`Delete "${dashboard.name}"? This cannot be undone.`)) {
                   void deleteDashboard(dashboard.id)
@@ -142,9 +160,9 @@ export function DashboardsPage() {
       )}
 
       {editingDashboard && (
-        <RenameDashboardModal
+        <DashboardSettingsModal
           dashboard={editingDashboard}
-          onClose={() => setEditingDashboard(null)}
+          onClose={() => setEditingDashboardId(null)}
           onRename={renameDashboard}
         />
       )}
@@ -250,7 +268,10 @@ function DashboardCard({
             onRename()
           }}
           title="Edit dashboard"
-          className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors"
+          className={cn(
+            'p-1.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors',
+            dashboard.can_edit ? 'opacity-0 group-hover:opacity-100' : 'hidden',
+          )}
         >
           <Pencil size={13} />
         </button>

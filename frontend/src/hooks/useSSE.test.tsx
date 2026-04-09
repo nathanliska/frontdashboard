@@ -1,11 +1,19 @@
 import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { handleCalendarResourceEvent } from '../resources/calendarData'
+import { handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
-import { useCalendarStore } from '../stores/calendar'
 import { useDashboardStore } from '../stores/dashboard'
-import { useListsStore } from '../stores/lists'
 import { useNotificationsStore } from '../stores/notifications'
 import { APP_RESYNC_EVENT, useSSE } from './useSSE'
+
+vi.mock('../resources/listData', () => ({
+  handleListResourceEvent: vi.fn(),
+}))
+
+vi.mock('../resources/calendarData', () => ({
+  handleCalendarResourceEvent: vi.fn(),
+}))
 
 type Listener = (event: MessageEvent<string>) => void
 
@@ -59,10 +67,6 @@ describe('useSSE', () => {
       },
     })
 
-    useListsStore.setState({
-      handleSseEvent: vi.fn().mockResolvedValue(undefined),
-    })
-
     useDashboardStore.setState({
       handleDashboardEvent: vi.fn().mockResolvedValue(undefined),
       handleContentEvent: vi.fn(),
@@ -72,13 +76,6 @@ describe('useSSE', () => {
       panelOpen: false,
       load: vi.fn().mockResolvedValue(undefined),
       loadUnreadCount: vi.fn().mockResolvedValue(undefined),
-    })
-
-    useCalendarStore.setState({
-      windowStart: null,
-      windowEnd: null,
-      dashboardId: null,
-      loadOccurrences: vi.fn().mockResolvedValue(undefined),
     })
   })
 
@@ -97,14 +94,14 @@ describe('useSSE', () => {
     })
 
     await waitFor(() => {
-      expect(useListsStore.getState().handleSseEvent).toHaveBeenCalledWith(
+      expect(handleListResourceEvent).toHaveBeenCalledWith(
         expect.objectContaining({ event_type: 'resync' }),
       )
     })
-    expect(useDashboardStore.getState().handleDashboardEvent).toHaveBeenCalledWith(
+    expect(handleCalendarResourceEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event_type: 'resync' }),
     )
-    expect(useDashboardStore.getState().handleContentEvent).toHaveBeenCalledWith(
+    expect(useDashboardStore.getState().handleDashboardEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event_type: 'resync' }),
     )
     expect(useNotificationsStore.getState().loadUnreadCount).toHaveBeenCalledTimes(1)
@@ -147,5 +144,89 @@ describe('useSSE', () => {
     })
 
     window.removeEventListener(APP_RESYNC_EVENT, onAppResync)
+  })
+
+  it('routes valid calendar SSE events to the shared calendar resource layer', async () => {
+    render(<TestHarness />)
+
+    const es = MockEventSource.instances[0]
+    act(() => {
+      es.dispatch(
+        'calendar.event.updated',
+        JSON.stringify({
+          event_type: 'calendar.event.updated',
+          entity_id: 'event-1',
+          payload: { dashboard_id: 'dash-1' },
+        }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(handleCalendarResourceEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'calendar.event.updated' }),
+      )
+    })
+  })
+
+  it('does not route malformed calendar SSE events to the resource layer', async () => {
+    render(<TestHarness />)
+
+    const es = MockEventSource.instances[0]
+    act(() => {
+      es.dispatch('calendar.event.updated', '{not-json')
+    })
+
+    await waitFor(() => {
+      expect(handleCalendarResourceEvent).not.toHaveBeenCalled()
+    })
+  })
+
+  it('routes list SSE events to both the list resource layer and dashboard content handler', async () => {
+    render(<TestHarness />)
+
+    const es = MockEventSource.instances[0]
+    act(() => {
+      es.dispatch(
+        'list.item.updated',
+        JSON.stringify({
+          event_type: 'list.item.updated',
+          entity_id: 'item-1',
+          entity_type: 'list_item',
+          payload: { dashboard_id: 'dash-1', list_id: 'list-1' },
+        }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(handleListResourceEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'list.item.updated' }),
+      )
+      expect(useDashboardStore.getState().handleContentEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'list.item.updated' }),
+      )
+    })
+  })
+
+  it('routes dashboard share SSE events to the dashboard store handler', async () => {
+    render(<TestHarness />)
+
+    const es = MockEventSource.instances[0]
+    act(() => {
+      es.dispatch(
+        'dashboard.share_added',
+        JSON.stringify({
+          event_type: 'dashboard.share_added',
+          entity_id: 'dash-1',
+          entity_type: 'dashboard',
+          payload: { dashboard_id: 'dash-1', changed_fields: ['shares'], share_action: 'added' },
+        }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(useDashboardStore.getState().handleDashboardEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'dashboard.share_added' }),
+      )
+    })
   })
 })

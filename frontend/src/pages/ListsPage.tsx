@@ -1,9 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Archive, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
-import type { ListType } from '../api/lists'
+import type { ListSummary, ListType } from '../api/lists'
+import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
+import {
+  addListItem,
+  archiveList,
+  createList,
+  deleteList,
+  deleteListItem,
+  updateListItem,
+  updateListName,
+  useListDetail,
+  useListSummaries,
+} from '../resources/listData'
 import { useDashboardStore } from '../stores/dashboard'
-import { useListsStore } from '../stores/lists'
 import { toast } from '../stores/toast'
 import { cn } from '../utils/cn'
 
@@ -13,29 +24,11 @@ const TYPE_FILTERS: { value: ListType | 'all'; label: string }[] = [
   { value: 'grocery', label: 'Grocery' },
   { value: 'todo', label: 'Todo' },
 ]
+const EMPTY_LISTS: ListSummary[] = []
 
 export function ListsPage() {
-  const {
-    lists,
-    selectedId,
-    detail,
-    loading,
-    dashboardId,
-    loadLists,
-    clearSelection,
-    selectList,
-    createList,
-    updateListName,
-    deleteList,
-    archiveList,
-    addItem,
-    updateItemText,
-    toggleItem,
-    deleteItem,
-  } = useListsStore()
   const dashboards = useDashboardStore((s) => s.summaries)
   const dashboardsLoading = useDashboardStore((s) => s.summariesLoading)
-  const loadSummaries = useDashboardStore((s) => s.loadSummaries)
 
   const [typeFilter, setTypeFilter] = useState<ListType | 'all'>('all')
   const [showCreate, setShowCreate] = useState(false)
@@ -60,29 +53,37 @@ export function ListsPage() {
   const requestedDashboardId = searchParams.get('dashboard_id')
   const openListId = (location.state as { openListId?: string } | null)?.openListId
   const didAutoOpen = useRef(false)
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        await loadSummaries()
-        const items = useDashboardStore.getState().summaries
-        const nextDashboardId =
-          requestedDashboardId ?? items.find((item) => item.is_favorite)?.id ?? items[0]?.id ?? null
-        if (nextDashboardId) {
-          await loadLists(nextDashboardId)
-        }
-      } catch {
-        toast.error('Failed to load dashboards.')
-      }
-    })()
-  }, [loadLists, loadSummaries, requestedDashboardId])
+  const [dashboardId, setDashboardId] = useInitialDashboardSelection(
+    requestedDashboardId,
+    'Failed to load dashboards.',
+  )
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const listSummariesQuery = useListSummaries(dashboardId)
+  const detailQuery = useListDetail(selectedId)
+  const lists = listSummariesQuery.data ?? EMPTY_LISTS
+  const { loading, error: listsError } = listSummariesQuery
+  const detail = detailQuery.data
+  const detailError = detailQuery.error
+  const autoOpenRequestedList = useEffectEvent((listId: string) => {
+    didAutoOpen.current = true
+    setSelectedId(listId)
+  })
+  const clearMissingSelectedList = useEffectEvent(() => {
+    setSelectedId(null)
+  })
 
   useEffect(() => {
     if (openListId && !loading && !didAutoOpen.current) {
-      didAutoOpen.current = true
-      void selectList(openListId)
+      autoOpenRequestedList(openListId)
     }
-  }, [openListId, loading, selectList])
+  }, [loading, openListId])
+
+  useEffect(() => {
+    if (!selectedId || loading) return
+    if (!lists.some((list) => list.id === selectedId)) {
+      clearMissingSelectedList()
+    }
+  }, [lists, loading, selectedId])
 
   useEffect(() => {
     if (!editingListName) return
@@ -112,7 +113,8 @@ export function ListsPage() {
     if (!name || !dashboardId) return
 
     try {
-      await createList(name, newType, dashboardId)
+      const list = await createList(name, newType, dashboardId)
+      setSelectedId(list.id)
       setNewName('')
       setShowCreate(false)
     } catch (err) {
@@ -123,10 +125,14 @@ export function ListsPage() {
   async function handleAddItem(event: React.SyntheticEvent) {
     event.preventDefault()
     const text = addText.trim()
-    if (!text) return
+    if (!text || !selectedId) return
     setAddText('')
-    await addItem(text)
+    await addListItem(selectedId, text)
     addInputRef.current?.focus()
+  }
+
+  function selectList(id: string) {
+    setSelectedId(id)
   }
 
   function startEditingListName(name: string) {
@@ -191,11 +197,15 @@ export function ListsPage() {
   async function confirmDeleteList(listId: string) {
     setConfirmingListDeleteId(null)
     await deleteList(listId)
+    if (selectedId === listId) {
+      setSelectedId(null)
+    }
   }
 
   async function confirmDeleteItem(itemId: string) {
     setConfirmingItemDeleteId(null)
-    await deleteItem(itemId)
+    if (!selectedId) return
+    await deleteListItem(selectedId, itemId)
   }
 
   function startEditingItem(itemId: string, text: string) {
@@ -220,7 +230,8 @@ export function ListsPage() {
       return
     }
     try {
-      await updateItemText(itemId, text)
+      if (!selectedId) return
+      await updateListItem(selectedId, itemId, { text })
       cancelEditingItem()
     } catch {
       // store handles toast
@@ -237,11 +248,9 @@ export function ListsPage() {
             disabled={dashboardsLoading || dashboards.length === 0}
             onChange={(event) => {
               const nextDashboardId = event.target.value || null
-              clearSelection()
+              setSelectedId(null)
               setShowCreate(false)
-              if (nextDashboardId) {
-                void loadLists(nextDashboardId)
-              }
+              setDashboardId(nextDashboardId)
             }}
             className="min-w-0 max-w-[11rem] sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
           >
@@ -331,6 +340,8 @@ export function ListsPage() {
 
           {loading ? (
             <p className="text-sm text-zinc-600 px-1">Loading…</p>
+          ) : listsError ? (
+            <p className="text-sm text-zinc-600 px-1">Could not load lists.</p>
           ) : filteredLists.length === 0 ? (
             <p className="text-sm text-zinc-600 px-1">
               {dashboardId
@@ -367,7 +378,11 @@ export function ListsPage() {
             </div>
           ) : !detail ? (
             <div className="flex-1 flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
+              {detailError ? (
+                <p className="text-sm text-zinc-600">Could not load this list.</p>
+              ) : (
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
+              )}
             </div>
           ) : (
             <div className="flex flex-col h-full bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
@@ -443,7 +458,13 @@ export function ListsPage() {
                         className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 border-b border-zinc-800 group last:border-0"
                       >
                         <button
-                          onClick={() => void toggleItem(item.id, !item.checked)}
+                          onClick={() =>
+                            selectedId
+                              ? void updateListItem(selectedId, item.id, {
+                                  checked: !item.checked,
+                                })
+                              : undefined
+                          }
                           className={cn(
                             'shrink-0 w-4 h-4 rounded border transition-colors flex items-center justify-center',
                             item.checked
@@ -486,7 +507,13 @@ export function ListsPage() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => void toggleItem(item.id, !item.checked)}
+                            onClick={() =>
+                              selectedId
+                                ? void updateListItem(selectedId, item.id, {
+                                    checked: !item.checked,
+                                  })
+                                : undefined
+                            }
                             className={cn(
                               'flex-1 min-w-0 text-left text-sm transition-colors',
                               item.checked
@@ -615,7 +642,7 @@ function ListSidebarRow({
   sidebarListNameDraft: string
   sidebarListNameInputRef: React.RefObject<HTMLInputElement | null>
   confirmingListDeleteId: string | null
-  onSelect: (id: string) => Promise<void>
+  onSelect: (id: string) => void
   onDraftChange: (value: string) => void
   onSubmitEdit: (listId: string) => Promise<void>
   onCancelEdit: () => void

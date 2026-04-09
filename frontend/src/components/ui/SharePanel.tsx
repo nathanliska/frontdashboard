@@ -250,9 +250,7 @@ export function SharePanel({
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-zinc-200 truncate">{item.principal_name}</p>
-                    <p className="text-xs text-zinc-500">
-                      {item.principal_type === 'user' ? 'Person' : 'Legacy group access'}
-                    </p>
+                    <p className="text-xs text-zinc-500">Person</p>
                   </div>
                   <select
                     value={item.role}

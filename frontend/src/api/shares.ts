@@ -1,5 +1,5 @@
 export type ShareRole = 'viewer' | 'editor'
-export type PrincipalType = 'user' | 'group'
+export type PrincipalType = 'user'
 
 export interface ResourceShare {
   id: string
