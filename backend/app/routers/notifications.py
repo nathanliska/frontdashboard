@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
-from app.models.activity import ActivityEvent
+from app.models.activity import ActivityEvent, EventType
 from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.notifications import ActivityEventResponse, NotificationResponse
@@ -17,6 +17,10 @@ from app.schemas.notifications import ActivityEventResponse, NotificationRespons
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 _PAGE_LIMIT = 50
+_HIDDEN_ACTIVITY_EVENT_TYPES = (
+    EventType.dashboard_updated.value,
+    EventType.list_item_checked.value,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -113,15 +117,15 @@ async def list_activity(
     db: AsyncSession = Depends(get_db),
 ) -> list[ActivityEventResponse]:
     """Return the caller's own activity feed."""
-    q = select(ActivityEvent).where(
-        ActivityEvent.group_id.is_(None),
-        ActivityEvent.actor_id == current_user.id,
-    )
+    q = select(ActivityEvent).where(ActivityEvent.actor_id == current_user.id)
 
-    # Keep dashboard.* events in the activity log for SSE/resync, but
-    # hide them from the user-facing Activity tab unless a specific
-    # event_type filter is requested.
-    q = q.where(ActivityEvent.event_type == event_type) if event_type is not None else q.where(not_(ActivityEvent.event_type.like("dashboard.%")))
+    # Hide structural churn by default so the Activity tab reads like a timeline,
+    # not a transport log. Callers can still request a specific event_type.
+    q = (
+        q.where(ActivityEvent.event_type == event_type)
+        if event_type is not None
+        else q.where(not_(ActivityEvent.event_type.in_(_HIDDEN_ACTIVITY_EVENT_TYPES)))
+    )
     if before_event_id is not None:
         q = q.where(ActivityEvent.event_id < before_event_id)
 

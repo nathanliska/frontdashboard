@@ -22,7 +22,7 @@ class ShareResponse(BaseModel):
     resource_id: uuid.UUID
     principal_type: PrincipalType
     principal_id: uuid.UUID
-    principal_name: str  # resolved: user.display_name or group.name
+    principal_name: str  # resolved: user.display_name
     role: ShareRole
     granted_by: uuid.UUID
     created_at: datetime

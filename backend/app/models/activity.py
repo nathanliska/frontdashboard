@@ -36,6 +36,9 @@ class EventType(enum.StrEnum):
     dashboard_created = "dashboard.created"
     dashboard_updated = "dashboard.updated"
     dashboard_deleted = "dashboard.deleted"
+    dashboard_share_added = "dashboard.share_added"
+    dashboard_share_updated = "dashboard.share_updated"
+    dashboard_share_removed = "dashboard.share_removed"
     # Calendar
     calendar_event_created = "calendar.event.created"
     calendar_event_updated = "calendar.event.updated"
@@ -48,7 +51,6 @@ class ActivityEvent(Base):
     __tablename__ = "activity_events"
     __table_args__ = (
         Index("ix_activity_events_event_id", "event_id"),
-        Index("ix_activity_events_group", "group_id", "created_at"),
         Index("ix_activity_events_actor", "actor_id", "created_at"),
     )
     __mapper_args__ = {"eager_defaults": True}
@@ -62,8 +64,6 @@ class ActivityEvent(Base):
         unique=True,
     )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    # Null for private-scope events (not broadcast to any group)
-    group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # actor_id + actor_display_name snapshot — name preserved after user leaves/deletes
     actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     actor_display_name: Mapped[str] = mapped_column(String(200), nullable=False)

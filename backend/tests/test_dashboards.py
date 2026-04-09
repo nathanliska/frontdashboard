@@ -40,8 +40,17 @@ async def test_default_dashboard_listing_and_shared_access(auth_client: AsyncCli
         dashboards = {item["id"]: item for item in list_resp.json()}
         assert owned_dashboard["id"] in dashboards
         assert dashboards[owned_dashboard["id"]]["access_description"] == "Owned by you"
+        assert dashboards[owned_dashboard["id"]]["can_edit"] is True
+        assert dashboards[owned_dashboard["id"]]["can_manage_shares"] is True
         assert dashboards[shared_dashboard["id"]]["access_description"] == "Shared directly with you"
         assert dashboards[shared_dashboard["id"]]["is_shared"] is True
+        assert dashboards[shared_dashboard["id"]]["can_edit"] is False
+        assert dashboards[shared_dashboard["id"]]["can_manage_shares"] is False
+
+        shared_detail = await auth_client.get(f"/api/dashboards/{shared_dashboard['id']}")
+        assert shared_detail.status_code == 200
+        assert shared_detail.json()["can_edit"] is False
+        assert shared_detail.json()["can_manage_shares"] is False
     finally:
         await owner.__aexit__(None, None, None)
 
@@ -295,6 +304,72 @@ async def test_removing_dashboard_share_clears_removed_users_preferences(auth_cl
         await shared_user.__aexit__(None, None, None)
 
 
+async def test_dashboard_share_mutations_emit_activity_events(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    dashboard = await create_dashboard(auth_client, name="Shared Activity Board")
+
+    shared_user = await register_client("dashboard-share-events@example.com", display_name="Shared User")
+    try:
+        shared_user_me = await current_user(shared_user)
+
+        set_csrf(auth_client)
+        add_share_resp = await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/shares",
+            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "viewer"},
+        )
+        assert add_share_resp.status_code == 201
+        share_id = add_share_resp.json()["id"]
+
+        set_csrf(auth_client)
+        update_share_resp = await auth_client.patch(
+            f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
+            json={"role": "editor"},
+        )
+        assert update_share_resp.status_code == 200
+
+        set_csrf(auth_client)
+        delete_share_resp = await auth_client.delete(
+            f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
+        )
+        assert delete_share_resp.status_code == 204
+
+        result = await db_session.execute(
+            select(ActivityEvent)
+            .where(
+                ActivityEvent.entity_type == "dashboard",
+                ActivityEvent.entity_id == dashboard["id"],
+                ActivityEvent.event_type.in_(
+                    [
+                        "dashboard.share_added",
+                        "dashboard.share_updated",
+                        "dashboard.share_removed",
+                    ]
+                ),
+            )
+            .order_by(ActivityEvent.event_id)
+        )
+        share_events = result.scalars().all()
+
+        assert [event.event_type for event in share_events] == [
+            "dashboard.share_added",
+            "dashboard.share_updated",
+            "dashboard.share_removed",
+        ]
+        assert [event.payload["share_action"] for event in share_events] == [
+            "added",
+            "updated",
+            "removed",
+        ]
+        assert all(event.payload["principal_id"] == shared_user_me["id"] for event in share_events)
+        assert share_events[0].payload["role"] == "viewer"
+        assert share_events[1].payload["role"] == "editor"
+        assert share_events[2].payload["role"] == "editor"
+    finally:
+        await shared_user.__aexit__(None, None, None)
+
+
 async def test_dashboard_mutations_emit_activity_events(
     auth_client: AsyncClient,
     db_session: AsyncSession,
@@ -346,3 +421,77 @@ async def test_dashboard_mutations_emit_activity_events(
     assert "dashboard.created" in event_types
     assert "dashboard.deleted" in event_types
     assert event_types.count("dashboard.updated") >= 4
+
+
+async def test_dashboard_update_events_include_current_version_and_client_mutation_id(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    dashboard = await create_dashboard(auth_client, name="Contract Board")
+    shared_user = await register_client("dashboard-contract-viewer@example.com", display_name="Viewer")
+
+    try:
+        shared_user_me = await current_user(shared_user)
+
+        set_csrf(auth_client)
+        layout_resp = await auth_client.put(
+            f"/api/dashboards/{dashboard['id']}/layout",
+            json={"layout": [{"i": "sample", "x": 0, "y": 0, "w": 4, "h": 3}], "version": 0},
+        )
+        assert layout_resp.status_code == 200
+
+        set_csrf(auth_client)
+        add_widget_resp = await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/widgets",
+            json={"widget_type": "clock", "config": {"title": "UTC Clock"}},
+        )
+        assert add_widget_resp.status_code == 201
+        widget_id = add_widget_resp.json()["widgets"][0]["id"]
+
+        set_csrf(auth_client)
+        rename_resp = await auth_client.patch(
+            f"/api/dashboards/{dashboard['id']}",
+            headers={"X-Client-Mutation-Id": "rename-123"},
+            json={"name": "Contract Board Renamed"},
+        )
+        assert rename_resp.status_code == 200
+
+        set_csrf(auth_client)
+        update_widget_resp = await auth_client.patch(
+            f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
+            headers={"X-Client-Mutation-Id": "widget-123"},
+            json={"config": {"title": "Updated Clock"}},
+        )
+        assert update_widget_resp.status_code == 200
+
+        set_csrf(auth_client)
+        add_share_resp = await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/shares",
+            headers={"X-Client-Mutation-Id": "share-123"},
+            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "viewer"},
+        )
+        assert add_share_resp.status_code == 201
+
+        result = await db_session.execute(
+            select(ActivityEvent)
+            .where(
+                ActivityEvent.entity_type == "dashboard",
+                ActivityEvent.entity_id == dashboard["id"],
+            )
+            .order_by(ActivityEvent.event_id)
+        )
+        events = result.scalars().all()
+
+        rename_event = next(event for event in events if event.payload.get("client_mutation_id") == "rename-123")
+        widget_event = next(event for event in events if event.payload.get("client_mutation_id") == "widget-123")
+        share_event = next(event for event in events if event.payload.get("client_mutation_id") == "share-123")
+
+        assert rename_event.entity_version == 2
+        assert rename_event.payload["changed_fields"] == ["name"]
+        assert widget_event.entity_version == 2
+        assert widget_event.payload["changed_fields"] == ["widgets"]
+        assert share_event.event_type == "dashboard.share_added"
+        assert share_event.entity_version == 2
+        assert share_event.payload["changed_fields"] == ["shares"]
+    finally:
+        await shared_user.__aexit__(None, None, None)

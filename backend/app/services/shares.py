@@ -365,32 +365,6 @@ async def create_share(
     return share
 
 
-def list_group_share_ids(shares: list[ResourceShare]) -> list[uuid.UUID]:
-    return list({share.principal_id for share in shares if share.principal_type == PrincipalType.group})
-
-
-def primary_group_share_id(shares: list[ResourceShare]) -> uuid.UUID | None:
-    group_ids = list_group_share_ids(shares)
-    return group_ids[0] if len(group_ids) == 1 else None
-
-
-async def resource_is_shared_with_group(
-    resource_type: ResourceType,
-    resource_id: uuid.UUID,
-    group_id: uuid.UUID,
-    db: AsyncSession,
-) -> bool:
-    result = await db.execute(
-        select(ResourceShare.id).where(
-            ResourceShare.resource_type == resource_type,
-            ResourceShare.resource_id == resource_id,
-            ResourceShare.principal_type == PrincipalType.group,
-            ResourceShare.principal_id == group_id,
-        )
-    )
-    return result.scalar_one_or_none() is not None
-
-
 async def resource_is_visible_to_principal(
     resource_type: ResourceType,
     resource_id: uuid.UUID,
@@ -400,11 +374,9 @@ async def resource_is_visible_to_principal(
 ) -> bool:
     """Whether a resource is directly visible to a principal in audience terms.
 
-    User principals can satisfy visibility by owning the resource or by having a
-    direct user share. Group principals require a direct group share.
+    A user principal can satisfy visibility by owning the resource or by having
+    a direct user share.
     """
-    if principal_type == PrincipalType.group:
-        return False
 
     owner_query = None
     if resource_type == ResourceType.list:
@@ -450,7 +422,6 @@ async def resolve_share_responses(
 
     result = []
     for s in shares:
-        name = users_by_id.get(s.principal_id, "Unknown") if s.principal_type == PrincipalType.user else "Legacy group access"
         result.append(
             ShareResponse(
                 id=s.id,
@@ -458,7 +429,7 @@ async def resolve_share_responses(
                 resource_id=s.resource_id,
                 principal_type=s.principal_type,
                 principal_id=s.principal_id,
-                principal_name=name,
+                principal_name=users_by_id.get(s.principal_id, "Unknown"),
                 role=s.role,
                 granted_by=s.granted_by,
                 created_at=s.created_at,

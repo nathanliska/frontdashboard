@@ -134,7 +134,7 @@ async def test_no_share_returns_404_for_other_user(auth_client: AsyncClient) -> 
 
 
 async def test_dashboard_share_crud_endpoints(auth_client: AsyncClient) -> None:
-    """Dashboard share CRUD (list shares are dashboard-managed)."""
+    """Dashboard share CRUD works for dashboards that own lists."""
     dashboard = await _make_dashboard(auth_client)
 
     other = await _register_client("share-crud@example.com")

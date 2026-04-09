@@ -15,7 +15,6 @@ def activity_to_sse_dict(event: ActivityEvent) -> dict:
     payload = {
         "event_id": event.event_id,
         "event_type": event.event_type,
-        "group_id": str(event.group_id) if event.group_id else None,
         "entity_type": event.entity_type,
         "entity_id": str(event.entity_id),
         "entity_version": event.entity_version,
@@ -61,7 +60,6 @@ def notification_to_sse_dict(notif: Notification) -> dict:
         "type": notif.type,
         "title": notif.title,
         "body": notif.body,
-        "group_id": str(notif.group_id) if notif.group_id else None,
         "reference_type": notif.reference_type,
         "reference_id": str(notif.reference_id) if notif.reference_id else None,
         "read_at": notif.read_at.isoformat() if notif.read_at else None,

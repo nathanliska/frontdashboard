@@ -51,7 +51,6 @@ async def _broadcast_dashboard_event(
 ) -> None:
     await manager.broadcast(
         message,
-        group_id=None,
         user_ids=_dashboard_user_ids(dashboard, shares),
         actor_id=actor_id,
     )
@@ -159,7 +158,6 @@ async def create_event(
         actor_display_name=current_user.display_name,
         entity_type="calendar_event",
         entity_id=event.id,
-        group_id=None,
         payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)},
     )
     event_message = await build_activity_sse_dict(db, activity)
@@ -276,7 +274,6 @@ async def update_event(
         actor_display_name=current_user.display_name,
         entity_type="calendar_event",
         entity_id=event.id,
-        group_id=None,
         payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)},
     )
     event_message = await build_activity_sse_dict(db, activity)
@@ -332,7 +329,6 @@ async def update_occurrence(
         actor_display_name=current_user.display_name,
         entity_type="calendar_event",
         entity_id=event.id,
-        group_id=None,
         payload={"title": event.title, "occurrence_start": body.occurrence_start.astimezone(UTC).isoformat(), "dashboard_id": str(dashboard.id)},
     )
     event_message = await build_activity_sse_dict(db, activity)
@@ -371,7 +367,6 @@ async def delete_event(
         actor_display_name=current_user.display_name,
         entity_type="calendar_event",
         entity_id=event.id,
-        group_id=None,
         payload={"title": event.title, "dashboard_id": str(dashboard.id)},
     )
     event.deleted_at = datetime.now(UTC)
