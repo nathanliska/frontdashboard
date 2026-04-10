@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   calendarWindow,
   dateKey,
+  formatCalendarOccurrenceCellLabel,
+  formatCalendarOccurrenceCellTitle,
   isMultiDayOccurrence,
   monthGridDays,
   occursOnDate,
@@ -70,5 +72,63 @@ describe('calendar utils', () => {
     }
 
     expect(isMultiDayOccurrence(sameDayOccurrence)).toBe(false)
+  })
+
+  it('formats shared calendar cell labels for single-day events', () => {
+    const start = new Date(2026, 3, 10, 14, 0)
+    const end = new Date(2026, 3, 10, 15, 0)
+    const occurrence = {
+      event_id: 'event-3',
+      occurrence_start: start.toISOString(),
+      occurrence_end: end.toISOString(),
+      original_start: start.toISOString(),
+      title: 'Dentist',
+      description: null,
+      location: null,
+      timezone: 'UTC',
+      all_day: false,
+      created_by: 'user-1',
+      recurring: false,
+      is_exception: false,
+    }
+
+    expect(formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 10, 12))).toBe(
+      '2:00 PM Dentist',
+    )
+    expect(
+      formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 10, 12), 'compact'),
+    ).toBe('2PM Dentist')
+    expect(formatCalendarOccurrenceCellTitle(occurrence, new Date(2026, 3, 10, 12))).toBe(
+      'Dentist: 2:00 PM - 3:00 PM',
+    )
+  })
+
+  it('formats shared calendar cell labels for multi-day events', () => {
+    const start = new Date(2026, 3, 10, 23, 30)
+    const end = new Date(2026, 3, 11, 1, 0)
+    const occurrence = {
+      event_id: 'event-4',
+      occurrence_start: start.toISOString(),
+      occurrence_end: end.toISOString(),
+      original_start: start.toISOString(),
+      title: 'Late shift',
+      description: null,
+      location: null,
+      timezone: 'UTC',
+      all_day: false,
+      created_by: 'user-1',
+      recurring: false,
+      is_exception: false,
+    }
+
+    expect(formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 10, 12))).toBe(
+      'Starts 11:30 PM Late shift',
+    )
+    expect(
+      formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 11, 12), 'compact'),
+    ).toBe('End 1AM Late shift')
+    expect(formatCalendarOccurrenceCellTitle(occurrence, new Date(2026, 3, 11, 12))).toBe(
+      'Ends 1:00 AM Late shift (Apr 10, 11:30 PM - Apr 11, 1:00 AM)',
+    )
   })
 })
