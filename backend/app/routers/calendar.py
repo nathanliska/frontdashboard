@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -181,6 +181,8 @@ async def list_occurrences(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="window_end must be timezone-aware")
     if window_end <= window_start:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="window_end must be after window_start")
+    if window_end - window_start > timedelta(days=366):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="window cannot exceed 366 days")
 
     accessible_dashboard_ids = await list_accessible_dashboard_ids(current_user, db)
     if not accessible_dashboard_ids:

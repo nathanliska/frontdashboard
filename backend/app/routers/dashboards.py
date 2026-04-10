@@ -591,7 +591,7 @@ async def delete_dashboard(
         client_mutation_id=client_mutation_id,
     )
 
-    list_result = await db.execute(select(List.id).where(List.dashboard_id == dashboard.id))
+    list_result = await db.execute(select(List.id).where(List.dashboard_id == dashboard.id, List.deleted_at.is_(None)))
     list_ids = [row[0] for row in list_result.all()]
     for list_id in list_ids:
         await cleanup_resource_shares(ResourceType.list, list_id, db)
@@ -599,7 +599,7 @@ async def delete_dashboard(
         await db.execute(delete(ListItem).where(ListItem.list_id.in_(list_ids)))
         await db.execute(delete(List).where(List.id.in_(list_ids)))
 
-    event_result = await db.execute(select(CalendarEvent.id).where(CalendarEvent.dashboard_id == dashboard.id))
+    event_result = await db.execute(select(CalendarEvent.id).where(CalendarEvent.dashboard_id == dashboard.id, CalendarEvent.deleted_at.is_(None)))
     event_ids = [row[0] for row in event_result.all()]
     for event_id in event_ids:
         await cleanup_resource_shares(ResourceType.calendar_event, event_id, db)

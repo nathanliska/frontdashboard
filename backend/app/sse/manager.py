@@ -14,11 +14,13 @@ import contextlib
 import uuid
 from dataclasses import dataclass, field
 
+_QUEUE_MAX = 256
+
 
 @dataclass
 class _Client:
     user_id: uuid.UUID
-    queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=_QUEUE_MAX))
 
 
 class SseManager:
@@ -48,14 +50,19 @@ class SseManager:
         Targeted events are delivered to every client whose user_id is in the
         supplied audience set. Private events are delivered only to the actor.
         """
-        # Snapshot the list so mutations during awaits don't cause issues
+        # Snapshot the list so mutations during iteration don't cause issues.
         for client in list(self._clients):
             if user_ids:
-                if client.user_id in user_ids:
-                    await client.queue.put(message)
-            else:
-                if client.user_id == actor_id:
-                    await client.queue.put(message)
+                if client.user_id not in user_ids:
+                    continue
+            elif client.user_id != actor_id:
+                continue
+            try:
+                client.queue.put_nowait(message)
+            except asyncio.QueueFull:
+                # Client is stalled — drop it so the generator's finally block
+                # calls disconnect() when it next times out and detects closure.
+                self.disconnect(client)
 
 
 # Module-level singleton used by routers (Step 12 wires this up)
