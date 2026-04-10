@@ -29,7 +29,7 @@ def expand_event_occurrences(
     window_end: datetime,
 ) -> list[ExpandedOccurrence]:
     duration = event.ends_at - event.starts_at
-    starts = [event.starts_at] if not event.recurrence else list(_iter_recurrence_starts(event, window_end))
+    starts = [event.starts_at] if not event.recurrence else list(_iter_recurrence_starts(event, window_start, window_end))
 
     occurrences: list[ExpandedOccurrence] = []
     for start in starts:
@@ -70,7 +70,7 @@ def _build_occurrence(
     )
 
 
-def _iter_recurrence_starts(event: CalendarEvent, window_end: datetime):
+def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window_end: datetime):
     rule = event.recurrence or {}
     frequency = str(rule["frequency"])
     interval = int(rule.get("interval", 1))
@@ -100,10 +100,21 @@ def _iter_recurrence_starts(event: CalendarEvent, window_end: datetime):
         return True
 
     if frequency == "daily":
-        current_date = base_local.date()
+        # Skip ahead to near window_start when there's no count limit (count-limited
+        # events must iterate from the beginning to track emitted correctly).
+        if count_limit is None and window_start > event.starts_at:
+            days_ahead = (window_start.date() - base_local.date()).days
+            # Step back enough intervals to cover the event duration, so occurrences
+            # that started before window_start but extend into it are not missed.
+            duration_days = (event.ends_at - event.starts_at).days
+            intervals_back = max(1, (duration_days + interval - 1) // interval)
+            intervals_to_skip = max(0, (days_ahead // interval) - intervals_back)
+            current_date = base_local.date() + timedelta(days=intervals_to_skip * interval)
+        else:
+            current_date = base_local.date()
         while True:
             candidate_utc = _local_to_utc(tz, current_date, local_time)
-            if candidate_utc >= window_end and (until is None or candidate_utc > until):
+            if candidate_utc >= window_end:
                 break
             if should_emit(candidate_utc):
                 yield candidate_utc
@@ -115,23 +126,25 @@ def _iter_recurrence_starts(event: CalendarEvent, window_end: datetime):
     if frequency == "weekly":
         weekdays = sorted(set(int(day) for day in rule.get("by_weekday", [base_local.weekday()])))
         week_start = base_local.date() - timedelta(days=base_local.weekday())
-        week_index = 0
+        # Skip ahead to near window_start when there's no count limit.
+        if count_limit is None and window_start > event.starts_at:
+            days_ahead = max(0, (window_start.date() - week_start).days)
+            duration_days = (event.ends_at - event.starts_at).days
+            intervals_back = max(1, (duration_days + 7 * interval - 1) // (7 * interval))
+            week_index = max(0, (days_ahead // (7 * interval)) - intervals_back)
+        else:
+            week_index = 0
         while True:
             current_week_start = week_start + timedelta(weeks=week_index * interval)
-            produced_in_window = False
             for weekday in weekdays:
                 candidate_date = current_week_start + timedelta(days=weekday)
                 candidate_utc = _local_to_utc(tz, candidate_date, local_time)
                 if candidate_utc >= window_end:
-                    produced_in_window = True
+                    return
                 if should_emit(candidate_utc):
                     yield candidate_utc
                 elif count_limit is not None and emitted >= count_limit:
                     return
-            if produced_in_window and until is None:
-                break
-            if until is not None and _local_to_utc(tz, current_week_start + timedelta(days=max(weekdays)), local_time) > until:
-                break
             week_index += 1
         return
 
@@ -144,7 +157,7 @@ def _iter_recurrence_starts(event: CalendarEvent, window_end: datetime):
             if candidate_date is None:
                 continue
             candidate_utc = _local_to_utc(tz, candidate_date, local_time)
-            if candidate_utc >= window_end and (until is None or candidate_utc > until):
+            if candidate_utc >= window_end:
                 break
             if should_emit(candidate_utc):
                 yield candidate_utc
@@ -160,7 +173,7 @@ def _iter_recurrence_starts(event: CalendarEvent, window_end: datetime):
             if candidate_date is None:
                 continue
             candidate_utc = _local_to_utc(tz, candidate_date, local_time)
-            if candidate_utc >= window_end and (until is None or candidate_utc > until):
+            if candidate_utc >= window_end:
                 break
             if should_emit(candidate_utc):
                 yield candidate_utc

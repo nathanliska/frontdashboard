@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -26,23 +26,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-_SECURITY_HEADERS = {
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-}
-
-
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next: object) -> Response:
-    response: Response = await call_next(request)  # type: ignore[operator]
-    for header, value in _SECURITY_HEADERS.items():
-        response.headers[header] = value
-    return response
-
 
 app.include_router(auth_router)
 app.include_router(calendar_router)

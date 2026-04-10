@@ -13,10 +13,11 @@ RUN uv sync --frozen
 COPY app/ app/
 COPY alembic/ alembic/
 COPY alembic.ini .
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=6 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
 
-CMD uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+CMD alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
