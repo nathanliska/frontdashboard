@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Clock3 } from 'lucide-react'
 import { type CalendarOccurrence } from '../../../api/calendar'
+import { CalendarDayNumber } from '../../calendar/CalendarDayNumber'
 import { useCalendarOccurrences } from '../../../resources/calendarData'
 import { useDashboardStore } from '../../../stores/dashboard'
 import { cn } from '../../../utils/cn'
 import {
+  CALENDAR_WEEKDAY_LABELS,
+  CALENDAR_WEEKDAY_LABELS_COMPACT,
   addDays,
   calendarWindow,
   dateKey,
+  formatCalendarOccurrenceCellLabel,
+  formatCalendarOccurrenceCellTitle,
   formatDayNumber,
   formatMonthLabel,
   formatOccurrenceSpan,
@@ -264,7 +269,7 @@ function WeekCalendarWidget({
                 {dayOccurrences.slice(0, compact ? 2 : 3).map((occurrence) => (
                   <div
                     key={`${occurrence.event_id}:${occurrence.original_start}`}
-                    title={occurrence.title}
+                    title={formatCalendarOccurrenceCellTitle(occurrence, day)}
                     className={cn(
                       'rounded px-1.5 py-1 text-[10px] leading-tight truncate',
                       occurrence.recurring
@@ -272,7 +277,9 @@ function WeekCalendarWidget({
                         : 'bg-sky-500/12 text-sky-300',
                     )}
                   >
-                    {compact ? occurrence.title : buildWeekCellLabel(occurrence, day)}
+                    {compact
+                      ? occurrence.title
+                      : formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
                   </div>
                 ))}
                 {dayOccurrences.length > (compact ? 2 : 3) && (
@@ -302,9 +309,7 @@ function MonthCalendarWidget({
   ultraCompact: boolean
   monthDate: Date
 }) {
-  const weekdayLabels = compact
-    ? ['M', 'T', 'W', 'T', 'F', 'S', 'S']
-    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const weekdayLabels = compact ? CALENDAR_WEEKDAY_LABELS_COMPACT : CALENDAR_WEEKDAY_LABELS
 
   return (
     <div className="h-full flex flex-col">
@@ -345,20 +350,20 @@ function MonthCalendarWidget({
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
             >
-              <div
-                className={cn(
-                  ultraCompact ? 'text-[9px] mb-0.5' : 'text-[10px] mb-1',
-                  isToday ? 'text-zinc-100' : 'text-zinc-400',
-                )}
-              >
-                {formatDayNumber(day)}
+              <div className={cn(ultraCompact ? 'mb-0.5' : 'mb-1')}>
+                <CalendarDayNumber
+                  value={formatDayNumber(day)}
+                  isToday={isToday}
+                  dimmed={!inMonth}
+                  compact={ultraCompact}
+                />
               </div>
               {ultraCompact ? (
                 <div className="flex items-center gap-0.5">
                   {dayOccurrences.slice(0, 2).map((occurrence) => (
                     <span
                       key={`${occurrence.event_id}:${occurrence.original_start}`}
-                      title={occurrence.title}
+                      title={formatCalendarOccurrenceCellTitle(occurrence, day)}
                       className={cn(
                         'h-1.5 w-1.5 rounded-full',
                         occurrence.recurring ? 'bg-emerald-300' : 'bg-sky-300',
@@ -374,7 +379,7 @@ function MonthCalendarWidget({
                   {visible.map((occurrence) => (
                     <div
                       key={`${occurrence.event_id}:${occurrence.original_start}`}
-                      title={occurrence.title}
+                      title={formatCalendarOccurrenceCellTitle(occurrence, day)}
                       className={cn(
                         'rounded px-1 py-0.5 text-[10px] truncate',
                         occurrence.recurring
@@ -382,7 +387,7 @@ function MonthCalendarWidget({
                           : 'bg-sky-500/12 text-sky-300',
                       )}
                     >
-                      {buildMonthCellLabel(occurrence, day)}
+                      {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
                     </div>
                   ))}
                   {dayOccurrences.length > visible.length && (
@@ -423,46 +428,4 @@ function getWidgetWindow(
 
   const { start, end } = calendarWindow(today)
   return { windowStart: new Date(start), windowEnd: new Date(end) }
-}
-
-function buildWeekCellLabel(occurrence: CalendarOccurrence, day: Date): string {
-  if (occurrence.all_day) return occurrence.title
-  if (isMultiDayOccurrence(occurrence)) {
-    const dayId = dateKey(day)
-    const startId = dateKey(occurrence.occurrence_start)
-    const endId = dateKey(occurrence.occurrence_end)
-    if (dayId === startId) return `Start ${occurrence.title}`
-    if (dayId === endId) return `End ${occurrence.title}`
-    return `Cont. ${occurrence.title}`
-  }
-  return `${shortTime(occurrence.occurrence_start)} ${occurrence.title}`
-}
-
-function buildMonthCellLabel(occurrence: CalendarOccurrence, day: Date): string {
-  if (occurrence.all_day) return occurrence.title
-  if (isMultiDayOccurrence(occurrence)) {
-    const dayId = dateKey(day)
-    const startId = dateKey(occurrence.occurrence_start)
-    const endId = dateKey(occurrence.occurrence_end)
-    if (dayId === startId) return `Start ${occurrence.title}`
-    if (dayId === endId) return `End ${occurrence.title}`
-    return `Cont. ${occurrence.title}`
-  }
-  return `${compactTime(occurrence.occurrence_start)} ${occurrence.title}`
-}
-
-function shortTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
-function compactTime(value: string): string {
-  const d = new Date(value)
-  let h = d.getHours()
-  const m = d.getMinutes()
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  h = h % 12 || 12
-  return m === 0 ? `${h}${ampm}` : `${h}:${String(m).padStart(2, '0')}${ampm}`
 }

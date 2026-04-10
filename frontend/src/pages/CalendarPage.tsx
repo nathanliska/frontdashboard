@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { type CalendarOccurrence } from '../api/calendar'
+import { CalendarDayNumber } from '../components/calendar/CalendarDayNumber'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import {
   createCalendarEvent,
@@ -24,14 +25,16 @@ import { confirm } from '../stores/confirm'
 import { useDashboardStore } from '../stores/dashboard'
 import { cn } from '../utils/cn'
 import {
+  CALENDAR_WEEKDAY_LABELS,
   calendarWindow,
   dateKey,
   defaultLocalDateTime,
+  formatCalendarOccurrenceCellLabel,
+  formatCalendarOccurrenceCellTitle,
   formatDayNumber,
   formatHeadingDate,
   formatMonthLabel,
   formatOccurrenceSpan,
-  formatOccurrenceTime,
   isMultiDayOccurrence,
   monthGridDays,
   occurrencesForDate,
@@ -534,14 +537,18 @@ export function CalendarPage() {
           </div>
 
           <div className="grid grid-cols-7 border-b border-zinc-800">
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label) => (
-              <div
-                key={label}
-                className="px-1.5 sm:px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-zinc-500"
-              >
-                {label}
+            <div className="col-span-7 px-2 sm:px-3 pt-2 sm:pt-3">
+              <div className="grid grid-cols-7 gap-1">
+                {CALENDAR_WEEKDAY_LABELS.map((label) => (
+                  <div
+                    key={label}
+                    className="px-1 py-1 text-center text-[10px] uppercase tracking-[0.18em] text-zinc-500"
+                  >
+                    {label}
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
 
           {loading ? (
@@ -549,77 +556,81 @@ export function CalendarPage() {
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
             </div>
           ) : (
-            <div className="grid grid-cols-7 auto-rows-fr">
-              {monthDays.map((day) => {
-                const dayOccurrences = occurrencesForDate(occurrences, day)
-                const inMonth = day.getMonth() === monthCursor.getMonth()
-                const isSelected = dateKey(day) === dateKey(selectedDate)
-                const isToday = dateKey(day) === dateKey(new Date())
-                return (
-                  <button
-                    key={day.toISOString()}
-                    type="button"
-                    onClick={() => setSelectedDate(startOfDay(day))}
-                    className={cn(
-                      'min-h-16 sm:min-h-24 lg:min-h-28 border-r border-b border-zinc-800 p-1.5 sm:p-2 text-left align-top transition-colors',
-                      'hover:bg-zinc-800/60',
-                      !inMonth && 'bg-zinc-950/70 text-zinc-700',
-                      isSelected && 'bg-zinc-800/80',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
+            <div className="px-2 pb-2 sm:px-3 sm:pb-3">
+              <div className="grid grid-cols-7 auto-rows-fr gap-1">
+                {monthDays.map((day) => {
+                  const dayOccurrences = occurrencesForDate(occurrences, day)
+                  const inMonth = day.getMonth() === monthCursor.getMonth()
+                  const isSelected = dateKey(day) === dateKey(selectedDate)
+                  const isToday = dateKey(day) === dateKey(new Date())
+                  const visibleOccurrences = dayOccurrences.slice(0, inMonth ? 2 : 1)
+                  return (
+                    <button
+                      key={day.toISOString()}
+                      type="button"
+                      onClick={() => setSelectedDate(startOfDay(day))}
+                      className="group appearance-none bg-transparent p-0 text-left"
+                    >
+                      <div
                         className={cn(
-                          'inline-flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full text-xs sm:text-sm',
-                          inMonth ? 'text-zinc-200' : 'text-zinc-600',
-                          isToday && 'bg-zinc-100 text-zinc-950',
+                          'flex h-full min-h-16 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-1 transition-colors sm:min-h-24 lg:min-h-28',
+                          'group-hover:border-zinc-700 group-hover:bg-zinc-900/80',
+                          'group-focus-visible:border-zinc-400 group-focus-visible:ring-1 group-focus-visible:ring-zinc-400/40',
+                          !inMonth && 'opacity-45',
+                          isToday && 'border-zinc-600 bg-zinc-900',
+                          isSelected && 'border-sky-500/40 bg-sky-500/[0.06]',
                         )}
                       >
-                        {formatDayNumber(day)}
-                      </span>
-                      {dayOccurrences.length > 0 && (
-                        <span className="text-[10px] text-zinc-500">{dayOccurrences.length}</span>
-                      )}
-                    </div>
-                    <div className="mt-1 sm:mt-2 space-y-1">
-                      {dayOccurrences
-                        .slice(0, day.getMonth() === monthCursor.getMonth() ? 2 : 1)
-                        .map((occurrence) => (
-                          <div
-                            key={`${occurrence.event_id}:${occurrence.original_start}`}
-                            className={cn(
-                              'rounded-md px-1.5 sm:px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] leading-tight truncate',
-                              occurrence.recurring
-                                ? 'bg-emerald-500/12 text-emerald-300'
-                                : 'bg-sky-500/12 text-sky-300',
-                            )}
-                            title={buildDayCellTitle(occurrence, day)}
-                          >
-                            {buildDayCellLabel(occurrence, day)}
-                          </div>
-                        ))}
-                      {dayOccurrences.length >
-                        (day.getMonth() === monthCursor.getMonth() ? 2 : 1) && (
-                        <p className="px-0.5 text-[10px] text-zinc-500">
-                          +
-                          {dayOccurrences.length -
-                            (day.getMonth() === monthCursor.getMonth() ? 2 : 1)}{' '}
-                          more
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                )
-              })}
+                        <div className="mb-1 flex items-start justify-between gap-1">
+                          <CalendarDayNumber
+                            value={formatDayNumber(day)}
+                            isToday={isToday}
+                            isSelected={isSelected}
+                            dimmed={!inMonth}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          {visibleOccurrences.map((occurrence) => (
+                            <div
+                              key={`${occurrence.event_id}:${occurrence.original_start}`}
+                              className={cn(
+                                'rounded px-1 py-0.5 text-[10px] truncate',
+                                occurrence.recurring
+                                  ? 'bg-emerald-500/12 text-emerald-300'
+                                  : 'bg-sky-500/12 text-sky-300',
+                              )}
+                              title={formatCalendarOccurrenceCellTitle(occurrence, day)}
+                            >
+                              {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                            </div>
+                          ))}
+                          {dayOccurrences.length > visibleOccurrences.length && (
+                            <p className="text-[10px] text-zinc-500">
+                              +{dayOccurrences.length - visibleOccurrences.length}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           )}
         </section>
 
         <section className="min-h-0 rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden flex flex-col">
           <div className="border-b border-zinc-800 px-3 sm:px-4 py-4">
-            <h2 className="text-sm font-semibold text-zinc-100">
-              {formatHeadingDate(selectedDate)}
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-zinc-100">
+                {formatHeadingDate(selectedDate)}
+              </h2>
+              {dateKey(selectedDate) === dateKey(new Date()) && (
+                <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-400">
+                  Today
+                </span>
+              )}
+            </div>
             <p className="text-xs text-zinc-500">
               {selectedOccurrences.length === 0
                 ? 'No scheduled events'
@@ -675,36 +686,6 @@ function EventBadge({ children }: { children: ReactNode }) {
 
 function toMondayWeekday(jsDay: number): number {
   return (jsDay + 6) % 7
-}
-
-function shortTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
-function buildDayCellLabel(occurrence: CalendarOccurrence, day: Date): string {
-  if (occurrence.all_day) return `All day ${occurrence.title}`
-  if (!isMultiDayOccurrence(occurrence))
-    return `${shortTime(occurrence.occurrence_start)} ${occurrence.title}`
-
-  const dayId = dateKey(day)
-  const startId = dateKey(occurrence.occurrence_start)
-  const endId = dateKey(occurrence.occurrence_end)
-
-  if (dayId === startId)
-    return `Starts ${shortTime(occurrence.occurrence_start)} ${occurrence.title}`
-  if (dayId === endId) return `Ends ${shortTime(occurrence.occurrence_end)} ${occurrence.title}`
-  return `Continues ${occurrence.title}`
-}
-
-function buildDayCellTitle(occurrence: CalendarOccurrence, day: Date): string {
-  if (!isMultiDayOccurrence(occurrence)) {
-    return `${occurrence.title}: ${formatOccurrenceTime(occurrence.occurrence_start, occurrence.occurrence_end, occurrence.all_day)}`
-  }
-
-  return `${buildDayCellLabel(occurrence, day)} (${formatOccurrenceSpan(occurrence.occurrence_start, occurrence.occurrence_end, occurrence.all_day)})`
 }
 
 function getDurationSummary(startsAt: string, endsAt: string): string | null {

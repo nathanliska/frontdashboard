@@ -1,5 +1,8 @@
 import type { CalendarOccurrence } from '../api/calendar'
 
+export const CALENDAR_WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+export const CALENDAR_WEEKDAY_LABELS_COMPACT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const
+
 export function addDays(date: Date, days: number): Date {
   const next = new Date(date)
   next.setDate(next.getDate() + days)
@@ -92,6 +95,69 @@ export function formatOccurrenceSpan(start: string, end: string, allDay: boolean
   })
 
   return `${dateTimeFormatter.format(startDate)} - ${dateTimeFormatter.format(endDate)}`
+}
+
+type CalendarOccurrenceCellLabelVariant = 'full' | 'compact'
+
+function formatCellTime(value: string, variant: CalendarOccurrenceCellLabelVariant): string {
+  if (variant === 'compact') {
+    const d = new Date(value)
+    let h = d.getHours()
+    const m = d.getMinutes()
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    h = h % 12 || 12
+    return m === 0 ? `${h}${ampm}` : `${h}:${String(m).padStart(2, '0')}${ampm}`
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+export function formatCalendarOccurrenceCellLabel(
+  occurrence: CalendarOccurrence,
+  day: Date,
+  variant: CalendarOccurrenceCellLabelVariant = 'full',
+): string {
+  if (occurrence.all_day) {
+    return variant === 'compact' ? occurrence.title : `All day ${occurrence.title}`
+  }
+
+  if (!isMultiDayOccurrence(occurrence)) {
+    return `${formatCellTime(occurrence.occurrence_start, variant)} ${occurrence.title}`
+  }
+
+  const dayId = dateKey(day)
+  const startId = dateKey(occurrence.occurrence_start)
+  const endId = dateKey(occurrence.occurrence_end)
+
+  if (dayId === startId) {
+    return `${variant === 'compact' ? 'Start' : 'Starts'} ${formatCellTime(occurrence.occurrence_start, variant)} ${occurrence.title}`
+  }
+  if (dayId === endId) {
+    return `${variant === 'compact' ? 'End' : 'Ends'} ${formatCellTime(occurrence.occurrence_end, variant)} ${occurrence.title}`
+  }
+  return `${variant === 'compact' ? 'Cont.' : 'Continues'} ${occurrence.title}`
+}
+
+export function formatCalendarOccurrenceCellTitle(
+  occurrence: CalendarOccurrence,
+  day: Date,
+): string {
+  if (!isMultiDayOccurrence(occurrence)) {
+    return `${occurrence.title}: ${formatOccurrenceTime(
+      occurrence.occurrence_start,
+      occurrence.occurrence_end,
+      occurrence.all_day,
+    )}`
+  }
+
+  return `${formatCalendarOccurrenceCellLabel(occurrence, day)} (${formatOccurrenceSpan(
+    occurrence.occurrence_start,
+    occurrence.occurrence_end,
+    occurrence.all_day,
+  )})`
 }
 
 export function toLocalInputValue(date: Date): string {
