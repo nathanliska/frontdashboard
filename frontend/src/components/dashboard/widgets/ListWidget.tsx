@@ -3,7 +3,7 @@ import { Check, Plus } from 'lucide-react'
 import { type ListItem } from '../../../api/lists'
 import { addListItem, updateListItem, useListDetail } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
-import { cn } from '../../../utils/cn'
+import { cn } from '../../../utils/shared/cn'
 
 export function ListWidget({
   listId,
@@ -14,7 +14,6 @@ export function ListWidget({
   widgetId: string
   config: Record<string, unknown>
 }) {
-  const [addText, setAddText] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(300)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
@@ -49,11 +48,16 @@ export function ListWidget({
     await updateListItem(listId, item.id, { checked: !item.checked })
   }
 
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault()
-    if (!addText.trim() || !detail) return
-    await addListItem(listId, addText.trim())
-    setAddText('')
+  async function handleAdd(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!detail) return
+
+    const formData = new FormData(event.currentTarget)
+    const text = String(formData.get('item-text') ?? '').trim()
+    if (!text) return
+
+    await addListItem(listId, text)
+    event.currentTarget.reset()
   }
 
   if (error) {
@@ -136,24 +140,22 @@ export function ListWidget({
       {/* Add item */}
       {!isTiny && (
         <form
-          onSubmit={(e) => void handleAdd(e)}
+          onSubmit={(event) => void handleAdd(event)}
           className="flex items-center gap-1.5 shrink-0 border-t border-zinc-800 pt-2"
         >
           <input
-            value={addText}
-            onChange={(e) => setAddText(e.target.value)}
+            name="item-text"
+            required
             placeholder="Add item…"
             className="flex-1 bg-transparent text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none min-w-0"
           />
-          {addText.trim() && (
-            <button
-              type="submit"
-              className="shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors"
-              aria-label="Add"
-            >
-              <Plus size={12} />
-            </button>
-          )}
+          <button
+            type="submit"
+            className="shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors"
+            aria-label="Add"
+          >
+            <Plus size={12} />
+          </button>
         </form>
       )}
     </div>

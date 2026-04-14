@@ -1,7 +1,7 @@
 import { ExternalLink, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { DashboardWidget } from '../../api/dashboards'
-import { cn } from '../../utils/cn'
+import { capitalize, cn } from '../../utils/shared/cn'
 import { WidgetRenderer } from './WidgetRenderer'
 
 const WIDGET_LABELS: Record<string, string> = {
@@ -16,13 +16,13 @@ function widgetLabel(widget: DashboardWidget): string {
     const type = widget.config.list_type
     const label = typeof name === 'string' && name ? name : 'List'
     if (typeof type === 'string' && type) {
-      return `${label} · ${type[0].toUpperCase()}${type.slice(1)}`
+      return `${label} · ${capitalize(type)}`
     }
     return label
   }
   if (widget.widget_type === 'calendar') {
     const view = typeof widget.config.view === 'string' ? widget.config.view : 'month'
-    return `Calendar · ${view[0].toUpperCase()}${view.slice(1)}`
+    return `Calendar · ${capitalize(view)}`
   }
   return WIDGET_LABELS[widget.widget_type] ?? widget.widget_type
 }
