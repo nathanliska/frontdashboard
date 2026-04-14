@@ -1,4 +1,6 @@
-import type { CalendarOccurrence } from '../api/calendar'
+import type { CalendarOccurrence } from '../../api/calendar'
+
+export const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
 export const CALENDAR_WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 export const CALENDAR_WEEKDAY_LABELS_COMPACT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const

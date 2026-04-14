@@ -1,4 +1,4 @@
-export { createClientMutationId } from './clientMutation'
+export { createClientMutationId } from '../shared/clientMutation'
 
 const pendingListMutationIds = new Map<string, number>()
 const LIST_MUTATION_ECHO_TTL_MS = 5000

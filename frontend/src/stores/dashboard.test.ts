@@ -6,7 +6,7 @@ import { useDashboardStore } from './dashboard'
 import {
   __resetPendingDashboardMutationsForTests,
   recordPendingDashboardMutation,
-} from '../utils/dashboardMutation'
+} from '../utils/dashboard/dashboardMutation'
 
 const { apiUpdatePreferences } = vi.hoisted(() => ({
   apiUpdatePreferences: vi.fn(),
@@ -146,8 +146,7 @@ describe('useDashboardStore', () => {
     })
   })
 
-  it('updates favorites through user preferences and refreshes summaries', async () => {
-    const favoriteSummary = makeSummary({ is_favorite: true })
+  it('updates favorites through user preferences and updates summaries in-place', async () => {
     apiUpdatePreferences.mockResolvedValue({
       id: 'user-1',
       email: 'test@example.com',
@@ -157,7 +156,6 @@ describe('useDashboardStore', () => {
         favorite_dashboard_ids: ['dash-1'],
       },
     })
-    apiListDashboards.mockResolvedValue([favoriteSummary])
 
     useDashboardStore.setState({
       summaries: [makeSummary()],
@@ -168,10 +166,10 @@ describe('useDashboardStore', () => {
     await useDashboardStore.getState().toggleFavorite('dash-1', false)
 
     expect(apiUpdatePreferences).toHaveBeenCalledWith({ favorite_dashboard_ids: ['dash-1'] })
-    expect(apiListDashboards).toHaveBeenCalledTimes(1)
+    expect(apiListDashboards).not.toHaveBeenCalled()
     expect(useAuthStore.getState().user?.preferences.favorite_dashboard_ids).toEqual(['dash-1'])
     expect(useDashboardStore.getState().dashboard?.is_favorite).toBe(true)
-    expect(useDashboardStore.getState().summaries).toEqual([favoriteSummary])
+    expect(useDashboardStore.getState().summaries).toEqual([makeSummary({ is_favorite: true })])
   })
 
   it('refreshes summaries and the active dashboard for matching dashboard SSE events', async () => {

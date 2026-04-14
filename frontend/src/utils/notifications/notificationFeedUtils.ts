@@ -1,4 +1,4 @@
-import type { ActivityEvent, Notification } from '../api/notifications'
+import type { ActivityEvent, Notification } from '../../api/notifications'
 
 type ActivityPresentation = {
   badge: string

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../../api/dashboards'
 import type { ResourceShare } from '../../api/shares'
 import { DashboardSettingsModal } from './DashboardSettingsModal'
-import { __resetPendingDashboardMutationsForTests } from '../../utils/dashboardMutation'
+import { __resetPendingDashboardMutationsForTests } from '../../utils/dashboard/dashboardMutation'
 
 const {
   apiAddDashboardShare,

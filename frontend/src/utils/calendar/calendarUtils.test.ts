@@ -8,7 +8,7 @@ import {
   monthGridDays,
   occursOnDate,
   startOfWeek,
-} from './calendar'
+} from './calendarUtils'
 
 describe('calendar utils', () => {
   it('starts weeks on monday', () => {
