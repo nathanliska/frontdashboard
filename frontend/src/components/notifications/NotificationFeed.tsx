@@ -1,6 +1,6 @@
 import type { Notification } from '../../api/notifications'
-import { cn } from '../../utils/cn'
-import { getNotificationTypeLabel } from '../../utils/notificationFeed'
+import { cn } from '../../utils/shared/cn'
+import { getNotificationTypeLabel } from '../../utils/notifications/notificationFeedUtils'
 
 type NotificationFeedProps = {
   notifications: Notification[]

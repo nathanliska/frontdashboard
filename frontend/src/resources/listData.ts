@@ -24,7 +24,7 @@ import {
   createClientMutationId,
   forgetPendingListMutation,
   recordPendingListMutation,
-} from '../utils/listMutation'
+} from '../utils/lists/listMutation'
 
 type ListSummariesScope = {
   dashboardId: string

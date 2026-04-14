@@ -1,5 +1,5 @@
 import type { ActivityEvent } from '../../api/notifications'
-import { formatActivityEvent } from '../../utils/notificationFeed'
+import { formatActivityEvent } from '../../utils/notifications/notificationFeedUtils'
 
 type ActivityFeedProps = {
   activity: ActivityEvent[]

@@ -1,3 +1,22 @@
+# FrontDashboard Frontend
+
+## Naming and File Organization
+
+- Use `PascalCase` for `.tsx` files whose primary export is a React component or page.
+- Use `camelCase` for hooks, utilities, stores, resources, and other support modules.
+- Keep component folders component-only when practical. If a component needs helper types or logic, prefer moving that support code to `src/utils/<domain>/` or `src/hooks/`.
+- Group utilities by domain under `src/utils/`:
+  `calendar/`, `dashboard/`, `lists/`, `notifications/`, `share/`, and `shared/`.
+- Tests should mirror the source filename they cover.
+
+## Notes
+
+This project intentionally uses:
+
+- `src/components/**` for renderable UI modules
+- `src/hooks/**` for reusable React hooks
+- `src/utils/**` for non-React support code and types
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
