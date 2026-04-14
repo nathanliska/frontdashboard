@@ -1,0 +1,195 @@
+import { useEffect, useRef, useState } from 'react'
+import { Archive, Check, Pencil, Trash2, X } from 'lucide-react'
+import type { ListSummary } from '../../api/lists'
+import { cn } from '../../utils/shared/cn'
+import { TypeBadge } from './TypeBadge'
+
+export function ListSidebarRow({
+  list,
+  selectedId,
+  onSelect,
+  onRename,
+  onArchive,
+  onDelete,
+}: {
+  list: Pick<ListSummary, 'id' | 'name' | 'list_type' | 'item_count' | 'archived'>
+  selectedId: string | null
+  onSelect: (id: string) => void
+  onRename: (listId: string, name: string) => Promise<void>
+  onArchive: (id: string, archived: boolean) => Promise<void>
+  onDelete: (listId: string) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(list.name)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!editing) return
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [editing])
+
+  function startEditing() {
+    setConfirmingDelete(false)
+    setDraft(list.name)
+    setEditing(true)
+  }
+
+  function cancelEditing() {
+    setDraft(list.name)
+    setEditing(false)
+  }
+
+  async function submitEdit() {
+    try {
+      await onRename(list.id, draft)
+      setEditing(false)
+    } catch {
+      // keep the editor open so the user can retry
+    }
+  }
+
+  return (
+    <div
+      onClick={() => {
+        if (!editing) onSelect(list.id)
+      }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (editing) return
+        if (event.key === 'Enter') onSelect(list.id)
+      }}
+      className={cn(
+        'w-full text-left px-3 py-2.5 rounded-lg border transition-colors group cursor-pointer',
+        selectedId === list.id
+          ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
+          : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700',
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                event.stopPropagation()
+                void submitEdit()
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                cancelEditing()
+              }
+            }}
+            className="min-w-0 flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm font-medium text-zinc-100 focus:outline-none focus:border-zinc-500"
+          />
+        ) : (
+          <span className="text-sm font-medium truncate flex-1">{list.name}</span>
+        )}
+        <div className="flex items-center gap-1 shrink-0 text-zinc-500 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          {confirmingDelete ? (
+            <>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setConfirmingDelete(false)
+                  void onDelete(list.id)
+                }}
+                title="Confirm delete"
+                className="p-0.5 text-zinc-500 hover:text-red-400"
+              >
+                <Check size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setConfirmingDelete(false)
+                }}
+                title="Cancel delete"
+                className="p-0.5 text-zinc-500 hover:text-zinc-300"
+              >
+                <X size={13} />
+              </button>
+            </>
+          ) : editing ? (
+            <>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void submitEdit()
+                }}
+                title="Save list name"
+                className="p-0.5 text-zinc-500 hover:text-zinc-100"
+              >
+                <Check size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  cancelEditing()
+                }}
+                title="Cancel editing"
+                className="p-0.5 text-zinc-500 hover:text-zinc-300"
+              >
+                <X size={13} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  startEditing()
+                }}
+                title="Edit name"
+                className="p-0.5 text-zinc-500 hover:text-zinc-300"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void onArchive(list.id, !list.archived)
+                }}
+                title={list.archived ? 'Unarchive' : 'Archive'}
+                className="p-0.5 text-zinc-500 hover:text-zinc-300"
+              >
+                <Archive size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setConfirmingDelete(true)
+                }}
+                title="Delete"
+                className="p-0.5 text-zinc-500 hover:text-red-400"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mt-1">
+        <TypeBadge type={list.list_type} />
+        <span className="text-xs text-zinc-600">
+          {list.item_count} item{list.item_count !== 1 ? 's' : ''}
+        </span>
+        {list.archived && <span className="text-xs text-amber-600">archived</span>}
+      </div>
+    </div>
+  )
+}
