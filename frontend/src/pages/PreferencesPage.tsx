@@ -2,7 +2,8 @@ import { Home } from 'lucide-react'
 import { useAuthStore } from '../stores/auth'
 
 export function PreferencesPage() {
-  const { user, updatePreferences } = useAuthStore()
+  const user = useAuthStore((s) => s.user)
+  const updatePreferences = useAuthStore((s) => s.updatePreferences)
   const homeDashboardId = user?.preferences?.home_dashboard_id ?? null
 
   return (

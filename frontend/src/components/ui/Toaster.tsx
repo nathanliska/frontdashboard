@@ -1,6 +1,6 @@
 import { CheckCircle, Info, X, XCircle } from 'lucide-react'
 import { useToastStore, type ToastType } from '../../stores/toast'
-import { cn } from '../../utils/cn'
+import { cn } from '../../utils/shared/cn'
 
 const ICONS: Record<ToastType, React.ElementType> = {
   success: CheckCircle,
@@ -15,12 +15,13 @@ const STYLES: Record<ToastType, string> = {
 }
 
 export function Toaster() {
-  const { toasts, dismiss } = useToastStore()
+  const toasts = useToastStore((s) => s.toasts)
+  const dismiss = useToastStore((s) => s.dismiss)
 
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+    <div className="fixed bottom-4 right-4 z-100 flex flex-col gap-2 pointer-events-none">
       {toasts.map((t) => {
         const Icon = ICONS[t.type]
         return (

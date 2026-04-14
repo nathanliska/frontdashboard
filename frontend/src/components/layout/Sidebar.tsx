@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   CalendarDays,
@@ -14,7 +14,7 @@ import { NotificationPanel } from '../notifications/NotificationPanel'
 import { useAuthStore } from '../../stores/auth'
 import { useNotificationsStore } from '../../stores/notifications'
 import { useUIStore } from '../../stores/ui'
-import { cn } from '../../utils/cn'
+import { cn } from '../../utils/shared/cn'
 
 const NAV = [
   { label: 'Dashboards', icon: LayoutDashboard, to: '/dashboards' },
@@ -23,7 +23,10 @@ const NAV = [
 ]
 
 export function Sidebar() {
-  const { sidebarCollapsed, mobileSidebarOpen, toggleSidebar, closeMobileSidebar } = useUIStore()
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
+  const mobileSidebarOpen = useUIStore((s) => s.mobileSidebarOpen)
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const closeMobileSidebar = useUIStore((s) => s.closeMobileSidebar)
   const location = useLocation()
   const loadUnreadCount = useNotificationsStore((s) => s.loadUnreadCount)
 
@@ -42,7 +45,7 @@ export function Sidebar() {
       />
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-zinc-800 bg-zinc-950 transition-transform duration-200 sm:static sm:z-auto sm:h-screen sm:shrink-0 sm:transition-all',
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-zinc-800 bg-zinc-950 transition-transform duration-200 sm:relative sm:z-20 sm:h-screen sm:shrink-0 sm:transition-all',
           mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0',
           sidebarCollapsed ? 'sm:w-16' : 'sm:w-56',
         )}
@@ -123,19 +126,9 @@ function UserMenu({
   closeMobileSidebar: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
-
-  useEffect(() => {
-    if (!open) return
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
 
   async function handleSignOut() {
     setOpen(false)
@@ -148,11 +141,19 @@ function UserMenu({
   const displayName = user?.display_name ?? 'Account'
 
   return (
-    <div ref={ref} className="relative">
+    <div className="relative z-50">
+      {open && (
+        <button
+          type="button"
+          aria-label="Close account menu"
+          onClick={() => setOpen(false)}
+          className="fixed inset-0 z-40 cursor-default bg-transparent"
+        />
+      )}
       <button
         onClick={() => setOpen((o) => !o)}
         title={collapsed ? displayName : undefined}
-        className="flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
+        className="relative z-50 flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
       >
         <div className="shrink-0 w-4.5 h-4.5 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 text-[10px] font-semibold">
           {initial}
