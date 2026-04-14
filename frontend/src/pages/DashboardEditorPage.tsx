@@ -11,16 +11,14 @@ const APP_TITLE = 'FrontDashboard'
 export function DashboardEditorPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const {
-    dashboard,
-    loading,
-    loadError,
-    conflict,
-    loadDashboard,
-    resolveConflict,
-    addWidget,
-    renameDashboard,
-  } = useDashboardStore()
+  const dashboard = useDashboardStore((s) => s.dashboard)
+  const loading = useDashboardStore((s) => s.loading)
+  const loadError = useDashboardStore((s) => s.loadError)
+  const conflict = useDashboardStore((s) => s.conflict)
+  const loadDashboard = useDashboardStore((s) => s.loadDashboard)
+  const resolveConflict = useDashboardStore((s) => s.resolveConflict)
+  const addWidget = useDashboardStore((s) => s.addWidget)
+  const renameDashboard = useDashboardStore((s) => s.renameDashboard)
   const [showAddWidget, setShowAddWidget] = useState(false)
   const [showEditDashboard, setShowEditDashboard] = useState(false)
   const closeRestrictedModals = useEffectEvent(() => {
@@ -87,7 +85,7 @@ export function DashboardEditorPage() {
           {dashboard.name}
         </h1>
         {dashboard.is_shared && (
-          <div className="order-3 basis-full sm:order-none sm:basis-auto flex items-center gap-2 text-xs">
+          <div className="order-3 basis-full sm:order-0 sm:basis-auto flex items-center gap-2 text-xs">
             <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400">
               Shared
             </span>
