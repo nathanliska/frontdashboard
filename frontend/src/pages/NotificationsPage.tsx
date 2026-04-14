@@ -6,15 +6,19 @@ import { ActivityFeed } from '../components/notifications/ActivityFeed'
 import { NotificationFeed } from '../components/notifications/NotificationFeed'
 import { APP_RESYNC_EVENT } from '../hooks/useSSE'
 import { useNotificationsStore } from '../stores/notifications'
-import { cn } from '../utils/cn'
-import { getNotificationDestination } from '../utils/notificationFeed'
+import { cn } from '../utils/shared/cn'
+import { getNotificationDestination } from '../utils/notifications/notificationFeedUtils'
 
 type Tab = 'notifications' | 'activity'
 
 export function NotificationsPage() {
   const [tab, setTab] = useState<Tab>('notifications')
   const navigate = useNavigate()
-  const { notifications, unreadCount, load, markRead, markAllRead } = useNotificationsStore()
+  const notifications = useNotificationsStore((s) => s.notifications)
+  const unreadCount = useNotificationsStore((s) => s.unreadCount)
+  const load = useNotificationsStore((s) => s.load)
+  const markRead = useNotificationsStore((s) => s.markRead)
+  const markAllRead = useNotificationsStore((s) => s.markAllRead)
 
   const [activity, setActivity] = useState<Awaited<ReturnType<typeof apiGetActivity>>>([])
   const [activityLoading, setActivityLoading] = useState(false)

@@ -5,14 +5,15 @@ import { useAuthStore } from '../stores/auth'
 export function RegisterPage() {
   const register = useAuthStore((s) => s.register)
   const navigate = useNavigate()
-  const [displayName, setDisplayName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const displayName = String(formData.get('display-name') ?? '')
+    const email = String(formData.get('email') ?? '')
+    const password = String(formData.get('password') ?? '')
     setError(null)
     setLoading(true)
     try {
@@ -37,11 +38,10 @@ export function RegisterPage() {
             </label>
             <input
               id="display-name"
+              name="display-name"
               type="text"
               autoComplete="name"
               required
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
             />
           </div>
@@ -52,11 +52,10 @@ export function RegisterPage() {
             </label>
             <input
               id="email"
+              name="email"
               type="email"
               autoComplete="email"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
             />
           </div>
@@ -67,12 +66,11 @@ export function RegisterPage() {
             </label>
             <input
               id="password"
+              name="password"
               type="password"
               autoComplete="new-password"
               required
               minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
             />
           </div>

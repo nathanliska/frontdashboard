@@ -1,27 +1,17 @@
-import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Bell, Check, X } from 'lucide-react'
 import { NotificationFeed } from './NotificationFeed'
 import { useNotificationsStore } from '../../stores/notifications'
-import { getNotificationDestination } from '../../utils/notificationFeed'
+import { getNotificationDestination } from '../../utils/notifications/notificationFeedUtils'
 
 export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
   const navigate = useNavigate()
-  const { notifications, unreadCount, panelOpen, setPanelOpen, markRead, markAllRead } =
-    useNotificationsStore()
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  // Close on outside click
-  useEffect(() => {
-    if (!panelOpen) return
-    function handleClick(e: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setPanelOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [panelOpen, setPanelOpen])
+  const notifications = useNotificationsStore((s) => s.notifications)
+  const unreadCount = useNotificationsStore((s) => s.unreadCount)
+  const panelOpen = useNotificationsStore((s) => s.panelOpen)
+  const setPanelOpen = useNotificationsStore((s) => s.setPanelOpen)
+  const markRead = useNotificationsStore((s) => s.markRead)
+  const markAllRead = useNotificationsStore((s) => s.markAllRead)
 
   function handleNotificationClick(notification: (typeof notifications)[number]) {
     if (notification.read_at === null) {
@@ -35,12 +25,21 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div ref={panelRef} className="relative">
+    <div className="relative z-50">
+      {panelOpen && (
+        <button
+          type="button"
+          aria-label="Close notifications"
+          onClick={() => setPanelOpen(false)}
+          className="fixed inset-0 z-40 cursor-default bg-transparent"
+        />
+      )}
       {/* Bell trigger */}
       <button
+        type="button"
         onClick={() => setPanelOpen(!panelOpen)}
         title={collapsed ? 'Notifications' : undefined}
-        className="flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
+        className="relative z-50 flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
       >
         <div className="relative shrink-0">
           <Bell size={18} />
@@ -55,7 +54,7 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
 
       {/* Slide-out panel */}
       {panelOpen && (
-        <div className="absolute bottom-full left-full ml-2 mb-0 w-80 bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl z-50 flex flex-col max-h-[480px]">
+        <div className="absolute bottom-full left-full ml-2 mb-0 w-80 bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl z-50 flex flex-col max-h-120">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
             <span className="text-sm font-medium text-zinc-100">Notifications</span>

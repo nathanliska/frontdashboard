@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { LockKeyhole, Mail, Pencil, UserRound, X } from 'lucide-react'
 import { useAuthStore } from '../stores/auth'
 import { toast } from '../stores/toast'
@@ -7,47 +7,33 @@ export function ProfilePage() {
   const user = useAuthStore((s) => s.user)
   const updateProfile = useAuthStore((s) => s.updateProfile)
   const changePassword = useAuthStore((s) => s.changePassword)
-  const [displayName, setDisplayName] = useState('')
-  const [email, setEmail] = useState('')
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [editingProfile, setEditingProfile] = useState(false)
   const [editingPassword, setEditingPassword] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
 
-  useEffect(() => {
-    if (!user) return
-    setDisplayName(user.display_name)
-    setEmail(user.email)
-  }, [user])
-
   if (!user) return null
+  const currentUser = user
 
   function cancelProfileEdit() {
-    setDisplayName(user!.display_name)
-    setEmail(user!.email)
     setEditingProfile(false)
   }
 
   function cancelPasswordEdit() {
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
     setEditingPassword(false)
   }
 
-  async function handleProfileSubmit(event: React.FormEvent) {
+  async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const trimmedName = displayName.trim()
-    const trimmedEmail = email.trim()
+    const formData = new FormData(event.currentTarget)
+    const trimmedName = String(formData.get('display-name') ?? '').trim()
+    const trimmedEmail = String(formData.get('email') ?? '').trim()
     if (!trimmedName || !trimmedEmail) {
       toast.error('Display name and email are required.')
       return
     }
 
-    if (trimmedName === user!.display_name && trimmedEmail === user!.email) {
+    if (trimmedName === currentUser.display_name && trimmedEmail === currentUser.email) {
       toast.error('No profile changes to save.')
       return
     }
@@ -65,8 +51,12 @@ export function ProfilePage() {
     }
   }
 
-  async function handlePasswordSubmit(event: React.FormEvent) {
+  async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const currentPassword = String(formData.get('current-password') ?? '')
+    const newPassword = String(formData.get('new-password') ?? '')
+    const confirmPassword = String(formData.get('confirm-password') ?? '')
     if (!currentPassword || !newPassword || !confirmPassword) {
       toast.error('Fill out all password fields.')
       return
@@ -107,8 +97,10 @@ export function ProfilePage() {
                 {user.display_name[0]?.toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-medium text-zinc-100 truncate">{user.display_name}</p>
-                <p className="text-sm text-zinc-500 truncate">{user.email}</p>
+                <p className="text-base font-medium text-zinc-100 truncate">
+                  {currentUser.display_name}
+                </p>
+                <p className="text-sm text-zinc-500 truncate">{currentUser.email}</p>
               </div>
               <button
                 type="button"
@@ -126,6 +118,7 @@ export function ProfilePage() {
 
           {editingProfile ? (
             <form
+              key={`${currentUser.display_name}:${currentUser.email}`}
               onSubmit={(event) => void handleProfileSubmit(event)}
               className="px-5 py-4 space-y-4"
             >
@@ -135,8 +128,9 @@ export function ProfilePage() {
                   Display name
                 </span>
                 <input
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
+                  name="display-name"
+                  defaultValue={currentUser.display_name}
+                  required
                   className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-700"
                 />
               </label>
@@ -147,9 +141,10 @@ export function ProfilePage() {
                   Email
                 </span>
                 <input
+                  name="email"
                   type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  defaultValue={currentUser.email}
+                  required
                   className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-700"
                 />
               </label>
@@ -173,8 +168,8 @@ export function ProfilePage() {
             </form>
           ) : (
             <div className="px-5 py-4 space-y-3">
-              <Field label="Display name" value={user.display_name} />
-              <Field label="Email" value={user.email} />
+              <Field label="Display name" value={currentUser.display_name} />
+              <Field label="Email" value={currentUser.email} />
             </div>
           )}
         </section>
@@ -212,10 +207,10 @@ export function ProfilePage() {
               <label className="grid gap-1.5 text-sm">
                 <span className="text-zinc-400">Current password</span>
                 <input
+                  name="current-password"
                   type="password"
                   autoComplete="current-password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  required
                   className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-700"
                 />
               </label>
@@ -223,10 +218,11 @@ export function ProfilePage() {
               <label className="grid gap-1.5 text-sm">
                 <span className="text-zinc-400">New password</span>
                 <input
+                  name="new-password"
                   type="password"
                   autoComplete="new-password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
+                  required
+                  minLength={8}
                   className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-700"
                 />
               </label>
@@ -234,10 +230,10 @@ export function ProfilePage() {
               <label className="grid gap-1.5 text-sm">
                 <span className="text-zinc-400">Confirm new password</span>
                 <input
+                  name="confirm-password"
                   type="password"
                   autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  required
                   className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-700"
                 />
               </label>

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import GridLayout, { WidthProvider, type Layout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
-import type { Dashboard, LayoutItem } from '../../api/dashboards'
+import type { Dashboard, DashboardWidget, LayoutItem } from '../../api/dashboards'
 import { confirm } from '../../stores/confirm'
 import { useDashboardStore } from '../../stores/dashboard'
 import { WidgetContainer } from './WidgetContainer'
@@ -44,6 +44,36 @@ function mobileStackLayout(layout: LayoutItem[]): LayoutItem[] {
     return normalized
   })
 }
+
+const DashboardGridContent = memo(function DashboardGridContent({
+  widget,
+  dashboardId,
+  isSharedDashboard,
+  canEdit,
+  removeWidget,
+}: {
+  widget: DashboardWidget
+  dashboardId: string
+  isSharedDashboard: boolean
+  canEdit: boolean
+  removeWidget: (widgetId: string) => Promise<void>
+}) {
+  const handleRemove = useCallback(async () => {
+    if (await confirm('Remove this widget from the dashboard?')) {
+      void removeWidget(widget.id)
+    }
+  }, [removeWidget, widget.id])
+
+  return (
+    <WidgetContainer
+      widget={widget}
+      dashboardId={dashboardId}
+      isSharedDashboard={isSharedDashboard}
+      canEdit={canEdit}
+      onRemove={handleRemove}
+    />
+  )
+})
 
 export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; canEdit: boolean }) {
   const saveLayout = useDashboardStore((s) => s.saveLayout)
@@ -127,16 +157,14 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
         compactType="vertical"
       >
         {dashboard.widgets.map((widget) => (
+          // react-grid-layout needs a DOM element as the direct child so it can attach drag props.
           <div key={widget.id}>
-            <WidgetContainer
+            <DashboardGridContent
               widget={widget}
               dashboardId={dashboard.id}
               isSharedDashboard={dashboard.is_shared}
               canEdit={canEdit}
-              onRemove={async () => {
-                if (await confirm('Remove this widget from the dashboard?'))
-                  void removeWidget(widget.id)
-              }}
+              removeWidget={removeWidget}
             />
           </div>
         ))}

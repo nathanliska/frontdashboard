@@ -26,7 +26,7 @@ import {
   createClientMutationId,
   forgetPendingDashboardMutation,
   recordPendingDashboardMutation,
-} from '../utils/dashboardMutation'
+} from '../utils/dashboard/dashboardMutation'
 import {
   type Dashboard,
   type DashboardSummary,
@@ -381,9 +381,9 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
       const updatedUser = await apiUpdatePreferences({ favorite_dashboard_ids: nextFavoriteIds })
       useAuthStore.setState({ user: updatedUser })
       set((s) => ({
+        summaries: s.summaries.map((d) => (d.id === id ? { ...d, is_favorite: !current } : d)),
         dashboard: s.dashboard?.id === id ? { ...s.dashboard, is_favorite: !current } : s.dashboard,
       }))
-      await get().loadSummaries(true)
     } catch {
       toast.error('Failed to update favorite.')
     }
@@ -520,7 +520,15 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
         set({ conflict: true })
         return
       }
-      set({ dashboard: result.dashboard, conflict: false })
+      set((s) => ({
+        dashboard: {
+          ...result.dashboard,
+          // Layout saves don't touch widget data. Preserve existing widget
+          // references so memoized widget subtrees aren't invalidated on drag/resize.
+          widgets: s.dashboard?.widgets ?? result.dashboard.widgets,
+        },
+        conflict: false,
+      }))
     } catch {
       forgetPendingDashboardMutation(clientMutationId)
       toast.error('Failed to save layout.')

@@ -7,33 +7,45 @@ import {
   apiMarkRead,
 } from '../api/notifications'
 
+let notificationsPromise: Promise<void> | null = null
 let unreadCountPromise: Promise<void> | null = null
 
 interface NotificationsState {
   notifications: Notification[]
   unreadCount: number
   panelOpen: boolean
+  loaded: boolean
   load: () => Promise<void>
   loadUnreadCount: () => Promise<void>
   markRead: (id: string) => Promise<void>
   markAllRead: () => Promise<void>
   setPanelOpen: (open: boolean) => void
   addFromSse: (notif: Notification) => void
+  reset: () => void
 }
 
 export const useNotificationsStore = create<NotificationsState>()((set, get) => ({
   notifications: [],
   unreadCount: 0,
   panelOpen: false,
+  loaded: false,
 
   async load() {
-    try {
-      const notifications = await apiGetNotifications()
-      const unreadCount = notifications.filter((n) => n.read_at === null).length
-      set({ notifications, unreadCount })
-    } catch {
-      // ignore — stale state is acceptable
-    }
+    if (notificationsPromise) return notificationsPromise
+
+    notificationsPromise = (async () => {
+      try {
+        const notifications = await apiGetNotifications()
+        const unreadCount = notifications.filter((n) => n.read_at === null).length
+        set({ notifications, unreadCount, loaded: true })
+      } catch {
+        // ignore — stale state is acceptable
+      }
+    })().finally(() => {
+      notificationsPromise = null
+    })
+
+    return notificationsPromise
   },
 
   async loadUnreadCount() {
@@ -82,8 +94,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
 
   setPanelOpen(open) {
     set({ panelOpen: open })
-    // Load fresh notifications when panel opens
-    if (open) void get().load()
+    if (open && !get().loaded) void get().load()
   },
 
   addFromSse(notif) {
@@ -91,5 +102,16 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
       notifications: [notif, ...s.notifications],
       unreadCount: s.unreadCount + 1,
     }))
+  },
+
+  reset() {
+    notificationsPromise = null
+    unreadCountPromise = null
+    set({
+      notifications: [],
+      unreadCount: 0,
+      panelOpen: false,
+      loaded: false,
+    })
   },
 }))

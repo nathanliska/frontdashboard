@@ -10,6 +10,7 @@ import {
   apiUpdatePreferences,
   apiUpdateProfile,
 } from '../api/auth'
+import { useNotificationsStore } from './notifications'
 import { toast } from './toast'
 
 let authInitPromise: Promise<void> | null = null
@@ -35,6 +36,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     if (authInitPromise) return authInitPromise
 
     authInitPromise = (async () => {
+      const resetNotifications = useNotificationsStore.getState().reset
       // Try current access token first
       let user = await apiGetMe()
       if (user) {
@@ -53,6 +55,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           return
         }
       }
+      resetNotifications()
       set({ status: 'unauthenticated', user: null })
     })().finally(() => {
       authInitPromise = null
@@ -72,6 +75,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   async logout() {
+    useNotificationsStore.getState().reset()
     await apiLogout().catch(() => {})
     set({ status: 'unauthenticated', user: null })
   },
