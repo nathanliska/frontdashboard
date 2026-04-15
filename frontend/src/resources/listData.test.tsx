@@ -4,6 +4,7 @@ import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import { useAuthStore } from '../stores/auth'
 import {
   __resetListDataForTests,
+  addListItem,
   handleListResourceEvent,
   updateListItem,
   updateListName,
@@ -283,5 +284,12 @@ describe('listData', () => {
     await waitFor(() => expect(apiUpdateList).toHaveBeenCalledTimes(1))
     expect(apiGetLists).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Weekend groceries')).toBeInTheDocument()
+  })
+
+  it('rethrows add item failures so forms can keep their current value', async () => {
+    apiCreateItem.mockRejectedValueOnce(new Error('nope'))
+
+    await expect(addListItem('list-1', 'Buy eggs')).rejects.toThrow('nope')
+    expect(apiCreateItem).toHaveBeenCalledTimes(1)
   })
 })
