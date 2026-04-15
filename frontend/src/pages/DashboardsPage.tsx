@@ -14,6 +14,7 @@ export function DashboardsPage() {
   const summariesLoading = useDashboardStore((s) => s.summariesLoading)
   const loadSummaries = useDashboardStore((s) => s.loadSummaries)
   const createDashboard = useDashboardStore((s) => s.createDashboard)
+  const archiveDashboard = useDashboardStore((s) => s.archiveDashboard)
   const deleteDashboard = useDashboardStore((s) => s.deleteDashboard)
   const toggleFavorite = useDashboardStore((s) => s.toggleFavorite)
   const renameDashboard = useDashboardStore((s) => s.renameDashboard)
@@ -48,20 +49,26 @@ export function DashboardsPage() {
   }, [editingDashboard, editingDashboardId])
 
   const favorites = useMemo(
-    () => summaries.filter((dashboard) => dashboard.is_favorite),
+    () => summaries.filter((dashboard) => !dashboard.archived && dashboard.is_favorite),
     [summaries],
   )
-  const rest = useMemo(() => summaries.filter((dashboard) => !dashboard.is_favorite), [summaries])
+  const rest = useMemo(
+    () => summaries.filter((dashboard) => !dashboard.archived && !dashboard.is_favorite),
+    [summaries],
+  )
+  const archived = useMemo(() => summaries.filter((dashboard) => dashboard.archived), [summaries])
 
   function openDashboard(dashboard: DashboardSummary) {
     navigate(`/dashboard/${dashboard.id}`)
   }
 
   function handleToggleFavorite(dashboard: DashboardSummary) {
+    if (dashboard.archived) return
     void toggleFavorite(dashboard.id, dashboard.is_favorite)
   }
 
   function handleSetHome(dashboard: DashboardSummary) {
+    if (dashboard.archived) return
     void updatePreferences({ home_dashboard_id: dashboard.id })
   }
 
@@ -69,8 +76,17 @@ export function DashboardsPage() {
     setEditingDashboardId(dashboard.id)
   }
 
+  async function handleArchive(dashboard: DashboardSummary) {
+    const message = dashboard.archived
+      ? `Unarchive "${dashboard.name}"?`
+      : `Archive "${dashboard.name}"? Its lists and calendar views will disappear until you restore it.`
+    if (await confirm(message)) {
+      void archiveDashboard(dashboard.id, !dashboard.archived)
+    }
+  }
+
   async function handleDelete(dashboard: DashboardSummary) {
-    if (await confirm(`Delete "${dashboard.name}"? This cannot be undone.`)) {
+    if (await confirm(`Delete "${dashboard.name}" permanently? This cannot be undone.`)) {
       void deleteDashboard(dashboard.id)
     }
   }
@@ -110,6 +126,7 @@ export function DashboardsPage() {
               onToggleFavorite={handleToggleFavorite}
               onSetHome={handleSetHome}
               onRename={handleRename}
+              onArchive={handleArchive}
               onDelete={handleDelete}
             />
           </section>
@@ -130,6 +147,26 @@ export function DashboardsPage() {
               onToggleFavorite={handleToggleFavorite}
               onSetHome={handleSetHome}
               onRename={handleRename}
+              onArchive={handleArchive}
+              onDelete={handleDelete}
+            />
+          </section>
+        )}
+
+        {archived.length > 0 && (
+          <section>
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+              Archived
+            </h2>
+            <DashboardCardGrid
+              items={archived}
+              homeDashboardId={homeDashboardId}
+              currentUserId={currentUserId}
+              onOpen={openDashboard}
+              onToggleFavorite={handleToggleFavorite}
+              onSetHome={handleSetHome}
+              onRename={handleRename}
+              onArchive={handleArchive}
               onDelete={handleDelete}
             />
           </section>

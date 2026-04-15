@@ -9,6 +9,7 @@ export function DashboardCardGrid({
   onToggleFavorite,
   onSetHome,
   onRename,
+  onArchive,
   onDelete,
 }: {
   items: DashboardSummary[]
@@ -18,6 +19,7 @@ export function DashboardCardGrid({
   onToggleFavorite: (dashboard: DashboardSummary) => void
   onSetHome: (dashboard: DashboardSummary) => void
   onRename: (dashboard: DashboardSummary) => void
+  onArchive: (dashboard: DashboardSummary) => void
   onDelete: (dashboard: DashboardSummary) => void
 }) {
   return (
@@ -32,6 +34,7 @@ export function DashboardCardGrid({
           onToggleFavorite={() => onToggleFavorite(dashboard)}
           onSetHome={() => onSetHome(dashboard)}
           onRename={() => onRename(dashboard)}
+          onArchive={() => onArchive(dashboard)}
           onDelete={() => onDelete(dashboard)}
         />
       ))}

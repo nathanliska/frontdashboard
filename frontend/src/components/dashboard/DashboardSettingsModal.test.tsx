@@ -64,6 +64,7 @@ function makeSummary(
   return {
     id: 'dash-1',
     name: 'Primary Dashboard',
+    archived: false,
     can_manage_shares: true,
     ...overrides,
   }

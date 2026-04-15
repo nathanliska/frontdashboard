@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import type { CalendarOccurrence } from '../api/calendar'
@@ -65,14 +65,27 @@ export function CalendarPage() {
     requestedDashboardId,
     'Could not load dashboards for calendar.',
   )
+  const activeDashboards = useMemo(
+    () => dashboards.filter((dashboard) => !dashboard.archived),
+    [dashboards],
+  )
+  const effectiveActiveDashboardId = useMemo(() => {
+    if (
+      activeDashboardId &&
+      activeDashboards.some((dashboard) => dashboard.id === activeDashboardId)
+    ) {
+      return activeDashboardId
+    }
+    return activeDashboards[0]?.id ?? null
+  }, [activeDashboardId, activeDashboards])
   const occurrenceWindow = useMemo(() => {
-    if (!activeDashboardId) return null
+    if (!effectiveActiveDashboardId) return null
     return calendarWindow(monthCursor)
-  }, [activeDashboardId, monthCursor])
+  }, [effectiveActiveDashboardId, monthCursor])
   const occurrencesQuery = useCalendarOccurrences(
     occurrenceWindow?.start ?? null,
     occurrenceWindow?.end ?? null,
-    activeDashboardId,
+    effectiveActiveDashboardId,
   )
   const occurrences = occurrencesQuery.data ?? EMPTY_OCCURRENCES
   const { loading } = occurrencesQuery
@@ -83,9 +96,18 @@ export function CalendarPage() {
   )
   const today = useMemo(() => startOfDay(new Date()), [])
   const activeDashboard = useMemo<DashboardContext | null>(() => {
-    const summary = dashboards.find((d) => d.id === activeDashboardId)
+    const summary = activeDashboards.find((d) => d.id === effectiveActiveDashboardId)
     return summary ? { id: summary.id, name: summary.name } : null
-  }, [dashboards, activeDashboardId])
+  }, [activeDashboards, effectiveActiveDashboardId])
+
+  useEffect(() => {
+    if (effectiveActiveDashboardId === activeDashboardId) return
+    if (effectiveActiveDashboardId) {
+      setSearchParams({ dashboard_id: effectiveActiveDashboardId }, { replace: true })
+      return
+    }
+    setSearchParams({}, { replace: true })
+  }, [activeDashboardId, effectiveActiveDashboardId, setSearchParams])
 
   const closeEditor = useCallback(() => {
     editorRequestId.current += 1
@@ -131,7 +153,7 @@ export function CalendarPage() {
   const handleEditorSubmit = useCallback(
     async (draft: CalendarEditorDraft) => {
       const trimmedTitle = draft.title.trim()
-      if (!trimmedTitle || !activeDashboardId || !editorSession) return
+      if (!trimmedTitle || !effectiveActiveDashboardId || !editorSession) return
 
       const recurrence =
         draft.recurrenceMode === 'none'
@@ -161,7 +183,7 @@ export function CalendarPage() {
           })
         } else {
           await createCalendarEvent({
-            dashboard_id: activeDashboardId,
+            dashboard_id: effectiveActiveDashboardId,
             title: trimmedTitle,
             description: draft.description.trim() || undefined,
             location: draft.eventLocation.trim() || undefined,
@@ -178,7 +200,7 @@ export function CalendarPage() {
 
       closeEditor()
     },
-    [activeDashboardId, closeEditor, editorSession],
+    [closeEditor, editorSession, effectiveActiveDashboardId],
   )
 
   return (
@@ -187,7 +209,7 @@ export function CalendarPage() {
         <div className="flex items-center gap-2 min-w-0 pl-12 sm:pl-0 min-h-10">
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Calendar</h1>
           <select
-            value={activeDashboardId ?? ''}
+            value={effectiveActiveDashboardId ?? ''}
             disabled={dashboardsLoading || dashboards.length === 0}
             onChange={(event) => {
               const nextDashboardId = event.target.value || null
@@ -201,7 +223,7 @@ export function CalendarPage() {
             className="min-w-0 max-w-44 sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
           >
             <option value="">Select dashboard</option>
-            {dashboards.map((dashboard) => (
+            {activeDashboards.map((dashboard) => (
               <option key={dashboard.id} value={dashboard.id}>
                 {dashboard.name}
               </option>
@@ -378,7 +400,7 @@ export function CalendarPage() {
                   }
                   openCreateEditor()
                 }}
-                disabled={dashboardsLoading || !activeDashboardId}
+                disabled={dashboardsLoading || !effectiveActiveDashboardId}
                 className="shrink-0 flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-600"
               >
                 <Plus size={14} />
@@ -423,7 +445,10 @@ export function CalendarPage() {
                             ? 'Delete this entire series?'
                             : 'Delete this event?'
                           if (await confirm(label)) {
-                            void deleteCalendarEvent(occurrence.event_id, activeDashboardId)
+                            void deleteCalendarEvent(
+                              occurrence.event_id,
+                              effectiveActiveDashboardId,
+                            )
                           }
                         }}
                       />

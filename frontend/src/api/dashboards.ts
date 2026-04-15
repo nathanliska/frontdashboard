@@ -30,6 +30,7 @@ export interface DashboardSummary {
   id: string
   user_id: string
   name: string
+  archived: boolean
   access_description: string | null
   is_shared: boolean
   can_edit: boolean
@@ -44,6 +45,7 @@ export interface Dashboard {
   id: string
   user_id: string
   name: string
+  archived: boolean
   is_shared: boolean
   can_edit: boolean
   can_manage_shares: boolean
@@ -115,7 +117,7 @@ export async function apiCreateDashboard(
 
 export async function apiUpdateDashboardMeta(
   id: string,
-  data: { name?: string },
+  data: { name?: string; archived?: boolean },
   options?: DashboardMutationOptions,
 ): Promise<DashboardSummary> {
   const res = await apiFetch(`/api/dashboards/${id}`, {
