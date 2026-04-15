@@ -234,9 +234,10 @@ export async function addListItem(listId: string, text: string): Promise<void> {
       ...list,
       item_count: list.item_count + 1,
     }))
-  } catch {
+  } catch (error) {
     forgetPendingListMutation(clientMutationId)
     toast.error('Failed to add item.')
+    throw error instanceof Error ? error : new Error('Failed to add item.')
   }
 }
 
