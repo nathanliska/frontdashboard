@@ -164,6 +164,7 @@ function shouldApplyLocalDashboardSummaryTouch(event: SseEvent): boolean {
 
 function sortDashboardSummaries(summaries: DashboardSummary[]): DashboardSummary[] {
   return [...summaries].sort((a, b) => {
+    if (a.archived !== b.archived) return Number(a.archived) - Number(b.archived)
     if (a.is_favorite !== b.is_favorite) return Number(b.is_favorite) - Number(a.is_favorite)
     return b.updated_at.localeCompare(a.updated_at)
   })
@@ -276,6 +277,7 @@ interface DashboardState {
   // ── Listing actions ────────────────────────────────────────────────────────
   loadSummaries: (force?: boolean) => Promise<void>
   createDashboard: (data: { name: string; shares?: ShareCreate[] }) => Promise<DashboardSummary>
+  archiveDashboard: (id: string, archived: boolean) => Promise<void>
   deleteDashboard: (id: string) => Promise<void>
   toggleFavorite: (id: string, current: boolean) => Promise<void>
   renameDashboard: (id: string, name: string) => Promise<void>
@@ -358,6 +360,29 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     }
   },
 
+  async archiveDashboard(id, archived) {
+    const clientMutationId = createClientMutationId()
+    recordPendingDashboardMutation(clientMutationId)
+    try {
+      const updated = await apiUpdateDashboardMeta(id, { archived }, { clientMutationId })
+      set((s) => ({
+        summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
+        dashboard:
+          s.dashboard?.id === id
+            ? {
+                ...s.dashboard,
+                archived: updated.archived,
+                version: updated.version,
+                name: updated.name,
+              }
+            : s.dashboard,
+      }))
+    } catch {
+      forgetPendingDashboardMutation(clientMutationId)
+      toast.error(`Failed to ${archived ? 'archive' : 'unarchive'} dashboard.`)
+    }
+  },
+
   async deleteDashboard(id) {
     const clientMutationId = createClientMutationId()
     recordPendingDashboardMutation(clientMutationId)
@@ -395,10 +420,15 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     try {
       const updated = await apiUpdateDashboardMeta(id, { name }, { clientMutationId })
       set((s) => ({
-        summaries: s.summaries.map((d) => (d.id === id ? updated : d)),
+        summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
         dashboard:
           s.dashboard?.id === id
-            ? { ...s.dashboard, name: updated.name, version: updated.version }
+            ? {
+                ...s.dashboard,
+                name: updated.name,
+                archived: updated.archived,
+                version: updated.version,
+              }
             : s.dashboard,
       }))
     } catch {

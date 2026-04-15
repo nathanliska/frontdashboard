@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import type { ListSummary, ListType } from '../api/lists'
@@ -49,7 +49,17 @@ export function ListsPage() {
     'Failed to load dashboards.',
   )
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const listSummariesQuery = useListSummaries(dashboardId)
+  const activeDashboards = useMemo(
+    () => dashboards.filter((dashboard) => !dashboard.archived),
+    [dashboards],
+  )
+  const effectiveDashboardId = useMemo(() => {
+    if (dashboardId && activeDashboards.some((dashboard) => dashboard.id === dashboardId)) {
+      return dashboardId
+    }
+    return activeDashboards[0]?.id ?? null
+  }, [activeDashboards, dashboardId])
+  const listSummariesQuery = useListSummaries(effectiveDashboardId)
   const detailQuery = useListDetail(selectedId)
   const lists = listSummariesQuery.data ?? EMPTY_LISTS
   const { loading, error: listsError } = listSummariesQuery
@@ -78,14 +88,15 @@ export function ListsPage() {
 
   const filteredLists =
     typeFilter === 'all' ? lists : lists.filter((list) => list.list_type === typeFilter)
-  const activeDashboard = dashboards.find((item) => item.id === dashboardId) ?? null
+  const activeDashboard = activeDashboards.find((item) => item.id === effectiveDashboardId) ?? null
+  const showVisibleCreate = showCreate && effectiveDashboardId === dashboardId
 
   async function handleCreate(name: string, listType: ListType) {
     const trimmedName = name.trim()
-    if (!trimmedName || !dashboardId) return
+    if (!trimmedName || !effectiveDashboardId) return
 
     try {
-      const list = await createList(trimmedName, listType, dashboardId)
+      const list = await createList(trimmedName, listType, effectiveDashboardId)
       setSelectedId(list.id)
       setShowCreate(false)
     } catch (err) {
@@ -159,7 +170,7 @@ export function ListsPage() {
         <div className="flex items-center gap-2 min-w-0 pl-12 sm:pl-0 min-h-10">
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Lists</h1>
           <select
-            value={dashboardId ?? ''}
+            value={effectiveDashboardId ?? ''}
             disabled={dashboardsLoading || dashboards.length === 0}
             onChange={(event) => {
               const nextDashboardId = event.target.value || null
@@ -170,7 +181,7 @@ export function ListsPage() {
             className="min-w-0 max-w-44 sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
           >
             <option value="">Select dashboard</option>
-            {dashboards.map((dashboard) => (
+            {activeDashboards.map((dashboard) => (
               <option key={dashboard.id} value={dashboard.id}>
                 {dashboard.name}
               </option>
@@ -178,7 +189,7 @@ export function ListsPage() {
           </select>
           <button
             onClick={() => setShowCreate((value) => !value)}
-            disabled={!dashboardId}
+            disabled={!effectiveDashboardId}
             className="shrink-0 flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition-colors disabled:text-zinc-700"
           >
             <Plus size={16} />
@@ -211,7 +222,7 @@ export function ListsPage() {
 
       <div className="flex flex-1 min-h-0 flex-col gap-4 lg:flex-row">
         <div className="w-full lg:w-72 lg:shrink-0 flex flex-col gap-2 overflow-y-auto">
-          {showCreate && (
+          {showVisibleCreate && (
             <CreateListCard
               activeDashboardName={activeDashboard?.name}
               onCreate={handleCreate}
@@ -225,7 +236,7 @@ export function ListsPage() {
             <p className="text-sm text-zinc-600 px-1">Could not load lists.</p>
           ) : filteredLists.length === 0 ? (
             <p className="text-sm text-zinc-600 px-1">
-              {dashboardId
+              {effectiveDashboardId
                 ? 'No lists on this dashboard yet.'
                 : 'Select a dashboard to load its lists.'}
             </p>

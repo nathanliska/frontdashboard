@@ -41,6 +41,7 @@ function makeDashboard(): Dashboard {
     id: 'dash-1',
     user_id: 'user-1',
     name: 'Shared Board',
+    archived: false,
     is_shared: true,
     can_edit: false,
     can_manage_shares: false,
