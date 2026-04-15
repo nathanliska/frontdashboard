@@ -10,6 +10,7 @@ import {
   apiUpdatePreferences,
   apiUpdateProfile,
 } from '../api/auth'
+import { resetCalendarData } from '../resources/calendarData'
 import { useNotificationsStore } from './notifications'
 import { toast } from './toast'
 
@@ -76,6 +77,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   async logout() {
     useNotificationsStore.getState().reset()
+    resetCalendarData()
     await apiLogout().catch(() => {})
     set({ status: 'unauthenticated', user: null })
   },
