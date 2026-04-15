@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,6 +13,7 @@ class Dashboard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False, server_default="My Dashboard")
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     layout: Mapped[Any] = mapped_column(JSONB, nullable=False, server_default="[]")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 

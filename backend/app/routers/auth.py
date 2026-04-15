@@ -103,7 +103,12 @@ async def _normalize_accessible_dashboard_ids(
     if not dashboard_uuids:
         return []
 
-    dashboard_result = await db.execute(select(Dashboard.id, Dashboard.user_id).where(Dashboard.id.in_(dashboard_uuids)))
+    dashboard_result = await db.execute(
+        select(Dashboard.id, Dashboard.user_id).where(
+            Dashboard.id.in_(dashboard_uuids),
+            Dashboard.archived.is_(False),
+        )
+    )
     dashboard_rows = dashboard_result.all()
     owner_by_dashboard_id = {str(row.id): row.user_id for row in dashboard_rows}
 

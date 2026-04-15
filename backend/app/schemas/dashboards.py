@@ -27,6 +27,7 @@ class DashboardSummary(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     name: str
+    archived: bool
     access_description: str | None = None
     is_shared: bool = False
     can_edit: bool
@@ -43,6 +44,7 @@ class DashboardResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     name: str
+    archived: bool
     is_shared: bool
     can_edit: bool
     can_manage_shares: bool
@@ -61,6 +63,7 @@ class DashboardCreate(BaseModel):
 
 class DashboardUpdate(BaseModel):
     name: str | None = None
+    archived: bool | None = None
 
     model_config = ConfigDict(extra="forbid")
 

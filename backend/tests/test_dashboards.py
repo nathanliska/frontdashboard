@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent
-from tests.helpers import create_dashboard, current_user, register_client, set_csrf
+from tests.helpers import create_calendar_event, create_dashboard, create_list, current_user, register_client, set_csrf
 
 
 async def test_default_dashboard_listing_and_shared_access(auth_client: AsyncClient) -> None:
@@ -86,6 +86,98 @@ async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> Non
     )
     assert conflict_resp.status_code == 409
     assert "Version conflict" in conflict_resp.json()["detail"]
+
+
+async def test_archive_dashboard_hides_and_restores_lists_and_events(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client, name="Archive Me")
+    lst = await create_list(auth_client, dashboard["id"], name="Errands")
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Launch Review")
+
+    set_csrf(auth_client)
+    archive_resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}",
+        json={"archived": True},
+    )
+    assert archive_resp.status_code == 200
+    assert archive_resp.json()["archived"] is True
+
+    dashboards_resp = await auth_client.get("/api/dashboards")
+    assert dashboards_resp.status_code == 200
+    archived_dashboard = next(item for item in dashboards_resp.json() if item["id"] == dashboard["id"])
+    assert archived_dashboard["archived"] is True
+
+    dashboard_detail = await auth_client.get(f"/api/dashboards/{dashboard['id']}")
+    assert dashboard_detail.status_code == 200
+    assert dashboard_detail.json()["archived"] is True
+
+    lists_resp = await auth_client.get("/api/lists", params={"dashboard_id": dashboard["id"]})
+    assert lists_resp.status_code == 404
+
+    list_detail = await auth_client.get(f"/api/lists/{lst['id']}")
+    assert list_detail.status_code == 404
+
+    calendar_resp = await auth_client.get(
+        "/api/calendar/events",
+        params={
+            "window_start": "2026-04-10T00:00:00+00:00",
+            "window_end": "2026-04-11T00:00:00+00:00",
+            "dashboard_id": dashboard["id"],
+        },
+    )
+    assert calendar_resp.status_code == 404
+
+    event_detail = await auth_client.get(f"/api/calendar/events/{event['id']}")
+    assert event_detail.status_code == 404
+
+    set_csrf(auth_client)
+    restore_resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}",
+        json={"archived": False},
+    )
+    assert restore_resp.status_code == 200
+    assert restore_resp.json()["archived"] is False
+
+    restored_lists = await auth_client.get("/api/lists", params={"dashboard_id": dashboard["id"]})
+    assert restored_lists.status_code == 200
+    assert [item["id"] for item in restored_lists.json()] == [lst["id"]]
+
+    restored_calendar = await auth_client.get(
+        "/api/calendar/events",
+        params={
+            "window_start": "2026-04-10T00:00:00+00:00",
+            "window_end": "2026-04-11T00:00:00+00:00",
+            "dashboard_id": dashboard["id"],
+        },
+    )
+    assert restored_calendar.status_code == 200
+    assert [item["event_id"] for item in restored_calendar.json()] == [event["id"]]
+
+
+async def test_delete_archived_dashboard_removes_dashboard_owned_lists_and_events(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client, name="Archive Then Delete")
+    lst = await create_list(auth_client, dashboard["id"], name="Packing")
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Flight")
+
+    set_csrf(auth_client)
+    archive_resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}",
+        json={"archived": True},
+    )
+    assert archive_resp.status_code == 200
+    assert archive_resp.json()["archived"] is True
+
+    set_csrf(auth_client)
+    delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
+    assert delete_resp.status_code == 204
+
+    dashboard_resp = await auth_client.get(f"/api/dashboards/{dashboard['id']}")
+    assert dashboard_resp.status_code == 404
+
+    list_resp = await auth_client.get(f"/api/lists/{lst['id']}")
+    assert list_resp.status_code == 404
+
+    event_resp = await auth_client.get(f"/api/calendar/events/{event['id']}")
+    assert event_resp.status_code == 404
 
 
 async def test_update_dashboard_meta_rejects_legacy_favorite_field(auth_client: AsyncClient) -> None:
