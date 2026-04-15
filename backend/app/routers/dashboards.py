@@ -73,6 +73,7 @@ def _to_summary(
             "id": dashboard.id,
             "user_id": dashboard.user_id,
             "name": dashboard.name,
+            "archived": dashboard.archived,
             "access_description": access_description,
             "is_shared": is_shared,
             "can_edit": can_edit,
@@ -99,6 +100,7 @@ def _to_response(
         id=dashboard.id,
         user_id=dashboard.user_id,
         name=dashboard.name,
+        archived=dashboard.archived,
         is_shared=is_shared,
         can_edit=can_edit,
         can_manage_shares=can_manage_shares,
@@ -181,6 +183,11 @@ async def _get_dashboard_access(
     return dashboard, shares, role
 
 
+def _assert_dashboard_not_archived(dashboard: Dashboard) -> None:
+    if dashboard.archived:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dashboard is archived")
+
+
 async def _list_accessible_dashboard_summaries(
     user: User,
     db: AsyncSession,
@@ -231,7 +238,7 @@ async def _list_accessible_dashboard_summaries(
                 direct_share_exists,
             )
         )
-        .order_by(favorite_for_user.desc(), Dashboard.updated_at.desc())
+        .order_by(Dashboard.archived.asc(), favorite_for_user.desc(), Dashboard.updated_at.desc())
     )
     rows = result.all()
     shares_by_dashboard = await _resource_shares_by_dashboard(
@@ -546,6 +553,11 @@ async def update_dashboard_meta(
     if body.name is not None:
         permissions.assert_can_edit(role)
         dashboard.name = body.name
+    if body.archived is not None:
+        permissions.assert_can_delete(role)
+        dashboard.archived = body.archived
+        if body.archived:
+            await _remove_dashboard_from_user_preferences(dashboard, shares, db)
     event_message = await _build_dashboard_event_message(
         db,
         event_type=EventType.dashboard_updated,
@@ -591,6 +603,9 @@ async def delete_dashboard(
         client_mutation_id=client_mutation_id,
     )
 
+    # Permanent dashboard deletion owns cleanup for every dashboard-scoped child
+    # resource. Future dashboard-owned resource tables should be cleaned up here
+    # by dashboard_id as well.
     list_result = await db.execute(select(List.id).where(List.dashboard_id == dashboard.id, List.deleted_at.is_(None)))
     list_ids = [row[0] for row in list_result.all()]
     for list_id in list_ids:
@@ -629,7 +644,10 @@ async def get_default_dashboard(
         else literal(False)
     )
     result = await db.execute(
-        select(Dashboard).where(Dashboard.user_id == current_user.id).order_by(favorite_for_user.desc(), Dashboard.created_at.asc()).limit(1)
+        select(Dashboard)
+        .where(Dashboard.user_id == current_user.id, Dashboard.archived.is_(False))
+        .order_by(favorite_for_user.desc(), Dashboard.created_at.asc())
+        .limit(1)
     )
     dashboard = result.scalar_one_or_none()
     if dashboard is None:
@@ -681,6 +699,7 @@ async def update_layout(
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
+    _assert_dashboard_not_archived(dashboard)
     if dashboard.version != body.version:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -728,6 +747,7 @@ async def add_widget(
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
+    _assert_dashboard_not_archived(dashboard)
     is_shared_dashboard = bool(shares)
     widget_policy = get_widget_policy(body.widget_type)
     widget_config = dict(body.config)
@@ -867,6 +887,7 @@ async def create_dashboard_calendar_event(
 ) -> CalendarEventResponse:
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
+    _assert_dashboard_not_archived(dashboard)
     if body.dashboard_id != dashboard.id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -932,6 +953,7 @@ async def list_dashboard_calendar_occurrences(
         )
 
     dashboard, _shares, _role = await _get_dashboard_access(dashboard_id, current_user, db)
+    _assert_dashboard_not_archived(dashboard)
     event_result = await db.execute(
         select(CalendarEvent).where(
             CalendarEvent.deleted_at.is_(None),
@@ -979,6 +1001,7 @@ async def update_widget(
 ) -> WidgetResponse:
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
+    _assert_dashboard_not_archived(dashboard)
     result = await db.execute(
         select(DashboardWidget).where(
             DashboardWidget.id == widget_id,
@@ -1024,6 +1047,7 @@ async def delete_widget(
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
+    _assert_dashboard_not_archived(dashboard)
     result = await db.execute(
         select(DashboardWidget).where(
             DashboardWidget.id == widget_id,

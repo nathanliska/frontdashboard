@@ -22,8 +22,17 @@ async def load_dashboard_access(
     dashboard_id: uuid.UUID,
     user: User,
     db: AsyncSession,
+    *,
+    allow_archived: bool = False,
 ) -> tuple[Dashboard, list[ResourceShare], ShareRole | None]:
-    result = await db.execute(select(Dashboard).where(Dashboard.id == dashboard_id))
+    # Dashboard-scoped resources should load parent access through this helper so
+    # archived dashboards automatically hide their child content unless a route
+    # explicitly opts into archived access (for example, the dashboard archive UI).
+    dashboard_filters = [Dashboard.id == dashboard_id]
+    if not allow_archived:
+        dashboard_filters.append(Dashboard.archived.is_(False))
+
+    result = await db.execute(select(Dashboard).where(*dashboard_filters))
     dashboard = result.scalar_one_or_none()
     if dashboard is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
@@ -39,6 +48,8 @@ async def load_dashboard_access(
 
 
 async def list_accessible_dashboard_ids(user: User, db: AsyncSession) -> list[uuid.UUID]:
+    # Child-resource listing routes should source dashboard visibility from here
+    # so archived dashboards disappear consistently across future resource types.
     shared_ids_result = await db.execute(
         select(ResourceShare.resource_id).where(
             ResourceShare.resource_type == ResourceType.dashboard,
@@ -50,10 +61,11 @@ async def list_accessible_dashboard_ids(user: User, db: AsyncSession) -> list[uu
 
     result = await db.execute(
         select(Dashboard.id).where(
+            Dashboard.archived.is_(False),
             or_(
                 Dashboard.user_id == user.id,
                 Dashboard.id.in_(shared_ids) if shared_ids else False,
-            )
+            ),
         )
     )
     return [row[0] for row in result.all()]
@@ -173,6 +185,7 @@ async def get_shared_dashboards_for_resource(
         select(Dashboard)
         .join(DashboardWidget, DashboardWidget.dashboard_id == Dashboard.id)
         .where(
+            Dashboard.archived.is_(False),
             DashboardWidget.resource_type == resource_type,
             DashboardWidget.resource_id == resource_id,
         )
@@ -259,13 +272,14 @@ async def list_dashboard_managed_resource_ids_for_user(
 
     accessible_dashboard_result = await db.execute(
         select(Dashboard.id).where(
+            Dashboard.archived.is_(False),
             or_(
                 Dashboard.id.in_(matching_dashboard_ids),
                 and_(
                     Dashboard.user_id == user_id,
                     Dashboard.id.in_(all_shared_dashboard_ids),
                 ),
-            )
+            ),
         )
     )
     dashboard_ids = [row[0] for row in accessible_dashboard_result.all()]
