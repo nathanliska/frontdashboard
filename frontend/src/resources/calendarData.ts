@@ -31,6 +31,9 @@ const calendarOccurrencesQuery = createScopedQuery<CalendarOccurrencesScope, Cal
   fallbackErrorMessage: 'Failed to load calendar events.',
 })
 
+const calendarEventDetails = new Map<string, CalendarEvent>()
+const calendarEventRequests = new Map<string, Promise<CalendarEvent>>()
+
 function getEventPayload(event: SseEvent): Record<string, unknown> | null {
   return event.payload && typeof event.payload === 'object' ? event.payload : null
 }
@@ -42,6 +45,12 @@ function getDashboardId(event: SseEvent): string | null {
 
 function invalidateDashboardOccurrences(dashboardId: string | null): void {
   calendarOccurrencesQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
+}
+
+function invalidateCalendarEvent(eventId: string | null): void {
+  if (!eventId) return
+  calendarEventDetails.delete(eventId)
+  calendarEventRequests.delete(eventId)
 }
 
 export function useCalendarOccurrences(
@@ -60,6 +69,7 @@ export function useCalendarOccurrences(
 export async function createCalendarEvent(input: CreateCalendarEventInput): Promise<CalendarEvent> {
   try {
     const event = await apiCreateEvent(input)
+    calendarEventDetails.set(event.id, event)
     invalidateDashboardOccurrences(event.dashboard_id ?? input.dashboard_id ?? null)
     toast.success('Event created.')
     return event
@@ -71,8 +81,27 @@ export async function createCalendarEvent(input: CreateCalendarEventInput): Prom
 }
 
 export async function getCalendarEvent(eventId: string): Promise<CalendarEvent> {
+  const existingEvent = calendarEventDetails.get(eventId)
+  if (existingEvent) {
+    return existingEvent
+  }
+
+  const inFlightRequest = calendarEventRequests.get(eventId)
+  if (inFlightRequest) {
+    return inFlightRequest
+  }
+
   try {
-    return await apiGetEvent(eventId)
+    const request = apiGetEvent(eventId)
+      .then((event) => {
+        calendarEventDetails.set(eventId, event)
+        return event
+      })
+      .finally(() => {
+        calendarEventRequests.delete(eventId)
+      })
+    calendarEventRequests.set(eventId, request)
+    return await request
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load event.'
     toast.error(message)
@@ -86,6 +115,7 @@ export async function updateCalendarEvent(
 ): Promise<CalendarEvent> {
   try {
     const event = await apiUpdateEvent(eventId, input)
+    calendarEventDetails.set(eventId, event)
     invalidateDashboardOccurrences(event.dashboard_id)
     toast.success('Event updated.')
     return event
@@ -102,6 +132,7 @@ export async function deleteCalendarEvent(
 ): Promise<void> {
   try {
     await apiDeleteEvent(eventId)
+    invalidateCalendarEvent(eventId)
     invalidateDashboardOccurrences(dashboardId)
     toast.success('Event deleted.')
   } catch (error) {
@@ -114,14 +145,19 @@ export async function deleteCalendarEvent(
 export function handleCalendarResourceEvent(event: SseEvent): void {
   if (event.event_type === 'resync') {
     calendarOccurrencesQuery.invalidateWhere(() => true)
+    calendarEventDetails.clear()
+    calendarEventRequests.clear()
     return
   }
 
   if (!event.event_type.startsWith('calendar.')) return
 
+  invalidateCalendarEvent(event.entity_id)
   invalidateDashboardOccurrences(getDashboardId(event))
 }
 
-export function __resetCalendarDataForTests(): void {
+export function resetCalendarData(): void {
   calendarOccurrencesQuery.reset()
+  calendarEventDetails.clear()
+  calendarEventRequests.clear()
 }

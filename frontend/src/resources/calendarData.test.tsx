@@ -2,7 +2,8 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CalendarOccurrence } from '../api/calendar'
 import {
-  __resetCalendarDataForTests,
+  resetCalendarData,
+  getCalendarEvent,
   handleCalendarResourceEvent,
   useCalendarOccurrences,
 } from './calendarData'
@@ -49,6 +50,26 @@ function makeOccurrence(overrides: Partial<CalendarOccurrence> = {}): CalendarOc
   }
 }
 
+function makeEvent(overrides: Partial<import('../api/calendar').CalendarEvent> = {}) {
+  return {
+    id: 'event-1',
+    dashboard_id: 'dash-1',
+    title: 'Launch review',
+    description: null,
+    location: null,
+    starts_at: '2026-04-05T14:00:00Z',
+    ends_at: '2026-04-05T15:00:00Z',
+    timezone: 'UTC',
+    all_day: false,
+    created_by: 'user-1',
+    updated_by: 'user-1',
+    recurrence: null,
+    created_at: '2026-04-05T00:00:00Z',
+    updated_at: '2026-04-05T00:00:00Z',
+    ...overrides,
+  }
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -80,7 +101,7 @@ function CalendarProbe() {
 describe('calendarData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    __resetCalendarDataForTests()
+    resetCalendarData()
   })
 
   it('keeps occurrences visible during a background revalidation', async () => {
@@ -142,5 +163,41 @@ describe('calendarData', () => {
 
     await waitFor(() => expect(apiListOccurrences).toHaveBeenCalledTimes(2))
     await screen.findByText('Resynced event')
+  })
+
+  it('reuses cached event details when reopening the same calendar event editor', async () => {
+    apiGetEvent.mockResolvedValue(makeEvent())
+
+    const first = await getCalendarEvent('event-1')
+    const second = await getCalendarEvent('event-1')
+
+    expect(first).toEqual(second)
+    expect(apiGetEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('invalidates cached event details after calendar SSE updates', async () => {
+    apiGetEvent
+      .mockResolvedValueOnce(makeEvent({ title: 'Launch review' }))
+      .mockResolvedValueOnce(makeEvent({ title: 'Updated launch review' }))
+
+    await getCalendarEvent('event-1')
+
+    act(() => {
+      handleCalendarResourceEvent({
+        event_id: 1,
+        event_type: 'calendar.event.updated',
+        entity_type: 'calendar_event',
+        entity_id: 'event-1',
+        entity_version: 2,
+        actor_id: 'other-user',
+        actor_display_name: 'Other User',
+        payload: { dashboard_id: 'dash-1' },
+        created_at: '2026-04-05T00:00:01Z',
+      })
+    })
+
+    const refreshed = await getCalendarEvent('event-1')
+    expect(refreshed.title).toBe('Updated launch review')
+    expect(apiGetEvent).toHaveBeenCalledTimes(2)
   })
 })
