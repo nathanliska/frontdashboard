@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
 import { Clock3, MapPin, Pencil, Repeat2, Trash2 } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { CalendarOccurrence } from '../../api/calendar'
 import { formatOccurrenceSpan, isMultiDayOccurrence } from '../../utils/calendar/calendarUtils'
 

@@ -1,8 +1,6 @@
 import { CalendarDays, Clock3 } from 'lucide-react'
 import { memo } from 'react'
-import { type CalendarOccurrence } from '../../../api/calendar'
-import { CalendarDayNumber } from '../../calendar/CalendarDayNumber'
-import { cn } from '../../../utils/shared/cn'
+import type { CalendarOccurrence } from '../../../api/calendar'
 import {
   CALENDAR_WEEKDAY_LABELS,
   CALENDAR_WEEKDAY_LABELS_COMPACT,
@@ -15,7 +13,11 @@ import {
   formatOccurrenceTime,
   isMultiDayOccurrence,
 } from '../../../utils/calendar/calendarUtils'
+import { cn } from '../../../utils/shared/cn'
+import { CalendarDayNumber } from '../../calendar/CalendarDayNumber'
 import { type CalendarWidgetView, ViewTabButtons } from './CalendarWidgetViewTabs'
+
+const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
 
 export const DayCalendarWidget = memo(function DayCalendarWidget({
   occurrences,
@@ -183,7 +185,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
         )}
       >
         {weekdayLabels.map((label, index) => (
-          <div key={`${label}-${index}`} className="text-center">
+          <div key={WEEKDAY_KEYS[index]} className="text-center">
             {label}
           </div>
         ))}

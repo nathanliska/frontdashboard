@@ -1,21 +1,21 @@
-import { useCallback, useState } from 'react'
 import { Users } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import type { ShareRole } from '../../api/shares'
-import { ShareAccessList } from './share-panel/ShareAccessList'
-import { SharePanelAddAccess } from './share-panel/SharePanelAddAccess'
 import type {
   SharePanelAddPayload,
   SharePanelItem,
   ShareRoleOption,
 } from '../../utils/share/sharePanelTypes'
 import { capitalize } from '../../utils/shared/cn'
+import { ShareAccessList } from './share-panel/ShareAccessList'
+import { SharePanelAddAccess } from './share-panel/SharePanelAddAccess'
 
-export { DashboardManagedAccessList } from './share-panel/DashboardManagedAccessList'
 export type {
   SharePanelAddPayload,
   SharePanelItem,
   ShareRoleOption,
 } from '../../utils/share/sharePanelTypes'
+export { DashboardManagedAccessList } from './share-panel/DashboardManagedAccessList'
 
 const DEFAULT_SHARE_ROLE_OPTIONS: ShareRoleOption[] = (
   ['viewer', 'editor'] as const satisfies readonly ShareRole[]

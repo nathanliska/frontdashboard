@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
 import { Check, Plus } from 'lucide-react'
-import { type ListItem } from '../../../api/lists'
+import { useEffect, useRef, useState } from 'react'
+import type { ListItem } from '../../../api/lists'
 import { addListItem, updateListItem, useListDetail } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
 import { cn } from '../../../utils/shared/cn'

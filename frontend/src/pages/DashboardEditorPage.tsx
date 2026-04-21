@@ -1,6 +1,6 @@
+import { ArrowLeft, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { useEffect, useEffectEvent, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { AddWidgetModal, type AddWidgetParams } from '../components/dashboard/AddWidgetModal'
 import { DashboardGrid } from '../components/dashboard/DashboardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
@@ -56,6 +56,7 @@ export function DashboardEditorPage() {
       <div className="flex flex-col items-center justify-center h-64 gap-3">
         <p className="text-sm text-zinc-400">Dashboard not found or you don't have access.</p>
         <button
+          type="button"
           onClick={() => navigate('/dashboards')}
           className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5"
         >
@@ -75,6 +76,7 @@ export function DashboardEditorPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 pl-12 sm:pl-0 min-h-10">
         <button
+          type="button"
           onClick={() => navigate('/dashboards')}
           className="text-zinc-500 hover:text-zinc-300 transition-colors"
           aria-label="Back to dashboards"
@@ -97,6 +99,7 @@ export function DashboardEditorPage() {
         )}
         {canEdit && (
           <button
+            type="button"
             onClick={() => setShowEditDashboard(true)}
             className="rounded-md p-2 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors shrink-0"
             aria-label="Edit dashboard"
@@ -107,6 +110,7 @@ export function DashboardEditorPage() {
         )}
         {canEdit && (
           <button
+            type="button"
             onClick={() => setShowAddWidget(true)}
             className="ml-auto sm:ml-0 flex items-center gap-1.5 text-xs sm:text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 sm:px-3 py-1.5 rounded-md transition-colors shrink-0"
           >
@@ -123,6 +127,7 @@ export function DashboardEditorPage() {
             This dashboard is archived. Widgets are read-only until it is unarchived.
           </p>
           <button
+            type="button"
             onClick={() => navigate('/dashboards')}
             className="text-xs text-amber-400 hover:text-amber-300 transition-colors ml-4 shrink-0"
           >
@@ -138,6 +143,7 @@ export function DashboardEditorPage() {
             This dashboard was updated elsewhere. Reload to see the latest layout.
           </p>
           <button
+            type="button"
             onClick={resolveConflict}
             className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors ml-4 shrink-0"
           >

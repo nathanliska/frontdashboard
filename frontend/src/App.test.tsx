@@ -1,12 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import App from './App'
 import {
   createMockAuthState,
   mockUseAuthStore,
   resetMockAuthStore,
   setMockAuthState,
 } from './test/auth-store'
-import App from './App'
 
 const init = vi.fn()
 

@@ -63,7 +63,9 @@ export function createScopedQuery<Scope, Data>({
   }
 
   function notify(entry: ScopedQueryEntry<Scope, Data>) {
-    entry.listeners.forEach((listener) => listener())
+    entry.listeners.forEach((listener) => {
+      listener()
+    })
   }
 
   function setState(entry: ScopedQueryEntry<Scope, Data>, nextState: ScopedQueryState<Data>): void {
@@ -169,7 +171,6 @@ export function createScopedQuery<Scope, Data>({
   function useQuery(scope: Scope | null | undefined): ScopedQueryState<Data> {
     if (scope) ensureEntry(scope)
 
-    const scopeKey = scope ? getKey(scope) : null
     const state = useSyncExternalStore(
       (listener) => {
         if (!scope) {
@@ -205,7 +206,7 @@ export function createScopedQuery<Scope, Data>({
       if (entry.state.data === null || entry.stale) {
         void fetch(scope, { background: entry.state.data !== null }).catch(() => undefined)
       }
-    }, [scope, scopeKey])
+    }, [scope])
 
     return state
   }

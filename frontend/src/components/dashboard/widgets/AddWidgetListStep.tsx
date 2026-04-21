@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { type ListType, type ListSummary, apiGetLists } from '../../../api/lists'
+import { apiGetLists, type ListSummary, type ListType } from '../../../api/lists'
 import type { AddWidgetParams } from '../../../utils/dashboard/widgetCreationTypes'
 
 export function AddWidgetListStep({

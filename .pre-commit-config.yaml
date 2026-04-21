@@ -1,0 +1,59 @@
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.13
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - docs
+          - refactor
+          - chore
+          - test
+          - ci
+          - perf
+          - style
+          - build
+          - revert
+
+  - repo: local
+    hooks:
+      - id: normalize-commit-msg
+        name: Normalize commit message
+        entry: scripts/normalize-commit-msg.sh
+        language: script
+        stages: [prepare-commit-msg]
+        always_run: true
+
+      - id: biome-check
+        name: Biome check (frontend)
+        entry: scripts/run-biome-check.sh
+        language: script
+        files: ^frontend/.*\.(ts|tsx|js|jsx|json|css)$
+
+      - id: deptry
+        name: deptry (backend)
+        entry: bash -c 'cd backend && uv run python -m deptry .'
+        language: system
+        files: ^backend/.*\.py$|^backend/pyproject\.toml$
+        pass_filenames: false

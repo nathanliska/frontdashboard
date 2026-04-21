@@ -1,5 +1,5 @@
-import { type FormEvent, useState } from 'react'
 import { LockKeyhole, Mail, Pencil, UserRound, X } from 'lucide-react'
+import { type FormEvent, useState } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { toast } from '../stores/toast'
 

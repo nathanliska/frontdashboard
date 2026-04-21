@@ -1,5 +1,5 @@
-import { memo } from 'react'
 import { Trash2 } from 'lucide-react'
+import { memo } from 'react'
 import type { ShareRole } from '../../../api/shares'
 import type { SharePanelItem, ShareRoleOption } from '../../../utils/share/sharePanelTypes'
 

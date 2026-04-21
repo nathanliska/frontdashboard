@@ -1,13 +1,13 @@
+import { Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check } from 'lucide-react'
-import { type Notification, apiGetActivity } from '../api/notifications'
+import { apiGetActivity, type Notification } from '../api/notifications'
 import { ActivityFeed } from '../components/notifications/ActivityFeed'
 import { NotificationFeed } from '../components/notifications/NotificationFeed'
 import { APP_RESYNC_EVENT } from '../hooks/useSSE'
 import { useNotificationsStore } from '../stores/notifications'
-import { cn } from '../utils/shared/cn'
 import { getNotificationDestination } from '../utils/notifications/notificationFeedUtils'
+import { cn } from '../utils/shared/cn'
 
 type Tab = 'notifications' | 'activity'
 
@@ -74,6 +74,7 @@ export function NotificationsPage() {
         <h1 className="min-w-0 text-xl font-semibold text-zinc-100 truncate">Notifications</h1>
         {tab === 'notifications' && unreadCount > 0 && (
           <button
+            type="button"
             onClick={() => void markAllRead()}
             className="shrink-0 flex items-center gap-1.5 text-xs sm:text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
           >
@@ -87,6 +88,7 @@ export function NotificationsPage() {
       <div className="flex items-center gap-1 border-b border-zinc-800 shrink-0">
         {(['notifications', 'activity'] as Tab[]).map((t) => (
           <button
+            type="button"
             key={t}
             onClick={() => setTab(t)}
             className={cn(

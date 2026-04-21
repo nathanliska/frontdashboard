@@ -10,8 +10,9 @@ Self-hosted household dashboard app. Monorepo with `backend/` (FastAPI/Python) a
 | Frontend | React 18+, TypeScript, Vite, Tailwind CSS, Zustand, react-grid-layout |
 | Infra | Docker Compose, Caddy, uv (Python), npm (Node) |
 
-## Key Commands (once Makefile is populated)
+## Key Commands
 ```bash
+make hooks       # Install git hooks (once per clone)
 make dev-up      # Start all services
 make dev-down    # Stop all services
 make test        # Run all tests
@@ -23,10 +24,10 @@ make seed        # Seed development data
 
 ## Code Standards
 - **Backend**: Ruff for lint + format. Run `uv run ruff check --fix` and `uv run ruff format`.
-- **Frontend**: ESLint + Prettier. Run `npm run lint` and `npm run format`.
-- **Commits**: Conventional Commits enforced via `.githooks/commit-msg`. Format: `type(scope): description`. Types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `test`, `perf`, `ci`, `build`, `revert`.
-- **No commits to main**: enforced by pre-commit hook.
-- **Pre-push**: unit tests must pass.
+- **Frontend**: Biome for lint + format. Run `npm run lint`, `npm run lint:fix`, or `npm run format`.
+- **Commits**: Conventional Commits are normalized in `prepare-commit-msg` and enforced in `commit-msg`. Format: `type(scope): description`. Types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `test`, `perf`, `ci`, `build`, `revert`.
+- **No commits to main**: enforced by branch protection.
+- **CI**: GitHub Actions runs backend/frontend lint, tests, and frontend build on push and pull request.
 
 ## Architecture Decisions (key ones)
 - **Visibility model**: every scoped record has `visibility` (private/shared) + `group_id` (null for private). Check constraint enforces this at DB level.
@@ -36,8 +37,8 @@ make seed        # Seed development data
 - **Dashboards**: react-grid-layout with version integer for conflict detection.
 
 ## Hooks Setup
-Custom hooks live in `.githooks/`. They are activated with:
+Uses [pre-commit](https://pre-commit.com/), installed via `uv`. Run once after cloning:
 ```bash
-git config core.hooksPath .githooks
+make hooks
 ```
-This must be run after cloning (included in `make dev-up` / setup instructions).
+This runs `uv tool install pre-commit` then registers hooks for all active stages (pre-commit, prepare-commit-msg, commit-msg).

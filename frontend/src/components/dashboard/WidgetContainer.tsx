@@ -76,6 +76,7 @@ export function WidgetContainer({
           ) : null}
           {canEdit && onRemove && (
             <button
+              type="button"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation()

@@ -31,6 +31,7 @@ export function ConfirmDialog() {
         <p className="text-sm text-zinc-200">{message}</p>
         <div className="flex gap-2">
           <button
+            type="button"
             ref={cancelRef}
             onClick={_cancel}
             className="flex-1 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
@@ -38,6 +39,7 @@ export function ConfirmDialog() {
             Cancel
           </button>
           <button
+            type="button"
             onClick={_accept}
             className="flex-1 py-2 rounded-md text-sm bg-red-600 hover:bg-red-500 text-white font-medium transition-colors"
           >

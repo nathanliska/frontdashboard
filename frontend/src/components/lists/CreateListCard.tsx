@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import { X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { ListType } from '../../api/lists'
 
 export function CreateListCard({
@@ -13,6 +13,11 @@ export function CreateListCard({
 }) {
   const [name, setName] = useState('')
   const [listType, setListType] = useState<ListType>('checklist')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -26,7 +31,7 @@ export function CreateListCard({
       className="bg-zinc-900 border border-zinc-700 rounded-lg p-3 space-y-2 shrink-0"
     >
       <input
-        autoFocus
+        ref={inputRef}
         placeholder="List name"
         value={name}
         onChange={(event) => setName(event.target.value)}

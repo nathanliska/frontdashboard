@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiGetActivity } from '../api/notifications'
 import { APP_RESYNC_EVENT } from '../hooks/useSSE'
 import { useNotificationsStore } from '../stores/notifications'

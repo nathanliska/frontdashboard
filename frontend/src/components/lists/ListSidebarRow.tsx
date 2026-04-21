@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
 import { Archive, Check, Pencil, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { ListSummary } from '../../api/lists'
 import { cn } from '../../utils/shared/cn'
 import { TypeBadge } from './TypeBadge'
@@ -52,23 +52,25 @@ export function ListSidebarRow({
 
   return (
     <div
-      onClick={() => {
-        if (!editing) onSelect(list.id)
-      }}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (editing) return
-        if (event.key === 'Enter') onSelect(list.id)
-      }}
       className={cn(
-        'w-full text-left px-3 py-2.5 rounded-lg border transition-colors group cursor-pointer',
+        'relative w-full text-left px-3 py-2.5 rounded-lg border transition-colors group',
         selectedId === list.id
           ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
-          : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700',
+          : 'bg-zinc-900 border-zinc-800 text-zinc-300',
       )}
     >
-      <div className="flex items-start justify-between gap-2">
+      {!editing && (
+        <button
+          type="button"
+          onClick={() => onSelect(list.id)}
+          aria-label={`Open list ${list.name}`}
+          className={cn(
+            'absolute inset-0 rounded-lg',
+            selectedId === list.id ? '' : 'hover:border-zinc-700',
+          )}
+        />
+      )}
+      <div className="relative flex items-start justify-between gap-2">
         {editing ? (
           <input
             ref={inputRef}

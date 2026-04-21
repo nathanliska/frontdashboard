@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import {
-  type Notification,
   apiGetNotifications,
   apiGetUnreadCount,
   apiMarkAllRead,
   apiMarkRead,
+  type Notification,
 } from '../api/notifications'
 
 let notificationsPromise: Promise<void> | null = null
