@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { useRef, useState } from 'react'
 
 export function AddItemForm({ onAdd }: { onAdd: (text: string) => Promise<void> }) {
   const [text, setText] = useState('')

@@ -1,10 +1,5 @@
 import { useMemo } from 'react'
 import {
-  type ListMutationOptions,
-  type ListDetail,
-  type ListItem,
-  type ListSummary,
-  type ListType,
   apiCreateItem,
   apiCreateList,
   apiDeleteItem,
@@ -13,11 +8,15 @@ import {
   apiGetLists,
   apiUpdateItem,
   apiUpdateList,
+  type ListDetail,
+  type ListItem,
+  type ListMutationOptions,
+  type ListSummary,
+  type ListType,
 } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
 import { useAuthStore } from '../stores/auth'
 import { toast } from '../stores/toast'
-import { createScopedQuery } from './scopedQuery'
 import {
   __resetPendingListMutationsForTests,
   consumePendingListMutation,
@@ -25,6 +24,7 @@ import {
   forgetPendingListMutation,
   recordPendingListMutation,
 } from '../utils/lists/listMutation'
+import { createScopedQuery } from './scopedQuery'
 
 type ListSummariesScope = {
   dashboardId: string

@@ -2,8 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../../api/dashboards'
 import type { ResourceShare } from '../../api/shares'
-import { DashboardSettingsModal } from './DashboardSettingsModal'
 import { __resetPendingDashboardMutationsForTests } from '../../utils/dashboard/dashboardMutation'
+import { DashboardSettingsModal } from './DashboardSettingsModal'
 
 const {
   apiAddDashboardShare,

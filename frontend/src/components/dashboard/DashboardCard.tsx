@@ -29,15 +29,20 @@ export function DashboardCard({
 
   return (
     <div
-      onClick={() => {
-        if (!isArchived) onOpen()
-      }}
       className={cn(
-        'group flex flex-col gap-3 p-4 bg-zinc-900 border border-zinc-800 rounded-lg transition-colors',
-        isArchived ? 'opacity-75 cursor-default' : 'hover:border-zinc-700 cursor-pointer',
+        'group relative flex flex-col gap-3 p-4 bg-zinc-900 border border-zinc-800 rounded-lg transition-colors',
+        isArchived ? 'opacity-75 cursor-default' : 'hover:border-zinc-700',
       )}
     >
-      <div className="flex items-start gap-3">
+      {!isArchived && (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open dashboard ${dashboard.name}`}
+          className="absolute inset-0 rounded-lg"
+        />
+      )}
+      <div className="relative flex items-start gap-3">
         <div className="mt-0.5 shrink-0 text-zinc-500">
           <LayoutDashboard size={16} />
         </div>
@@ -54,8 +59,9 @@ export function DashboardCard({
         </div>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="relative flex items-center gap-1">
         <button
+          type="button"
           onClick={(event) => {
             event.stopPropagation()
             onSetHome()
@@ -74,6 +80,7 @@ export function DashboardCard({
         </button>
 
         <button
+          type="button"
           onClick={(event) => {
             event.stopPropagation()
             onRename()
@@ -90,6 +97,7 @@ export function DashboardCard({
         </button>
 
         <button
+          type="button"
           onClick={(event) => {
             event.stopPropagation()
             onToggleFavorite()
@@ -110,6 +118,7 @@ export function DashboardCard({
         {isOwned && (
           <>
             <button
+              type="button"
               onClick={(event) => {
                 event.stopPropagation()
                 onArchive()
@@ -127,6 +136,7 @@ export function DashboardCard({
 
             {isArchived && (
               <button
+                type="button"
                 onClick={(event) => {
                   event.stopPropagation()
                   onDelete()

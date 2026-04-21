@@ -1,8 +1,8 @@
-import { Link, useNavigate } from 'react-router-dom'
 import { Bell, Check, X } from 'lucide-react'
-import { NotificationFeed } from './NotificationFeed'
+import { Link, useNavigate } from 'react-router-dom'
 import { useNotificationsStore } from '../../stores/notifications'
 import { getNotificationDestination } from '../../utils/notifications/notificationFeedUtils'
+import { NotificationFeed } from './NotificationFeed'
 
 export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
   const navigate = useNavigate()
@@ -61,6 +61,7 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
             <div className="flex items-center gap-2">
               {unreadCount > 0 && (
                 <button
+                  type="button"
                   onClick={() => void markAllRead()}
                   className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
                 >
@@ -69,6 +70,7 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
                 </button>
               )}
               <button
+                type="button"
                 onClick={() => setPanelOpen(false)}
                 className="text-zinc-600 hover:text-zinc-300 transition-colors"
               >

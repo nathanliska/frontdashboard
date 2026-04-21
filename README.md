@@ -40,9 +40,8 @@ A self-hosted dashboard app that acts as a private household operating system. S
 git clone https://github.com/nathanliska/frontdashboard.git
 cd frontdashboard
 
-# 2. Configure git hooks
-git config core.hooksPath .githooks
-chmod +x .githooks/*
+# 2. Install git hooks (once per clone or hook changes, requires uv)
+make hooks
 
 # 3. Copy and fill in environment variables
 cp .env.example .env
@@ -91,7 +90,7 @@ See [PLAN.md](PLAN.md) for full architecture documentation.
 
 ## Contributing
 
-- Commits must follow [Conventional Commits](https://www.conventionalcommits.org/) format, enforced by the `commit-msg` hook.
-- No direct commits to `main`.
+- Commits must follow [Conventional Commits](https://www.conventionalcommits.org/) format; the subject is normalized in `prepare-commit-msg` and enforced in `commit-msg`.
+- No direct commits to `main`; branch protection enforces this in GitHub.
 - All PRs must pass tests and lint before merge.
 - See the [PR template](.github/pull_request_template.md) for the checklist.

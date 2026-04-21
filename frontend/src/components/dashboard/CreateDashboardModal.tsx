@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { DashboardSummary } from '../../api/dashboards'
 import type { ShareCreate, ShareRole } from '../../api/shares'
 import { SharePanel, type SharePanelItem, type ShareRoleOption } from '../ui/SharePanel'
@@ -29,6 +29,11 @@ export function CreateDashboardModal({
 }) {
   const [draftShares, setDraftShares] = useState<DraftShare[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    nameInputRef.current?.focus()
+  }, [])
 
   const shareItems = useMemo<SharePanelItem[]>(
     () =>
@@ -86,15 +91,23 @@ export function CreateDashboardModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <button
+        type="button"
+        aria-label="Close create dashboard dialog"
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-dashboard-title"
+        className="relative bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-hidden"
+      >
         <div className="px-5 py-4 border-b border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-100">Create dashboard</h2>
+          <h2 id="create-dashboard-title" className="text-sm font-semibold text-zinc-100">
+            Create dashboard
+          </h2>
         </div>
 
         <form
@@ -107,9 +120,9 @@ export function CreateDashboardModal({
                 Name
               </label>
               <input
+                ref={nameInputRef}
                 id="create-dashboard-name"
                 name="dashboard-name"
-                autoFocus
                 required
                 placeholder="My Dashboard"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"

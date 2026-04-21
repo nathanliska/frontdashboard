@@ -17,21 +17,7 @@
 
 import { create } from 'zustand'
 import { apiUpdatePreferences } from '../api/auth'
-import type { ShareCreate } from '../api/shares'
-import type { SseEvent } from '../hooks/useSSE'
-import { useAuthStore } from './auth'
-import { toast } from './toast'
 import {
-  consumePendingDashboardMutation,
-  createClientMutationId,
-  forgetPendingDashboardMutation,
-  recordPendingDashboardMutation,
-} from '../utils/dashboard/dashboardMutation'
-import {
-  type Dashboard,
-  type DashboardSummary,
-  type DashboardWidget,
-  type LayoutItem,
   apiAddWidget,
   apiCreateDashboard,
   apiDeleteDashboard,
@@ -41,7 +27,21 @@ import {
   apiUpdateDashboardMeta,
   apiUpdateLayout,
   apiUpdateWidget,
+  type Dashboard,
+  type DashboardSummary,
+  type DashboardWidget,
+  type LayoutItem,
 } from '../api/dashboards'
+import type { ShareCreate } from '../api/shares'
+import type { SseEvent } from '../hooks/useSSE'
+import {
+  consumePendingDashboardMutation,
+  createClientMutationId,
+  forgetPendingDashboardMutation,
+  recordPendingDashboardMutation,
+} from '../utils/dashboard/dashboardMutation'
+import { useAuthStore } from './auth'
+import { toast } from './toast'
 
 type LoadDashboardOptions = {
   background?: boolean

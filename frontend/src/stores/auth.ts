@@ -1,7 +1,5 @@
 import { create } from 'zustand'
 import {
-  type User,
-  type UserPreferences,
   apiChangePassword,
   apiGetMe,
   apiLogin,
@@ -9,6 +7,8 @@ import {
   apiRegister,
   apiUpdatePreferences,
   apiUpdateProfile,
+  type User,
+  type UserPreferences,
 } from '../api/auth'
 import { resetCalendarData } from '../resources/calendarData'
 import { useNotificationsStore } from './notifications'

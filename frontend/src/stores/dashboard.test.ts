@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useAuthStore } from './auth'
 import type { Dashboard, DashboardSummary } from '../api/dashboards'
 import type { SseEvent } from '../hooks/useSSE'
-import { useDashboardStore } from './dashboard'
 import {
   __resetPendingDashboardMutationsForTests,
   recordPendingDashboardMutation,
 } from '../utils/dashboard/dashboardMutation'
+import { useAuthStore } from './auth'
+import { useDashboardStore } from './dashboard'
 
 const { apiUpdatePreferences } = vi.hoisted(() => ({
   apiUpdatePreferences: vi.fn(),

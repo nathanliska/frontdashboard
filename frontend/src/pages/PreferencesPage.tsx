@@ -30,6 +30,7 @@ export function PreferencesPage() {
           </div>
           {homeDashboardId && (
             <button
+              type="button"
               onClick={() => void updatePreferences({ home_dashboard_id: null })}
               className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors shrink-0"
             >

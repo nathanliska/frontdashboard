@@ -1,7 +1,7 @@
 import { Minus, Plus } from 'lucide-react'
 import { memo } from 'react'
+import type { DurationUnit } from '../../utils/calendar/calendarEditorDurationUtils'
 import { cn } from '../../utils/shared/cn'
-import { type DurationUnit } from '../../utils/calendar/calendarEditorDurationUtils'
 
 export const CalendarEditorDurationToolbar = memo(function CalendarEditorDurationToolbar({
   allDay,

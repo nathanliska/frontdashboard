@@ -1,5 +1,5 @@
-import { apiFetch } from './client'
 import type { CalendarEvent, CalendarOccurrence, CreateCalendarEventInput } from './calendar'
+import { apiFetch } from './client'
 import type { ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
 const dashboardRequests = new Map<string, Promise<Dashboard>>()

@@ -1,9 +1,9 @@
-import type { ReactNode } from 'react'
 import { Menu } from 'lucide-react'
-import { ConfirmDialog } from '../ui/ConfirmDialog'
-import { Toaster } from '../ui/Toaster'
+import type { ReactNode } from 'react'
 import { useSSE } from '../../hooks/useSSE'
 import { useUIStore } from '../../stores/ui'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { Toaster } from '../ui/Toaster'
 import { Sidebar } from './Sidebar'
 
 export function AppShell({ children }: { children: ReactNode }) {

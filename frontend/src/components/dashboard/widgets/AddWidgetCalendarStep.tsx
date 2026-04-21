@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { AddWidgetParams } from '../../../utils/dashboard/widgetCreationTypes'
-import { ViewTabButtons, type CalendarWidgetView } from './CalendarWidgetViewTabs'
+import { type CalendarWidgetView, ViewTabButtons } from './CalendarWidgetViewTabs'
 
 export function AddWidgetCalendarStep({
   isSharedDashboard,
@@ -21,6 +21,7 @@ export function AddWidgetCalendarStep({
       </div>
 
       <button
+        type="button"
         onClick={() =>
           void onAdd({
             widget_type: 'calendar',

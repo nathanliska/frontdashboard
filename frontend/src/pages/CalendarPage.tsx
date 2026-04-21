@@ -1,17 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { CalendarOccurrence } from '../api/calendar'
 import { CalendarDayNumber } from '../components/calendar/CalendarDayNumber'
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
-import {
-  type CalendarEditorDraft,
-  type EditorMode,
-  createCalendarEditorDraftFromEvent,
-  createDefaultCalendarEditorDraft,
-  toRecurrenceUntilIso,
-} from '../utils/calendar/calendarEditorDraftUtils'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import {
   createCalendarEvent,
@@ -22,11 +15,17 @@ import {
 } from '../resources/calendarData'
 import { confirm } from '../stores/confirm'
 import { useDashboardStore } from '../stores/dashboard'
-import { cn } from '../utils/shared/cn'
+import {
+  type CalendarEditorDraft,
+  createCalendarEditorDraftFromEvent,
+  createDefaultCalendarEditorDraft,
+  type EditorMode,
+  toRecurrenceUntilIso,
+} from '../utils/calendar/calendarEditorDraftUtils'
 import {
   CALENDAR_WEEKDAY_LABELS,
-  DEFAULT_TIMEZONE,
   calendarWindow,
+  DEFAULT_TIMEZONE,
   dateKey,
   formatCalendarOccurrenceCellLabel,
   formatCalendarOccurrenceCellTitle,
@@ -37,6 +36,7 @@ import {
   occurrencesForDate,
   startOfDay,
 } from '../utils/calendar/calendarUtils'
+import { cn } from '../utils/shared/cn'
 
 type DashboardContext = {
   id: string

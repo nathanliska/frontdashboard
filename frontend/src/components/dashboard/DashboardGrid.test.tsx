@@ -1,5 +1,5 @@
-import * as React from 'react'
 import { render, screen } from '@testing-library/react'
+import * as React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Dashboard } from '../../api/dashboards'
 import { DashboardGrid } from './DashboardGrid'

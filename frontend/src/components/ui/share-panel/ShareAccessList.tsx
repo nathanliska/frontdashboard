@@ -1,6 +1,6 @@
 import type { ShareRole } from '../../../api/shares'
-import { ShareAccessRow } from './ShareAccessRow'
 import type { SharePanelItem, ShareRoleOption } from '../../../utils/share/sharePanelTypes'
+import { ShareAccessRow } from './ShareAccessRow'
 
 export function ShareAccessList({
   items,

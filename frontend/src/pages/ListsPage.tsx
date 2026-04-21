@@ -1,6 +1,6 @@
+import { Plus } from 'lucide-react'
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Plus } from 'lucide-react'
 import type { ListSummary, ListType } from '../api/lists'
 import { AddItemForm } from '../components/lists/AddItemForm'
 import { CreateListCard } from '../components/lists/CreateListCard'
@@ -188,6 +188,7 @@ export function ListsPage() {
             ))}
           </select>
           <button
+            type="button"
             onClick={() => setShowCreate((value) => !value)}
             disabled={!effectiveDashboardId}
             className="shrink-0 flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition-colors disabled:text-zinc-700"
@@ -206,6 +207,7 @@ export function ListsPage() {
       <div className="flex items-center gap-1 shrink-0 overflow-x-auto pb-1">
         {TYPE_FILTERS.map(({ value, label }) => (
           <button
+            type="button"
             key={value}
             onClick={() => setTypeFilter(value)}
             className={cn(

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
 import { Check, Pencil, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { ListItem } from '../../api/lists'
 import { cn } from '../../utils/shared/cn'
 
@@ -48,6 +48,7 @@ export function ListItemRow({
   return (
     <li className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 border-b border-zinc-800 group last:border-0">
       <button
+        type="button"
         onClick={() => void onToggleChecked(item.id, !item.checked)}
         className={cn(
           'shrink-0 w-4 h-4 rounded border transition-colors flex items-center justify-center',
@@ -56,7 +57,7 @@ export function ListItemRow({
         aria-label={item.checked ? 'Uncheck' : 'Check'}
       >
         {item.checked && (
-          <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 text-zinc-200">
+          <svg aria-hidden="true" viewBox="0 0 12 12" className="w-2.5 h-2.5 text-zinc-200">
             <path
               d="M2 6l2.5 2.5L10 3.5"
               stroke="currentColor"

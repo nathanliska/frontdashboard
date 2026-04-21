@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import type { AddWidgetParams } from '../../utils/dashboard/widgetCreationTypes'
 import { AddWidgetCalendarStep } from './widgets/AddWidgetCalendarStep'
 import { AddWidgetListStep } from './widgets/AddWidgetListStep'
 import { AddWidgetTypeStep } from './widgets/AddWidgetTypeStep'
-import type { AddWidgetParams } from '../../utils/dashboard/widgetCreationTypes'
 
 export type { AddWidgetParams } from '../../utils/dashboard/widgetCreationTypes'
 
@@ -27,7 +27,7 @@ export function AddWidgetModal({
 
   useEffect(() => {
     backdropRef.current?.focus()
-  }, [step])
+  }, [])
 
   function handleEscape() {
     if (step !== 'pick-type') {
@@ -60,6 +60,7 @@ export function AddWidgetModal({
         <div className="flex items-center gap-2 px-5 py-4 border-b border-zinc-800">
           {step !== 'pick-type' && (
             <button
+              type="button"
               onClick={() => setStep('pick-type')}
               className="text-zinc-500 hover:text-zinc-300 transition-colors"
             >
@@ -73,7 +74,11 @@ export function AddWidgetModal({
                 ? 'Add a list'
                 : 'Choose a calendar view'}
           </h2>
-          <button onClick={onClose} className="text-zinc-600 hover:text-zinc-300 transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-600 hover:text-zinc-300 transition-colors"
+          >
             <X size={16} />
           </button>
         </div>

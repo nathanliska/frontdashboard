@@ -13,12 +13,14 @@ dependencies = [
     "argon2-cffi>=23.1.0",
     "slowapi>=0.1.9",
     "email-validator>=2.1.0",
+    "pydantic>=2.0.0",
     "sse-starlette>=2.1.0",
     "pydantic-settings>=2.3.0",
 ]
 
 [dependency-groups]
 dev = [
+    "deptry>=0.23.1",
     "ruff>=0.4.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -43,3 +45,6 @@ known-first-party = ["app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["uvicorn", "asyncpg", "email-validator"]

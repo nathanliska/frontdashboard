@@ -1,6 +1,6 @@
+import { LayoutDashboard, Plus } from 'lucide-react'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Plus } from 'lucide-react'
 import type { DashboardSummary } from '../api/dashboards'
 import { CreateDashboardModal } from '../components/dashboard/CreateDashboardModal'
 import { DashboardCardGrid } from '../components/dashboard/DashboardCardGrid'
@@ -43,7 +43,7 @@ export function DashboardsPage() {
 
   useEffect(() => {
     if (!editingDashboardId) return
-    if (!editingDashboard || !editingDashboard.can_edit) {
+    if (!editingDashboard?.can_edit) {
       closeEditingDashboard()
     }
   }, [editingDashboard, editingDashboardId])
@@ -104,6 +104,7 @@ export function DashboardsPage() {
       <div className="flex items-center justify-between gap-3 shrink-0 pl-12 sm:pl-0 min-h-10">
         <h1 className="min-w-0 text-xl font-semibold text-zinc-100 truncate">Dashboards</h1>
         <button
+          type="button"
           onClick={() => setShowCreate(true)}
           className="shrink-0 flex items-center gap-1.5 text-xs sm:text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2.5 sm:px-3 py-1.5 rounded-md transition-colors"
         >

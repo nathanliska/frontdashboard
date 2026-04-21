@@ -1,5 +1,5 @@
 import { CheckCircle, Info, X, XCircle } from 'lucide-react'
-import { useToastStore, type ToastType } from '../../stores/toast'
+import { type ToastType, useToastStore } from '../../stores/toast'
 import { cn } from '../../utils/shared/cn'
 
 const ICONS: Record<ToastType, React.ElementType> = {
@@ -35,6 +35,7 @@ export function Toaster() {
             <Icon size={15} className="shrink-0 mt-0.5" />
             <span className="flex-1">{t.message}</span>
             <button
+              type="button"
               onClick={() => dismiss(t.id)}
               className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
               aria-label="Dismiss"

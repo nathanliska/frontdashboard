@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../api/dashboards'
-import { DashboardsPage } from './DashboardsPage'
 import { useAuthStore } from '../stores/auth'
 import { useDashboardStore } from '../stores/dashboard'
+import { DashboardsPage } from './DashboardsPage'
 
 vi.mock('../components/dashboard/DashboardSettingsModal', () => ({
   DashboardSettingsModal: ({
@@ -17,7 +17,9 @@ vi.mock('../components/dashboard/DashboardSettingsModal', () => ({
     <div>
       <p>Editing {dashboard.name}</p>
       <p>Can manage shares: {String(dashboard.can_manage_shares)}</p>
-      <button onClick={onClose}>Close modal</button>
+      <button type="button" onClick={onClose}>
+        Close modal
+      </button>
     </div>
   ),
 }))

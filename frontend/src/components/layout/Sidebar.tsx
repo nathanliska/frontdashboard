@@ -1,5 +1,3 @@
-import { useState, useEffect } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   CalendarDays,
   CheckSquare,
@@ -10,11 +8,13 @@ import {
   Settings,
   User,
 } from 'lucide-react'
-import { NotificationPanel } from '../notifications/NotificationPanel'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/auth'
 import { useNotificationsStore } from '../../stores/notifications'
 import { useUIStore } from '../../stores/ui'
 import { cn } from '../../utils/shared/cn'
+import { NotificationPanel } from '../notifications/NotificationPanel'
 
 const NAV = [
   { label: 'Dashboards', icon: LayoutDashboard, to: '/dashboards' },
@@ -36,7 +36,9 @@ export function Sidebar() {
 
   return (
     <>
-      <div
+      <button
+        type="button"
+        aria-label="Close navigation"
         className={cn(
           'fixed inset-0 z-40 bg-black/50 transition-opacity sm:hidden',
           mobileSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
@@ -58,6 +60,7 @@ export function Sidebar() {
             </span>
           )}
           <button
+            type="button"
             onClick={mobileSidebarOpen ? closeMobileSidebar : toggleSidebar}
             className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
             aria-label={
@@ -151,6 +154,7 @@ function UserMenu({
         />
       )}
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
         title={collapsed ? displayName : undefined}
         className="relative z-50 flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
@@ -207,6 +211,7 @@ function MenuItem({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         'w-full flex items-center gap-2.5 px-3 py-2 transition-colors text-left',

@@ -54,6 +54,7 @@ export function AddWidgetTypeStep({
               : description
         return (
           <button
+            type="button"
             key={type}
             onClick={() => {
               if (type === 'list') {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { type CalendarOccurrence } from '../../../api/calendar'
+import type { CalendarOccurrence } from '../../../api/calendar'
 import { useCalendarOccurrences } from '../../../resources/calendarData'
 import { useDashboardStore } from '../../../stores/dashboard'
 import {

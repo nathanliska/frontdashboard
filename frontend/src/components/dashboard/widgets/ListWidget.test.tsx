@@ -1,8 +1,8 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListItem } from '../../../api/lists'
-import { useDashboardStore } from '../../../stores/dashboard'
 import { __resetListDataForTests, handleListResourceEvent } from '../../../resources/listData'
+import { useDashboardStore } from '../../../stores/dashboard'
 import { ListWidget } from './ListWidget'
 
 const apiMocks = vi.hoisted(() => ({

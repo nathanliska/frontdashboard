@@ -1,15 +1,12 @@
-import { memo, useEffect, useEffectEvent, useState, type FormEvent } from 'react'
-import { CalendarEditorDurationToolbar } from './CalendarEditorDurationToolbar'
-import { CalendarEditorRepeatSection } from './CalendarEditorRepeatSection'
-import { cn } from '../../utils/shared/cn'
+import { type FormEvent, memo, useEffect, useEffectEvent, useState } from 'react'
 import {
   type CalendarEditorDraft,
   type EditorMode,
-  type RecurrenceMode,
   formatEndDateLabel,
   formatWeeklySelection,
   getDurationSummary,
   getRecurringOverlapWarning,
+  type RecurrenceMode,
   repeatUnitLabel,
   syncCreateDraftToSelectedDate,
   toMondayWeekday,
@@ -25,6 +22,9 @@ import {
   toDurationMinutes,
   toLocalDateTimeValue,
 } from '../../utils/calendar/calendarEditorDurationUtils'
+import { cn } from '../../utils/shared/cn'
+import { CalendarEditorDurationToolbar } from './CalendarEditorDurationToolbar'
+import { CalendarEditorRepeatSection } from './CalendarEditorRepeatSection'
 
 type RepeatCadenceMode = Exclude<RecurrenceMode, 'none'>
 

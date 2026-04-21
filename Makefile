@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down logs test lint format migrate seed help
+.PHONY: dev-up dev-down logs test lint format migrate seed hooks help
 
 help:
 	@echo ""
@@ -10,7 +10,13 @@ help:
 	@echo "  make format    Format + auto-fix backend and frontend"
 	@echo "  make migrate   Run Alembic migrations"
 	@echo "  make seed      Seed development data"
+	@echo "  make hooks     Install pre-commit hooks (via uv)"
 	@echo ""
+
+# Git hooks
+hooks:
+	uv tool install pre-commit
+	pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg --hook-type commit-msg
 
 # Docker
 dev-up:
@@ -32,10 +38,10 @@ lint:
 	cd backend && uv run ruff check .
 	cd frontend && npm run lint
 
-# Formatting — ruff format + lint fix for backend, Prettier + ESLint fix for frontend
+# Formatting — ruff format + lint fix for backend, Biome lint:fix for frontend
 format:
 	cd backend && uv run ruff format . && uv run ruff check --fix .
-	cd frontend && npm run format && npm run lint -- --fix
+	cd frontend && npm run lint:fix
 
 # Database
 migrate:
