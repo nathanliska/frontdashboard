@@ -42,6 +42,14 @@ export function WidgetContainer({
   onRemove?: () => void
   children?: React.ReactNode
 }) {
+  const listSearchParams =
+    widget.widget_type === 'list' && widget.resource_id
+      ? new URLSearchParams({
+          dashboard_id: dashboardId,
+          list_id: widget.resource_id,
+        }).toString()
+      : null
+
   return (
     <div className="relative flex flex-col h-full bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group">
       {/* Header / drag handle */}
@@ -61,10 +69,7 @@ export function WidgetContainer({
               to={
                 widget.widget_type === 'calendar'
                   ? `/calendar?dashboard_id=${dashboardId}`
-                  : `/lists?dashboard_id=${dashboardId}`
-              }
-              state={
-                widget.widget_type === 'calendar' ? undefined : { openListId: widget.resource_id }
+                  : `/lists?${listSearchParams}`
               }
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}

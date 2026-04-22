@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react'
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import type { ListSummary, ListType } from '../api/lists'
 import { AddItemForm } from '../components/lists/AddItemForm'
 import { CreateListCard } from '../components/lists/CreateListCard'
@@ -33,6 +33,7 @@ const TYPE_FILTERS: { value: ListType | 'all'; label: string }[] = [
 const EMPTY_LISTS: ListSummary[] = []
 
 export function ListsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const dashboards = useDashboardStore((s) => s.summaries)
   const dashboardsLoading = useDashboardStore((s) => s.summariesLoading)
 
@@ -40,10 +41,10 @@ export function ListsPage() {
   const [showCreate, setShowCreate] = useState(false)
 
   const location = useLocation()
-  const searchParams = new URLSearchParams(location.search)
   const requestedDashboardId = searchParams.get('dashboard_id')
-  const openListId = (location.state as { openListId?: string } | null)?.openListId
-  const didAutoOpen = useRef(false)
+  const requestedListId = searchParams.get('list_id')
+  const openListId = (location.state as { openListId?: string } | null)?.openListId ?? null
+  const consumedStateOpenListId = useRef(false)
   const [dashboardId, setDashboardId] = useInitialDashboardSelection(
     requestedDashboardId,
     'Failed to load dashboards.',
@@ -65,19 +66,56 @@ export function ListsPage() {
   const { loading, error: listsError } = listSummariesQuery
   const detail = detailQuery.data
   const detailError = detailQuery.error
-  const autoOpenRequestedList = useEffectEvent((listId: string) => {
-    didAutoOpen.current = true
+  const updateRouteSelection = useEffectEvent(
+    (nextDashboardId: string | null, nextListId: string | null, replace = false) => {
+      const nextSearchParams = new URLSearchParams(searchParams)
+      if (nextDashboardId) {
+        nextSearchParams.set('dashboard_id', nextDashboardId)
+      } else {
+        nextSearchParams.delete('dashboard_id')
+      }
+      if (nextListId) {
+        nextSearchParams.set('list_id', nextListId)
+      } else {
+        nextSearchParams.delete('list_id')
+      }
+
+      if (nextSearchParams.toString() !== searchParams.toString()) {
+        setSearchParams(nextSearchParams, { replace })
+      }
+    },
+  )
+  const openRequestedList = useEffectEvent((listId: string, replace = false) => {
     setSelectedId(listId)
+    updateRouteSelection(effectiveDashboardId, listId, replace)
   })
   const clearMissingSelectedList = useEffectEvent(() => {
     setSelectedId(null)
+    updateRouteSelection(effectiveDashboardId, null, true)
   })
 
   useEffect(() => {
-    if (openListId && !loading && !didAutoOpen.current) {
-      autoOpenRequestedList(openListId)
+    if (effectiveDashboardId === requestedDashboardId) return
+    updateRouteSelection(effectiveDashboardId, selectedId, true)
+  }, [effectiveDashboardId, requestedDashboardId, selectedId])
+
+  useEffect(() => {
+    if (!requestedListId || loading) return
+    if (!lists.some((list) => list.id === requestedListId)) {
+      updateRouteSelection(effectiveDashboardId, null, true)
+      return
     }
-  }, [loading, openListId])
+    if (selectedId !== requestedListId) {
+      setSelectedId(requestedListId)
+    }
+  }, [effectiveDashboardId, lists, loading, requestedListId, selectedId])
+
+  useEffect(() => {
+    if (requestedListId || consumedStateOpenListId.current || !openListId || loading) return
+    if (!lists.some((list) => list.id === openListId)) return
+    consumedStateOpenListId.current = true
+    openRequestedList(openListId, true)
+  }, [lists, loading, openListId, requestedListId])
 
   useEffect(() => {
     if (!selectedId || loading) return
@@ -97,7 +135,7 @@ export function ListsPage() {
 
     try {
       const list = await createList(trimmedName, listType, effectiveDashboardId)
-      setSelectedId(list.id)
+      openRequestedList(list.id)
       setShowCreate(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to create list.')
@@ -111,7 +149,7 @@ export function ListsPage() {
   }
 
   function selectList(id: string) {
-    setSelectedId(id)
+    openRequestedList(id)
   }
 
   async function submitListNameEdit(name: string) {
@@ -177,6 +215,7 @@ export function ListsPage() {
               setSelectedId(null)
               setShowCreate(false)
               setDashboardId(nextDashboardId)
+              updateRouteSelection(nextDashboardId, null)
             }}
             className="min-w-0 max-w-44 sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
           >
