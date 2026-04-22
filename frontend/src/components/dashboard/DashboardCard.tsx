@@ -28,21 +28,28 @@ export function DashboardCard({
   const isArchived = dashboard.archived
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: the card contains real action buttons, so the outer click target cannot itself be a button
     <div
+      role="button"
+      tabIndex={isArchived ? -1 : 0}
+      aria-disabled={isArchived}
+      aria-label={`Open dashboard ${dashboard.name}`}
+      onClick={() => {
+        if (!isArchived) onOpen()
+      }}
+      onKeyDown={(event) => {
+        if (isArchived) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen()
+        }
+      }}
       className={cn(
-        'group relative flex flex-col gap-3 p-4 bg-zinc-900 border border-zinc-800 rounded-lg transition-colors',
-        isArchived ? 'opacity-75 cursor-default' : 'hover:border-zinc-700',
+        'group flex flex-col gap-3 p-4 bg-zinc-900 border border-zinc-800 rounded-lg transition-colors',
+        isArchived ? 'opacity-75 cursor-default' : 'cursor-pointer hover:border-zinc-700',
       )}
     >
-      {!isArchived && (
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-label={`Open dashboard ${dashboard.name}`}
-          className="absolute inset-0 rounded-lg"
-        />
-      )}
-      <div className="relative flex items-start gap-3">
+      <div className="flex items-start gap-3">
         <div className="mt-0.5 shrink-0 text-zinc-500">
           <LayoutDashboard size={16} />
         </div>
@@ -59,7 +66,7 @@ export function DashboardCard({
         </div>
       </div>
 
-      <div className="relative flex items-center gap-1">
+      <div className="flex items-center gap-1">
         <button
           type="button"
           onClick={(event) => {

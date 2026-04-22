@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+// @vitest-environment jsdom
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListSummary } from '../api/lists'
 import { useDashboardStore } from '../stores/dashboard'
@@ -17,7 +18,7 @@ vi.mock('../resources/listData', () => ({
   useListDetail: vi.fn(),
 }))
 
-import { useListDetail, useListSummaries } from '../resources/listData'
+import { deleteList, useListDetail, useListSummaries } from '../resources/listData'
 
 const mockedUseListSummaries = vi.mocked(useListSummaries)
 const mockedUseListDetail = vi.mocked(useListDetail)
@@ -58,6 +59,11 @@ function makeDetail(overrides: Partial<ListDetail> = {}): ListDetail {
     ],
     ...overrides,
   }
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <p data-testid="location-search">{location.search}</p>
 }
 
 describe('ListsPage', () => {
@@ -154,5 +160,163 @@ describe('ListsPage', () => {
     )
 
     expect(await screen.findByText('Bananas')).toBeInTheDocument()
+  })
+
+  it('updates the URL when a list row is clicked', async () => {
+    const groceriesSummary = makeSummary({
+      id: 'list-2',
+      name: 'Groceries',
+      list_type: 'grocery',
+      item_count: 1,
+    })
+    const groceriesDetail = makeDetail({
+      id: 'list-2',
+      name: 'Groceries',
+      list_type: 'grocery',
+      item_count: 1,
+      items: [
+        {
+          id: 'item-2',
+          list_id: 'list-2',
+          text: 'Bananas',
+          checked: false,
+          sort_order: 0,
+          due_date: null,
+          priority: null,
+          category: null,
+          assigned_to: null,
+          created_by: 'user-1',
+          created_at: '2026-04-21T00:00:00Z',
+          updated_at: '2026-04-21T00:00:00Z',
+        },
+      ],
+    })
+
+    mockedUseListSummaries.mockImplementation((dashboardId) => ({
+      data: dashboardId ? [makeSummary(), groceriesSummary] : [],
+      loading: false,
+      error: null,
+    }))
+    mockedUseListDetail.mockImplementation((listId) => ({
+      data: listId === 'list-2' ? groceriesDetail : null,
+      loading: false,
+      error: null,
+    }))
+
+    render(
+      <MemoryRouter initialEntries={['/lists?dashboard_id=dash-1']}>
+        <Routes>
+          <Route
+            path="/lists"
+            element={
+              <>
+                <ListsPage />
+                <LocationProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open list Groceries' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-search')).toHaveTextContent(
+        '?dashboard_id=dash-1&list_id=list-2',
+      )
+    })
+    expect(await screen.findByText('Bananas')).toBeInTheDocument()
+  })
+
+  it('clears list_id from the URL when deleting the selected list', async () => {
+    const deleteListMock = vi.mocked(deleteList)
+    deleteListMock.mockResolvedValue(undefined)
+
+    mockedUseListSummaries.mockImplementation((dashboardId) => ({
+      data: dashboardId ? [makeSummary()] : [],
+      loading: false,
+      error: null,
+    }))
+    mockedUseListDetail.mockImplementation((listId) => ({
+      data: listId === 'list-1' ? makeDetail() : null,
+      loading: false,
+      error: null,
+    }))
+
+    render(
+      <MemoryRouter initialEntries={['/lists?dashboard_id=dash-1&list_id=list-1']}>
+        <Routes>
+          <Route
+            path="/lists"
+            element={
+              <>
+                <ListsPage />
+                <LocationProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Take out recycling')
+    expect(screen.getByTestId('location-search')).toHaveTextContent(
+      '?dashboard_id=dash-1&list_id=list-1',
+    )
+
+    fireEvent.click(screen.getByTitle('Delete'))
+    fireEvent.click(screen.getByTitle('Confirm delete'))
+
+    await waitFor(() => {
+      expect(deleteListMock).toHaveBeenCalledWith('list-1')
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('location-search')).toHaveTextContent('?dashboard_id=dash-1')
+    })
+  })
+
+  it('keeps list_id in the URL when deleting the selected list fails', async () => {
+    const deleteListMock = vi.mocked(deleteList)
+    deleteListMock.mockRejectedValue(new Error('Failed to delete list.'))
+
+    mockedUseListSummaries.mockImplementation((dashboardId) => ({
+      data: dashboardId ? [makeSummary()] : [],
+      loading: false,
+      error: null,
+    }))
+    mockedUseListDetail.mockImplementation((listId) => ({
+      data: listId === 'list-1' ? makeDetail() : null,
+      loading: false,
+      error: null,
+    }))
+
+    render(
+      <MemoryRouter initialEntries={['/lists?dashboard_id=dash-1&list_id=list-1']}>
+        <Routes>
+          <Route
+            path="/lists"
+            element={
+              <>
+                <ListsPage />
+                <LocationProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Take out recycling')
+
+    fireEvent.click(screen.getByTitle('Delete'))
+    fireEvent.click(screen.getByTitle('Confirm delete'))
+
+    await waitFor(() => {
+      expect(deleteListMock).toHaveBeenCalledWith('list-1')
+    })
+    expect(screen.getByTestId('location-search')).toHaveTextContent(
+      '?dashboard_id=dash-1&list_id=list-1',
+    )
   })
 })

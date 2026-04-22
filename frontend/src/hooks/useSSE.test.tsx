@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { handleCalendarResourceEvent } from '../resources/calendarData'

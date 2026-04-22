@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down logs test lint format migrate seed hooks help
+.PHONY: dev-up dev-down logs test lint format audit audit-fix migrate seed hooks help
 
 help:
 	@echo ""
@@ -8,6 +8,8 @@ help:
 	@echo "  make test      Run all tests"
 	@echo "  make lint      Lint backend + frontend (check only)"
 	@echo "  make format    Format + auto-fix backend and frontend"
+	@echo "  make audit     Run dependency/security audit checks"
+	@echo "  make audit-fix Apply npm audit fixes for frontend dependencies"
 	@echo "  make migrate   Run Alembic migrations"
 	@echo "  make seed      Seed development data"
 	@echo "  make hooks     Install pre-commit hooks (via uv)"
@@ -16,7 +18,7 @@ help:
 # Git hooks
 hooks:
 	uv tool install pre-commit
-	pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg --hook-type commit-msg
+	pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg --hook-type commit-msg --hook-type pre-push
 
 # Docker
 dev-up:
@@ -42,6 +44,13 @@ lint:
 format:
 	cd backend && uv run ruff format . && uv run ruff check --fix .
 	cd frontend && npm run lint:fix
+
+# Auditing — Frontend dependency/security checks
+audit:
+	cd frontend && npm run audit
+
+audit-fix:
+	cd frontend && npm run audit:fix
 
 # Database
 migrate:

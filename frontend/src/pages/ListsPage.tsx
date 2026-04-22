@@ -89,7 +89,7 @@ export function ListsPage() {
     setSelectedId(listId)
     updateRouteSelection(effectiveDashboardId, listId, replace)
   })
-  const clearMissingSelectedList = useEffectEvent(() => {
+  const clearSelectedList = useEffectEvent(() => {
     setSelectedId(null)
     updateRouteSelection(effectiveDashboardId, null, true)
   })
@@ -120,7 +120,7 @@ export function ListsPage() {
   useEffect(() => {
     if (!selectedId || loading) return
     if (!lists.some((list) => list.id === selectedId)) {
-      clearMissingSelectedList()
+      clearSelectedList()
     }
   }, [lists, loading, selectedId])
 
@@ -175,9 +175,13 @@ export function ListsPage() {
   }
 
   async function handleDeleteList(listId: string) {
-    await deleteList(listId)
-    if (selectedId === listId) {
-      setSelectedId(null)
+    try {
+      await deleteList(listId)
+      if (selectedId === listId) {
+        clearSelectedList()
+      }
+    } catch {
+      // deleteList already reports the failure; keep the current selection and URL intact
     }
   }
 
