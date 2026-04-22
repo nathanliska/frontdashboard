@@ -45,7 +45,7 @@ export function ListsPage() {
   const requestedListId = searchParams.get('list_id')
   const openListId = (location.state as { openListId?: string } | null)?.openListId ?? null
   const consumedStateOpenListId = useRef(false)
-  const [dashboardId, setDashboardId] = useInitialDashboardSelection(
+  const [dashboardId, setDashboardId, dashboardsReady] = useInitialDashboardSelection(
     requestedDashboardId,
     'Failed to load dashboards.',
   )
@@ -95,12 +95,13 @@ export function ListsPage() {
   })
 
   useEffect(() => {
+    if (!dashboardsReady) return
     if (effectiveDashboardId === requestedDashboardId) return
     updateRouteSelection(effectiveDashboardId, selectedId, true)
-  }, [effectiveDashboardId, requestedDashboardId, selectedId])
+  }, [dashboardsReady, effectiveDashboardId, requestedDashboardId, selectedId])
 
   useEffect(() => {
-    if (!requestedListId || loading) return
+    if (!requestedListId || loading || listSummariesQuery.data === null) return
     if (!lists.some((list) => list.id === requestedListId)) {
       updateRouteSelection(effectiveDashboardId, null, true)
       return
@@ -108,7 +109,7 @@ export function ListsPage() {
     if (selectedId !== requestedListId) {
       setSelectedId(requestedListId)
     }
-  }, [effectiveDashboardId, lists, loading, requestedListId, selectedId])
+  }, [effectiveDashboardId, listSummariesQuery.data, lists, loading, requestedListId, selectedId])
 
   useEffect(() => {
     if (requestedListId || consumedStateOpenListId.current || !openListId || loading) return
