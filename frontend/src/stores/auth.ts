@@ -11,6 +11,7 @@ import {
   type UserPreferences,
 } from '../api/auth'
 import { resetCalendarData } from '../resources/calendarData'
+import { resetListData } from '../resources/listData'
 import { useNotificationsStore } from './notifications'
 import { toast } from './toast'
 
@@ -38,6 +39,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
     authInitPromise = (async () => {
       const resetNotifications = useNotificationsStore.getState().reset
+      const resetSessionData = () => {
+        resetNotifications()
+        resetCalendarData()
+        resetListData()
+      }
       // Try current access token first
       let user = await apiGetMe()
       if (user) {
@@ -56,7 +62,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           return
         }
       }
-      resetNotifications()
+      resetSessionData()
       set({ status: 'unauthenticated', user: null })
     })().finally(() => {
       authInitPromise = null
@@ -78,6 +84,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   async logout() {
     useNotificationsStore.getState().reset()
     resetCalendarData()
+    resetListData()
     await apiLogout().catch(() => {})
     set({ status: 'unauthenticated', user: null })
   },

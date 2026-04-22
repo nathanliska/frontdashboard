@@ -215,9 +215,10 @@ export async function deleteList(id: string): Promise<void> {
   try {
     await apiDeleteList(id, options)
     removeListFromCaches(id)
-  } catch {
+  } catch (error) {
     forgetPendingListMutation(clientMutationId)
     toast.error('Failed to delete list.')
+    throw error instanceof Error ? error : new Error('Failed to delete list.')
   }
 }
 
@@ -316,8 +317,12 @@ export function handleListResourceEvent(event: SseEvent): void {
   }
 }
 
-export function __resetListDataForTests(): void {
+export function resetListData(): void {
   listSummariesQuery.reset()
   listDetailQuery.reset()
+}
+
+export function __resetListDataForTests(): void {
+  resetListData()
   __resetPendingListMutationsForTests()
 }

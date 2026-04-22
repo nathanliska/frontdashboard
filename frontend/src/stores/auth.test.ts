@@ -2,6 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User } from '../api/auth'
 import { useAuthStore } from './auth'
 
+const { resetCalendarData } = vi.hoisted(() => ({
+  resetCalendarData: vi.fn(),
+}))
+
+const { resetListData } = vi.hoisted(() => ({
+  resetListData: vi.fn(),
+}))
+
 const {
   apiChangePassword,
   apiGetMe,
@@ -30,6 +38,14 @@ vi.mock('../api/auth', () => ({
   apiRegister,
   apiUpdatePreferences,
   apiUpdateProfile,
+}))
+
+vi.mock('../resources/calendarData', () => ({
+  resetCalendarData,
+}))
+
+vi.mock('../resources/listData', () => ({
+  resetListData,
 }))
 
 vi.mock('./toast', () => ({
@@ -92,6 +108,8 @@ describe('useAuthStore', () => {
 
     expect(useAuthStore.getState().status).toBe('unauthenticated')
     expect(useAuthStore.getState().user).toBeNull()
+    expect(resetCalendarData).toHaveBeenCalledTimes(1)
+    expect(resetListData).toHaveBeenCalledTimes(1)
   })
 
   it('updates auth state on login and logout', async () => {
@@ -105,5 +123,7 @@ describe('useAuthStore', () => {
     await useAuthStore.getState().logout()
     expect(useAuthStore.getState().status).toBe('unauthenticated')
     expect(useAuthStore.getState().user).toBeNull()
+    expect(resetCalendarData).toHaveBeenCalledTimes(1)
+    expect(resetListData).toHaveBeenCalledTimes(1)
   })
 })

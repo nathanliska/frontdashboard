@@ -66,6 +66,8 @@ make dev-down    # Stop all services
 make test        # Run all tests
 make lint        # Lint backend + frontend
 make format      # Format backend + frontend
+make audit       # Run dependency/security audit checks
+make audit-fix   # Apply npm audit fixes for frontend dependencies
 make migrate     # Run Alembic migrations
 make seed        # Seed development data
 make logs        # Tail service logs
@@ -91,6 +93,8 @@ See [PLAN.md](PLAN.md) for full architecture documentation.
 ## Contributing
 
 - Commits must follow [Conventional Commits](https://www.conventionalcommits.org/) format; the subject is normalized in `prepare-commit-msg` and enforced in `commit-msg`.
+- Frontend dependency/security audits can be run with `make audit` or `cd frontend && npm run audit`.
+- Suggested automatic fixes can be applied with `make audit-fix` or `cd frontend && npm run audit:fix`.
 - No direct commits to `main`; branch protection enforces this in GitHub.
 - All PRs must pass tests and lint before merge.
 - See the [PR template](.github/pull_request_template.md) for the checklist.

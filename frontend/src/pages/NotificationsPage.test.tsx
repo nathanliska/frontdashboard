@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -104,7 +105,25 @@ describe('NotificationsPage', () => {
     })
   })
 
-  it('opens dashboard notifications and marks them read when clicked', async () => {
+  it.each([
+    {
+      buttonName: /dashboard shared with you/i,
+      destinationPath: '/dashboard/:id',
+      destinationLabel: 'Dashboard route',
+      expectedNotificationId: 'notif-1',
+    },
+    {
+      buttonName: /dashboard access removed/i,
+      destinationPath: '/dashboards',
+      destinationLabel: 'Dashboards route',
+      expectedNotificationId: 'notif-2',
+    },
+  ])('opens the correct destination and marks the notification read', async ({
+    buttonName,
+    destinationPath,
+    destinationLabel,
+    expectedNotificationId,
+  }) => {
     const markRead = vi.fn().mockResolvedValue(undefined)
     useNotificationsStore.setState({ markRead })
 
@@ -112,33 +131,14 @@ describe('NotificationsPage', () => {
       <MemoryRouter initialEntries={['/notifications']}>
         <Routes>
           <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/dashboard/:id" element={<p>Dashboard route</p>} />
+          <Route path={destinationPath} element={<p>{destinationLabel}</p>} />
         </Routes>
       </MemoryRouter>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /dashboard shared with you/i }))
+    fireEvent.click(screen.getByRole('button', { name: buttonName }))
 
-    await screen.findByText('Dashboard route')
-    expect(markRead).toHaveBeenCalledWith('notif-1')
-  })
-
-  it('sends removed-access notifications back to the dashboards page', async () => {
-    const markRead = vi.fn().mockResolvedValue(undefined)
-    useNotificationsStore.setState({ markRead })
-
-    render(
-      <MemoryRouter initialEntries={['/notifications']}>
-        <Routes>
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/dashboards" element={<p>Dashboards route</p>} />
-        </Routes>
-      </MemoryRouter>,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: /dashboard access removed/i }))
-
-    await screen.findByText('Dashboards route')
-    expect(markRead).toHaveBeenCalledWith('notif-2')
+    await screen.findByText(destinationLabel)
+    expect(markRead).toHaveBeenCalledWith(expectedNotificationId)
   })
 })

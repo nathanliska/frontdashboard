@@ -17,16 +17,16 @@ jobs:
       run:
         working-directory: backend
     steps:
-      # Pin action SHAs for reproducible, reviewable workflow runs.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # Keep checkout on a Node 24-capable release to avoid runner deprecation warnings.
+      - uses: actions/checkout@v5.0.1
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           # Cache the uv dependency/artifact cache keyed by backend inputs.
           enable-cache: true
           working-directory: backend
           cache-dependency-glob: |
-            backend/pyproject.toml
-            backend/uv.lock
+            pyproject.toml
+            uv.lock
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -42,18 +42,18 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
       SECRET_KEY: ci-secret-key
     steps:
-      # Pin action SHAs for reproducible, reviewable workflow runs.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # Keep checkout on a Node 24-capable release to avoid runner deprecation warnings.
+      - uses: actions/checkout@v5.0.1
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           # Cache the uv dependency/artifact cache keyed by backend inputs.
           enable-cache: true
           working-directory: backend
           cache-dependency-glob: |
-            backend/pyproject.toml
-            backend/uv.lock
+            pyproject.toml
+            uv.lock
       - run: uv sync --frozen
-      - run: uv run pytest -q
+      - run: uv run pytest
 
   frontend-lint:
     name: Frontend lint
@@ -63,8 +63,8 @@ jobs:
         working-directory: frontend
     steps:
       # npm caching is handled by setup-node against the frontend lockfile.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@v5.0.1
+      - uses: actions/setup-node@v6.3.0
         with:
           node-version: "20"
           cache: "npm"
@@ -80,8 +80,8 @@ jobs:
         working-directory: frontend
     steps:
       # npm caching is handled by setup-node against the frontend lockfile.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@v5.0.1
+      - uses: actions/setup-node@v6.3.0
         with:
           node-version: "20"
           cache: "npm"

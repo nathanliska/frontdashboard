@@ -18,6 +18,8 @@ make dev-down    # Stop all services
 make test        # Run all tests
 make lint        # Lint backend + frontend
 make format      # Format backend + frontend
+make audit       # Run dependency/security audit checks
+make audit-fix   # Apply npm audit fixes for frontend dependencies
 make migrate     # Run Alembic migrations
 make seed        # Seed development data
 ```
@@ -25,6 +27,7 @@ make seed        # Seed development data
 ## Code Standards
 - **Backend**: Ruff for lint + format. Run `uv run ruff check --fix` and `uv run ruff format`.
 - **Frontend**: Biome for lint + format. Run `npm run lint`, `npm run lint:fix`, or `npm run format`.
+- **Audit**: Run `make audit` or `cd frontend && npm run audit` for frontend dependency/security checks. Apply suggested fixes with `make audit-fix` or `cd frontend && npm run audit:fix`.
 - **Commits**: Conventional Commits are normalized in `prepare-commit-msg` and enforced in `commit-msg`. Format: `type(scope): description`. Types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `test`, `perf`, `ci`, `build`, `revert`.
 - **No commits to main**: enforced by branch protection.
 - **CI**: GitHub Actions runs backend/frontend lint, tests, and frontend build on push and pull request.

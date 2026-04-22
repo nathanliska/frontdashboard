@@ -51,26 +51,30 @@ export function ListSidebarRow({
   }
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: the row contains real action buttons, so the outer click target cannot itself be a button
     <div
+      role="button"
+      tabIndex={editing ? -1 : 0}
+      aria-disabled={editing}
+      aria-label={`Open list ${list.name}`}
+      onClick={() => {
+        if (!editing) onSelect(list.id)
+      }}
+      onKeyDown={(event) => {
+        if (editing) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect(list.id)
+        }
+      }}
       className={cn(
-        'relative w-full text-left px-3 py-2.5 rounded-lg border transition-colors group',
+        'w-full text-left px-3 py-2.5 rounded-lg border transition-colors group',
         selectedId === list.id
           ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
-          : 'bg-zinc-900 border-zinc-800 text-zinc-300',
+          : 'cursor-pointer bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700',
       )}
     >
-      {!editing && (
-        <button
-          type="button"
-          onClick={() => onSelect(list.id)}
-          aria-label={`Open list ${list.name}`}
-          className={cn(
-            'absolute inset-0 rounded-lg',
-            selectedId === list.id ? '' : 'hover:border-zinc-700',
-          )}
-        />
-      )}
-      <div className="relative flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
         {editing ? (
           <input
             ref={inputRef}
