@@ -39,14 +39,14 @@ repos:
   - repo: local
     hooks:
       - id: normalize-commit-msg
-        name: Normalize commit message
+        name: normalize commit message
         entry: scripts/normalize-commit-msg.sh
         language: script
         stages: [prepare-commit-msg]
         always_run: true
 
       - id: biome-check
-        name: Biome check (frontend)
+        name: biome check (frontend)
         entry: scripts/run-biome-check.sh
         language: script
         files: ^frontend/.*\.(ts|tsx|js|jsx|json|css)$
