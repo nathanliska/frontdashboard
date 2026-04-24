@@ -63,7 +63,7 @@ jobs:
     steps:
       # npm caching is handled by setup-node against the frontend lockfile.
       - uses: actions/checkout@v5.0.1
-      - uses: actions/setup-node@v6.3.0
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: "22"
           cache: "npm"
@@ -80,7 +80,7 @@ jobs:
     steps:
       # npm caching is handled by setup-node against the frontend lockfile.
       - uses: actions/checkout@v5.0.1
-      - uses: actions/setup-node@v6.3.0
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: "22"
           cache: "npm"
