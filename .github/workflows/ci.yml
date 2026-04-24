@@ -17,7 +17,7 @@ jobs:
         working-directory: backend
     steps:
       # Keep checkout on a Node 24-capable release to avoid runner deprecation warnings.
-      - uses: actions/checkout@v5.0.1
+      - uses: actions/checkout@v6.0.2
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           # Cache the uv dependency/artifact cache keyed by backend inputs.
@@ -42,7 +42,7 @@ jobs:
       SECRET_KEY: ci-secret-key
     steps:
       # Keep checkout on a Node 24-capable release to avoid runner deprecation warnings.
-      - uses: actions/checkout@v5.0.1
+      - uses: actions/checkout@v6.0.2
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           # Cache the uv dependency/artifact cache keyed by backend inputs.
@@ -62,7 +62,7 @@ jobs:
         working-directory: frontend
     steps:
       # npm caching is handled by setup-node against the frontend lockfile.
-      - uses: actions/checkout@v5.0.1
+      - uses: actions/checkout@v6.0.2
       - uses: actions/setup-node@v6.4.0
         with:
           node-version: "22"
@@ -79,7 +79,7 @@ jobs:
         working-directory: frontend
     steps:
       # npm caching is handled by setup-node against the frontend lockfile.
-      - uses: actions/checkout@v5.0.1
+      - uses: actions/checkout@v6.0.2
       - uses: actions/setup-node@v6.4.0
         with:
           node-version: "22"
