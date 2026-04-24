@@ -24,8 +24,7 @@ vi.mock('react-grid-layout', () => {
   }
 
   return {
-    default: MockGridLayout,
-    WidthProvider: <T,>(component: T) => component,
+    GridLayout: MockGridLayout,
   }
 })
 

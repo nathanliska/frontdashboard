@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import GridLayout, { type Layout, WidthProvider } from 'react-grid-layout'
+import { GridLayout, type Layout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import type { Dashboard, DashboardWidget, LayoutItem } from '../../api/dashboards'
@@ -7,9 +7,7 @@ import { confirm } from '../../stores/confirm'
 import { useDashboardStore } from '../../stores/dashboard'
 import { WidgetContainer } from './WidgetContainer'
 
-const ResponsiveGrid = WidthProvider(GridLayout)
-
-function sameLayout(a: LayoutItem[], b: Layout[]): boolean {
+function sameLayout(a: LayoutItem[], b: Layout): boolean {
   if (a.length !== b.length) return false
 
   const byId = new Map(a.map((item) => [item.i, item]))
@@ -108,20 +106,20 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
   }, [])
 
   const handleLayoutChange = useCallback(
-    (newLayout: Layout[]) => {
+    (newLayout: Layout) => {
       setDraftBaseVersion(dashboard.version)
-      setDraftLayout(newLayout as LayoutItem[])
+      setDraftLayout([...newLayout] as unknown as LayoutItem[])
     },
     [dashboard.version],
   )
 
   const handleLayoutStop = useCallback(
-    (newLayout: Layout[]) => {
+    (newLayout: Layout) => {
       if (!canEdit || isMobile) return
       setDraftBaseVersion(dashboard.version)
-      setDraftLayout(newLayout as LayoutItem[])
+      setDraftLayout([...newLayout] as unknown as LayoutItem[])
       if (sameLayout(dashboard.layout, newLayout)) return
-      void saveLayout(newLayout as LayoutItem[])
+      void saveLayout([...newLayout] as unknown as LayoutItem[])
     },
     [canEdit, dashboard.layout, dashboard.version, isMobile, saveLayout],
   )
@@ -141,20 +139,16 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
 
   return (
     <div ref={containerRef} className="w-full">
-      <ResponsiveGrid
-        layout={presentedLayout}
-        cols={cols}
-        rowHeight={rowHeight}
-        margin={margin}
-        containerPadding={containerPadding}
-        isDraggable={canEdit && !isMobile}
-        isResizable={canEdit && !isMobile}
-        draggableHandle=".drag-handle"
+      <GridLayout
+        layout={presentedLayout as unknown as Layout}
+        width={containerWidth}
+        gridConfig={{ cols, rowHeight, margin, containerPadding }}
+        dragConfig={{ enabled: canEdit && !isMobile, handle: '.drag-handle' }}
+        resizeConfig={{ enabled: canEdit && !isMobile }}
         onLayoutChange={handleLayoutChange}
         onDragStop={handleLayoutStop}
         onResizeStop={handleLayoutStop}
         className="w-full"
-        compactType="vertical"
       >
         {dashboard.widgets.map((widget) => (
           // react-grid-layout needs a DOM element as the direct child so it can attach drag props.
@@ -168,7 +162,7 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
             />
           </div>
         ))}
-      </ResponsiveGrid>
+      </GridLayout>
     </div>
   )
 }
