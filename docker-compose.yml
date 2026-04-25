@@ -5,7 +5,7 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend:/app
-      - /app/node_modules
+      - frontend-node-modules:/app/node_modules
     depends_on:
       backend:
         condition: service_healthy
@@ -16,7 +16,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - /app/.venv
+      - backend-venv:/app/.venv
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - SECRET_KEY=${SECRET_KEY}
@@ -42,3 +42,5 @@ services:
 
 volumes:
   pgdata:
+  backend-venv:
+  frontend-node-modules:
