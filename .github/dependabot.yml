@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: "weekly"
 
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
@@ -16,8 +21,3 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
-
-  - package-ecosystem: "pip"
-    directory: "/backend"
-    schedule:
-      interval: "weekly"
