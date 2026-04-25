@@ -6,6 +6,12 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  background-color: var(--color-zinc-950);
+}
+
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
