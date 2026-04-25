@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { AddWidgetModal, type AddWidgetParams } from '../components/dashboard/AddWidgetModal'
 import { DashboardGrid } from '../components/dashboard/DashboardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
+import { ROUTES } from '../routes'
 import { useDashboardStore } from '../stores/dashboard'
 
 const APP_TITLE = 'FrontDashboard'
@@ -57,7 +58,7 @@ export function DashboardEditorPage() {
         <p className="text-sm text-zinc-400">Dashboard not found or you don't have access.</p>
         <button
           type="button"
-          onClick={() => navigate('/dashboards')}
+          onClick={() => navigate(ROUTES.dashboards)}
           className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5"
         >
           <ArrowLeft size={14} />
@@ -77,7 +78,7 @@ export function DashboardEditorPage() {
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 pl-12 sm:pl-0 min-h-10">
         <button
           type="button"
-          onClick={() => navigate('/dashboards')}
+          onClick={() => navigate(ROUTES.dashboards)}
           className="text-zinc-500 hover:text-zinc-300 transition-colors"
           aria-label="Back to dashboards"
         >
@@ -128,7 +129,7 @@ export function DashboardEditorPage() {
           </p>
           <button
             type="button"
-            onClick={() => navigate('/dashboards')}
+            onClick={() => navigate(ROUTES.dashboards)}
             className="text-xs text-amber-400 hover:text-amber-300 transition-colors ml-4 shrink-0"
           >
             Manage

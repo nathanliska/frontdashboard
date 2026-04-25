@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { ROUTES } from '../../routes'
 import { useAuthStore } from '../../stores/auth'
 import { useNotificationsStore } from '../../stores/notifications'
 import { useUIStore } from '../../stores/ui'
@@ -17,9 +18,9 @@ import { cn } from '../../utils/shared/cn'
 import { NotificationPanel } from '../notifications/NotificationPanel'
 
 const NAV = [
-  { label: 'Dashboards', icon: LayoutDashboard, to: '/dashboards' },
-  { label: 'Calendar', icon: CalendarDays, to: '/calendar' },
-  { label: 'Lists', icon: CheckSquare, to: '/lists' },
+  { label: 'Dashboards', icon: LayoutDashboard, to: ROUTES.dashboards },
+  { label: 'Calendar', icon: CalendarDays, to: ROUTES.calendar },
+  { label: 'Lists', icon: CheckSquare, to: ROUTES.lists },
 ]
 
 export function Sidebar() {
@@ -137,7 +138,7 @@ function UserMenu({
     setOpen(false)
     closeMobileSidebar()
     await logout()
-    navigate('/login', { replace: true })
+    navigate(ROUTES.login, { replace: true })
   }
 
   const initial = user?.display_name?.[0]?.toUpperCase() ?? '?'
@@ -178,7 +179,7 @@ function UserMenu({
             onClick={() => {
               setOpen(false)
               closeMobileSidebar()
-              navigate('/profile')
+              navigate(ROUTES.profile)
             }}
           />
           <MenuItem
@@ -187,7 +188,7 @@ function UserMenu({
             onClick={() => {
               setOpen(false)
               closeMobileSidebar()
-              navigate('/preferences')
+              navigate(ROUTES.preferences)
             }}
           />
           <hr className="border-zinc-800 my-1" />

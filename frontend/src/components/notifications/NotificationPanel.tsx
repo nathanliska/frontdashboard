@@ -1,5 +1,6 @@
 import { Bell, Check, X } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ROUTES } from '../../routes'
 import { useNotificationsStore } from '../../stores/notifications'
 import { getNotificationDestination } from '../../utils/notifications/notificationFeedUtils'
 import { NotificationFeed } from './NotificationFeed'
@@ -92,7 +93,7 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
           {/* Footer */}
           <div className="px-4 py-2.5 border-t border-zinc-800 shrink-0">
             <Link
-              to="/notifications"
+              to={ROUTES.notifications}
               onClick={() => setPanelOpen(false)}
               className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
             >

@@ -1,4 +1,5 @@
 import type { ActivityEvent, Notification } from '../../api/notifications'
+import { ROUTES } from '../../routes'
 
 type ActivityPresentation = {
   badge: string
@@ -35,10 +36,10 @@ export function getNotificationTypeLabel(type: string): string {
 
 export function getNotificationDestination(notification: Notification): string | null {
   if (notification.type === 'dashboard.share_removed') {
-    return '/dashboards'
+    return ROUTES.dashboards
   }
   if (notification.reference_type === 'dashboard' && notification.reference_id) {
-    return `/dashboard/${notification.reference_id}`
+    return ROUTES.dashboard(notification.reference_id)
   }
   return null
 }

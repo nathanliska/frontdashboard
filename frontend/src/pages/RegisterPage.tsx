@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 
 export function RegisterPage() {
@@ -18,7 +19,7 @@ export function RegisterPage() {
     setLoading(true)
     try {
       await register(email, password, displayName)
-      navigate('/', { replace: true })
+      navigate(ROUTES.home, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed')
     } finally {
@@ -88,7 +89,7 @@ export function RegisterPage() {
 
         <p className="text-center text-sm text-zinc-500 mt-6">
           Already have an account?{' '}
-          <Link to="/login" className="text-zinc-300 hover:text-zinc-100">
+          <Link to={ROUTES.login} className="text-zinc-300 hover:text-zinc-100">
             Sign in
           </Link>
         </p>

@@ -5,6 +5,7 @@ import type { DashboardSummary } from '../api/dashboards'
 import { CreateDashboardModal } from '../components/dashboard/CreateDashboardModal'
 import { DashboardCardGrid } from '../components/dashboard/DashboardCardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
+import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 import { confirm } from '../stores/confirm'
 import { useDashboardStore } from '../stores/dashboard'
@@ -59,7 +60,7 @@ export function DashboardsPage() {
   const archived = useMemo(() => summaries.filter((dashboard) => dashboard.archived), [summaries])
 
   function openDashboard(dashboard: DashboardSummary) {
-    navigate(`/dashboard/${dashboard.id}`)
+    navigate(ROUTES.dashboard(dashboard.id))
   }
 
   function handleToggleFavorite(dashboard: DashboardSummary) {
@@ -186,7 +187,7 @@ export function DashboardsPage() {
         <CreateDashboardModal
           onCreated={(summary) => {
             setShowCreate(false)
-            navigate(`/dashboard/${summary.id}`)
+            navigate(ROUTES.dashboard(summary.id))
           }}
           onClose={() => setShowCreate(false)}
           createDashboard={createDashboard}

@@ -1,0 +1,15 @@
+export const ROUTES = {
+  home: '/',
+  login: '/login',
+  register: '/register',
+  dashboards: '/dashboards',
+  dashboard: (id: string) => `/dashboard/${id}`,
+  dashboardPattern: '/dashboard/:id',
+  calendar: '/calendar',
+  lists: '/lists',
+  listDetail: (listId: string) => `/lists/${listId}`,
+  listDetailPattern: '/lists/:listId',
+  notifications: '/notifications',
+  profile: '/profile',
+  preferences: '/preferences',
+} as const

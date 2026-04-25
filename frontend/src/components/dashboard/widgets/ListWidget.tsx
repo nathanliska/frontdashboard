@@ -86,7 +86,7 @@ export function ListWidget({
   const isTiny = containerWidth < 180
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-2 h-full">
+    <div ref={containerRef} className="flex flex-col gap-2 flex-1 min-h-0">
       {/* Progress bar */}
       {total > 0 && (
         <div className="shrink-0">
@@ -125,7 +125,7 @@ export function ListWidget({
             </span>
             <span
               className={cn(
-                'text-xs flex-1 truncate leading-tight mt-0.5',
+                'text-xs flex-1 truncate leading-4 mt-0.5',
                 item.checked ? 'line-through text-zinc-600' : 'text-zinc-300',
               )}
             >

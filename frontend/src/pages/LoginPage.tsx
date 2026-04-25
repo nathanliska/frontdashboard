@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 
 export function LoginPage() {
@@ -17,7 +18,7 @@ export function LoginPage() {
     setLoading(true)
     try {
       await login(email, password)
-      navigate('/', { replace: true })
+      navigate(ROUTES.home, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
@@ -72,7 +73,7 @@ export function LoginPage() {
 
         <p className="text-center text-sm text-zinc-500 mt-6">
           No account?{' '}
-          <Link to="/register" className="text-zinc-300 hover:text-zinc-100">
+          <Link to={ROUTES.register} className="text-zinc-300 hover:text-zinc-100">
             Register
           </Link>
         </p>

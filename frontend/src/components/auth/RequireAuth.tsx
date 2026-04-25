@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from 'react-router-dom'
+import { ROUTES } from '../../routes'
 import { useAuthStore } from '../../stores/auth'
 
 export function RequireAuth() {
@@ -17,7 +18,7 @@ export function RequireAuth() {
   }
 
   if (status === 'unauthenticated') {
-    return <Navigate to="/login" replace />
+    return <Navigate to={ROUTES.login} replace />
   }
 
   return <Outlet />

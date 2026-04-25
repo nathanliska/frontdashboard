@@ -5,12 +5,14 @@ import { AppShell } from './components/layout/AppShell'
 import { CalendarPage } from './pages/CalendarPage'
 import { DashboardEditorPage } from './pages/DashboardEditorPage'
 import { DashboardsPage } from './pages/DashboardsPage'
-import { ListsPage } from './pages/ListsPage'
+import { ListDetailPage } from './pages/ListDetailPage'
+import { ListsLayout } from './pages/ListsLayout'
 import { LoginPage } from './pages/LoginPage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { PreferencesPage } from './pages/PreferencesPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
+import { ROUTES } from './routes'
 import { useAuthStore } from './stores/auth'
 
 function AuthInit({ children }: { children: ReactNode }) {
@@ -32,7 +34,7 @@ function DefaultDashboardRedirect() {
 
   useEffect(() => {
     const homeId = user?.preferences?.home_dashboard_id
-    navigate(homeId ? `/dashboard/${homeId}` : '/dashboards', { replace: true })
+    navigate(homeId ? ROUTES.dashboard(homeId) : ROUTES.dashboards, { replace: true })
   }, [user, navigate])
 
   return (
@@ -48,8 +50,8 @@ export default function App() {
       <AuthInit>
         <Routes>
           {/* Public */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
+          <Route path={ROUTES.login} element={<LoginPage />} />
+          <Route path={ROUTES.register} element={<RegisterPage />} />
 
           {/* Protected — RequireAuth shows spinner while loading, redirects if unauthed */}
           <Route element={<RequireAuth />}>
@@ -60,18 +62,20 @@ export default function App() {
                 </AppShell>
               }
             >
-              <Route path="/" element={<DefaultDashboardRedirect />} />
-              <Route path="/dashboards" element={<DashboardsPage />} />
-              <Route path="/dashboard/:id" element={<DashboardEditorPage />} />
-              <Route path="/calendar" element={<CalendarPage />} />
-              <Route path="/lists" element={<ListsPage />} />
-              <Route path="/notifications" element={<NotificationsPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/preferences" element={<PreferencesPage />} />
+              <Route path={ROUTES.home} element={<DefaultDashboardRedirect />} />
+              <Route path={ROUTES.dashboards} element={<DashboardsPage />} />
+              <Route path={ROUTES.dashboardPattern} element={<DashboardEditorPage />} />
+              <Route path={ROUTES.calendar} element={<CalendarPage />} />
+              <Route path={ROUTES.lists} element={<ListsLayout />}>
+                <Route path=":listId" element={<ListDetailPage />} />
+              </Route>
+              <Route path={ROUTES.notifications} element={<NotificationsPage />} />
+              <Route path={ROUTES.profile} element={<ProfilePage />} />
+              <Route path={ROUTES.preferences} element={<PreferencesPage />} />
             </Route>
           </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to={ROUTES.home} replace />} />
         </Routes>
       </AuthInit>
     </BrowserRouter>

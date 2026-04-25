@@ -1,6 +1,7 @@
 import { ExternalLink, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { InheritedDashboardAccess } from '../../../api/shares'
+import { ROUTES } from '../../../routes'
 
 export function DashboardManagedAccessList({
   dashboards,
@@ -37,7 +38,7 @@ export function DashboardManagedAccessList({
                   <p className="mt-1 text-xs text-zinc-500">Managed by dashboard</p>
                 </div>
                 <Link
-                  to={`/dashboard/${dashboard.dashboard_id}`}
+                  to={ROUTES.dashboard(dashboard.dashboard_id)}
                   className="shrink-0 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
                 >
                   Open

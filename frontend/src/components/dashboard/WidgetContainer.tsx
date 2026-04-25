@@ -42,12 +42,9 @@ export function WidgetContainer({
   onRemove?: () => void
   children?: React.ReactNode
 }) {
-  const listSearchParams =
+  const listUrl =
     widget.widget_type === 'list' && widget.resource_id
-      ? new URLSearchParams({
-          dashboard_id: dashboardId,
-          list_id: widget.resource_id,
-        }).toString()
+      ? `/lists/${widget.resource_id}?dashboard_id=${dashboardId}`
       : null
 
   return (
@@ -69,7 +66,7 @@ export function WidgetContainer({
               to={
                 widget.widget_type === 'calendar'
                   ? `/calendar?dashboard_id=${dashboardId}`
-                  : `/lists?${listSearchParams}`
+                  : (listUrl ?? '/lists')
               }
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
@@ -97,7 +94,7 @@ export function WidgetContainer({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden p-2.5 sm:p-3">
+      <div className="flex flex-col flex-1 min-h-0 p-2.5 sm:p-3">
         {children ?? (
           <WidgetRenderer
             widget={widget}

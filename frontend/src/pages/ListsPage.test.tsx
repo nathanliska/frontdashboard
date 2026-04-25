@@ -4,7 +4,8 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListSummary } from '../api/lists'
 import { useDashboardStore } from '../stores/dashboard'
-import { ListsPage } from './ListsPage'
+import { ListDetailPage } from './ListDetailPage'
+import { ListsLayout } from './ListsLayout'
 
 vi.mock('../resources/listData', () => ({
   addListItem: vi.fn(),
@@ -63,10 +64,30 @@ function makeDetail(overrides: Partial<ListDetail> = {}): ListDetail {
 
 function LocationProbe() {
   const location = useLocation()
-  return <p data-testid="location-search">{location.search}</p>
+  return <p data-testid="location">{location.pathname + location.search}</p>
 }
 
-describe('ListsPage', () => {
+function renderLists(initialEntry: string) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route
+          path="/lists"
+          element={
+            <>
+              <ListsLayout />
+              <LocationProbe />
+            </>
+          }
+        >
+          <Route path=":listId" element={<ListDetailPage />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
+describe('ListsLayout / ListDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
@@ -110,18 +131,12 @@ describe('ListsPage', () => {
     })
   })
 
-  it('restores the selected list from the URL on load', async () => {
-    const groceriesSummary = makeSummary({
-      id: 'list-2',
-      name: 'Groceries',
-      list_type: 'grocery',
-      item_count: 1,
-    })
+  it('renders the selected list directly from the URL path', async () => {
+    const groceriesSummary = makeSummary({ id: 'list-2', name: 'Groceries', list_type: 'grocery' })
     const groceriesDetail = makeDetail({
       id: 'list-2',
       name: 'Groceries',
       list_type: 'grocery',
-      item_count: 1,
       items: [
         {
           id: 'item-2',
@@ -140,40 +155,28 @@ describe('ListsPage', () => {
       ],
     })
 
-    mockedUseListSummaries.mockImplementation((dashboardId) => ({
-      data: dashboardId ? [makeSummary(), groceriesSummary] : [],
+    mockedUseListSummaries.mockReturnValue({
+      data: [makeSummary(), groceriesSummary],
       loading: false,
       error: null,
-    }))
+    })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-2' ? groceriesDetail : null,
       loading: false,
       error: null,
     }))
 
-    render(
-      <MemoryRouter initialEntries={['/lists?dashboard_id=dash-1&list_id=list-2']}>
-        <Routes>
-          <Route path="/lists" element={<ListsPage />} />
-        </Routes>
-      </MemoryRouter>,
-    )
+    renderLists('/lists/list-2?dashboard_id=dash-1')
 
     expect(await screen.findByText('Bananas')).toBeInTheDocument()
   })
 
-  it('updates the URL when a list row is clicked', async () => {
-    const groceriesSummary = makeSummary({
-      id: 'list-2',
-      name: 'Groceries',
-      list_type: 'grocery',
-      item_count: 1,
-    })
+  it('navigates to the list path when a list row is clicked', async () => {
+    const groceriesSummary = makeSummary({ id: 'list-2', name: 'Groceries', list_type: 'grocery' })
     const groceriesDetail = makeDetail({
       id: 'list-2',
       name: 'Groceries',
       list_type: 'grocery',
-      item_count: 1,
       items: [
         {
           id: 'item-2',
@@ -192,120 +195,63 @@ describe('ListsPage', () => {
       ],
     })
 
-    mockedUseListSummaries.mockImplementation((dashboardId) => ({
-      data: dashboardId ? [makeSummary(), groceriesSummary] : [],
+    mockedUseListSummaries.mockReturnValue({
+      data: [makeSummary(), groceriesSummary],
       loading: false,
       error: null,
-    }))
+    })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-2' ? groceriesDetail : null,
       loading: false,
       error: null,
     }))
 
-    render(
-      <MemoryRouter initialEntries={['/lists?dashboard_id=dash-1']}>
-        <Routes>
-          <Route
-            path="/lists"
-            element={
-              <>
-                <ListsPage />
-                <LocationProbe />
-              </>
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    )
+    renderLists('/lists?dashboard_id=dash-1')
 
     fireEvent.click(screen.getByRole('button', { name: 'Open list Groceries' }))
 
     await waitFor(() => {
-      expect(screen.getByTestId('location-search')).toHaveTextContent(
-        '?dashboard_id=dash-1&list_id=list-2',
-      )
+      expect(screen.getByTestId('location')).toHaveTextContent('/lists/list-2?dashboard_id=dash-1')
     })
     expect(await screen.findByText('Bananas')).toBeInTheDocument()
   })
 
-  it('clears list_id from the URL when deleting the selected list', async () => {
-    const deleteListMock = vi.mocked(deleteList)
-    deleteListMock.mockResolvedValue(undefined)
+  it('navigates back to the index when deleting the selected list', async () => {
+    vi.mocked(deleteList).mockResolvedValue(undefined)
 
-    mockedUseListSummaries.mockImplementation((dashboardId) => ({
-      data: dashboardId ? [makeSummary()] : [],
-      loading: false,
-      error: null,
-    }))
+    mockedUseListSummaries.mockReturnValue({ data: [makeSummary()], loading: false, error: null })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-1' ? makeDetail() : null,
       loading: false,
       error: null,
     }))
 
-    render(
-      <MemoryRouter initialEntries={['/lists?dashboard_id=dash-1&list_id=list-1']}>
-        <Routes>
-          <Route
-            path="/lists"
-            element={
-              <>
-                <ListsPage />
-                <LocationProbe />
-              </>
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    )
+    renderLists('/lists/list-1?dashboard_id=dash-1')
 
     await screen.findByText('Take out recycling')
-    expect(screen.getByTestId('location-search')).toHaveTextContent(
-      '?dashboard_id=dash-1&list_id=list-1',
-    )
 
     fireEvent.click(screen.getByTitle('Delete'))
     fireEvent.click(screen.getByTitle('Confirm delete'))
 
     await waitFor(() => {
-      expect(deleteListMock).toHaveBeenCalledWith('list-1')
+      expect(vi.mocked(deleteList)).toHaveBeenCalledWith('list-1')
     })
     await waitFor(() => {
-      expect(screen.getByTestId('location-search')).toHaveTextContent('?dashboard_id=dash-1')
+      expect(screen.getByTestId('location')).toHaveTextContent('/lists?dashboard_id=dash-1')
     })
   })
 
-  it('keeps list_id in the URL when deleting the selected list fails', async () => {
-    const deleteListMock = vi.mocked(deleteList)
-    deleteListMock.mockRejectedValue(new Error('Failed to delete list.'))
+  it('stays on the list path when deleting fails', async () => {
+    vi.mocked(deleteList).mockRejectedValue(new Error('Failed to delete list.'))
 
-    mockedUseListSummaries.mockImplementation((dashboardId) => ({
-      data: dashboardId ? [makeSummary()] : [],
-      loading: false,
-      error: null,
-    }))
+    mockedUseListSummaries.mockReturnValue({ data: [makeSummary()], loading: false, error: null })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-1' ? makeDetail() : null,
       loading: false,
       error: null,
     }))
 
-    render(
-      <MemoryRouter initialEntries={['/lists?dashboard_id=dash-1&list_id=list-1']}>
-        <Routes>
-          <Route
-            path="/lists"
-            element={
-              <>
-                <ListsPage />
-                <LocationProbe />
-              </>
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    )
+    renderLists('/lists/list-1?dashboard_id=dash-1')
 
     await screen.findByText('Take out recycling')
 
@@ -313,10 +259,8 @@ describe('ListsPage', () => {
     fireEvent.click(screen.getByTitle('Confirm delete'))
 
     await waitFor(() => {
-      expect(deleteListMock).toHaveBeenCalledWith('list-1')
+      expect(vi.mocked(deleteList)).toHaveBeenCalledWith('list-1')
     })
-    expect(screen.getByTestId('location-search')).toHaveTextContent(
-      '?dashboard_id=dash-1&list_id=list-1',
-    )
+    expect(screen.getByTestId('location')).toHaveTextContent('/lists/list-1?dashboard_id=dash-1')
   })
 })
