@@ -81,6 +81,7 @@ async def test_refresh_rotates_token(auth_client: AsyncClient) -> None:
 
 async def test_logout(auth_client: AsyncClient) -> None:
     csrf = auth_client.cookies.get("csrf_token")
+    assert csrf is not None
     resp = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf})
     assert resp.status_code == 204
 
@@ -97,6 +98,7 @@ async def test_logout_wrong_csrf(auth_client: AsyncClient) -> None:
 
 async def test_refresh_after_logout_fails(auth_client: AsyncClient) -> None:
     csrf = auth_client.cookies.get("csrf_token")
+    assert csrf is not None
     await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf})
     resp = await auth_client.post(_REFRESH_URL)
     assert resp.status_code == 401

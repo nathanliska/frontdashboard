@@ -18,8 +18,9 @@ from app.schemas.calendar import (
     CalendarOccurrenceMutationResponse,
     CalendarOccurrenceResponse,
     CalendarOccurrenceUpdate,
+    RecurrenceRule,
 )
-from app.schemas.shares import ResourceAccessResponse
+from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessResponse
 from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.calendar import expand_event_occurrences
@@ -83,7 +84,7 @@ def _event_response(event: CalendarEvent) -> CalendarEventResponse:
         all_day=event.all_day,
         created_by=event.created_by,
         updated_by=event.updated_by,
-        recurrence=event.recurrence,
+        recurrence=RecurrenceRule.model_validate(event.recurrence) if event.recurrence else None,
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
@@ -109,12 +110,7 @@ def _occurrence_response(occurrence) -> CalendarOccurrenceResponse:
 def _dashboard_managed_permissions_response(dashboard: Dashboard) -> ResourceAccessResponse:
     return ResourceAccessResponse(
         direct_shares=[],
-        inherited_dashboards=[
-            {
-                "dashboard_id": dashboard.id,
-                "dashboard_name": dashboard.name,
-            }
-        ],
+        inherited_dashboards=[InheritedDashboardAccessResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name)],
     )
 
 

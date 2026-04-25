@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from jose import jwt
+import jwt
 
 from app.config import settings
 
@@ -22,7 +22,7 @@ def create_access_token(user_id: uuid.UUID, email: str) -> str:
 
 
 def decode_access_token(token: str) -> dict:
-    """Decode and verify a JWT access token. Raises jose.JWTError on failure."""
+    """Decode and verify a JWT access token. Raises jwt.PyJWTError on failure."""
     return jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
 
 

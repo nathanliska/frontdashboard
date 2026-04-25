@@ -14,7 +14,7 @@ from app.models.list import List, ListItem, ListType
 from app.models.notification import Notification
 from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
 from app.models.user import User
-from app.schemas.calendar import CalendarEventCreate, CalendarEventResponse, CalendarOccurrenceResponse
+from app.schemas.calendar import CalendarEventCreate, CalendarEventResponse, CalendarOccurrenceResponse, RecurrenceRule
 from app.schemas.dashboards import (
     DashboardCreate,
     DashboardResponse,
@@ -482,7 +482,7 @@ def _event_response(event: CalendarEvent) -> CalendarEventResponse:
         all_day=event.all_day,
         created_by=event.created_by,
         updated_by=event.updated_by,
-        recurrence=event.recurrence,
+        recurrence=RecurrenceRule.model_validate(event.recurrence) if event.recurrence else None,
         created_at=event.created_at,
         updated_at=event.updated_at,
     )

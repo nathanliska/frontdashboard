@@ -2,8 +2,8 @@ import secrets
 import uuid
 from typing import Annotated
 
+import jwt
 from fastapi import Cookie, Depends, Header, HTTPException, status
-from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,7 @@ async def _resolve_current_user(
     try:
         payload = decode_access_token(access_token)
         user_id = uuid.UUID(payload["sub"])
-    except (JWTError, KeyError, ValueError):
+    except (jwt.PyJWTError, KeyError, ValueError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from None
 
     result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))

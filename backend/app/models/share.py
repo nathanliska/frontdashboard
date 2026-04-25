@@ -40,8 +40,8 @@ class ResourceShare(UUIDPrimaryKeyMixin, Base):
 
     resource_type: Mapped[str] = mapped_column(String(30), nullable=False)
     resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    principal_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    principal_type: Mapped[PrincipalType] = mapped_column(String(10), nullable=False)
     principal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    role: Mapped[ShareRole] = mapped_column(String(20), nullable=False)
     granted_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -1,9 +1,9 @@
 import uuid
-from typing import Any
+from typing import Any, cast
 
 
 def _preferences_dict(preferences: object) -> dict[str, Any]:
-    return dict(preferences) if isinstance(preferences, dict) else {}
+    return cast(dict[str, Any], preferences).copy() if isinstance(preferences, dict) else {}
 
 
 def favorite_dashboard_id_strings_from_preferences(preferences: object) -> list[str]:

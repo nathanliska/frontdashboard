@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dashboard import Dashboard, DashboardWidget
@@ -64,7 +64,7 @@ async def list_accessible_dashboard_ids(user: User, db: AsyncSession) -> list[uu
             Dashboard.archived.is_(False),
             or_(
                 Dashboard.user_id == user.id,
-                Dashboard.id.in_(shared_ids) if shared_ids else False,
+                Dashboard.id.in_(shared_ids) if shared_ids else false(),
             ),
         )
     )

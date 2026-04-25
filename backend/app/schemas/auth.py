@@ -43,7 +43,9 @@ class UserResponse(BaseModel):
             return UserPreferences.model_validate(v)
         if v is None:
             return UserPreferences()
-        return v  # already a UserPreferences instance
+        if not isinstance(v, UserPreferences):
+            raise ValueError(f"unexpected preferences type: {type(v)}")
+        return v
 
 
 class PreferencesUpdate(BaseModel):

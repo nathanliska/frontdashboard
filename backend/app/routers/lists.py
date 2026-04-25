@@ -21,7 +21,7 @@ from app.schemas.lists import (
     ListResponse,
     ListUpdate,
 )
-from app.schemas.shares import ResourceAccessResponse
+from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessResponse
 from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.dashboard_widgets import remove_resource_widgets
@@ -132,12 +132,7 @@ async def _item_response(db: AsyncSession, item: ListItem) -> ListItemResponse:
 def _dashboard_managed_permissions_response(dashboard: Dashboard) -> ResourceAccessResponse:
     return ResourceAccessResponse(
         direct_shares=[],
-        inherited_dashboards=[
-            {
-                "dashboard_id": dashboard.id,
-                "dashboard_name": dashboard.name,
-            }
-        ],
+        inherited_dashboards=[InheritedDashboardAccessResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name)],
     )
 
 

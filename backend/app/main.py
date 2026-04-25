@@ -17,7 +17,7 @@ from app.routers.users import router as users_router
 app = FastAPI(title="FrontDashboard")
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty: ignore[invalid-argument-type]
 
 app.add_middleware(
     CORSMiddleware,
