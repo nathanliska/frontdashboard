@@ -219,7 +219,11 @@ describe('ListsLayout / ListDetailPage', () => {
   it('navigates back to the index when deleting the selected list', async () => {
     vi.mocked(deleteList).mockResolvedValue(undefined)
 
-    mockedUseListSummaries.mockReturnValue({ data: [makeSummary()], loading: false, error: null })
+    mockedUseListSummaries.mockReturnValue({
+      data: [makeSummary({ archived: true })],
+      loading: false,
+      error: null,
+    })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-1' ? makeDetail() : null,
       loading: false,
@@ -244,7 +248,11 @@ describe('ListsLayout / ListDetailPage', () => {
   it('stays on the list path when deleting fails', async () => {
     vi.mocked(deleteList).mockRejectedValue(new Error('Failed to delete list.'))
 
-    mockedUseListSummaries.mockReturnValue({ data: [makeSummary()], loading: false, error: null })
+    mockedUseListSummaries.mockReturnValue({
+      data: [makeSummary({ archived: true })],
+      loading: false,
+      error: null,
+    })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-1' ? makeDetail() : null,
       loading: false,

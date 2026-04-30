@@ -175,12 +175,23 @@ async def test_delete_list_works_for_dashboard_owner(auth_client: AsyncClient) -
     lst = await _make_list(auth_client, dashboard["id"])
 
     _csrf(auth_client)
+    await auth_client.patch(f"/api/lists/{lst['id']}", json={"archived": True})
     resp = await auth_client.delete(f"/api/lists/{lst['id']}")
     assert resp.status_code == 204
 
     # Confirm it's gone
     get_resp = await auth_client.get(f"/api/lists/{lst['id']}")
     assert get_resp.status_code == 404
+
+
+async def test_delete_list_requires_archive(auth_client: AsyncClient) -> None:
+    dashboard = await _make_dashboard(auth_client)
+    lst = await _make_list(auth_client, dashboard["id"])
+
+    _csrf(auth_client)
+    resp = await auth_client.delete(f"/api/lists/{lst['id']}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "List must be archived before it can be deleted"
 
 
 async def test_list_shares_returns_dashboard_managed_response(auth_client: AsyncClient) -> None:

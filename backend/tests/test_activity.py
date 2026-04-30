@@ -158,6 +158,7 @@ async def test_list_deleted_event(db_client: AsyncClient, db_session: AsyncSessi
     lst = await _make_list(db_client, dashboard["id"])
 
     _csrf(db_client)
+    await db_client.patch(f"/api/lists/{lst['id']}", json={"archived": True})
     resp = await db_client.delete(f"/api/lists/{lst['id']}")
     assert resp.status_code == 204
 
