@@ -174,17 +174,19 @@ export function ListSidebarRow({
               >
                 <Archive size={13} />
               </button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setConfirmingDelete(true)
-                }}
-                title="Delete"
-                className="p-0.5 text-zinc-500 hover:text-red-400"
-              >
-                <Trash2 size={13} />
-              </button>
+              {list.archived && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setConfirmingDelete(true)
+                  }}
+                  title="Delete"
+                  className="p-0.5 text-zinc-500 hover:text-red-400"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </>
           )}
         </div>

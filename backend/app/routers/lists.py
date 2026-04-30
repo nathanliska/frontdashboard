@@ -284,6 +284,8 @@ async def delete_list(
 ) -> None:
     lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     permissions.assert_can_edit(role)
+    if not lst.archived:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="List must be archived before it can be deleted")
     await remove_resource_widgets(ResourceType.list.value, lst.id, db)
 
     event_message = await _build_list_event_message(
