@@ -10,6 +10,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.main import app
 from app.models.activity import ActivityEvent, EventType
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,10 @@ async def _register(client: AsyncClient, email: str, display_name: str = "User")
         json={"email": email, "password": "password123", "display_name": display_name},
     )
     assert resp.status_code == 201
-    return resp.json()
+    token = app.state.email_verification_tokens[email]
+    verify_resp = await client.post("/api/auth/verify-email", json={"token": token})
+    assert verify_resp.status_code == 200
+    return verify_resp.json()
 
 
 async def _make_dashboard(client: AsyncClient) -> dict:

@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -28,6 +29,7 @@ def pytest_configure(config: pytest.Config) -> None:
     import app.models.activity  # noqa: F401
     import app.models.calendar  # noqa: F401
     import app.models.dashboard  # noqa: F401
+    import app.models.email_verification_token  # noqa: F401
     import app.models.list  # noqa: F401
     import app.models.notification  # noqa: F401
     import app.models.refresh_token  # noqa: F401
@@ -53,8 +55,15 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
 
 @pytest.fixture(autouse=True)
-async def reset_test_state() -> AsyncGenerator[None, None]:
+async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None, None]:
     """Reset non-database global state after each test."""
+    app.state.email_verification_tokens = {}
+
+    async def _capture_verification_email(email: str, verification_url: str) -> None:
+        query = parse_qs(urlparse(verification_url).query)
+        app.state.email_verification_tokens[email] = query["token"][0]
+
+    monkeypatch.setattr("app.routers.auth.send_verification_email", _capture_verification_email)
     yield
     limiter._storage.reset()
 
@@ -107,4 +116,7 @@ async def auth_client(db_client: AsyncClient) -> AsyncGenerator[AsyncClient, Non
         },
     )
     assert resp.status_code == 201
+    token = app.state.email_verification_tokens["testuser@example.com"]
+    verify_resp = await db_client.post("/api/auth/verify-email", json={"token": token})
+    assert verify_resp.status_code == 200
     yield db_client

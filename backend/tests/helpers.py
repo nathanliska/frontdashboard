@@ -29,6 +29,9 @@ async def register_client(
         json={"email": email, "password": password, "display_name": display_name},
     )
     assert resp.status_code == 201, resp.text
+    token = app.state.email_verification_tokens[email]
+    verify_resp = await client.post("/api/auth/verify-email", json={"token": token})
+    assert verify_resp.status_code == 200, verify_resp.text
     return client
 
 

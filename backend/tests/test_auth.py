@@ -1,9 +1,18 @@
-from httpx import AsyncClient
+from datetime import UTC, datetime, timedelta
 
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.tokens import hash_token
+from app.main import app
+from app.models.email_verification_token import EmailVerificationToken
 from tests.helpers import CSRF, create_dashboard, register_client, set_csrf
 
 _REGISTER_URL = "/api/auth/register"
 _LOGIN_URL = "/api/auth/login"
+_VERIFY_EMAIL_URL = "/api/auth/verify-email"
+_RESEND_VERIFICATION_URL = "/api/auth/resend-verification"
 _REFRESH_URL = "/api/auth/refresh"
 _LOGOUT_URL = "/api/auth/logout"
 _ME_URL = "/api/auth/me"
@@ -20,11 +29,10 @@ async def test_register(db_client: AsyncClient) -> None:
     assert resp.status_code == 201
     data = resp.json()
     assert data["email"] == "new@example.com"
-    assert data["display_name"] == "New User"
-    assert "id" in data
-    assert "access_token" in resp.cookies
-    assert "refresh_token" in resp.cookies
-    assert "csrf_token" in resp.cookies
+    assert "access_token" not in resp.cookies
+    assert "refresh_token" not in resp.cookies
+    assert "csrf_token" not in resp.cookies
+    assert app.state.email_verification_tokens["new@example.com"]
 
 
 async def test_register_duplicate_email(db_client: AsyncClient) -> None:
@@ -39,10 +47,86 @@ async def test_login(db_client: AsyncClient) -> None:
         _REGISTER_URL,
         json={"email": "login@example.com", "password": "mypassword", "display_name": "L"},
     )
+    token = app.state.email_verification_tokens["login@example.com"]
+    verify = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+    assert verify.status_code == 200
+
     resp = await db_client.post(_LOGIN_URL, json={"email": "login@example.com", "password": "mypassword"})
     assert resp.status_code == 200
     assert "access_token" in resp.cookies
     assert "csrf_token" in resp.cookies
+
+
+async def test_login_requires_email_verification(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "unverified@example.com", "password": "mypassword", "display_name": "U"},
+    )
+    first_token = app.state.email_verification_tokens["unverified@example.com"]
+    resp = await db_client.post(_LOGIN_URL, json={"email": "unverified@example.com", "password": "mypassword"})
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Email verification required"
+    assert app.state.email_verification_tokens["unverified@example.com"] == first_token
+
+
+async def test_verify_email_authenticates_user(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "verify@example.com", "password": "mypassword", "display_name": "Verify"},
+    )
+    token = app.state.email_verification_tokens["verify@example.com"]
+
+    resp = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "verify@example.com"
+    assert resp.json()["email_verified_at"] is not None
+    assert "access_token" in resp.cookies
+    assert "refresh_token" in resp.cookies
+    assert "csrf_token" in resp.cookies
+
+
+async def test_verify_email_rejects_used_token(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "replay@example.com", "password": "mypassword", "display_name": "Replay"},
+    )
+    token = app.state.email_verification_tokens["replay@example.com"]
+
+    first = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+    assert first.status_code == 200
+
+    replay = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+    assert replay.status_code == 400
+    assert replay.json()["detail"] == "Invalid or expired verification link"
+
+
+async def test_verify_email_rejects_expired_token(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "expired@example.com", "password": "mypassword", "display_name": "Expired"},
+    )
+    token = app.state.email_verification_tokens["expired@example.com"]
+
+    result = await db_session.execute(select(EmailVerificationToken).where(EmailVerificationToken.token_hash == hash_token(token)))
+    record = result.scalar_one()
+    record.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    await db_session.commit()
+
+    resp = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid or expired verification link"
+
+
+async def test_resend_verification_issues_new_token(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "resend@example.com", "password": "mypassword", "display_name": "Resend"},
+    )
+    first_token = app.state.email_verification_tokens["resend@example.com"]
+
+    resp = await db_client.post(_RESEND_VERIFICATION_URL, json={"email": "resend@example.com"})
+    assert resp.status_code == 204
+    assert app.state.email_verification_tokens["resend@example.com"] != first_token
 
 
 async def test_login_wrong_password(db_client: AsyncClient) -> None:
@@ -108,28 +192,16 @@ async def test_update_profile(auth_client: AsyncClient) -> None:
     set_csrf(auth_client)
     resp = await auth_client.patch(
         _PROFILE_URL,
-        json={"email": "updated@example.com", "display_name": "Updated User"},
+        json={"display_name": "Updated User"},
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["email"] == "updated@example.com"
     assert data["display_name"] == "Updated User"
     assert "access_token" in resp.cookies
 
     me = await auth_client.get(_ME_URL)
     assert me.status_code == 200
-    assert me.json()["email"] == "updated@example.com"
-
-
-async def test_update_profile_rejects_duplicate_email(auth_client: AsyncClient) -> None:
-    other = await register_client("duplicate@example.com", display_name="Duplicate")
-    try:
-        set_csrf(auth_client)
-        resp = await auth_client.patch(_PROFILE_URL, json={"email": "duplicate@example.com"})
-        assert resp.status_code == 409
-        assert resp.json()["detail"] == "Email already registered"
-    finally:
-        await other.__aexit__(None, None, None)
+    assert me.json()["display_name"] == "Updated User"
 
 
 async def test_update_profile_rejects_blank_display_name(auth_client: AsyncClient) -> None:

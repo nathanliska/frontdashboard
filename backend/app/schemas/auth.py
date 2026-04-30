@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -12,6 +13,18 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+
+class RegistrationResponse(BaseModel):
+    email: str
 
 
 class UserPreferences(BaseModel):
@@ -32,6 +45,7 @@ class UserResponse(BaseModel):
     email: str
     display_name: str
     preferences: UserPreferences = UserPreferences()
+    email_verified_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -54,7 +68,6 @@ class PreferencesUpdate(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    email: EmailStr | None = None
     display_name: str | None = None
 
 

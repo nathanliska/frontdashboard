@@ -12,6 +12,7 @@ import { NotificationsPage } from './pages/NotificationsPage'
 import { PreferencesPage } from './pages/PreferencesPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
+import { VerifyEmailPage } from './pages/VerifyEmailPage'
 import { ROUTES } from './routes'
 import { useAuthStore } from './stores/auth'
 
@@ -52,6 +53,7 @@ export default function App() {
           {/* Public */}
           <Route path={ROUTES.login} element={<LoginPage />} />
           <Route path={ROUTES.register} element={<RegisterPage />} />
+          <Route path={ROUTES.verifyEmail} element={<VerifyEmailPage />} />
 
           {/* Protected — RequireAuth shows spinner while loading, redirects if unauthed */}
           <Route element={<RequireAuth />}>

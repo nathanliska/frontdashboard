@@ -2,6 +2,7 @@ export const ROUTES = {
   home: '/',
   login: '/login',
   register: '/register',
+  verifyEmail: '/verify-email',
   dashboards: '/dashboards',
   dashboard: (id: string) => `/dashboard/${id}`,
   dashboardPattern: '/dashboard/:id',

@@ -16,6 +16,7 @@ const {
   apiLogin,
   apiLogout,
   apiRegister,
+  apiVerifyEmail,
   apiUpdatePreferences,
   apiUpdateProfile,
 } = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ const {
   apiLogin: vi.fn(),
   apiLogout: vi.fn(),
   apiRegister: vi.fn(),
+  apiVerifyEmail: vi.fn(),
   apiUpdatePreferences: vi.fn(),
   apiUpdateProfile: vi.fn(),
 }))
@@ -36,6 +38,7 @@ vi.mock('../api/auth', () => ({
   apiLogin,
   apiLogout,
   apiRegister,
+  apiVerifyEmail,
   apiUpdatePreferences,
   apiUpdateProfile,
 }))

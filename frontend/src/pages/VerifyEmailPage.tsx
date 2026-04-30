@@ -1,0 +1,114 @@
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { apiResendVerification } from '../api/auth'
+import { ROUTES } from '../routes'
+import { useAuthStore } from '../stores/auth'
+
+export function VerifyEmailPage() {
+  const verifyEmail = useAuthStore((s) => s.verifyEmail)
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const token = searchParams.get('token')
+  const initialEmail = useMemo(() => searchParams.get('email') ?? '', [searchParams])
+  const [email, setEmail] = useState(initialEmail)
+  const [status, setStatus] = useState<'idle' | 'verifying' | 'verified' | 'resending'>(
+    token ? 'verifying' : 'idle',
+  )
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!token) return
+
+    let cancelled = false
+    setStatus('verifying')
+    setError(null)
+
+    verifyEmail(token)
+      .then(() => {
+        if (cancelled) return
+        setStatus('verified')
+        navigate(ROUTES.home, { replace: true })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setStatus('idle')
+        setError(err instanceof Error ? err.message : 'Email verification failed')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [navigate, token, verifyEmail])
+
+  async function handleResend(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError(null)
+    setMessage(null)
+    setStatus('resending')
+    try {
+      await apiResendVerification(email)
+      setMessage('Verification email sent.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend verification email')
+    } finally {
+      setStatus('idle')
+    }
+  }
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-zinc-950">
+      <div className="w-full max-w-sm px-6">
+        <h1 className="mb-3 text-center text-2xl font-semibold text-zinc-100">Verify your email</h1>
+        <p className="mb-8 text-center text-sm text-zinc-500">
+          {status === 'verifying' ? (
+            'Checking your verification link...'
+          ) : initialEmail ? (
+            <>
+              We sent a verification link to <span className="text-zinc-300">{initialEmail}</span>.
+              Check your inbox before signing in.
+            </>
+          ) : (
+            'Check your inbox for a verification link before signing in.'
+          )}
+        </p>
+
+        <form onSubmit={handleResend} className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm text-zinc-400" htmlFor="email">
+              Email
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          {message && <p className="text-sm text-emerald-400">{message}</p>}
+
+          <button
+            type="submit"
+            disabled={status === 'resending' || status === 'verifying'}
+            className="w-full rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          >
+            {status === 'resending' ? 'Sending...' : 'Resend verification email'}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-sm text-zinc-500">
+          Already verified?{' '}
+          <Link to={ROUTES.login} className="text-zinc-300 hover:text-zinc-100">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </div>
+  )
+}

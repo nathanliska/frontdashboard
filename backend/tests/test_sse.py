@@ -12,6 +12,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.main import app
 from app.routers.sse import _should_resync_on_connect
 from app.sse.manager import SseManager
 
@@ -33,7 +34,10 @@ async def _register(client: AsyncClient, email: str = "alice@example.com", displ
         json={"email": email, "password": "password123", "display_name": display_name},
     )
     assert resp.status_code == 201
-    return resp.json()
+    token = app.state.email_verification_tokens[email]
+    verify_resp = await client.post("/api/auth/verify-email", json={"token": token})
+    assert verify_resp.status_code == 200
+    return verify_resp.json()
 
 
 # ---------------------------------------------------------------------------

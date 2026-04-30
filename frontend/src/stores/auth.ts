@@ -7,6 +7,8 @@ import {
   apiRegister,
   apiUpdatePreferences,
   apiUpdateProfile,
+  apiVerifyEmail,
+  type RegistrationResponse,
   type User,
   type UserPreferences,
 } from '../api/auth'
@@ -22,10 +24,11 @@ interface AuthState {
   user: User | null
   init: () => Promise<void>
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, displayName: string) => Promise<void>
+  register: (email: string, password: string, displayName: string) => Promise<RegistrationResponse>
+  verifyEmail: (token: string) => Promise<void>
   logout: () => Promise<void>
   updatePreferences: (prefs: UserPreferences) => Promise<void>
-  updateProfile: (input: { email?: string; display_name?: string }) => Promise<void>
+  updateProfile: (input: { display_name?: string }) => Promise<void>
   changePassword: (input: { current_password: string; new_password: string }) => Promise<void>
 }
 
@@ -77,7 +80,13 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   async register(email, password, displayName) {
-    const user = await apiRegister(email, password, displayName)
+    const registration = await apiRegister(email, password, displayName)
+    set({ status: 'unauthenticated', user: null })
+    return registration
+  },
+
+  async verifyEmail(token) {
+    const user = await apiVerifyEmail(token)
     set({ status: 'authenticated', user })
   },
 

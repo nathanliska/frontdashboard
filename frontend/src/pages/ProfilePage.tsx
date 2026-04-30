@@ -1,4 +1,4 @@
-import { LockKeyhole, Mail, Pencil, UserRound, X } from 'lucide-react'
+import { LockKeyhole, Pencil, UserRound, X } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useAuthStore } from '../stores/auth'
 import { toast } from '../stores/toast'
@@ -27,23 +27,19 @@ export function ProfilePage() {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const trimmedName = String(formData.get('display-name') ?? '').trim()
-    const trimmedEmail = String(formData.get('email') ?? '').trim()
-    if (!trimmedName || !trimmedEmail) {
-      toast.error('Display name and email are required.')
+    if (!trimmedName) {
+      toast.error('Display name is required.')
       return
     }
 
-    if (trimmedName === currentUser.display_name && trimmedEmail === currentUser.email) {
+    if (trimmedName === currentUser.display_name) {
       toast.error('No profile changes to save.')
       return
     }
 
     setSavingProfile(true)
     try {
-      await updateProfile({
-        display_name: trimmedName,
-        email: trimmedEmail,
-      })
+      await updateProfile({ display_name: trimmedName })
       setEditingProfile(false)
       toast.success('Profile updated.')
     } finally {
@@ -118,7 +114,7 @@ export function ProfilePage() {
 
           {editingProfile ? (
             <form
-              key={`${currentUser.display_name}:${currentUser.email}`}
+              key={currentUser.display_name}
               onSubmit={(event) => void handleProfileSubmit(event)}
               className="px-5 py-4 space-y-4"
             >
@@ -130,20 +126,6 @@ export function ProfilePage() {
                 <input
                   name="display-name"
                   defaultValue={currentUser.display_name}
-                  required
-                  className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-700"
-                />
-              </label>
-
-              <label className="grid gap-1.5 text-sm">
-                <span className="flex items-center gap-2 text-zinc-400">
-                  <Mail size={14} />
-                  Email
-                </span>
-                <input
-                  name="email"
-                  type="email"
-                  defaultValue={currentUser.email}
                   required
                   className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:outline-none focus:border-zinc-700"
                 />

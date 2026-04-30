@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ApiError } from '../api/auth'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 
@@ -20,7 +21,12 @@ export function LoginPage() {
       await login(email, password)
       navigate(ROUTES.home, { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed')
+      const message = err instanceof Error ? err.message : 'Login failed'
+      if (err instanceof ApiError && err.status === 403) {
+        navigate(`${ROUTES.verifyEmail}?email=${encodeURIComponent(email)}`, { replace: true })
+        return
+      }
+      setError(message)
     } finally {
       setLoading(false)
     }

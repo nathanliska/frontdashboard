@@ -18,6 +18,10 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       CORS_ORIGINS: ""
       ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM}
     networks:
       - internal
     restart: unless-stopped

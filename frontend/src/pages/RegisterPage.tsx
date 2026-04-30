@@ -18,8 +18,8 @@ export function RegisterPage() {
     setError(null)
     setLoading(true)
     try {
-      await register(email, password, displayName)
-      navigate(ROUTES.home, { replace: true })
+      const result = await register(email, password, displayName)
+      navigate(`${ROUTES.verifyEmail}?email=${encodeURIComponent(result.email)}`, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed')
     } finally {

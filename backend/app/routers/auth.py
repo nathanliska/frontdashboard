@@ -1,9 +1,10 @@
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.csrf import generate_csrf_token
@@ -14,6 +15,7 @@ from app.config import settings
 from app.database import get_db
 from app.limiter import limiter
 from app.models.dashboard import Dashboard
+from app.models.email_verification_token import EmailVerificationToken
 from app.models.refresh_token import RefreshToken
 from app.models.share import PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
@@ -23,8 +25,14 @@ from app.schemas.auth import (
     PreferencesUpdate,
     ProfileUpdate,
     RegisterRequest,
+    RegistrationResponse,
+    ResendVerificationRequest,
     UserResponse,
+    VerifyEmailRequest,
 )
+from app.services.email import send_verification_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -73,6 +81,42 @@ def _set_access_cookie(response: Response, access_token: str) -> None:
         secure=_SECURE,
         max_age=settings.access_token_expire_minutes * 60,
     )
+
+
+async def _issue_email_verification(user: User, db: AsyncSession) -> str:
+    now = datetime.now(UTC)
+    await db.execute(
+        update(EmailVerificationToken)
+        .where(
+            EmailVerificationToken.user_id == user.id,
+            EmailVerificationToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+    raw_token, token_hash = create_opaque_token()
+    db.add(
+        EmailVerificationToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=now + timedelta(hours=settings.email_verification_expire_hours),
+        )
+    )
+    await db.flush()
+    return f"{settings.frontend_base_url.rstrip('/')}/verify-email?token={raw_token}"
+
+
+async def _create_session(user: User, response: Response, db: AsyncSession) -> None:
+    raw_refresh, refresh_hash = create_opaque_token()
+    csrf = generate_csrf_token()
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=refresh_hash,
+            expires_at=datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days),
+        )
+    )
+    access = create_access_token(user.id, user.email)
+    _set_auth_cookies(response, access, raw_refresh, csrf)
 
 
 async def _normalize_accessible_dashboard_ids(
@@ -136,14 +180,13 @@ async def _normalize_accessible_dashboard_ids(
     return normalized_ids
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
+@router.post("/register", status_code=status.HTTP_201_CREATED, response_model=RegistrationResponse)
 @limiter.limit("5/minute")
 async def register(
     request: Request,
     body: RegisterRequest,
-    response: Response,
     db: AsyncSession = Depends(get_db),
-) -> UserResponse:
+) -> RegistrationResponse:
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -164,22 +207,62 @@ async def register(
         "home_dashboard_id": str(dashboard_id),
         "favorite_dashboard_ids": [],
     }
+    verification_url = await _issue_email_verification(user, db)
+    await db.commit()
+    try:
+        await send_verification_email(user.email, verification_url)
+    except RuntimeError:
+        logger.exception("Failed to send verification email to %s", user.email)
 
-    raw_refresh, refresh_hash = create_opaque_token()
-    csrf = generate_csrf_token()
-    db.add(
-        RefreshToken(
-            user_id=user.id,
-            token_hash=refresh_hash,
-            expires_at=datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days),
+    return RegistrationResponse(email=user.email)
+
+
+@router.post("/verify-email", response_model=UserResponse)
+@limiter.limit("10/minute")
+async def verify_email(
+    request: Request,
+    body: VerifyEmailRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
+    now = datetime.now(UTC)
+    result = await db.execute(
+        select(EmailVerificationToken).where(
+            EmailVerificationToken.token_hash == hash_token(body.token),
+            EmailVerificationToken.used_at.is_(None),
+            EmailVerificationToken.expires_at > now,
         )
     )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+
+    user_result = await db.execute(select(User).where(User.id == token.user_id, User.deleted_at.is_(None)))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+
+    token.used_at = now
+    user.email_verified_at = now
+    await _create_session(user, response, db)
     await db.commit()
     await db.refresh(user)
-
-    access = create_access_token(user.id, user.email)
-    _set_auth_cookies(response, access, raw_refresh, csrf)
     return UserResponse.model_validate(user)
+
+
+@router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("3/minute")
+async def resend_verification(
+    request: Request,
+    body: ResendVerificationRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
+    user = result.scalar_one_or_none()
+    if user and user.email_verified_at is None:
+        verification_url = await _issue_email_verification(user, db)
+        await db.commit()
+        await send_verification_email(user.email, verification_url)
 
 
 @router.post("/login", response_model=UserResponse)
@@ -194,20 +277,11 @@ async def login(
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    if user.email_verified_at is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")
 
-    raw_refresh, refresh_hash = create_opaque_token()
-    csrf = generate_csrf_token()
-    db.add(
-        RefreshToken(
-            user_id=user.id,
-            token_hash=refresh_hash,
-            expires_at=datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days),
-        )
-    )
+    await _create_session(user, response, db)
     await db.commit()
-
-    access = create_access_token(user.id, user.email)
-    _set_auth_cookies(response, access, raw_refresh, csrf)
     return UserResponse.model_validate(user)
 
 
@@ -285,23 +359,11 @@ async def update_profile(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
-    if body.email is None and body.display_name is None:
+    if body.display_name is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="No profile changes provided",
         )
-
-    if body.email is not None and body.email != current_user.email:
-        result = await db.execute(
-            select(User.id).where(
-                User.email == body.email,
-                User.id != current_user.id,
-                User.deleted_at.is_(None),
-            )
-        )
-        if result.scalar_one_or_none() is not None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-        current_user.email = body.email
 
     if body.display_name is not None:
         display_name = body.display_name.strip()
