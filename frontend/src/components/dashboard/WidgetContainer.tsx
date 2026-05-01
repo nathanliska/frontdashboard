@@ -5,6 +5,7 @@ import { capitalize, cn } from '../../utils/shared/cn'
 import { WidgetRenderer } from './WidgetRenderer'
 
 const WIDGET_LABELS: Record<string, string> = {
+  agenda: 'Agenda',
   calendar: 'Calendar',
   clock: 'Clock',
 }
@@ -61,17 +62,22 @@ export function WidgetContainer({
         </span>
         <div className="flex items-center gap-2 shrink-0">
           {(widget.widget_type === 'list' && widget.resource_id) ||
-          widget.widget_type === 'calendar' ? (
+          widget.widget_type === 'calendar' ||
+          widget.widget_type === 'agenda' ? (
             <Link
               to={
-                widget.widget_type === 'calendar'
+                widget.widget_type === 'calendar' || widget.widget_type === 'agenda'
                   ? `/calendar?dashboard_id=${dashboardId}`
                   : (listUrl ?? '/lists')
               }
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               className="text-zinc-600 hover:text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-              aria-label={widget.widget_type === 'calendar' ? 'Open calendar' : 'Open full list'}
+              aria-label={
+                widget.widget_type === 'calendar' || widget.widget_type === 'agenda'
+                  ? 'Open calendar'
+                  : 'Open full list'
+              }
             >
               <ExternalLink size={11} />
             </Link>

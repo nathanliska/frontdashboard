@@ -24,6 +24,10 @@ WIDGET_POLICIES: dict[str, WidgetPolicy] = {
         widget_type="calendar",
         content_mode=WidgetContentMode.dashboard_query,
     ),
+    "agenda": WidgetPolicy(
+        widget_type="agenda",
+        content_mode=WidgetContentMode.dashboard_query,
+    ),
     "list": WidgetPolicy(
         widget_type="list",
         content_mode=WidgetContentMode.resource,

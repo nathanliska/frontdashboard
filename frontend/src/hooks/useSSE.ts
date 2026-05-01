@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { Notification } from '../api/notifications'
+import { handleAgendaResourceEvent } from '../resources/agendaData'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
 import { handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
@@ -72,6 +73,7 @@ export function useSSE(): void {
       try {
         const data = JSON.parse(e.data) as SseEvent
         handleListResourceEvent(data)
+        handleAgendaResourceEvent(data)
         handleDashboardContentEvent(data)
       } catch {
         // malformed event — ignore
@@ -82,6 +84,7 @@ export function useSSE(): void {
       try {
         const data = JSON.parse(e.data) as SseEvent
         handleCalendarResourceEvent(data)
+        handleAgendaResourceEvent(data)
       } catch {
         // malformed event — ignore
       }
@@ -109,6 +112,7 @@ export function useSSE(): void {
       const resyncEvent = { event_type: 'resync', payload: {} } as SseEvent
       handleListResourceEvent(resyncEvent)
       handleCalendarResourceEvent(resyncEvent)
+      handleAgendaResourceEvent(resyncEvent)
       void handleDashboardEvent(resyncEvent)
       void loadUnreadCount()
       const { panelOpen } = useNotificationsStore.getState()

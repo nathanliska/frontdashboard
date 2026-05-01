@@ -1,4 +1,5 @@
 import type { DashboardWidget } from '../../api/dashboards'
+import { AgendaWidget } from './widgets/AgendaWidget'
 import { CalendarWidget } from './widgets/CalendarWidget'
 import { ClockWidget } from './widgets/ClockWidget'
 import { ListWidget } from './widgets/ListWidget'
@@ -24,6 +25,9 @@ export function WidgetRenderer({
       return (
         <CalendarWidget widgetId={widget.id} dashboardId={dashboardId} config={widget.config} />
       )
+
+    case 'agenda':
+      return <AgendaWidget dashboardId={dashboardId} />
 
     default:
       return (

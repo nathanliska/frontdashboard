@@ -8,6 +8,11 @@ const WIDGET_TYPES = [
     description: 'Day, week, or month view',
   },
   {
+    type: 'agenda',
+    label: 'Agenda',
+    description: 'Today, overdue reminders, and upcoming events',
+  },
+  {
     type: 'list',
     label: 'List',
     description: 'Checklist, grocery list, or to-do list',
@@ -49,9 +54,13 @@ export function AddWidgetTypeStep({
             ? isSharedDashboard
               ? 'Show events visible to everyone with access to this dashboard'
               : 'Your own accessible events'
-            : type === 'clock' && isSharedDashboard
-              ? 'Uses one shared timezone for everyone'
-              : description
+            : type === 'agenda'
+              ? isSharedDashboard
+                ? 'Shared events and due reminders for this dashboard'
+                : 'Your events and due reminders for this dashboard'
+              : type === 'clock' && isSharedDashboard
+                ? 'Uses one shared timezone for everyone'
+                : description
         return (
           <button
             type="button"

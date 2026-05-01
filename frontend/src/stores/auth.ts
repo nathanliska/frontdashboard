@@ -12,6 +12,7 @@ import {
   type User,
   type UserPreferences,
 } from '../api/auth'
+import { resetAgendaData } from '../resources/agendaData'
 import { resetCalendarData } from '../resources/calendarData'
 import { resetListData } from '../resources/listData'
 import { useNotificationsStore } from './notifications'
@@ -44,6 +45,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const resetNotifications = useNotificationsStore.getState().reset
       const resetSessionData = () => {
         resetNotifications()
+        resetAgendaData()
         resetCalendarData()
         resetListData()
       }
@@ -92,6 +94,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   async logout() {
     useNotificationsStore.getState().reset()
+    resetAgendaData()
     resetCalendarData()
     resetListData()
     await apiLogout().catch(() => {})

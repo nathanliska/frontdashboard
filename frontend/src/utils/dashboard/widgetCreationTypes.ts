@@ -1,4 +1,4 @@
-export type WidgetType = 'calendar' | 'list' | 'clock'
+export type WidgetType = 'calendar' | 'agenda' | 'list' | 'clock'
 
 export interface AddWidgetParams {
   widget_type: WidgetType
