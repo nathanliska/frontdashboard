@@ -7,12 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.tokens import hash_token
 from app.main import app
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.password_reset_token import PasswordResetToken
 from tests.helpers import CSRF, create_dashboard, register_client, set_csrf
 
 _REGISTER_URL = "/api/auth/register"
 _LOGIN_URL = "/api/auth/login"
 _VERIFY_EMAIL_URL = "/api/auth/verify-email"
 _RESEND_VERIFICATION_URL = "/api/auth/resend-verification"
+_PASSWORD_RESET_REQUEST_URL = "/api/auth/password-reset/request"
+_PASSWORD_RESET_CONFIRM_URL = "/api/auth/password-reset/confirm"
 _REFRESH_URL = "/api/auth/refresh"
 _LOGOUT_URL = "/api/auth/logout"
 _ME_URL = "/api/auth/me"
@@ -136,6 +139,73 @@ async def test_login_wrong_password(db_client: AsyncClient) -> None:
     )
     resp = await db_client.post(_LOGIN_URL, json={"email": "wrong@example.com", "password": "incorrect"})
     assert resp.status_code == 401
+
+
+async def test_request_password_reset_issues_token(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "reset@example.com", "password": "oldpassword", "display_name": "Reset"},
+    )
+
+    resp = await db_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "reset@example.com"})
+
+    assert resp.status_code == 204
+    assert app.state.password_reset_tokens["reset@example.com"]
+
+
+async def test_request_password_reset_unknown_email_is_generic(db_client: AsyncClient) -> None:
+    resp = await db_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "missing@example.com"})
+
+    assert resp.status_code == 204
+    assert "missing@example.com" not in app.state.password_reset_tokens
+
+
+async def test_confirm_password_reset_updates_login_credentials(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "confirm-reset@example.com", "password": "oldpassword", "display_name": "Reset"},
+    )
+    verification_token = app.state.email_verification_tokens["confirm-reset@example.com"]
+    verify = await db_client.post(_VERIFY_EMAIL_URL, json={"token": verification_token})
+    assert verify.status_code == 200
+
+    request = await db_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "confirm-reset@example.com"})
+    assert request.status_code == 204
+    reset_token = app.state.password_reset_tokens["confirm-reset@example.com"]
+
+    resp = await db_client.post(
+        _PASSWORD_RESET_CONFIRM_URL,
+        json={"token": reset_token, "new_password": "newpassword123"},
+    )
+    assert resp.status_code == 204
+
+    old_login = await db_client.post(_LOGIN_URL, json={"email": "confirm-reset@example.com", "password": "oldpassword"})
+    assert old_login.status_code == 401
+
+    new_login = await db_client.post(_LOGIN_URL, json={"email": "confirm-reset@example.com", "password": "newpassword123"})
+    assert new_login.status_code == 200
+
+
+async def test_confirm_password_reset_rejects_expired_token(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "expired-reset@example.com", "password": "oldpassword", "display_name": "Expired"},
+    )
+    await db_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "expired-reset@example.com"})
+    reset_token = app.state.password_reset_tokens["expired-reset@example.com"]
+
+    result = await db_session.execute(select(PasswordResetToken).where(PasswordResetToken.token_hash == hash_token(reset_token)))
+    record = result.scalar_one()
+    record.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    await db_session.commit()
+
+    resp = await db_client.post(
+        _PASSWORD_RESET_CONFIRM_URL,
+        json={"token": reset_token, "new_password": "newpassword123"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid or expired reset link"
 
 
 async def test_me_requires_auth(client: AsyncClient) -> None:

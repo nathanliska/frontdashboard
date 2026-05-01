@@ -53,9 +53,17 @@ export function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-zinc-400 mb-1.5" htmlFor="password">
-              Password
-            </label>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <label className="block text-sm text-zinc-400" htmlFor="password">
+                Password
+              </label>
+              <Link
+                to={ROUTES.forgotPassword}
+                className="text-xs font-medium text-zinc-300 hover:text-zinc-100"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input
               id="password"
               name="password"

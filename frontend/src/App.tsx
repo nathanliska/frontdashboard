@@ -5,6 +5,7 @@ import { AppShell } from './components/layout/AppShell'
 import { CalendarPage } from './pages/CalendarPage'
 import { DashboardEditorPage } from './pages/DashboardEditorPage'
 import { DashboardsPage } from './pages/DashboardsPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ListDetailPage } from './pages/ListDetailPage'
 import { ListsLayout } from './pages/ListsLayout'
 import { LoginPage } from './pages/LoginPage'
@@ -12,6 +13,7 @@ import { NotificationsPage } from './pages/NotificationsPage'
 import { PreferencesPage } from './pages/PreferencesPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
 import { ROUTES } from './routes'
 import { useAuthStore } from './stores/auth'
@@ -53,6 +55,8 @@ export default function App() {
           {/* Public */}
           <Route path={ROUTES.login} element={<LoginPage />} />
           <Route path={ROUTES.register} element={<RegisterPage />} />
+          <Route path={ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
+          <Route path={ROUTES.resetPassword} element={<ResetPasswordPage />} />
           <Route path={ROUTES.verifyEmail} element={<VerifyEmailPage />} />
 
           {/* Protected — RequireAuth shows spinner while loading, redirects if unauthed */}

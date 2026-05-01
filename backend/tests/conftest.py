@@ -32,6 +32,7 @@ def pytest_configure(config: pytest.Config) -> None:
     import app.models.email_verification_token  # noqa: F401
     import app.models.list  # noqa: F401
     import app.models.notification  # noqa: F401
+    import app.models.password_reset_token  # noqa: F401
     import app.models.refresh_token  # noqa: F401
     import app.models.share  # noqa: F401
     import app.models.user  # noqa: F401
@@ -58,12 +59,18 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None, None]:
     """Reset non-database global state after each test."""
     app.state.email_verification_tokens = {}
+    app.state.password_reset_tokens = {}
 
     async def _capture_verification_email(email: str, verification_url: str) -> None:
         query = parse_qs(urlparse(verification_url).query)
         app.state.email_verification_tokens[email] = query["token"][0]
 
+    async def _capture_password_reset_email(email: str, reset_url: str) -> None:
+        query = parse_qs(urlparse(reset_url).query)
+        app.state.password_reset_tokens[email] = query["token"][0]
+
     monkeypatch.setattr("app.routers.auth.send_verification_email", _capture_verification_email)
+    monkeypatch.setattr("app.routers.auth.send_password_reset_email", _capture_password_reset_email)
     yield
     limiter._storage.reset()
 

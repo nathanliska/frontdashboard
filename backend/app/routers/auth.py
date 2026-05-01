@@ -16,12 +16,15 @@ from app.database import get_db
 from app.limiter import limiter
 from app.models.dashboard import Dashboard
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.share import PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
 from app.schemas.auth import (
     LoginRequest,
     PasswordChangeRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
     PreferencesUpdate,
     ProfileUpdate,
     RegisterRequest,
@@ -30,7 +33,7 @@ from app.schemas.auth import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services.email import send_verification_email
+from app.services.email import send_password_reset_email, send_verification_email
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +106,28 @@ async def _issue_email_verification(user: User, db: AsyncSession) -> str:
     )
     await db.flush()
     return f"{settings.frontend_base_url.rstrip('/')}/verify-email?token={raw_token}"
+
+
+async def _issue_password_reset(user: User, db: AsyncSession) -> str:
+    now = datetime.now(UTC)
+    await db.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+    raw_token, token_hash = create_opaque_token()
+    db.add(
+        PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=now + timedelta(hours=settings.password_reset_expire_hours),
+        )
+    )
+    await db.flush()
+    return f"{settings.frontend_base_url.rstrip('/')}/reset-password?token={raw_token}"
 
 
 async def _create_session(user: User, response: Response, db: AsyncSession) -> None:
@@ -263,6 +288,58 @@ async def resend_verification(
         verification_url = await _issue_email_verification(user, db)
         await db.commit()
         await send_verification_email(user.email, verification_url)
+
+
+@router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("3/minute")
+async def request_password_reset(
+    request: Request,
+    body: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
+    user = result.scalar_one_or_none()
+    if user:
+        reset_url = await _issue_password_reset(user, db)
+        await db.commit()
+        await send_password_reset_email(user.email, reset_url)
+
+
+@router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def confirm_password_reset(
+    request: Request,
+    body: PasswordResetConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    now = datetime.now(UTC)
+    result = await db.execute(
+        select(PasswordResetToken).where(
+            PasswordResetToken.token_hash == hash_token(body.token),
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+    )
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+
+    user_result = await db.execute(select(User).where(User.id == token.user_id, User.deleted_at.is_(None)))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+
+    token.used_at = now
+    user.password_hash = hash_password(body.new_password)
+    await db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked.is_(False),
+        )
+        .values(revoked=True)
+    )
+    await db.commit()
 
 
 @router.post("/login", response_model=UserResponse)

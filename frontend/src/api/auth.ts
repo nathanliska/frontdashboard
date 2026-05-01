@@ -98,6 +98,26 @@ export async function apiResendVerification(email: string): Promise<void> {
   if (!res.ok) throw await readError(res, 'Failed to resend verification email')
 }
 
+export async function apiRequestPasswordReset(email: string): Promise<void> {
+  const res = await fetch('/api/auth/password-reset/request', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) throw await readError(res, 'Failed to send password reset email')
+}
+
+export async function apiConfirmPasswordReset(token: string, new_password: string): Promise<void> {
+  const res = await fetch('/api/auth/password-reset/confirm', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, new_password }),
+  })
+  if (!res.ok) throw await readError(res, 'Failed to reset password')
+}
+
 export async function apiLogout(): Promise<void> {
   await apiFetch('/api/auth/logout', { method: 'POST' })
 }

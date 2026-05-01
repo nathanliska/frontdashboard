@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
-    email_verification_expire_hours: int = 24
+    email_verification_expire_hours: int = 1
+    password_reset_expire_hours: int = 1
     frontend_base_url: str = "http://localhost:5173"
     resend_api_key: str | None = None
     email_from: str = "FrontDashboard <noreply@frontdashboard.local>"
