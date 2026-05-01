@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down logs test lint format audit audit-fix migrate seed hooks help
+.PHONY: dev-up dev-down logs test lint typecheck format audit audit-fix migrate seed hooks help
 
 help:
 	@echo ""
@@ -7,6 +7,7 @@ help:
 	@echo "  make logs      Tail service logs"
 	@echo "  make test      Run all tests"
 	@echo "  make lint      Lint backend + frontend (check only)"
+	@echo "  make typecheck Run type checks for backend + frontend"
 	@echo "  make format    Format + auto-fix backend and frontend"
 	@echo "  make audit     Run dependency/security audit checks"
 	@echo "  make audit-fix Apply npm audit fixes for frontend dependencies"
@@ -32,7 +33,7 @@ logs:
 
 # Testing
 test:
-	cd backend && uv run pytest
+	cd backend && uv run pytest && uv run ty check
 	cd frontend && npm run test:run
 
 # Linting — check only, no modifications

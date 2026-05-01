@@ -11,6 +11,7 @@
     "format": "biome format --write .",
     "audit": "npm audit",
     "audit:fix": "npm audit fix",
+    "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
     "preview": "vite preview"
