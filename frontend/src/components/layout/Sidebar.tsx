@@ -5,7 +5,6 @@ import {
   ChevronRight,
   LayoutDashboard,
   LogOut,
-  Settings,
   User,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -180,15 +179,6 @@ function UserMenu({
               setOpen(false)
               closeMobileSidebar()
               navigate(ROUTES.profile)
-            }}
-          />
-          <MenuItem
-            icon={Settings}
-            label="Preferences"
-            onClick={() => {
-              setOpen(false)
-              closeMobileSidebar()
-              navigate(ROUTES.preferences)
             }}
           />
           <hr className="border-zinc-800 my-1" />

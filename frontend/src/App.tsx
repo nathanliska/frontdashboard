@@ -10,7 +10,6 @@ import { ListDetailPage } from './pages/ListDetailPage'
 import { ListsLayout } from './pages/ListsLayout'
 import { LoginPage } from './pages/LoginPage'
 import { NotificationsPage } from './pages/NotificationsPage'
-import { PreferencesPage } from './pages/PreferencesPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
@@ -77,7 +76,6 @@ export default function App() {
               </Route>
               <Route path={ROUTES.notifications} element={<NotificationsPage />} />
               <Route path={ROUTES.profile} element={<ProfilePage />} />
-              <Route path={ROUTES.preferences} element={<PreferencesPage />} />
             </Route>
           </Route>
 

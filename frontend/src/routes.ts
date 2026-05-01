@@ -14,5 +14,4 @@ export const ROUTES = {
   listDetailPattern: '/lists/:listId',
   notifications: '/notifications',
   profile: '/profile',
-  preferences: '/preferences',
 } as const

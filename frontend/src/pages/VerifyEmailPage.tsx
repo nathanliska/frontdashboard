@@ -1,8 +1,15 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { apiResendVerification } from '../api/auth'
+import { ApiError, apiResendVerification } from '../api/auth'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
+
+function getVerificationErrorMessage(err: unknown) {
+  if (err instanceof ApiError && err.status === 400) {
+    return 'That verification link is invalid or expired. Request a new link below.'
+  }
+  return err instanceof Error ? err.message : 'Email verification failed'
+}
 
 export function VerifyEmailPage() {
   const verifyEmail = useAuthStore((s) => s.verifyEmail)
@@ -33,7 +40,7 @@ export function VerifyEmailPage() {
       .catch((err) => {
         if (cancelled) return
         setStatus('idle')
-        setError(err instanceof Error ? err.message : 'Email verification failed')
+        setError(getVerificationErrorMessage(err))
       })
 
     return () => {

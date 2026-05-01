@@ -252,11 +252,12 @@ async def verify_email(
 ) -> UserResponse:
     now = datetime.now(UTC)
     result = await db.execute(
-        select(EmailVerificationToken).where(
+        select(EmailVerificationToken)
+        .where(
             EmailVerificationToken.token_hash == hash_token(body.token),
-            EmailVerificationToken.used_at.is_(None),
             EmailVerificationToken.expires_at > now,
         )
+        .with_for_update()
     )
     token = result.scalar_one_or_none()
     if not token:
@@ -267,8 +268,13 @@ async def verify_email(
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
 
-    token.used_at = now
-    user.email_verified_at = now
+    if token.used_at is not None:
+        if user.email_verified_at != token.used_at:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+    else:
+        token.used_at = now
+        user.email_verified_at = now
+
     await _create_session(user, response, db)
     await db.commit()
     await db.refresh(user)

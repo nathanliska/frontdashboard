@@ -88,7 +88,7 @@ async def test_verify_email_authenticates_user(db_client: AsyncClient) -> None:
     assert "csrf_token" in resp.cookies
 
 
-async def test_verify_email_rejects_used_token(db_client: AsyncClient) -> None:
+async def test_verify_email_allows_successful_token_replay(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
         json={"email": "replay@example.com", "password": "mypassword", "display_name": "Replay"},
@@ -99,8 +99,27 @@ async def test_verify_email_rejects_used_token(db_client: AsyncClient) -> None:
     assert first.status_code == 200
 
     replay = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
-    assert replay.status_code == 400
-    assert replay.json()["detail"] == "Invalid or expired verification link"
+    assert replay.status_code == 200
+    assert replay.json()["email"] == "replay@example.com"
+    assert replay.json()["email_verified_at"] == first.json()["email_verified_at"]
+    assert "access_token" in replay.cookies
+    assert "refresh_token" in replay.cookies
+    assert "csrf_token" in replay.cookies
+
+
+async def test_verify_email_rejects_invalidated_token_after_resend(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "invalidated@example.com", "password": "mypassword", "display_name": "Invalidated"},
+    )
+    first_token = app.state.email_verification_tokens["invalidated@example.com"]
+
+    resend = await db_client.post(_RESEND_VERIFICATION_URL, json={"email": "invalidated@example.com"})
+    assert resend.status_code == 204
+
+    resp = await db_client.post(_VERIFY_EMAIL_URL, json={"token": first_token})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid or expired verification link"
 
 
 async def test_verify_email_rejects_expired_token(db_client: AsyncClient, db_session: AsyncSession) -> None:
