@@ -33,7 +33,7 @@ import {
   formatDayNumber,
   formatHeadingDate,
   formatMonthLabel,
-  monthGridDays,
+  monthWeeksInView,
   occurrencesForDate,
   startOfDay,
 } from '../utils/calendar/calendarUtils'
@@ -90,7 +90,7 @@ export function CalendarPage() {
   )
   const occurrences = occurrencesQuery.data ?? EMPTY_OCCURRENCES
   const { loading } = occurrencesQuery
-  const monthDays = useMemo(() => monthGridDays(monthCursor), [monthCursor])
+  const monthDays = useMemo(() => monthWeeksInView(monthCursor), [monthCursor])
   const selectedOccurrences = useMemo(
     () => occurrencesForDate(occurrences, selectedDate),
     [occurrences, selectedDate],
@@ -205,7 +205,7 @@ export function CalendarPage() {
   )
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="flex min-h-full flex-col gap-4 xl:h-full">
       <div className="flex flex-col gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0 pl-12 sm:pl-0 min-h-10">
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Calendar</h1>
@@ -238,8 +238,8 @@ export function CalendarPage() {
         </p>
       </div>
 
-      <div className="flex-1 min-h-0 grid gap-4 xl:grid-cols-[1.35fr_0.9fr]">
-        <section className="min-h-0 rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden flex flex-col">
+      <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[1.35fr_0.9fr]">
+        <section className="h-[430px] min-h-0 shrink-0 rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden flex flex-col sm:h-[560px] xl:h-auto xl:shrink">
           <div className="flex items-center justify-between border-b border-zinc-800 px-3 sm:px-4 py-3">
             <div className="flex items-center gap-2">
               <button
@@ -316,7 +316,7 @@ export function CalendarPage() {
                   const inMonth = day.getMonth() === monthCursor.getMonth()
                   const isSelected = dateKey(day) === dateKey(selectedDate)
                   const isToday = dateKey(day) === dateKey(new Date())
-                  const visibleOccurrences = dayOccurrences.slice(0, inMonth ? 2 : 1)
+                  const visibleOccurrences = dayOccurrences.slice(0, inMonth ? 4 : 2)
                   return (
                     <button
                       key={day.toISOString()}
@@ -326,7 +326,7 @@ export function CalendarPage() {
                     >
                       <div
                         className={cn(
-                          'flex h-full min-h-16 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-1 transition-colors sm:min-h-24 xl:min-h-0',
+                          'flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-1 transition-colors',
                           'group-hover:border-zinc-700 group-hover:bg-zinc-900/80',
                           'group-focus-visible:border-zinc-400 group-focus-visible:ring-1 group-focus-visible:ring-zinc-400/40',
                           !inMonth && 'opacity-45',
@@ -342,7 +342,7 @@ export function CalendarPage() {
                             dimmed={!inMonth}
                           />
                         </div>
-                        <div className="space-y-1">
+                        <div className="flex-1 min-h-0 overflow-hidden space-y-1">
                           {visibleOccurrences.map((occurrence) => (
                             <div
                               key={`${occurrence.event_id}:${occurrence.original_start}`}
@@ -357,12 +357,12 @@ export function CalendarPage() {
                               {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
                             </div>
                           ))}
-                          {dayOccurrences.length > visibleOccurrences.length && (
-                            <p className="text-[10px] text-zinc-500">
-                              +{dayOccurrences.length - visibleOccurrences.length}
-                            </p>
-                          )}
                         </div>
+                        {dayOccurrences.length > visibleOccurrences.length && (
+                          <p className="text-[10px] text-zinc-500 shrink-0 mt-0.5">
+                            +{dayOccurrences.length - visibleOccurrences.length}
+                          </p>
+                        )}
                       </div>
                     </button>
                   )
@@ -372,7 +372,7 @@ export function CalendarPage() {
           )}
         </section>
 
-        <section className="min-h-0 rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden flex flex-col">
+        <section className="min-h-0 max-h-[60dvh] rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden flex flex-col sm:max-h-[520px] xl:max-h-none">
           <div className="border-b border-zinc-800 px-3 sm:px-4 py-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -410,7 +410,7 @@ export function CalendarPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
             {selectedOccurrences.length > 0 ? (
               <div className="space-y-3">
                 {selectedOccurrences.map((occurrence) => (

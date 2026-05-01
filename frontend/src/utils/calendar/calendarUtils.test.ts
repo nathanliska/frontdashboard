@@ -6,6 +6,7 @@ import {
   formatCalendarOccurrenceCellTitle,
   isMultiDayOccurrence,
   monthGridDays,
+  monthWeeksInView,
   occursOnDate,
   startOfWeek,
 } from './calendarUtils'
@@ -27,6 +28,24 @@ describe('calendar utils', () => {
     expect(dateKey(days[41])).toBe('2026-05-10')
     expect(dateKey(new Date(window.start))).toBe('2026-03-30')
     expect(dateKey(new Date(window.end))).toBe('2026-05-11')
+  })
+
+  it('shows only weeks that include days from the requested month', () => {
+    const fiveWeekMonth = monthWeeksInView(new Date(2026, 3, 15, 12))
+    const sixWeekMonth = monthWeeksInView(new Date(2026, 2, 15, 12))
+    const fourWeekMonth = monthWeeksInView(new Date(2027, 1, 15, 12))
+
+    expect(fiveWeekMonth).toHaveLength(35)
+    expect(dateKey(fiveWeekMonth[0])).toBe('2026-03-30')
+    expect(dateKey(fiveWeekMonth[34])).toBe('2026-05-03')
+
+    expect(sixWeekMonth).toHaveLength(42)
+    expect(dateKey(sixWeekMonth[0])).toBe('2026-02-23')
+    expect(dateKey(sixWeekMonth[41])).toBe('2026-04-05')
+
+    expect(fourWeekMonth).toHaveLength(28)
+    expect(dateKey(fourWeekMonth[0])).toBe('2027-02-01')
+    expect(dateKey(fourWeekMonth[27])).toBe('2027-02-28')
   })
 
   it('treats overlapping occurrences as visible on a day', () => {

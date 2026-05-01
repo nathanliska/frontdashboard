@@ -191,7 +191,12 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
         ))}
       </div>
 
-      <div className={cn('grid grid-cols-7 flex-1 min-h-0', ultraCompact ? 'gap-0.5' : 'gap-1')}>
+      <div
+        className={cn(
+          'grid grid-cols-7 auto-rows-fr flex-1 min-h-0',
+          ultraCompact ? 'gap-0.5' : 'gap-1',
+        )}
+      >
         {days.map((day) => {
           const dayOccurrences = occurrencesByDate.get(dateKey(day)) ?? []
           const inMonth = day.getMonth() === monthDate.getMonth()
@@ -204,12 +209,12 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
               className={cn(
                 ultraCompact
                   ? 'rounded border border-zinc-800 bg-zinc-950/60 p-0.5 min-h-0 overflow-hidden'
-                  : 'rounded-md border border-zinc-800 bg-zinc-950/60 p-1 min-h-0 overflow-hidden',
+                  : 'rounded-md border border-zinc-800 bg-zinc-950/60 p-1 min-h-0 overflow-hidden flex flex-col',
                 !inMonth && 'opacity-45',
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
             >
-              <div className={cn(ultraCompact ? 'mb-0.5' : 'mb-1')}>
+              <div className={cn(ultraCompact ? 'mb-0.5' : 'mb-1 shrink-0')}>
                 <CalendarDayNumber
                   value={formatDayNumber(day)}
                   isToday={isToday}
@@ -234,27 +239,29 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
                   )}
                 </div>
               ) : (
-                <div className="space-y-1">
-                  {visible.map((occurrence) => (
-                    <div
-                      key={`${occurrence.event_id}:${occurrence.original_start}`}
-                      title={formatCalendarOccurrenceCellTitle(occurrence, day)}
-                      className={cn(
-                        'rounded px-1 py-0.5 text-[10px] truncate',
-                        occurrence.recurring
-                          ? 'bg-emerald-500/12 text-emerald-300'
-                          : 'bg-sky-500/12 text-sky-300',
-                      )}
-                    >
-                      {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
-                    </div>
-                  ))}
+                <>
+                  <div className="flex-1 min-h-0 overflow-hidden space-y-1">
+                    {visible.map((occurrence) => (
+                      <div
+                        key={`${occurrence.event_id}:${occurrence.original_start}`}
+                        title={formatCalendarOccurrenceCellTitle(occurrence, day)}
+                        className={cn(
+                          'rounded px-1 py-0.5 text-[10px] truncate',
+                          occurrence.recurring
+                            ? 'bg-emerald-500/12 text-emerald-300'
+                            : 'bg-sky-500/12 text-sky-300',
+                        )}
+                      >
+                        {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                      </div>
+                    ))}
+                  </div>
                   {dayOccurrences.length > visible.length && (
-                    <p className="text-[10px] text-zinc-500">
+                    <p className="text-[10px] text-zinc-500 shrink-0 mt-0.5">
                       +{dayOccurrences.length - visible.length}
                     </p>
                   )}
-                </div>
+                </>
               )}
             </div>
           )

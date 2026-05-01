@@ -11,9 +11,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const toggleMobileSidebar = useUIStore((s) => s.toggleMobileSidebar)
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
+    <div className="flex h-dvh bg-zinc-950 text-zinc-100 overflow-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-auto p-3 pt-3 sm:p-4 sm:pt-4 lg:p-6">
+      <main className="flex-1 h-full overflow-auto p-3 pt-3 sm:p-4 sm:pt-4 lg:p-6">
         <button
           type="button"
           onClick={toggleMobileSidebar}

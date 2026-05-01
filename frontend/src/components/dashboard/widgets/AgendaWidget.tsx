@@ -13,7 +13,7 @@ function isToday(item: AgendaItem): boolean {
 }
 
 export function AgendaWidget({ dashboardId }: { dashboardId: string }) {
-  const { data, loading, error } = useAgendaItems(dashboardId)
+  const { data, error } = useAgendaItems(dashboardId)
   const all = data ?? []
   const todayItems = all.filter(isToday)
   const upcomingItems = all.filter((i) => !isToday(i)).slice(0, MAX_ITEMS - todayItems.length)
@@ -27,7 +27,7 @@ export function AgendaWidget({ dashboardId }: { dashboardId: string }) {
     )
   }
 
-  if (loading && !data) {
+  if (!data && !error) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="h-3.5 w-3.5 animate-spin rounded-full border border-zinc-700 border-t-zinc-500" />

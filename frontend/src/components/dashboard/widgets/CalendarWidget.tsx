@@ -6,7 +6,7 @@ import {
   addDays,
   calendarWindow,
   dateKey,
-  monthGridDays,
+  monthWeeksInView,
   occurrencesForDate,
   startOfDay,
   startOfWeek,
@@ -61,7 +61,7 @@ export function CalendarWidget({
     const start = startOfWeek(today)
     return Array.from({ length: 7 }, (_, index) => addDays(start, index))
   }, [today])
-  const monthDays = useMemo(() => monthGridDays(today), [today])
+  const monthDays = useMemo(() => monthWeeksInView(today), [today])
   const visibleOccurrencesByDate = useMemo(() => {
     const days = view === 'day' ? [today] : view === 'week' ? weekDays : monthDays
     return new Map(days.map((day) => [dateKey(day), occurrencesForDate(occurrences, day)]))

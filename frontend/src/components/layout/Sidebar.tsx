@@ -48,7 +48,7 @@ export function Sidebar() {
       />
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-zinc-800 bg-zinc-950 transition-transform duration-200 sm:relative sm:z-20 sm:h-screen sm:shrink-0 sm:transition-all',
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-zinc-800 bg-zinc-950 transition-transform duration-200 sm:relative sm:z-20 sm:h-dvh sm:shrink-0 sm:transition-all',
           mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0',
           sidebarCollapsed ? 'sm:w-16' : 'sm:w-56',
         )}

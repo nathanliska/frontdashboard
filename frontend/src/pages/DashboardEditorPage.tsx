@@ -73,7 +73,7 @@ export function DashboardEditorPage() {
   const canEdit = dashboard.can_edit && !dashboard.archived
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="flex flex-col min-h-full gap-4">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 pl-12 sm:pl-0 min-h-10">
         <button
@@ -155,7 +155,7 @@ export function DashboardEditorPage() {
       )}
 
       {/* Grid */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1">
         <DashboardGrid dashboard={dashboard} canEdit={canEdit} />
       </div>
 

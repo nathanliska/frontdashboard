@@ -202,3 +202,17 @@ export function monthGridDays(monthDate: Date): Date[] {
   const gridStart = startOfWeek(monthStart)
   return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index))
 }
+
+export function monthWeeksInView(monthDate: Date): Date[] {
+  const month = monthDate.getMonth()
+  const days = monthGridDays(monthDate)
+
+  for (let end = days.length; end > 0; end -= 7) {
+    const week = days.slice(end - 7, end)
+    if (week.some((day) => day.getMonth() === month)) {
+      return days.slice(0, end)
+    }
+  }
+
+  return days
+}

@@ -52,12 +52,12 @@ export function ListWidget({
     event.preventDefault()
     if (!detail) return
 
-    const formData = new FormData(event.currentTarget)
-    const text = String(formData.get('item-text') ?? '').trim()
+    const form = event.currentTarget
+    const text = String(new FormData(form).get('item-text') ?? '').trim()
     if (!text) return
 
     await addListItem(listId, text)
-    event.currentTarget.reset()
+    form.reset()
   }
 
   if (error) {
