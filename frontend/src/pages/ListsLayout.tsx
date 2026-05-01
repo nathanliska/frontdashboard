@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Outlet, useMatch, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ListSummary, ListType } from '../api/lists'
-import { CreateListCard } from '../components/lists/CreateListCard'
+import { CreateListModal } from '../components/lists/CreateListModal'
 import { ListSidebarRow } from '../components/lists/ListSidebarRow'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import {
@@ -65,7 +65,7 @@ export function ListsLayout() {
   const filteredLists =
     typeFilter === 'all' ? lists : lists.filter((l) => l.list_type === typeFilter)
   const activeDashboard = activeDashboards.find((d) => d.id === effectiveDashboardId) ?? null
-  const showVisibleCreate = showCreate && effectiveDashboardId === dashboardId
+  const showVisibleCreate = showCreate && Boolean(effectiveDashboardId)
 
   function listUrl(id: string) {
     return `${ROUTES.listDetail(id)}${effectiveDashboardId ? `?dashboard_id=${effectiveDashboardId}` : ''}`
@@ -180,13 +180,6 @@ export function ListsLayout() {
             listId ? '-translate-x-full pointer-events-none' : 'translate-x-0',
           )}
         >
-          {showVisibleCreate && (
-            <CreateListCard
-              activeDashboardName={activeDashboard?.name}
-              onCreate={handleCreate}
-              onClose={() => setShowCreate(false)}
-            />
-          )}
           {loading ? (
             <p className="text-sm text-zinc-600 px-1">Loading…</p>
           ) : listsError ? (
@@ -228,6 +221,14 @@ export function ListsLayout() {
           )}
         </div>
       </div>
+
+      {showVisibleCreate && (
+        <CreateListModal
+          activeDashboardName={activeDashboard?.name}
+          onCreate={handleCreate}
+          onClose={() => setShowCreate(false)}
+        />
+      )}
     </div>
   )
 }
