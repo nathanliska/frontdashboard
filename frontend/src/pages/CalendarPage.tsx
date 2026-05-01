@@ -1,4 +1,5 @@
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { CalendarOccurrence } from '../api/calendar'
@@ -410,53 +411,25 @@ export function CalendarPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 sm:p-4">
-            {editorLoading || editorSession || selectedOccurrences.length > 0 ? (
+            {selectedOccurrences.length > 0 ? (
               <div className="space-y-3">
-                {editorLoading && <CalendarEditorLoading onClose={closeEditor} />}
-
-                {editorSession && (
-                  <CalendarEditor
-                    key={editorSession.key}
-                    mode={editorSession.mode}
-                    initialDraft={editorSession.initialDraft}
-                    selectedDate={editorSession.mode === 'create' ? selectedDate : null}
-                    activeDashboardName={activeDashboard?.name}
-                    onClose={closeEditor}
-                    onSubmit={handleEditorSubmit}
+                {selectedOccurrences.map((occurrence) => (
+                  <OccurrenceCard
+                    key={`${occurrence.event_id}:${occurrence.original_start}`}
+                    occurrence={occurrence}
+                    onEdit={() => {
+                      void openEditEditor(occurrence.event_id)
+                    }}
+                    onDelete={async () => {
+                      const label = occurrence.recurring
+                        ? 'Delete this entire series?'
+                        : 'Delete this event?'
+                      if (await confirm(label)) {
+                        void deleteCalendarEvent(occurrence.event_id, effectiveActiveDashboardId)
+                      }
+                    }}
                   />
-                )}
-
-                {selectedOccurrences.length > 0 ? (
-                  <div className="space-y-3">
-                    {(editorLoading || editorSession) && (
-                      <p className="px-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-                        Scheduled
-                      </p>
-                    )}
-                    {selectedOccurrences.map((occurrence) => (
-                      <OccurrenceCard
-                        key={`${occurrence.event_id}:${occurrence.original_start}`}
-                        occurrence={occurrence}
-                        onEdit={() => {
-                          void openEditEditor(occurrence.event_id)
-                        }}
-                        onDelete={async () => {
-                          const label = occurrence.recurring
-                            ? 'Delete this entire series?'
-                            : 'Delete this event?'
-                          if (await confirm(label)) {
-                            void deleteCalendarEvent(
-                              occurrence.event_id,
-                              effectiveActiveDashboardId,
-                            )
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                ) : !editorLoading && !editorSession ? (
-                  <SelectedDayEmptyState compact activeDashboardName={activeDashboard?.name} />
-                ) : null}
+                ))}
               </div>
             ) : (
               <SelectedDayEmptyState activeDashboardName={activeDashboard?.name} />
@@ -464,11 +437,43 @@ export function CalendarPage() {
           </div>
         </section>
       </div>
+
+      {(editorLoading || editorSession) && (
+        <CalendarEditorModal onClose={closeEditor}>
+          {editorLoading && <CalendarEditorLoading />}
+
+          {editorSession && (
+            <CalendarEditor
+              key={editorSession.key}
+              mode={editorSession.mode}
+              initialDraft={editorSession.initialDraft}
+              selectedDate={editorSession.mode === 'create' ? selectedDate : null}
+              activeDashboardName={activeDashboard?.name}
+              onClose={closeEditor}
+              onSubmit={handleEditorSubmit}
+            />
+          )}
+        </CalendarEditorModal>
+      )}
     </div>
   )
 }
 
-function CalendarEditorLoading({ onClose }: { onClose: () => void }) {
+function CalendarEditorModal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <button
+        type="button"
+        aria-label="Close event dialog"
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+      />
+      <div className="relative mx-4 w-full max-w-4xl max-h-[88vh] overflow-y-auto">{children}</div>
+    </div>
+  )
+}
+
+function CalendarEditorLoading() {
   return (
     <div className="grid gap-3 rounded-xl border border-zinc-800 bg-zinc-950/45 p-4">
       <div className="flex items-center justify-between gap-3">
@@ -476,13 +481,6 @@ function CalendarEditorLoading({ onClose }: { onClose: () => void }) {
           <p className="text-sm font-medium text-zinc-200">Loading event</p>
           <p className="text-xs text-zinc-500">Fetching the latest event details.</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg px-3 py-2 text-sm text-zinc-500 hover:text-zinc-200 transition-colors"
-        >
-          Cancel
-        </button>
       </div>
       <div className="flex items-center justify-center py-10">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />

@@ -1,10 +1,10 @@
+import { Minus, Plus } from 'lucide-react'
 import { type FormEvent, memo, useEffect, useEffectEvent, useState } from 'react'
 import {
   type CalendarEditorDraft,
   type EditorMode,
   formatEndDateLabel,
   formatWeeklySelection,
-  getDurationSummary,
   getRecurringOverlapWarning,
   type RecurrenceMode,
   repeatUnitLabel,
@@ -23,7 +23,6 @@ import {
   toLocalDateTimeValue,
 } from '../../utils/calendar/calendarEditorDurationUtils'
 import { cn } from '../../utils/shared/cn'
-import { CalendarEditorDurationToolbar } from './CalendarEditorDurationToolbar'
 import { CalendarEditorRepeatSection } from './CalendarEditorRepeatSection'
 
 type RepeatCadenceMode = Exclude<RecurrenceMode, 'none'>
@@ -60,12 +59,11 @@ export const CalendarEditor = memo(function CalendarEditor({
     inferDurationUnit(initialDraft.startsAt, initialDraft.endsAt),
   )
   const [showOptionalFields, setShowOptionalFields] = useState(
-    Boolean(initialDraft.description || initialDraft.eventLocation || mode === 'edit'),
+    Boolean(initialDraft.description || initialDraft.eventLocation),
   )
   const [submitting, setSubmitting] = useState(false)
 
   const dashboardLabel = activeDashboardName ?? 'the selected dashboard'
-  const durationSummary = getDurationSummary(startsAt, endsAt)
   const isRepeating = recurrenceMode !== 'none'
   const recurrenceIntervalNumber = Math.max(Number(recurrenceInterval) || 1, 1)
   const parsedStart = new Date(startsAt)
@@ -73,14 +71,19 @@ export const CalendarEditor = memo(function CalendarEditor({
   const hasValidStart = !Number.isNaN(parsedStart.getTime())
   const hasValidEnd = !Number.isNaN(parsedEnd.getTime())
   const scheduleError =
-    hasValidStart && hasValidEnd && parsedEnd <= parsedStart
+    !allDay && hasValidStart && hasValidEnd && parsedEnd <= parsedStart
       ? 'End time must be after the start time.'
       : null
   const durationMinutes = getDurationMinutes(startsAt, endsAt)
   const durationValue = formatDurationValue(durationMinutes, durationUnit)
   const overlapWarning = !isRepeating
     ? null
-    : getRecurringOverlapWarning(startsAt, endsAt, recurrenceMode, recurrenceInterval)
+    : getRecurringOverlapWarning(
+        startsAt,
+        allDay ? getAllDayEndDateTime(startsAt) : endsAt,
+        recurrenceMode,
+        recurrenceInterval,
+      )
   const recurrenceSummary = !isRepeating
     ? 'Does not repeat'
     : `Repeats every ${recurrenceIntervalNumber} ${repeatUnitLabel(
@@ -99,17 +102,10 @@ export const CalendarEditor = memo(function CalendarEditor({
       recurrenceWeekdays,
     })
 
-    if (syncedDraft.startsAt !== startsAt) {
-      setStartsAt(syncedDraft.startsAt)
-    }
-
-    if (syncedDraft.endsAt !== endsAt) {
-      setEndsAt(syncedDraft.endsAt)
-    }
-
-    if (syncedDraft.recurrenceWeekdays !== recurrenceWeekdays) {
+    if (syncedDraft.startsAt !== startsAt) setStartsAt(syncedDraft.startsAt)
+    if (syncedDraft.endsAt !== endsAt) setEndsAt(syncedDraft.endsAt)
+    if (syncedDraft.recurrenceWeekdays !== recurrenceWeekdays)
       setRecurrenceWeekdays(syncedDraft.recurrenceWeekdays)
-    }
   })
 
   useEffect(() => {
@@ -140,9 +136,7 @@ export const CalendarEditor = memo(function CalendarEditor({
 
   function handleRecurrenceModeChange(value: RecurrenceMode) {
     setRecurrenceMode(value)
-    if (value !== 'none') {
-      setLastRecurringMode(value)
-    }
+    if (value !== 'none') setLastRecurringMode(value)
     if (value === 'weekly' && recurrenceWeekdays.length === 0) {
       setRecurrenceWeekdays([toMondayWeekday(new Date(startsAt).getDay())])
     }
@@ -153,16 +147,13 @@ export const CalendarEditor = memo(function CalendarEditor({
       setRecurrenceMode('none')
       return
     }
-
     handleRecurrenceModeChange(recurrenceMode === 'none' ? lastRecurringMode : recurrenceMode)
   }
 
   function handleDurationValueChange(value: string) {
     if (!hasValidStart) return
-
     const nextValue = Number(value)
     if (!Number.isFinite(nextValue) || nextValue <= 0) return
-
     const nextEnd = new Date(parsedStart)
     nextEnd.setMinutes(nextEnd.getMinutes() + toDurationMinutes(nextValue, durationUnit))
     setEndsAt(toLocalDateTimeValue(nextEnd))
@@ -170,7 +161,6 @@ export const CalendarEditor = memo(function CalendarEditor({
 
   function adjustDuration(delta: number) {
     if (!hasValidStart) return
-
     const currentValue = Number(durationValue) || getMinimumDurationValue(durationUnit)
     const nextValue = Math.max(
       getMinimumDurationValue(durationUnit),
@@ -184,7 +174,6 @@ export const CalendarEditor = memo(function CalendarEditor({
   function handleDurationUnitChange(nextUnit: DurationUnit) {
     setDurationUnit(nextUnit)
     if (!hasValidStart) return
-
     const nextEnd = new Date(parsedStart)
     nextEnd.setMinutes(
       nextEnd.getMinutes() + toDurationMinutes(getDefaultDurationValue(nextUnit), nextUnit),
@@ -200,14 +189,12 @@ export const CalendarEditor = memo(function CalendarEditor({
 
   function adjustRecurrenceInterval(delta: number) {
     const currentValue = Number(recurrenceInterval) || 1
-    const nextValue = Math.max(1, currentValue + delta)
-    setRecurrenceInterval(String(nextValue))
+    setRecurrenceInterval(String(Math.max(1, currentValue + delta)))
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (scheduleError || submitting) return
-
     setSubmitting(true)
     try {
       await onSubmit({
@@ -215,7 +202,7 @@ export const CalendarEditor = memo(function CalendarEditor({
         description,
         eventLocation,
         startsAt,
-        endsAt,
+        endsAt: allDay ? getAllDayEndDateTime(startsAt) : endsAt,
         allDay,
         recurrenceMode,
         recurrenceInterval,
@@ -233,8 +220,9 @@ export const CalendarEditor = memo(function CalendarEditor({
       aria-busy={submitting}
       className="rounded-2xl border border-zinc-800/80 bg-gradient-to-br from-zinc-950/85 via-zinc-950/70 to-zinc-900/35 p-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.2)]"
     >
+      {/* Header */}
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <p className="rounded-full border border-zinc-800 bg-zinc-950/80 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
             {mode === 'edit' ? 'Edit event' : 'Add event'}
           </p>
@@ -249,112 +237,129 @@ export const CalendarEditor = memo(function CalendarEditor({
         </button>
       </div>
 
-      <div className="mt-2 grid gap-2.5">
-        <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-end">
-          <label className="grid gap-1 text-sm">
-            <span className="text-zinc-500">Title</span>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className={TITLE_CLASS_NAME}
-              placeholder="Event title"
-              required
-            />
-          </label>
-          <div className="flex items-center gap-2 xl:pb-px">
-            <button
-              type="button"
-              onClick={() => setShowOptionalFields((current) => !current)}
-              className="h-11 rounded-xl border border-zinc-800 bg-zinc-900/35 px-3 text-sm text-zinc-400 transition-colors hover:border-zinc-700 hover:bg-zinc-900/55 hover:text-zinc-200"
-            >
-              {showOptionalFields ? 'Hide details' : 'Details'}
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || Boolean(scheduleError)}
-              className="h-11 rounded-2xl bg-zinc-100 px-4 text-sm font-medium text-zinc-950 shadow-[0_10px_24px_rgba(255,255,255,0.06)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-            >
-              {submitting
-                ? mode === 'edit'
-                  ? 'Saving...'
-                  : 'Creating...'
-                : mode === 'edit'
-                  ? 'Save changes'
-                  : 'Create'}
-            </button>
-          </div>
+      <div className="mt-2 grid gap-2">
+        {/* Title + actions */}
+        <div className="flex items-center gap-2">
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            className="h-10 min-w-0 flex-1 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
+            placeholder="Event title"
+            aria-label="Event title"
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowOptionalFields((current) => !current)}
+            className="h-10 shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/35 px-3 text-sm text-zinc-400 transition-colors hover:border-zinc-700 hover:bg-zinc-900/55 hover:text-zinc-200"
+          >
+            {showOptionalFields ? 'Hide details' : 'Details'}
+          </button>
+          <button
+            type="submit"
+            disabled={submitting || Boolean(scheduleError)}
+            className="h-10 shrink-0 rounded-xl bg-zinc-100 px-4 text-sm font-medium text-zinc-950 shadow-[0_10px_24px_rgba(255,255,255,0.06)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+          >
+            {submitting
+              ? mode === 'edit'
+                ? 'Saving...'
+                : 'Creating...'
+              : mode === 'edit'
+                ? 'Save changes'
+                : 'Create'}
+          </button>
         </div>
 
+        {/* Optional details */}
         {showOptionalFields && (
-          <div className="grid gap-2 rounded-2xl border border-zinc-800/80 bg-zinc-900/25 p-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+          <div className="grid gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/25 p-2.5 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <label className="grid gap-1 text-sm">
-              <span className="text-zinc-400">Location</span>
+              <span className="px-0.5 text-xs text-zinc-500">Location</span>
               <input
                 value={eventLocation}
                 onChange={(event) => setEventLocation(event.target.value)}
-                className={CONTROL_CLASS_NAME}
+                className={INPUT_CLASS}
                 placeholder="Kitchen"
               />
             </label>
             <label className="grid gap-1 text-sm">
-              <span className="text-zinc-400">Notes</span>
+              <span className="px-0.5 text-xs text-zinc-500">Notes</span>
               <textarea
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                rows={2}
-                className={`${TEXTAREA_CLASS_NAME} resize-y`}
+                rows={1}
+                className="resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
                 placeholder="Optional details"
               />
             </label>
           </div>
         )}
 
-        <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.95fr)]">
-          <label className="grid gap-1 text-sm">
-            <span className="text-zinc-500">Starts</span>
+        {/* Timing row — single flex row, no above-labels */}
+        <div className="flex flex-wrap items-center gap-2">
+          <AllDayToggle allDay={allDay} onAllDayChange={setAllDay} />
+
+          {allDay ? (
             <input
-              type="datetime-local"
-              value={startsAt}
-              onChange={(event) => handleStartsAtChange(event.target.value)}
-              className={CONTROL_CLASS_NAME}
+              type="date"
+              value={startsAt.slice(0, 10)}
+              onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
+              aria-label="Date"
+              className={INPUT_CLASS}
               required
             />
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span className="text-zinc-500">Ends</span>
-            <input
-              type="datetime-local"
-              value={endsAt}
-              min={startsAt}
-              onChange={(event) => setEndsAt(event.target.value)}
-              aria-invalid={Boolean(scheduleError)}
-              className={cn(
-                CONTROL_CLASS_NAME,
-                scheduleError && 'border-rose-500/40 focus:border-rose-400',
-              )}
-              required
-            />
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span className="text-zinc-500">Repeat</span>
-            <select
-              value={isRepeating ? 'repeating' : 'none'}
-              onChange={(event) => handleRepeatEnabledChange(event.target.value === 'repeating')}
-              className={CONTROL_CLASS_NAME}
-            >
-              <option value="none">Does not repeat</option>
-              <option value="repeating">Repeats</option>
-            </select>
-          </label>
+          ) : (
+            <>
+              <input
+                type="datetime-local"
+                value={startsAt}
+                onChange={(event) => handleStartsAtChange(event.target.value)}
+                aria-label="Start time"
+                className={INPUT_CLASS}
+                required
+              />
+              <span className="select-none text-zinc-600">–</span>
+              <input
+                type="datetime-local"
+                value={endsAt}
+                onChange={(event) => setEndsAt(event.target.value)}
+                aria-invalid={Boolean(scheduleError)}
+                aria-label="End time"
+                className={cn(
+                  INPUT_CLASS,
+                  scheduleError && 'border-rose-500/40 focus:border-rose-400',
+                )}
+                required
+              />
+              <DurationControl
+                durationUnit={durationUnit}
+                durationValue={durationValue}
+                disabled={Boolean(scheduleError)}
+                onAdjustDuration={adjustDuration}
+                onDurationUnitChange={handleDurationUnitChange}
+                onDurationValueChange={handleDurationValueChange}
+              />
+            </>
+          )}
+
+          <select
+            value={isRepeating ? 'repeating' : 'none'}
+            onChange={(event) => handleRepeatEnabledChange(event.target.value === 'repeating')}
+            aria-label="Repeat"
+            className={INPUT_CLASS}
+          >
+            <option value="none">No repeat</option>
+            <option value="repeating">Repeats</option>
+          </select>
         </div>
 
+        {/* Repeat section */}
         {isRepeating && (
           <CalendarEditorRepeatSection
             recurrenceMode={recurrenceMode}
             recurrenceInterval={recurrenceInterval}
             recurrenceEndsOn={recurrenceEndsOn}
             recurrenceWeekdays={recurrenceWeekdays}
-            startsAt={startsAt}
             recurrenceSummary={recurrenceSummary}
             onAdjustRecurrenceInterval={adjustRecurrenceInterval}
             onRecurrenceIntervalChange={handleRecurrenceIntervalChange}
@@ -364,18 +369,7 @@ export const CalendarEditor = memo(function CalendarEditor({
           />
         )}
 
-        <CalendarEditorDurationToolbar
-          allDay={allDay}
-          durationSummary={durationSummary}
-          scheduleError={scheduleError}
-          durationUnit={durationUnit}
-          durationValue={durationValue}
-          onAllDayChange={setAllDay}
-          onAdjustDuration={adjustDuration}
-          onDurationUnitChange={handleDurationUnitChange}
-          onDurationValueChange={handleDurationValueChange}
-        />
-
+        {/* Error / overlap warning */}
         {(scheduleError || overlapWarning) && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
             {scheduleError || overlapWarning}
@@ -386,11 +380,101 @@ export const CalendarEditor = memo(function CalendarEditor({
   )
 })
 
-const TITLE_CLASS_NAME =
-  'h-12 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700'
+function DurationControl({
+  disabled,
+  durationUnit,
+  durationValue,
+  onAdjustDuration,
+  onDurationValueChange,
+  onDurationUnitChange,
+}: {
+  disabled: boolean
+  durationUnit: DurationUnit
+  durationValue: string
+  onAdjustDuration: (delta: number) => void
+  onDurationValueChange: (value: string) => void
+  onDurationUnitChange: (unit: DurationUnit) => void
+}) {
+  return (
+    <div className="flex h-9 w-fit items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950 px-2">
+      <div className="flex items-center rounded-md border border-zinc-800/60">
+        <button
+          type="button"
+          onClick={() => onAdjustDuration(-1)}
+          disabled={disabled}
+          className="flex h-7 w-7 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-700"
+          aria-label="Decrease duration"
+        >
+          <Minus size={12} />
+        </button>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={durationValue}
+          onChange={(event) => onDurationValueChange(event.target.value)}
+          disabled={disabled}
+          className="h-7 w-10 border-x border-zinc-800 bg-transparent px-1 text-center text-sm text-zinc-100 focus:outline-none disabled:text-zinc-600"
+          aria-label="Duration value"
+        />
+        <button
+          type="button"
+          onClick={() => onAdjustDuration(1)}
+          disabled={disabled}
+          className="flex h-7 w-7 items-center justify-center text-zinc-400 transition-colors hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-700"
+          aria-label="Increase duration"
+        >
+          <Plus size={12} />
+        </button>
+      </div>
+      <select
+        value={durationUnit}
+        onChange={(event) => onDurationUnitChange(event.target.value as DurationUnit)}
+        className="h-7 rounded-md border border-zinc-800/60 bg-zinc-950 px-1.5 text-sm text-zinc-100 focus:outline-none focus:border-zinc-700"
+        aria-label="Duration unit"
+      >
+        <option value="minutes">min</option>
+        <option value="hours">hr</option>
+        <option value="days">days</option>
+      </select>
+    </div>
+  )
+}
 
-const CONTROL_CLASS_NAME =
-  'h-11 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700'
+function AllDayToggle({
+  allDay,
+  onAllDayChange,
+}: {
+  allDay: boolean
+  onAllDayChange: (checked: boolean) => void
+}) {
+  return (
+    <label
+      className={cn(
+        'flex h-9 w-fit items-center gap-2 rounded-xl px-3 text-sm transition-colors',
+        allDay
+          ? 'border border-zinc-700 bg-zinc-900 text-zinc-100'
+          : 'border border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200',
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={allDay}
+        onChange={(event) => onAllDayChange(event.target.checked)}
+        className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-zinc-100 focus:ring-0"
+      />
+      All day
+    </label>
+  )
+}
 
-const TEXTAREA_CLASS_NAME =
-  'rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700'
+function getAllDayEndDateTime(startsAt: string): string {
+  const start = new Date(startsAt)
+  if (Number.isNaN(start.getTime())) return startsAt
+  const end = new Date(start)
+  end.setHours(0, 0, 0, 0)
+  end.setDate(end.getDate() + 1)
+  return toLocalDateTimeValue(end)
+}
+
+const INPUT_CLASS =
+  'h-9 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none'
