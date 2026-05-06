@@ -19,6 +19,11 @@ export function forgetPendingListMutation(clientMutationId: string): void {
   pendingListMutationIds.delete(clientMutationId)
 }
 
+export function hasPendingListMutation(clientMutationId: string): boolean {
+  pruneExpiredPendingListMutations()
+  return pendingListMutationIds.has(clientMutationId)
+}
+
 export function consumePendingListMutation(clientMutationId: string): boolean {
   pruneExpiredPendingListMutations()
   if (!pendingListMutationIds.has(clientMutationId)) return false

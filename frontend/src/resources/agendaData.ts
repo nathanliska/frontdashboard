@@ -2,10 +2,12 @@ import { useMemo } from 'react'
 import type { CalendarOccurrence } from '../api/calendar'
 import { apiListOccurrences } from '../api/calendar'
 import type { ListItem, ListSummary } from '../api/lists'
-import { apiGetList, apiGetLists } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
+import { useAuthStore } from '../stores/auth'
 import { addDays, dateKey, startOfDay } from '../utils/calendar/calendarUtils'
-import { createScopedQuery } from './scopedQuery'
+import { hasPendingListMutation } from '../utils/lists/listMutation'
+import { loadDashboardListDetails, readDashboardListDetailsFromCache } from './listData'
+import { createScopedQuery, type ScopedQueryState } from './scopedQuery'
 
 export type AgendaItem =
   | {
@@ -32,9 +34,19 @@ type AgendaScope = {
   dashboardId: string
 }
 
-const agendaQuery = createScopedQuery<AgendaScope, AgendaItem[]>({
+// Keep mixed-source widgets split at the cache layer so SSE can invalidate only
+// the data slice that changed. The agenda UI composes reminders + calendar
+// occurrences, but list events should not force a calendar refetch and
+// calendar events should not force list-detail reloads.
+const agendaOccurrencesQuery = createScopedQuery<AgendaScope, CalendarOccurrence[]>({
   getKey: (scope) => scope.dashboardId,
-  fetcher: fetchAgendaItems,
+  fetcher: fetchAgendaOccurrences,
+  fallbackErrorMessage: 'Failed to load agenda.',
+})
+
+const agendaRemindersQuery = createScopedQuery<AgendaScope, AgendaItem[]>({
+  getKey: (scope) => scope.dashboardId,
+  fetcher: fetchAgendaReminders,
   fallbackErrorMessage: 'Failed to load agenda.',
 })
 
@@ -45,6 +57,21 @@ function getEventPayload(event: SseEvent): Record<string, unknown> | null {
 function getDashboardId(event: SseEvent): string | null {
   const payload = getEventPayload(event)
   return typeof payload?.dashboard_id === 'string' ? payload.dashboard_id : null
+}
+
+function getListEventClientMutationId(event: SseEvent): string | null {
+  const payload = getEventPayload(event)
+  return typeof payload?.client_mutation_id === 'string' ? payload.client_mutation_id : null
+}
+
+function isPendingListMutationEcho(event: SseEvent): boolean {
+  const currentUserId = useAuthStore.getState().user?.id
+  const clientMutationId = getListEventClientMutationId(event)
+  if (!currentUserId || event.actor_id !== currentUserId || !clientMutationId) {
+    return false
+  }
+
+  return hasPendingListMutation(clientMutationId)
 }
 
 function compareAgendaItems(a: AgendaItem, b: AgendaItem): number {
@@ -92,29 +119,56 @@ function listItemToAgendaItem(
   }
 }
 
-async function fetchAgendaItems(scope: AgendaScope): Promise<AgendaItem[]> {
+async function fetchAgendaOccurrences(scope: AgendaScope): Promise<CalendarOccurrence[]> {
   const today = startOfDay(new Date())
-  const todayKey = dateKey(today)
   const windowEnd = addDays(today, 8)
 
-  const [occurrences, lists] = await Promise.all([
-    apiListOccurrences({
-      windowStart: today.toISOString(),
-      windowEnd: windowEnd.toISOString(),
-      dashboardId: scope.dashboardId,
-    }),
-    apiGetLists(scope.dashboardId),
-  ])
+  return apiListOccurrences({
+    windowStart: today.toISOString(),
+    windowEnd: windowEnd.toISOString(),
+    dashboardId: scope.dashboardId,
+  })
+}
 
-  const activeLists = lists.filter((list) => !list.archived)
-  const details = await Promise.all(activeLists.map((list) => apiGetList(list.id)))
-  const reminders = details.flatMap((detail) =>
+async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
+  const todayKey = dateKey(startOfDay(new Date()))
+  const details = await loadDashboardListDetails(scope.dashboardId)
+
+  return details.flatMap((detail) =>
     detail.items
       .map((item) => listItemToAgendaItem(item, detail, todayKey))
       .filter((item): item is AgendaItem => item !== null),
   )
+}
 
-  return [...reminders, ...occurrences.map(occurrenceToAgendaItem)].sort(compareAgendaItems)
+function buildAgendaRemindersFromCache(dashboardId: string): AgendaItem[] | null {
+  const todayKey = dateKey(startOfDay(new Date()))
+  const details = readDashboardListDetailsFromCache(dashboardId)
+  if (!details) return null
+
+  return details.flatMap((detail) =>
+    detail.items
+      .map((item) => listItemToAgendaItem(item, detail, todayKey))
+      .filter((agendaItem): agendaItem is AgendaItem => agendaItem !== null),
+  )
+}
+
+function mergeAgendaState(
+  occurrencesState: ScopedQueryState<CalendarOccurrence[]>,
+  remindersState: ScopedQueryState<AgendaItem[]>,
+): ScopedQueryState<AgendaItem[]> {
+  const data =
+    occurrencesState.data && remindersState.data
+      ? [...remindersState.data, ...occurrencesState.data.map(occurrenceToAgendaItem)].sort(
+          compareAgendaItems,
+        )
+      : null
+
+  return {
+    data,
+    loading: occurrencesState.loading || remindersState.loading,
+    error: occurrencesState.error ?? remindersState.error,
+  }
 }
 
 export function useAgendaItems(dashboardId: string | null) {
@@ -122,25 +176,58 @@ export function useAgendaItems(dashboardId: string | null) {
     () => (dashboardId ? { dashboardId } : null),
     [dashboardId],
   )
-  return agendaQuery.useQuery(scope)
+  const occurrencesState = agendaOccurrencesQuery.useQuery(scope)
+  const remindersState = agendaRemindersQuery.useQuery(scope)
+
+  return useMemo(
+    () => mergeAgendaState(occurrencesState, remindersState),
+    [occurrencesState, remindersState],
+  )
 }
 
 export function handleAgendaResourceEvent(event: SseEvent): void {
   if (event.event_type === 'resync') {
-    agendaQuery.invalidateWhere(() => true)
+    agendaOccurrencesQuery.invalidateWhere(() => true)
+    agendaRemindersQuery.invalidateWhere(() => true)
     return
   }
 
-  if (event.event_type.startsWith('calendar.') || event.event_type.startsWith('list.')) {
-    const dashboardId = getDashboardId(event)
+  const dashboardId = getDashboardId(event)
+  const invalidateMatching = (invalidate: (predicate: (scope: AgendaScope) => boolean) => void) => {
     if (dashboardId) {
-      agendaQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
+      invalidate((scope) => scope.dashboardId === dashboardId)
     } else {
-      agendaQuery.invalidateWhere(() => true)
+      invalidate(() => true)
     }
+  }
+
+  if (event.event_type.startsWith('calendar.')) {
+    invalidateMatching((predicate) => agendaOccurrencesQuery.invalidateWhere(predicate))
+    return
+  }
+
+  if (event.event_type.startsWith('list.')) {
+    if (dashboardId && isPendingListMutationEcho(event)) {
+      const reminders = buildAgendaRemindersFromCache(dashboardId)
+      if (reminders) {
+        agendaRemindersQuery.updateWhere(
+          (scope) => scope.dashboardId === dashboardId,
+          (state) => ({
+            data: reminders,
+            loading: false,
+            error: state.error,
+          }),
+        )
+      }
+      return
+    }
+
+    // List events only affect reminder rows derived from list items.
+    invalidateMatching((predicate) => agendaRemindersQuery.invalidateWhere(predicate))
   }
 }
 
 export function resetAgendaData(): void {
-  agendaQuery.reset()
+  agendaOccurrencesQuery.reset()
+  agendaRemindersQuery.reset()
 }

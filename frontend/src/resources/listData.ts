@@ -151,6 +151,23 @@ export function useListDetail(listId: string | null) {
   return listDetailQuery.useQuery(scope)
 }
 
+export async function loadDashboardListDetails(dashboardId: string): Promise<ListDetail[]> {
+  const lists = await listSummariesQuery.fetch({ dashboardId })
+  const activeLists = lists.filter((list) => !list.archived)
+  return Promise.all(activeLists.map((list) => listDetailQuery.fetch({ listId: list.id })))
+}
+
+export function readDashboardListDetailsFromCache(dashboardId: string): ListDetail[] | null {
+  const summaries = listSummariesQuery.getState({ dashboardId }).data
+  if (!summaries) return null
+
+  const activeLists = summaries.filter((list) => !list.archived)
+  const details = activeLists.map((list) => listDetailQuery.getState({ listId: list.id }).data)
+  if (details.some((detail) => !detail)) return null
+
+  return details as ListDetail[]
+}
+
 export async function createList(
   name: string,
   listType: ListType,

@@ -1,4 +1,3 @@
-import type { CalendarEvent, CalendarOccurrence, CreateCalendarEventInput } from './calendar'
 import { apiFetch } from './client'
 import type { ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
@@ -266,38 +265,4 @@ export async function apiRemoveDashboardShare(
     headers: buildDashboardMutationHeaders(options),
   })
   if (!res.ok) throw new Error('Failed to remove dashboard share')
-}
-
-export async function apiGetDashboardCalendarOccurrences(params: {
-  dashboardId: string
-  windowStart: string
-  windowEnd: string
-}): Promise<CalendarOccurrence[]> {
-  const query = new URLSearchParams({
-    window_start: params.windowStart,
-    window_end: params.windowEnd,
-  })
-  const res = await apiFetch(
-    `/api/dashboards/${params.dashboardId}/calendar-occurrences?${query.toString()}`,
-  )
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(data.detail ?? 'Failed to load dashboard calendar')
-  }
-  return res.json() as Promise<CalendarOccurrence[]>
-}
-
-export async function apiCreateDashboardCalendarEvent(
-  dashboardId: string,
-  input: CreateCalendarEventInput,
-): Promise<CalendarEvent> {
-  const res = await apiFetch(`/api/dashboards/${dashboardId}/calendar-events`, {
-    method: 'POST',
-    body: JSON.stringify(input),
-  })
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(data.detail ?? 'Failed to create dashboard event')
-  }
-  return res.json() as Promise<CalendarEvent>
 }
