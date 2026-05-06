@@ -33,7 +33,7 @@ from app.services.shares import (
 from app.sse.events import build_activity_sse_dict
 from app.sse.manager import manager
 
-router = APIRouter(prefix="/api/lists", tags=["lists"])
+router = APIRouter(prefix="/lists", tags=["lists"])
 ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id")]
 
 
@@ -151,6 +151,7 @@ async def create_list(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse:
+    """Create a list on a dashboard the caller can edit."""
     dashboard, shares, role = await load_dashboard_access(body.dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -185,6 +186,7 @@ async def list_lists(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[ListResponse]:
+    """List accessible lists, optionally filtered to one dashboard."""
     accessible_dashboard_ids = await list_accessible_dashboard_ids(current_user, db)
     if not accessible_dashboard_ids:
         return []
@@ -221,6 +223,7 @@ async def get_list(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ListDetailResponse:
+    """Return one list with its active items."""
     lst, _dashboard, _shares, _role = await _get_list_access(list_id, current_user, db)
     items_result = await db.execute(
         select(ListItem).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)).order_by(ListItem.sort_order, ListItem.created_at)
@@ -249,6 +252,7 @@ async def update_list(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse:
+    """Update list metadata and broadcast the resulting change."""
     lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -282,6 +286,7 @@ async def delete_list(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Soft-delete an archived list and clean up dependent resources."""
     lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     permissions.assert_can_edit(role)
     if not lst.archived:
@@ -313,6 +318,7 @@ async def create_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ListItemResponse:
+    """Append a new item to a list in stable sort order."""
     # Serialize append-order assignment within a list so concurrent creates don't pick the same sort_order.
     lst, dashboard, shares, role = await _get_list_access(
         list_id,
@@ -365,6 +371,7 @@ async def update_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ListItemResponse:
+    """Update fields on a list item the caller can access."""
     _lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     item_result = await db.execute(
         select(ListItem).where(
@@ -408,6 +415,7 @@ async def delete_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Soft-delete a list item and broadcast the change."""
     _lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -443,6 +451,7 @@ async def list_list_shares(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ResourceAccessResponse:
+    """Show that list access is inherited from the parent dashboard."""
     _lst, dashboard, _shares, _role = await _get_list_access(list_id, current_user, db)
     return _dashboard_managed_permissions_response(dashboard)
 
@@ -454,6 +463,7 @@ async def add_list_share(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Reject direct list sharing because dashboards own permissions."""
     await _get_list_access(list_id, current_user, db)
     _raise_dashboard_managed_permissions_error()
 
@@ -466,6 +476,7 @@ async def update_list_share(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Reject direct list share updates because dashboards own permissions."""
     await _get_list_access(list_id, current_user, db)
     _raise_dashboard_managed_permissions_error()
 
@@ -478,5 +489,6 @@ async def delete_list_share(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Reject direct list share deletion because dashboards own permissions."""
     await _get_list_access(list_id, current_user, db)
     _raise_dashboard_managed_permissions_error()

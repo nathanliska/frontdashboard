@@ -37,7 +37,7 @@ from app.services.email import send_password_reset_email, send_verification_emai
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 _SECURE = settings.environment == "production"
 
@@ -212,6 +212,7 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> RegistrationResponse:
+    """Create a new user and queue email verification."""
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -250,6 +251,7 @@ async def verify_email(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
+    """Verify an email token and start an authenticated session."""
     now = datetime.now(UTC)
     result = await db.execute(
         select(EmailVerificationToken)
@@ -288,6 +290,7 @@ async def resend_verification(
     body: ResendVerificationRequest,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Issue a fresh verification email for an unverified account."""
     result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
     if user and user.email_verified_at is None:
@@ -303,6 +306,7 @@ async def request_password_reset(
     body: PasswordResetRequest,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Issue a password reset email when the account exists."""
     result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
     if user:
@@ -318,6 +322,7 @@ async def confirm_password_reset(
     body: PasswordResetConfirmRequest,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Consume a reset token and replace the user's password."""
     now = datetime.now(UTC)
     result = await db.execute(
         select(PasswordResetToken).where(
@@ -356,6 +361,7 @@ async def login(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
+    """Authenticate a user and issue fresh session cookies."""
     result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
@@ -374,6 +380,7 @@ async def refresh_tokens(
     refresh_token: Annotated[str | None, Cookie()] = None,
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
+    """Rotate refresh credentials and issue a new access token."""
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
 
@@ -420,6 +427,7 @@ async def logout(
     refresh_token: Annotated[str | None, Cookie()] = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Revoke the current refresh token and clear auth cookies."""
     if refresh_token:
         result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token)))
         record = result.scalar_one_or_none()
@@ -431,6 +439,7 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
+    """Return the currently authenticated user."""
     return UserResponse.model_validate(current_user)
 
 
@@ -442,6 +451,7 @@ async def update_profile(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
+    """Update editable profile fields for the current user."""
     if body.display_name is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -471,6 +481,7 @@ async def change_password(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Change the current user's password and refresh the access cookie."""
     if not verify_password(body.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -495,11 +506,7 @@ async def update_preferences(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
-    """Update the current user's preferences (e.g. home dashboard).
-
-    Validates that home_dashboard_id (if provided) belongs to a dashboard
-    the user can actually access, then merges the update into the JSONB column.
-    """
+    """Update stored user preferences after validating dashboard access."""
     validated_preferences = body.model_dump(exclude_unset=True)
     if body.home_dashboard_id is not None:
         normalized_home_dashboard_ids = await _normalize_accessible_dashboard_ids(

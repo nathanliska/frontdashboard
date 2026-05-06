@@ -6,7 +6,7 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models.user import User
 
-router = APIRouter(prefix="/api/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/search")
@@ -15,6 +15,7 @@ async def search_users(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, str]]:
+    """Search for other users by display name or email."""
     result = await db.execute(
         select(User)
         .where(

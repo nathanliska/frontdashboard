@@ -32,7 +32,7 @@ from app.services.shares import (
 from app.sse.events import build_activity_sse_dict
 from app.sse.manager import manager
 
-router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 
 def _dashboard_user_ids(
@@ -128,6 +128,7 @@ async def create_event(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CalendarEventResponse:
+    """Create a calendar event on an accessible dashboard."""
     dashboard, shares, role = await load_dashboard_access(body.dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -171,6 +172,7 @@ async def list_occurrences(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[CalendarOccurrenceResponse]:
+    """List expanded event occurrences for the requested window."""
     if window_start.tzinfo is None or window_start.utcoffset() is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="window_start must be timezone-aware")
     if window_end.tzinfo is None or window_end.utcoffset() is None:
@@ -228,6 +230,7 @@ async def get_event(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CalendarEventResponse:
+    """Return a single calendar event the caller can access."""
     event, _dashboard, _shares, _role = await _get_event_access(event_id, current_user, db)
     return _event_response(event)
 
@@ -240,6 +243,7 @@ async def update_event(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CalendarEventResponse:
+    """Update calendar event metadata and broadcast the change."""
     event, dashboard, shares, role = await _get_event_access(event_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -289,6 +293,7 @@ async def update_occurrence(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CalendarOccurrenceMutationResponse:
+    """Create or update a single recurring-event occurrence override."""
     event, dashboard, shares, role = await _get_event_access(event_id, current_user, db)
     if event.recurrence is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only recurring events support occurrence overrides")
@@ -355,6 +360,7 @@ async def delete_event(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Soft-delete a calendar event and notify dashboard subscribers."""
     event, dashboard, shares, role = await _get_event_access(event_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -381,6 +387,7 @@ async def list_event_shares(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ResourceAccessResponse:
+    """Show that event access is inherited from the parent dashboard."""
     _event, dashboard, _shares, _role = await _get_event_access(event_id, current_user, db)
     return _dashboard_managed_permissions_response(dashboard)
 
@@ -392,6 +399,7 @@ async def add_event_share(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Reject direct event sharing because dashboards own permissions."""
     await _get_event_access(event_id, current_user, db)
     _raise_dashboard_managed_permissions_error()
 
@@ -404,6 +412,7 @@ async def update_event_share(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Reject direct event share updates because dashboards own permissions."""
     await _get_event_access(event_id, current_user, db)
     _raise_dashboard_managed_permissions_error()
 
@@ -416,5 +425,6 @@ async def delete_event_share(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Reject direct event share deletion because dashboards own permissions."""
     await _get_event_access(event_id, current_user, db)
     _raise_dashboard_managed_permissions_error()

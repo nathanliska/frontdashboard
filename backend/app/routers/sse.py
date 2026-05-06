@@ -11,7 +11,7 @@ from app.models.user import User
 from app.sse.events import connected_dict, resync_dict
 from app.sse.manager import manager
 
-router = APIRouter(prefix="/api/sse", tags=["sse"])
+router = APIRouter(prefix="/sse", tags=["sse"])
 
 
 def _should_resync_on_connect(last_event_id: str | None) -> bool:

@@ -14,7 +14,7 @@ from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.notifications import ActivityEventResponse, NotificationResponse
 
-router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 _PAGE_LIMIT = 50
 _HIDDEN_ACTIVITY_EVENT_TYPES = (
@@ -48,6 +48,7 @@ async def unread_count(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    """Return the number of unread notifications for the caller."""
     from sqlalchemy import func
 
     result = await db.execute(
@@ -66,6 +67,7 @@ async def mark_read(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> NotificationResponse:
+    """Mark a single notification as read."""
     result = await db.execute(
         select(Notification).where(
             Notification.id == notification_id,
@@ -89,6 +91,7 @@ async def mark_all_read(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Mark all unread notifications as read for the caller."""
     now = datetime.now(UTC)
     await db.execute(
         update(Notification)
@@ -106,7 +109,7 @@ async def mark_all_read(
 # Activity log
 # ---------------------------------------------------------------------------
 
-activity_router = APIRouter(prefix="/api/activity", tags=["activity"])
+activity_router = APIRouter(prefix="/activity", tags=["activity"])
 
 
 @activity_router.get("", response_model=list[ActivityEventResponse])
