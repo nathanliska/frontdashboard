@@ -88,7 +88,7 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
         <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">This week</p>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 flex-1 min-h-0">
+      <div className="grid grid-cols-[repeat(7,minmax(0,1fr))] gap-1 flex-1 min-h-0">
         {days.map((day) => {
           const dayOccurrences = occurrencesByDate.get(dateKey(day)) ?? []
           const isToday = dateKey(day) === dateKey(new Date())
@@ -97,7 +97,7 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
             <div
               key={day.toISOString()}
               className={cn(
-                'rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 min-h-0 overflow-hidden',
+                'rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 min-h-0 min-w-0 overflow-hidden',
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
             >
@@ -180,12 +180,12 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
 
       <div
         className={cn(
-          'grid grid-cols-7 text-[10px] text-zinc-500',
+          'grid grid-cols-[repeat(7,minmax(0,1fr))] text-[10px] text-zinc-500',
           ultraCompact ? 'gap-0.5 mb-0.5' : 'gap-1 mb-1',
         )}
       >
         {weekdayLabels.map((label, index) => (
-          <div key={WEEKDAY_KEYS[index]} className="text-center">
+          <div key={WEEKDAY_KEYS[index]} className="min-w-0 text-center">
             {label}
           </div>
         ))}
@@ -193,7 +193,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
 
       <div
         className={cn(
-          'grid grid-cols-7 auto-rows-fr flex-1 min-h-0',
+          'grid grid-cols-[repeat(7,minmax(0,1fr))] auto-rows-fr flex-1 min-h-0',
           ultraCompact ? 'gap-0.5' : 'gap-1',
         )}
       >
@@ -208,8 +208,8 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
               key={day.toISOString()}
               className={cn(
                 ultraCompact
-                  ? 'rounded border border-zinc-800 bg-zinc-950/60 p-0.5 min-h-0 overflow-hidden'
-                  : 'rounded-md border border-zinc-800 bg-zinc-950/60 p-1 min-h-0 overflow-hidden flex flex-col',
+                  ? 'rounded border border-zinc-800 bg-zinc-950/60 p-0.5 min-h-0 min-w-0 overflow-hidden'
+                  : 'rounded-md border border-zinc-800 bg-zinc-950/60 p-1 min-h-0 min-w-0 overflow-hidden flex flex-col',
                 !inMonth && 'opacity-45',
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}

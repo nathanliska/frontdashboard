@@ -289,13 +289,13 @@ export function CalendarPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-7 border-b border-zinc-800">
+          <div className="grid grid-cols-[repeat(7,minmax(0,1fr))] border-b border-zinc-800">
             <div className="col-span-7 px-2 sm:px-3 pt-2 sm:pt-3">
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid grid-cols-[repeat(7,minmax(0,1fr))] gap-1">
                 {CALENDAR_WEEKDAY_LABELS.map((label) => (
                   <div
                     key={label}
-                    className="px-1 py-1 text-center text-[10px] uppercase tracking-[0.18em] text-zinc-500"
+                    className="min-w-0 px-1 py-1 text-center text-[10px] uppercase tracking-[0.18em] text-zinc-500"
                   >
                     {label}
                   </div>
@@ -310,7 +310,7 @@ export function CalendarPage() {
             </div>
           ) : (
             <div className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">
-              <div className="grid h-full grid-cols-7 auto-rows-fr gap-1">
+              <div className="grid h-full grid-cols-[repeat(7,minmax(0,1fr))] auto-rows-fr gap-1">
                 {monthDays.map((day) => {
                   const dayOccurrences = occurrencesForDate(occurrences, day)
                   const inMonth = day.getMonth() === monthCursor.getMonth()
@@ -322,11 +322,11 @@ export function CalendarPage() {
                       key={day.toISOString()}
                       type="button"
                       onClick={() => setSelectedDate(startOfDay(day))}
-                      className="group min-h-0 appearance-none bg-transparent p-0 text-left"
+                      className="group min-h-0 min-w-0 appearance-none bg-transparent p-0 text-left"
                     >
                       <div
                         className={cn(
-                          'flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-1 transition-colors',
+                          'flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-1 transition-colors',
                           'group-hover:border-zinc-700 group-hover:bg-zinc-900/80',
                           'group-focus-visible:border-zinc-400 group-focus-visible:ring-1 group-focus-visible:ring-zinc-400/40',
                           !inMonth && 'opacity-45',

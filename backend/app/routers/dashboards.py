@@ -1,5 +1,4 @@
 import uuid
-from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -8,13 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
-from app.models.calendar import CalendarEvent, CalendarEventOverride
+from app.models.calendar import CalendarEvent
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.list import List, ListItem, ListType
 from app.models.notification import Notification
 from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
 from app.models.user import User
-from app.schemas.calendar import CalendarEventCreate, CalendarEventResponse, CalendarOccurrenceResponse, RecurrenceRule
 from app.schemas.dashboards import (
     DashboardCreate,
     DashboardResponse,
@@ -28,7 +26,6 @@ from app.schemas.dashboards import (
 from app.schemas.shares import ShareCreate, ShareResponse, ShareUpdate
 from app.services import permissions
 from app.services.activity import EventType, log_event
-from app.services.calendar import expand_event_occurrences
 from app.services.notifications import stage_notification
 from app.services.preferences import (
     favorite_dashboard_ids_from_preferences,
@@ -50,7 +47,7 @@ from app.services.widget_policy import (
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
 from app.sse.manager import manager
 
-router = APIRouter(prefix="/api/dashboards", tags=["dashboards"])
+router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id")]
 
 
@@ -115,6 +112,12 @@ def _next_y(layout: list[dict[str, Any]]) -> int:
     if not layout:
         return 0
     return max(item.get("y", 0) + item.get("h", 1) for item in layout)
+
+
+def _default_widget_size(widget_type: str) -> tuple[int, int]:
+    if widget_type == "calendar":
+        return (3, 3)
+    return (4, 4)
 
 
 async def _resource_shares_by_dashboard(
@@ -452,47 +455,12 @@ async def _broadcast_notification_messages(
         await manager.broadcast(message, user_ids={user_id}, actor_id=actor_id)
 
 
-def _occurrence_response(occurrence) -> CalendarOccurrenceResponse:
-    return CalendarOccurrenceResponse(
-        event_id=occurrence.event_id,
-        occurrence_start=occurrence.occurrence_start,
-        occurrence_end=occurrence.occurrence_end,
-        original_start=occurrence.original_start,
-        title=occurrence.title,
-        description=occurrence.description,
-        location=occurrence.location,
-        timezone=occurrence.timezone,
-        all_day=occurrence.all_day,
-        created_by=occurrence.created_by,
-        recurring=occurrence.recurring,
-        is_exception=occurrence.is_exception,
-    )
-
-
-def _event_response(event: CalendarEvent) -> CalendarEventResponse:
-    return CalendarEventResponse(
-        id=event.id,
-        dashboard_id=event.dashboard_id,
-        title=event.title,
-        description=event.description,
-        location=event.location,
-        starts_at=event.starts_at,
-        ends_at=event.ends_at,
-        timezone=event.timezone,
-        all_day=event.all_day,
-        created_by=event.created_by,
-        updated_by=event.updated_by,
-        recurrence=RecurrenceRule.model_validate(event.recurrence) if event.recurrence else None,
-        created_at=event.created_at,
-        updated_at=event.updated_at,
-    )
-
-
 @router.get("", response_model=list[DashboardSummary])
 async def list_dashboards(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[DashboardSummary]:
+    """List dashboards the current user owns or can access."""
     return await _list_accessible_dashboard_summaries(current_user, db)
 
 
@@ -504,6 +472,7 @@ async def create_dashboard(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
+    """Create a dashboard and apply any initial shares."""
     dashboard = Dashboard(user_id=current_user.id, name=body.name)
     db.add(dashboard)
     await db.flush()
@@ -549,6 +518,7 @@ async def update_dashboard_meta(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
+    """Update dashboard metadata such as name or archived state."""
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     if body.name is not None:
         permissions.assert_can_edit(role)
@@ -592,6 +562,7 @@ async def delete_dashboard(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Permanently delete a dashboard and its dashboard-owned resources."""
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_delete(role)
     event_message = await _build_dashboard_event_message(
@@ -634,6 +605,7 @@ async def get_default_dashboard(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
+    """Return the user's default active dashboard."""
     favorite_dashboard_ids = favorite_dashboard_ids_from_preferences(current_user.preferences)
     favorite_for_user = (
         case(
@@ -670,6 +642,7 @@ async def get_dashboard(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
+    """Return a dashboard with its widgets and access metadata."""
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     widgets = await _load_widgets(dashboard.id, db)
     return _to_response(
@@ -691,6 +664,7 @@ async def update_layout(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
+    """Replace dashboard layout coordinates with optimistic version checks."""
     # Serialize layout/version mutations so optimistic conflict checks stay race-safe.
     dashboard, shares, role = await _get_dashboard_access(
         dashboard_id,
@@ -739,6 +713,7 @@ async def add_widget(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
+    """Add a widget to a dashboard, creating bound resources when needed."""
     # Lock the dashboard row so concurrent widget/layout mutations can't lose version/layout updates.
     dashboard, shares, role = await _get_dashboard_access(
         dashboard_id,
@@ -835,13 +810,14 @@ async def add_widget(
     await db.flush()
 
     current_layout: list[dict[str, Any]] = dashboard.layout if isinstance(dashboard.layout, list) else []
+    default_w, default_h = _default_widget_size(body.widget_type)
     dashboard.layout = current_layout + [
         {
             "i": str(widget.id),
             "x": 0,
             "y": _next_y(current_layout),
-            "w": 4,
-            "h": 4,
+            "w": default_w,
+            "h": default_h,
         }
     ]
     dashboard.version += 1
@@ -873,122 +849,6 @@ async def add_widget(
     )
 
 
-@router.post(
-    "/{dashboard_id}/calendar-events",
-    status_code=status.HTTP_201_CREATED,
-    response_model=CalendarEventResponse,
-)
-async def create_dashboard_calendar_event(
-    dashboard_id: uuid.UUID,
-    body: CalendarEventCreate,
-    _csrf: None = Depends(require_csrf),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> CalendarEventResponse:
-    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
-    permissions.assert_can_edit(role)
-    _assert_dashboard_not_archived(dashboard)
-    if body.dashboard_id != dashboard.id:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="dashboard_id must match the dashboard in the URL",
-        )
-
-    event = CalendarEvent(
-        dashboard_id=dashboard.id,
-        created_by=current_user.id,
-        updated_by=current_user.id,
-        title=body.title,
-        description=body.description,
-        location=body.location,
-        starts_at=body.starts_at.astimezone(UTC),
-        ends_at=body.ends_at.astimezone(UTC),
-        timezone=body.timezone,
-        all_day=body.all_day,
-        recurrence=body.recurrence.model_dump(mode="json") if body.recurrence else None,
-    )
-    db.add(event)
-    await db.flush()
-    activity = log_event(
-        db,
-        event_type=EventType.calendar_event_created,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
-        entity_type="calendar_event",
-        entity_id=event.id,
-        payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)},
-    )
-    event_message = await build_activity_sse_dict(db, activity)
-    await db.commit()
-    await db.refresh(event)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
-    return _event_response(event)
-
-
-@router.get(
-    "/{dashboard_id}/calendar-occurrences",
-    response_model=list[CalendarOccurrenceResponse],
-)
-async def list_dashboard_calendar_occurrences(
-    dashboard_id: uuid.UUID,
-    window_start: datetime,
-    window_end: datetime,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[CalendarOccurrenceResponse]:
-    if window_start.tzinfo is None or window_start.utcoffset() is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="window_start must be timezone-aware",
-        )
-    if window_end.tzinfo is None or window_end.utcoffset() is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="window_end must be timezone-aware",
-        )
-    if window_end <= window_start:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="window_end must be after window_start",
-        )
-
-    dashboard, _shares, _role = await _get_dashboard_access(dashboard_id, current_user, db)
-    _assert_dashboard_not_archived(dashboard)
-    event_result = await db.execute(
-        select(CalendarEvent).where(
-            CalendarEvent.deleted_at.is_(None),
-            CalendarEvent.dashboard_id == dashboard.id,
-        )
-    )
-    events = list(event_result.scalars().all())
-    if not events:
-        return []
-
-    overrides_result = await db.execute(
-        select(CalendarEventOverride).where(CalendarEventOverride.calendar_event_id.in_([event.id for event in events]))
-    )
-    overrides = list(overrides_result.scalars().all())
-    overrides_by_event: dict[uuid.UUID, dict[datetime, CalendarEventOverride]] = {event.id: {} for event in events}
-    for override in overrides:
-        overrides_by_event.setdefault(override.calendar_event_id, {})[override.occurrence_start] = override
-
-    window_start = window_start.astimezone(UTC)
-    window_end = window_end.astimezone(UTC)
-    occurrences = []
-    for event in events:
-        occurrences.extend(
-            expand_event_occurrences(
-                event,
-                overrides_by_event.get(event.id, {}),
-                window_start,
-                window_end,
-            )
-        )
-
-    occurrences.sort(key=lambda occurrence: (occurrence.occurrence_start, occurrence.title.lower()))
-    return [_occurrence_response(occurrence) for occurrence in occurrences]
-
-
 @router.patch("/{dashboard_id}/widgets/{widget_id}", response_model=WidgetResponse)
 async def update_widget(
     dashboard_id: uuid.UUID,
@@ -999,6 +859,7 @@ async def update_widget(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> WidgetResponse:
+    """Update widget configuration on a dashboard."""
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
     _assert_dashboard_not_archived(dashboard)
@@ -1039,6 +900,7 @@ async def delete_widget(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Delete a widget and remove its layout entry from the dashboard."""
     # Lock the dashboard row so concurrent widget/layout mutations can't lose version/layout updates.
     dashboard, shares, role = await _get_dashboard_access(
         dashboard_id,
@@ -1084,6 +946,7 @@ async def list_dashboard_shares(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[ShareResponse]:
+    """List direct shares configured for a dashboard."""
     dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
     shares = await get_resource_shares(ResourceType.dashboard, dashboard_id, db)
@@ -1099,6 +962,7 @@ async def add_dashboard_share(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> ShareResponse:
+    """Create or upsert a direct share on a dashboard."""
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
     existing_share = next(
@@ -1149,6 +1013,7 @@ async def update_dashboard_share(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> ShareResponse:
+    """Change the role for an existing dashboard share."""
     dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
     share = await get_resource_share(ResourceType.dashboard, dashboard_id, share_id, db)
@@ -1192,6 +1057,7 @@ async def delete_dashboard_share(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
+    """Remove a direct share from a dashboard."""
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
     share = await get_resource_share(ResourceType.dashboard, dashboard_id, share_id, db)

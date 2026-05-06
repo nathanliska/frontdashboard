@@ -274,12 +274,27 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
     assert detail_resp.json()["layout"] == []
 
 
+async def test_calendar_widget_uses_small_default_layout(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client, name="Calendar Widgets")
+
+    set_csrf(auth_client)
+    add_resp = await auth_client.post(
+        f"/api/dashboards/{dashboard['id']}/widgets",
+        json={"widget_type": "calendar", "config": {"view": "month"}},
+    )
+    assert add_resp.status_code == 201
+
+    layout_item = add_resp.json()["layout"][0]
+    assert layout_item["w"] == 3
+    assert layout_item["h"] == 3
+
+
 async def test_dashboard_calendar_routes_and_delete(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Calendar Dashboard")
 
     set_csrf(auth_client)
     create_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/calendar-events",
+        "/api/calendar/events",
         json={
             "dashboard_id": dashboard["id"],
             "title": "Launch Review",
@@ -293,8 +308,9 @@ async def test_dashboard_calendar_routes_and_delete(auth_client: AsyncClient) ->
     assert create_resp.json()["title"] == "Launch Review"
 
     occurrences_resp = await auth_client.get(
-        f"/api/dashboards/{dashboard['id']}/calendar-occurrences",
+        "/api/calendar/events",
         params={
+            "dashboard_id": dashboard["id"],
             "window_start": "2026-04-10T00:00:00+00:00",
             "window_end": "2026-04-11T00:00:00+00:00",
         },
