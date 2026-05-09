@@ -468,7 +468,9 @@ function CalendarEditorModal({ children, onClose }: { children: ReactNode; onClo
         className="absolute inset-0 bg-black/50"
         onClick={onClose}
       />
-      <div className="relative mx-4 w-full max-w-4xl max-h-[88vh] overflow-y-auto">{children}</div>
+      <div className="relative mx-4 w-full max-w-4xl max-h-[90dvh] overflow-y-auto overflow-x-hidden">
+        {children}
+      </div>
     </div>
   )
 }

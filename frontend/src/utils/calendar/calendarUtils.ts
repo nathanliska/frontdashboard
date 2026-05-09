@@ -2,8 +2,8 @@ import type { CalendarOccurrence } from '../../api/calendar'
 
 export const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
-export const CALENDAR_WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
-export const CALENDAR_WEEKDAY_LABELS_COMPACT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const
+export const CALENDAR_WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+export const CALENDAR_WEEKDAY_LABELS_COMPACT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const
 
 export function addDays(date: Date, days: number): Date {
   const next = new Date(date)
@@ -23,8 +23,7 @@ export function startOfMonth(date: Date): Date {
 
 export function startOfWeek(date: Date): Date {
   const next = startOfDay(date)
-  const mondayOffset = (next.getDay() + 6) % 7
-  return addDays(next, -mondayOffset)
+  return addDays(next, -next.getDay())
 }
 
 export function calendarWindow(monthDate: Date): { start: string; end: string } {

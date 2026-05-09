@@ -218,7 +218,7 @@ export const CalendarEditor = memo(function CalendarEditor({
     <form
       onSubmit={(event) => void handleSubmit(event)}
       aria-busy={submitting}
-      className="rounded-2xl border border-zinc-800/80 bg-gradient-to-br from-zinc-950/85 via-zinc-950/70 to-zinc-900/35 p-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.2)]"
+      className="rounded-2xl border border-zinc-800/80 bg-linear-to-br from-zinc-950/85 via-zinc-950/70 to-zinc-900/35 p-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.2)]"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
@@ -296,41 +296,49 @@ export const CalendarEditor = memo(function CalendarEditor({
         )}
 
         {/* Timing row — single flex row, no above-labels */}
-        <div className="flex flex-wrap items-center gap-2">
-          <AllDayToggle allDay={allDay} onAllDayChange={setAllDay} />
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex flex-wrap items-center gap-2">
+            <AllDayToggle allDay={allDay} onAllDayChange={setAllDay} />
 
-          {allDay ? (
-            <input
-              type="date"
-              value={startsAt.slice(0, 10)}
-              onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
-              aria-label="Date"
-              className={INPUT_CLASS}
-              required
-            />
-          ) : (
-            <>
+            {allDay ? (
               <input
-                type="datetime-local"
-                value={startsAt}
-                onChange={(event) => handleStartsAtChange(event.target.value)}
-                aria-label="Start time"
-                className={INPUT_CLASS}
+                type="date"
+                value={startsAt.slice(0, 10)}
+                onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
+                aria-label="Date"
+                className={cn(INPUT_CLASS, 'flex-1 sm:flex-none')}
                 required
               />
-              <span className="select-none text-zinc-600">–</span>
-              <input
-                type="datetime-local"
-                value={endsAt}
-                onChange={(event) => setEndsAt(event.target.value)}
-                aria-invalid={Boolean(scheduleError)}
-                aria-label="End time"
-                className={cn(
-                  INPUT_CLASS,
-                  scheduleError && 'border-rose-500/40 focus:border-rose-400',
-                )}
-                required
-              />
+            ) : (
+              <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
+                <input
+                  type="datetime-local"
+                  value={startsAt}
+                  onChange={(event) => handleStartsAtChange(event.target.value)}
+                  aria-label="Start time"
+                  className={cn(INPUT_CLASS, 'flex-1 min-w-0')}
+                  required
+                />
+                <span className="select-none text-zinc-600">–</span>
+                <input
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={(event) => setEndsAt(event.target.value)}
+                  aria-invalid={Boolean(scheduleError)}
+                  aria-label="End time"
+                  className={cn(
+                    INPUT_CLASS,
+                    'flex-1 min-w-0',
+                    scheduleError && 'border-rose-500/40 focus:border-rose-400',
+                  )}
+                  required
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {!allDay && (
               <DurationControl
                 durationUnit={durationUnit}
                 durationValue={durationValue}
@@ -339,18 +347,17 @@ export const CalendarEditor = memo(function CalendarEditor({
                 onDurationUnitChange={handleDurationUnitChange}
                 onDurationValueChange={handleDurationValueChange}
               />
-            </>
-          )}
-
-          <select
-            value={isRepeating ? 'repeating' : 'none'}
-            onChange={(event) => handleRepeatEnabledChange(event.target.value === 'repeating')}
-            aria-label="Repeat"
-            className={INPUT_CLASS}
-          >
-            <option value="none">No repeat</option>
-            <option value="repeating">Repeats</option>
-          </select>
+            )}
+            <select
+              value={isRepeating ? 'repeating' : 'none'}
+              onChange={(event) => handleRepeatEnabledChange(event.target.value === 'repeating')}
+              aria-label="Repeat"
+              className={INPUT_CLASS}
+            >
+              <option value="none">No repeat</option>
+              <option value="repeating">Repeats</option>
+            </select>
+          </div>
         </div>
 
         {/* Repeat section */}

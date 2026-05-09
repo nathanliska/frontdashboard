@@ -12,40 +12,45 @@ import {
 } from './calendarUtils'
 
 describe('calendar utils', () => {
-  it('starts weeks on monday', () => {
+  it('starts weeks on sunday', () => {
+    // April 15 2026 is a Wednesday; previous Sunday is April 12
     const weekStart = startOfWeek(new Date(2026, 3, 15, 12))
-    expect(dateKey(weekStart)).toBe('2026-04-13')
+    expect(dateKey(weekStart)).toBe('2026-04-12')
   })
 
   it('builds a six-week month grid and matching fetch window', () => {
+    // April 2026: Apr 1 = Wednesday, grid starts Sun Mar 29
     const monthDate = new Date(2026, 3, 15, 12)
 
     const days = monthGridDays(monthDate)
     const window = calendarWindow(monthDate)
 
     expect(days).toHaveLength(42)
-    expect(dateKey(days[0])).toBe('2026-03-30')
-    expect(dateKey(days[41])).toBe('2026-05-10')
-    expect(dateKey(new Date(window.start))).toBe('2026-03-30')
-    expect(dateKey(new Date(window.end))).toBe('2026-05-11')
+    expect(dateKey(days[0])).toBe('2026-03-29')
+    expect(dateKey(days[41])).toBe('2026-05-09')
+    expect(dateKey(new Date(window.start))).toBe('2026-03-29')
+    expect(dateKey(new Date(window.end))).toBe('2026-05-10')
   })
 
   it('shows only weeks that include days from the requested month', () => {
+    // April 2026: Apr 1 = Wed, grid Sun Mar 29 → 5 weeks (35 days)
     const fiveWeekMonth = monthWeeksInView(new Date(2026, 3, 15, 12))
-    const sixWeekMonth = monthWeeksInView(new Date(2026, 2, 15, 12))
-    const fourWeekMonth = monthWeeksInView(new Date(2027, 1, 15, 12))
+    // May 2026: May 1 = Fri, grid Sun Apr 26 → 6 weeks (42 days, May 31 anchors week 6)
+    const sixWeekMonth = monthWeeksInView(new Date(2026, 4, 15, 12))
+    // Feb 2026: Feb 1 = Sun, grid starts Feb 1 → exactly 4 weeks (28 days)
+    const fourWeekMonth = monthWeeksInView(new Date(2026, 1, 15, 12))
 
     expect(fiveWeekMonth).toHaveLength(35)
-    expect(dateKey(fiveWeekMonth[0])).toBe('2026-03-30')
-    expect(dateKey(fiveWeekMonth[34])).toBe('2026-05-03')
+    expect(dateKey(fiveWeekMonth[0])).toBe('2026-03-29')
+    expect(dateKey(fiveWeekMonth[34])).toBe('2026-05-02')
 
     expect(sixWeekMonth).toHaveLength(42)
-    expect(dateKey(sixWeekMonth[0])).toBe('2026-02-23')
-    expect(dateKey(sixWeekMonth[41])).toBe('2026-04-05')
+    expect(dateKey(sixWeekMonth[0])).toBe('2026-04-26')
+    expect(dateKey(sixWeekMonth[41])).toBe('2026-06-06')
 
     expect(fourWeekMonth).toHaveLength(28)
-    expect(dateKey(fourWeekMonth[0])).toBe('2027-02-01')
-    expect(dateKey(fourWeekMonth[27])).toBe('2027-02-28')
+    expect(dateKey(fourWeekMonth[0])).toBe('2026-02-01')
+    expect(dateKey(fourWeekMonth[27])).toBe('2026-02-28')
   })
 
   it('treats overlapping occurrences as visible on a day', () => {
