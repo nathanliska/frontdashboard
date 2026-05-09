@@ -3,9 +3,16 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ROUTES } from '../../routes'
 import { useNotificationsStore } from '../../stores/notifications'
 import { getNotificationDestination } from '../../utils/notifications/notificationFeedUtils'
+import { cn } from '../../utils/shared/cn'
 import { NotificationFeed } from './NotificationFeed'
 
-export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
+export function NotificationPanel({
+  collapsed,
+  onOpen,
+}: {
+  collapsed: boolean
+  onOpen?: () => void
+}) {
   const navigate = useNavigate()
   const notifications = useNotificationsStore((s) => s.notifications)
   const unreadCount = useNotificationsStore((s) => s.unreadCount)
@@ -38,7 +45,10 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
       {/* Bell trigger */}
       <button
         type="button"
-        onClick={() => setPanelOpen(!panelOpen)}
+        onClick={() => {
+          if (!panelOpen) onOpen?.()
+          setPanelOpen(!panelOpen)
+        }}
         title={collapsed ? 'Notifications' : undefined}
         className="relative z-50 flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
       >
@@ -55,7 +65,12 @@ export function NotificationPanel({ collapsed }: { collapsed: boolean }) {
 
       {/* Slide-out panel */}
       {panelOpen && (
-        <div className="absolute bottom-full left-full ml-2 mb-0 w-80 bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl z-50 flex flex-col max-h-120">
+        <div
+          className={cn(
+            'absolute bottom-full mb-1 w-80 bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl z-50 flex flex-col max-h-120',
+            collapsed ? 'left-full ml-2' : 'left-2',
+          )}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
             <span className="text-sm font-medium text-zinc-100">Notifications</span>

@@ -29,6 +29,8 @@ export function Sidebar() {
   const closeMobileSidebar = useUIStore((s) => s.closeMobileSidebar)
   const location = useLocation()
   const loadUnreadCount = useNotificationsStore((s) => s.loadUnreadCount)
+  const setPanelOpen = useNotificationsStore((s) => s.setPanelOpen)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
 
   useEffect(() => {
     void loadUnreadCount()
@@ -110,9 +112,17 @@ export function Sidebar() {
 
         {/* Bottom: bell + user menu */}
         <div className="border-t border-zinc-800 py-2 space-y-0.5">
-          <NotificationPanel collapsed={sidebarCollapsed && !mobileSidebarOpen} />
+          <NotificationPanel
+            collapsed={sidebarCollapsed && !mobileSidebarOpen}
+            onOpen={() => setUserMenuOpen(false)}
+          />
           <UserMenu
             collapsed={sidebarCollapsed && !mobileSidebarOpen}
+            open={userMenuOpen}
+            onOpenChange={(next) => {
+              if (next) setPanelOpen(false)
+              setUserMenuOpen(next)
+            }}
             closeMobileSidebar={closeMobileSidebar}
           />
         </div>
@@ -123,18 +133,21 @@ export function Sidebar() {
 
 function UserMenu({
   collapsed,
+  open,
+  onOpenChange,
   closeMobileSidebar,
 }: {
   collapsed: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
   closeMobileSidebar: () => void
 }) {
-  const [open, setOpen] = useState(false)
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
 
   async function handleSignOut() {
-    setOpen(false)
+    onOpenChange(false)
     closeMobileSidebar()
     await logout()
     navigate(ROUTES.login, { replace: true })
@@ -149,13 +162,13 @@ function UserMenu({
         <button
           type="button"
           aria-label="Close account menu"
-          onClick={() => setOpen(false)}
+          onClick={() => onOpenChange(false)}
           className="fixed inset-0 z-40 cursor-default bg-transparent"
         />
       )}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => onOpenChange(!open)}
         title={collapsed ? displayName : undefined}
         className="relative z-50 flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
       >
@@ -176,7 +189,7 @@ function UserMenu({
             icon={User}
             label="Profile"
             onClick={() => {
-              setOpen(false)
+              onOpenChange(false)
               closeMobileSidebar()
               navigate(ROUTES.profile)
             }}
