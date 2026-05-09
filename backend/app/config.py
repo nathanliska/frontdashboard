@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,14 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:5173"
     resend_api_key: str | None = None
     email_from: str = "FrontDashboard <noreply@frontdashboard.local>"
+
+    @field_validator("frontend_base_url", mode="before")
+    @classmethod
+    def validate_frontend_base_url(cls, v: object) -> str:
+        url = str(v).strip().rstrip("/")
+        if not url.startswith(("http://", "https://")):
+            raise ValueError("frontend_base_url must start with http:// or https://")
+        return url
 
     @property
     def cors_origins_list(self) -> list[str]:
