@@ -292,7 +292,7 @@ export const CalendarEditor = memo(function CalendarEditor({
                 value={startsAt.slice(0, 10)}
                 onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
                 aria-label="Date"
-                className={cn(INPUT_CLASS, 'flex-1')}
+                className={cn(INPUT_CLASS, 'min-w-0 flex-1')}
                 required
               />
             )}
@@ -306,7 +306,7 @@ export const CalendarEditor = memo(function CalendarEditor({
                 value={startsAt}
                 onChange={(event) => handleStartsAtChange(event.target.value)}
                 aria-label="Start time"
-                className={cn(INPUT_CLASS, 'w-full')}
+                className={cn(INPUT_CLASS, 'min-w-0 w-full')}
                 required
               />
               <span className="hidden select-none text-zinc-600 sm:block">–</span>
@@ -318,7 +318,7 @@ export const CalendarEditor = memo(function CalendarEditor({
                 aria-label="End time"
                 className={cn(
                   INPUT_CLASS,
-                  'w-full',
+                  'min-w-0 w-full',
                   scheduleError && 'border-rose-500/40 focus:border-rose-400',
                 )}
                 required

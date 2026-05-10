@@ -142,11 +142,9 @@ export function ListsLayout() {
             New list
           </button>
         </div>
-        <p className="text-sm text-zinc-500">
-          {activeDashboard
-            ? `Detailed editing for ${activeDashboard.name}. Dashboard permissions apply automatically.`
-            : 'Choose a dashboard to work with its lists.'}
-        </p>
+        {!activeDashboard && (
+          <p className="text-sm text-zinc-500">Choose a dashboard to work with its lists.</p>
+        )}
       </div>
 
       <div

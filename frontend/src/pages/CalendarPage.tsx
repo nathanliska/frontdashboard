@@ -231,11 +231,9 @@ export function CalendarPage() {
             ))}
           </select>
         </div>
-        <p className="text-sm text-zinc-500">
-          {activeDashboard
-            ? `Month view for ${activeDashboard.name}. Everyone on this dashboard sees the same events.`
-            : 'Choose a dashboard to view and edit its events.'}
-        </p>
+        {!activeDashboard && (
+          <p className="text-sm text-zinc-500">Choose a dashboard to view and edit its events.</p>
+        )}
       </div>
 
       <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[1.35fr_0.9fr]">
