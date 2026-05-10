@@ -21,14 +21,20 @@ async def send_verification_email(email: str, verification_url: str) -> None:
     if not settings.resend_api_key:
         logger.debug("Email verification link for %s: %s", email, verification_url)
         return
-    await asyncio.to_thread(_send_verification_sync, email, verification_url)
+    try:
+        await asyncio.to_thread(_send_verification_sync, email, verification_url)
+    except RuntimeError:
+        logger.exception("Failed to send verification email to %s", email)
 
 
 async def send_password_reset_email(email: str, reset_url: str) -> None:
     if not settings.resend_api_key:
         logger.debug("Password reset link for %s: %s", email, reset_url)
         return
-    await asyncio.to_thread(_send_password_reset_sync, email, reset_url)
+    try:
+        await asyncio.to_thread(_send_password_reset_sync, email, reset_url)
+    except RuntimeError:
+        logger.exception("Failed to send password reset email to %s", email)
 
 
 def _send_verification_sync(email: str, verification_url: str) -> None:

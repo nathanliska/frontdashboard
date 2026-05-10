@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -210,6 +210,7 @@ async def _normalize_accessible_dashboard_ids(
 async def register(
     request: Request,
     body: RegisterRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> RegistrationResponse:
     """Create a new user and queue email verification."""
@@ -235,11 +236,7 @@ async def register(
     }
     verification_url = await _issue_email_verification(user, db)
     await db.commit()
-    try:
-        await send_verification_email(user.email, verification_url)
-    except RuntimeError:
-        logger.exception("Failed to send verification email to %s", user.email)
-
+    background_tasks.add_task(send_verification_email, user.email, verification_url)
     return RegistrationResponse(email=user.email)
 
 
@@ -288,6 +285,7 @@ async def verify_email(
 async def resend_verification(
     request: Request,
     body: ResendVerificationRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Issue a fresh verification email for an unverified account."""
@@ -296,7 +294,7 @@ async def resend_verification(
     if user and user.email_verified_at is None:
         verification_url = await _issue_email_verification(user, db)
         await db.commit()
-        await send_verification_email(user.email, verification_url)
+        background_tasks.add_task(send_verification_email, user.email, verification_url)
 
 
 @router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
@@ -304,6 +302,7 @@ async def resend_verification(
 async def request_password_reset(
     request: Request,
     body: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Issue a password reset email when the account exists."""
@@ -312,7 +311,7 @@ async def request_password_reset(
     if user:
         reset_url = await _issue_password_reset(user, db)
         await db.commit()
-        await send_password_reset_email(user.email, reset_url)
+        background_tasks.add_task(send_password_reset_email, user.email, reset_url)
 
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)

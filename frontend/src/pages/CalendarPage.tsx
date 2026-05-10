@@ -466,12 +466,12 @@ function CalendarEditorModal({ children, onClose }: { children: ReactNode; onClo
         className="absolute inset-0 bg-black/60"
         onClick={onClose}
       />
-      <div className="relative w-full sm:mx-4 sm:max-w-4xl">
+      <div className="relative flex max-h-[88dvh] w-full flex-col sm:mx-4 sm:max-h-[90dvh] sm:max-w-4xl">
         {/* Drag handle — visible on mobile only */}
-        <div className="flex justify-center pb-2 pt-3 sm:hidden">
+        <div className="flex shrink-0 justify-center pb-2 pt-3 sm:hidden">
           <div className="h-1 w-12 rounded-full bg-zinc-600" />
         </div>
-        <div className="max-h-[88dvh] overflow-y-auto sm:max-h-[90dvh]">{children}</div>
+        <div className="min-h-0 flex-1">{children}</div>
       </div>
     </div>
   )
