@@ -225,10 +225,10 @@ export const CalendarEditor = memo(function CalendarEditor({
     <form
       onSubmit={(event) => void handleSubmit(event)}
       aria-busy={submitting}
-      className="flex max-h-full flex-col overflow-hidden rounded-t-2xl border border-zinc-800/80 bg-zinc-950 shadow-[0_-8px_40px_rgba(0,0,0,0.5)] sm:rounded-2xl sm:shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
+      className="overflow-hidden rounded-t-2xl border border-zinc-800/80 bg-zinc-950 shadow-[0_-8px_40px_rgba(0,0,0,0.5)] sm:rounded-2xl sm:shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
     >
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-3 pt-4">
+      <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
         <div className="flex min-w-0 items-center gap-2">
           <p className="shrink-0 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
             {mode === 'edit' ? 'Edit event' : 'Add event'}
@@ -245,7 +245,7 @@ export const CalendarEditor = memo(function CalendarEditor({
       </div>
 
       {/* Body */}
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto px-4 pb-4">
+      <div className="grid gap-3 px-4 pb-4">
         {/* Title */}
         <input
           value={title}
@@ -300,13 +300,13 @@ export const CalendarEditor = memo(function CalendarEditor({
 
           {/* Start + end datetime — stacked on mobile, side-by-side on sm+ */}
           {!allDay && (
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
               <input
                 type="datetime-local"
                 value={startsAt}
                 onChange={(event) => handleStartsAtChange(event.target.value)}
                 aria-label="Start time"
-                className={cn(INPUT_CLASS, 'min-w-0 w-full')}
+                className={cn(INPUT_CLASS, 'min-w-0 max-w-full w-full appearance-none')}
                 required
               />
               <span className="hidden select-none text-zinc-600 sm:block">–</span>
@@ -318,7 +318,7 @@ export const CalendarEditor = memo(function CalendarEditor({
                 aria-label="End time"
                 className={cn(
                   INPUT_CLASS,
-                  'min-w-0 w-full',
+                  'min-w-0 max-w-full w-full appearance-none',
                   scheduleError && 'border-rose-500/40 focus:border-rose-400',
                 )}
                 required
@@ -375,7 +375,7 @@ export const CalendarEditor = memo(function CalendarEditor({
       </div>
 
       {/* Action bar */}
-      <div className="flex shrink-0 items-center gap-2 border-t border-zinc-800/60 px-4 py-3">
+      <div className="flex items-center gap-2 border-t border-zinc-800/60 px-4 py-3">
         <button
           type="button"
           onClick={() => setShowOptionalFields((current) => !current)}
