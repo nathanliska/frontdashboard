@@ -1,4 +1,5 @@
 import { Bell, Check, X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ROUTES } from '../../routes'
 import { useNotificationsStore } from '../../stores/notifications'
@@ -20,6 +21,18 @@ export function NotificationPanel({
   const setPanelOpen = useNotificationsStore((s) => s.setPanelOpen)
   const markRead = useNotificationsStore((s) => s.markRead)
   const markAllRead = useNotificationsStore((s) => s.markAllRead)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!panelOpen) return
+    function handleMouseDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setPanelOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [panelOpen, setPanelOpen])
 
   function handleNotificationClick(notification: (typeof notifications)[number]) {
     if (notification.read_at === null) {
@@ -33,15 +46,7 @@ export function NotificationPanel({
   }
 
   return (
-    <div className="relative z-50">
-      {panelOpen && (
-        <button
-          type="button"
-          aria-label="Close notifications"
-          onClick={() => setPanelOpen(false)}
-          className="fixed inset-0 z-40 cursor-default bg-transparent"
-        />
-      )}
+    <div ref={containerRef} className="relative z-50">
       {/* Bell trigger */}
       <button
         type="button"

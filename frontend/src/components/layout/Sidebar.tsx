@@ -7,7 +7,7 @@ import {
   LogOut,
   User,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ROUTES } from '../../routes'
 import { useAuthStore } from '../../stores/auth'
@@ -35,6 +35,14 @@ export function Sidebar() {
   useEffect(() => {
     void loadUnreadCount()
   }, [loadUnreadCount])
+
+  const handleUserMenuOpenChange = useCallback(
+    (next: boolean) => {
+      if (next) setPanelOpen(false)
+      setUserMenuOpen(next)
+    },
+    [setPanelOpen],
+  )
 
   return (
     <>
@@ -119,10 +127,7 @@ export function Sidebar() {
           <UserMenu
             collapsed={sidebarCollapsed && !mobileSidebarOpen}
             open={userMenuOpen}
-            onOpenChange={(next) => {
-              if (next) setPanelOpen(false)
-              setUserMenuOpen(next)
-            }}
+            onOpenChange={handleUserMenuOpenChange}
             closeMobileSidebar={closeMobileSidebar}
           />
         </div>
@@ -145,6 +150,18 @@ function UserMenu({
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleMouseDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        onOpenChange(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [open, onOpenChange])
 
   async function handleSignOut() {
     onOpenChange(false)
@@ -157,15 +174,7 @@ function UserMenu({
   const displayName = user?.display_name ?? 'Account'
 
   return (
-    <div className="relative z-50">
-      {open && (
-        <button
-          type="button"
-          aria-label="Close account menu"
-          onClick={() => onOpenChange(false)}
-          className="fixed inset-0 z-40 cursor-default bg-transparent"
-        />
-      )}
+    <div ref={containerRef} className="relative z-50">
       <button
         type="button"
         onClick={() => onOpenChange(!open)}
