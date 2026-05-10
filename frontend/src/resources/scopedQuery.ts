@@ -135,6 +135,13 @@ export function createScopedQuery<Scope, Data>({
     return request
   }
 
+  async function fetchIfStale(scope: Scope): Promise<Data> {
+    const entry = ensureEntry(scope)
+    if (entry.inFlight) return entry.inFlight
+    if (entry.state.data !== null && !entry.stale) return entry.state.data
+    return fetch(scope)
+  }
+
   function invalidateWhere(
     predicate: (scope: Scope) => boolean,
     options: ScopedQueryFetchOptions & { activeOnly?: boolean } = {},
@@ -213,6 +220,7 @@ export function createScopedQuery<Scope, Data>({
 
   return {
     fetch,
+    fetchIfStale,
     getState,
     invalidateWhere,
     reset,

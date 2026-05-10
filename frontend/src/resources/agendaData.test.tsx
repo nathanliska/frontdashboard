@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CalendarOccurrence } from '../api/calendar'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
-import { useAuthStore } from '../stores/auth'
 import { handleAgendaResourceEvent, resetAgendaData, useAgendaItems } from './agendaData'
-import { __resetListDataForTests, handleListResourceEvent, updateListItem } from './listData'
+import { __resetListDataForTests, handleListResourceEvent } from './listData'
 
 const { apiListOccurrences } = vi.hoisted(() => ({
   apiListOccurrences: vi.fn(),
@@ -126,19 +125,35 @@ function AgendaProbe() {
   )
 }
 
-function makeListCheckedEvent(): SseEvent {
+function makeListItemCheckedEvent(): SseEvent {
   return {
-    event_id: 1,
+    event_id: 2,
     event_type: 'list.item.checked',
     entity_type: 'list_item',
     entity_id: 'item-1',
     entity_version: 2,
-    actor_id: 'user-1',
+    actor_id: 'user-2',
     actor_display_name: 'Example User',
     payload: {
       dashboard_id: 'dash-1',
       list_id: 'list-1',
-      client_mutation_id: '11111111-1111-4111-8111-111111111111',
+    },
+    created_at: '2026-05-05T00:00:02Z',
+  }
+}
+
+function makeCalendarUpdatedEvent(): SseEvent {
+  return {
+    event_id: 1,
+    event_type: 'calendar.event.updated',
+    entity_type: 'calendar_event',
+    entity_id: 'event-1',
+    entity_version: 2,
+    actor_id: 'user-2',
+    actor_display_name: 'Example User',
+    payload: {
+      dashboard_id: 'dash-1',
+      title: 'Updated review',
     },
     created_at: '2026-05-05T00:00:01Z',
   }
@@ -149,25 +164,14 @@ describe('agendaData', () => {
     vi.clearAllMocks()
     resetAgendaData()
     __resetListDataForTests()
-    useAuthStore.setState({
-      status: 'authenticated',
-      user: {
-        id: 'user-1',
-        email: 'user@example.com',
-        display_name: 'Example User',
-        preferences: {},
-      },
-    })
   })
 
-  it('updates reminders from cache without reloading on self-echoed list item checks', async () => {
-    apiListOccurrences.mockResolvedValueOnce([makeOccurrence()])
+  it('refreshes calendar agenda items without reloading list reminders on calendar events', async () => {
+    apiListOccurrences
+      .mockResolvedValueOnce([makeOccurrence()])
+      .mockResolvedValueOnce([makeOccurrence({ title: 'Updated review' })])
     apiGetLists.mockResolvedValue([makeListSummary()])
     apiGetList.mockResolvedValueOnce(makeListDetail())
-    apiUpdateItem.mockResolvedValueOnce(makeListItem({ checked: true }))
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
-      '11111111-1111-4111-8111-111111111111',
-    )
 
     render(<AgendaProbe />)
 
@@ -178,20 +182,40 @@ describe('agendaData', () => {
     expect(apiGetLists).toHaveBeenCalledTimes(1)
     expect(apiGetList).toHaveBeenCalledTimes(1)
 
-    await act(async () => {
-      await updateListItem('list-1', 'item-1', { checked: true })
-    })
-
-    const event = makeListCheckedEvent()
-
     act(() => {
-      handleAgendaResourceEvent(event)
-      handleListResourceEvent(event)
+      handleAgendaResourceEvent(makeCalendarUpdatedEvent())
     })
 
-    await waitFor(() => expect(screen.queryByText('Buy milk')).not.toBeInTheDocument())
+    await screen.findByText('Updated review')
+    expect(apiListOccurrences).toHaveBeenCalledTimes(2)
+    expect(apiGetLists).toHaveBeenCalledTimes(1)
+    expect(apiGetList).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Buy milk')).toBeInTheDocument()
+  })
+
+  it('refreshes list reminders without reloading calendar occurrences on list events', async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetLists.mockResolvedValue([makeListSummary()])
+    apiGetList
+      .mockResolvedValueOnce(makeListDetail())
+      .mockResolvedValueOnce(makeListDetail({ items: [makeListItem({ checked: true })] }))
+
+    render(<AgendaProbe />)
+
+    await screen.findByText('Buy milk')
     expect(apiListOccurrences).toHaveBeenCalledTimes(1)
     expect(apiGetLists).toHaveBeenCalledTimes(1)
     expect(apiGetList).toHaveBeenCalledTimes(1)
+
+    const event = makeListItemCheckedEvent()
+    act(() => {
+      handleListResourceEvent(event)
+      handleAgendaResourceEvent(event)
+    })
+
+    await screen.findByText('Launch review')
+    expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
+    expect(apiListOccurrences).toHaveBeenCalledTimes(1)
+    expect(apiGetLists).toHaveBeenCalledTimes(1)
   })
 })

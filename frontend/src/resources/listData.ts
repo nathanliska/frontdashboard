@@ -152,9 +152,9 @@ export function useListDetail(listId: string | null) {
 }
 
 export async function loadDashboardListDetails(dashboardId: string): Promise<ListDetail[]> {
-  const lists = await listSummariesQuery.fetch({ dashboardId })
+  const lists = await listSummariesQuery.fetchIfStale({ dashboardId })
   const activeLists = lists.filter((list) => !list.archived)
-  return Promise.all(activeLists.map((list) => listDetailQuery.fetch({ listId: list.id })))
+  return Promise.all(activeLists.map((list) => listDetailQuery.fetchIfStale({ listId: list.id })))
 }
 
 export function readDashboardListDetailsFromCache(dashboardId: string): ListDetail[] | null {

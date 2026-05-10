@@ -72,11 +72,8 @@ export function useSSE(): void {
     function onListEvent(e: MessageEvent<string>) {
       try {
         const data = JSON.parse(e.data) as SseEvent
-        // Mixed-source widgets should keep their own caches narrow. Route the
-        // event to them before the primary list resource consumes any local
-        // mutation echo tokens, then let each layer decide what to invalidate.
-        handleAgendaResourceEvent(data)
         handleListResourceEvent(data)
+        handleAgendaResourceEvent(data)
         handleDashboardContentEvent(data)
       } catch {
         // malformed event — ignore

@@ -3,10 +3,8 @@ import type { CalendarOccurrence } from '../api/calendar'
 import { apiListOccurrences } from '../api/calendar'
 import type { ListItem, ListSummary } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
-import { useAuthStore } from '../stores/auth'
 import { addDays, dateKey, startOfDay } from '../utils/calendar/calendarUtils'
-import { hasPendingListMutation } from '../utils/lists/listMutation'
-import { loadDashboardListDetails, readDashboardListDetailsFromCache } from './listData'
+import { loadDashboardListDetails } from './listData'
 import { createScopedQuery, type ScopedQueryState } from './scopedQuery'
 
 export type AgendaItem =
@@ -35,9 +33,8 @@ type AgendaScope = {
 }
 
 // Keep mixed-source widgets split at the cache layer so SSE can invalidate only
-// the data slice that changed. The agenda UI composes reminders + calendar
-// occurrences, but list events should not force a calendar refetch and
-// calendar events should not force list-detail reloads.
+// the calendar slice. List reminders are still included on agenda load, but
+// list events are handled by the list resource layer instead of this module.
 const agendaOccurrencesQuery = createScopedQuery<AgendaScope, CalendarOccurrence[]>({
   getKey: (scope) => scope.dashboardId,
   fetcher: fetchAgendaOccurrences,
@@ -57,21 +54,6 @@ function getEventPayload(event: SseEvent): Record<string, unknown> | null {
 function getDashboardId(event: SseEvent): string | null {
   const payload = getEventPayload(event)
   return typeof payload?.dashboard_id === 'string' ? payload.dashboard_id : null
-}
-
-function getListEventClientMutationId(event: SseEvent): string | null {
-  const payload = getEventPayload(event)
-  return typeof payload?.client_mutation_id === 'string' ? payload.client_mutation_id : null
-}
-
-function isPendingListMutationEcho(event: SseEvent): boolean {
-  const currentUserId = useAuthStore.getState().user?.id
-  const clientMutationId = getListEventClientMutationId(event)
-  if (!currentUserId || event.actor_id !== currentUserId || !clientMutationId) {
-    return false
-  }
-
-  return hasPendingListMutation(clientMutationId)
 }
 
 function compareAgendaItems(a: AgendaItem, b: AgendaItem): number {
@@ -141,18 +123,6 @@ async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
   )
 }
 
-function buildAgendaRemindersFromCache(dashboardId: string): AgendaItem[] | null {
-  const todayKey = dateKey(startOfDay(new Date()))
-  const details = readDashboardListDetailsFromCache(dashboardId)
-  if (!details) return null
-
-  return details.flatMap((detail) =>
-    detail.items
-      .map((item) => listItemToAgendaItem(item, detail, todayKey))
-      .filter((agendaItem): agendaItem is AgendaItem => agendaItem !== null),
-  )
-}
-
 function mergeAgendaState(
   occurrencesState: ScopedQueryState<CalendarOccurrence[]>,
   remindersState: ScopedQueryState<AgendaItem[]>,
@@ -203,26 +173,9 @@ export function handleAgendaResourceEvent(event: SseEvent): void {
 
   if (event.event_type.startsWith('calendar.')) {
     invalidateMatching((predicate) => agendaOccurrencesQuery.invalidateWhere(predicate))
-    return
   }
 
   if (event.event_type.startsWith('list.')) {
-    if (dashboardId && isPendingListMutationEcho(event)) {
-      const reminders = buildAgendaRemindersFromCache(dashboardId)
-      if (reminders) {
-        agendaRemindersQuery.updateWhere(
-          (scope) => scope.dashboardId === dashboardId,
-          (state) => ({
-            data: reminders,
-            loading: false,
-            error: state.error,
-          }),
-        )
-      }
-      return
-    }
-
-    // List events only affect reminder rows derived from list items.
     invalidateMatching((predicate) => agendaRemindersQuery.invalidateWhere(predicate))
   }
 }
