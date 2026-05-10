@@ -289,9 +289,9 @@ export function CalendarPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-[repeat(7,minmax(0,1fr))] border-b border-zinc-800">
+          <div className="grid grid-cols-7 border-b border-zinc-800">
             <div className="col-span-7 px-2 sm:px-3 pt-2 sm:pt-3">
-              <div className="grid grid-cols-[repeat(7,minmax(0,1fr))] gap-1">
+              <div className="grid grid-cols-7 gap-1">
                 {CALENDAR_WEEKDAY_LABELS.map((label) => (
                   <div
                     key={label}
@@ -310,7 +310,7 @@ export function CalendarPage() {
             </div>
           ) : (
             <div className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">
-              <div className="grid h-full grid-cols-[repeat(7,minmax(0,1fr))] auto-rows-fr gap-1">
+              <div className="grid h-full grid-cols-7 auto-rows-fr gap-1">
                 {monthDays.map((day) => {
                   const dayOccurrences = occurrencesForDate(occurrences, day)
                   const inMonth = day.getMonth() === monthCursor.getMonth()
@@ -461,15 +461,19 @@ export function CalendarPage() {
 
 function CalendarEditorModal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center">
       <button
         type="button"
         aria-label="Close event dialog"
-        className="absolute inset-0 bg-black/50"
+        className="absolute inset-0 bg-black/60"
         onClick={onClose}
       />
-      <div className="relative mx-4 w-full max-w-4xl max-h-[90dvh] overflow-y-auto overflow-x-hidden">
-        {children}
+      <div className="relative w-full sm:mx-4 sm:max-w-4xl">
+        {/* Drag handle — visible on mobile only */}
+        <div className="flex justify-center pb-2 pt-3 sm:hidden">
+          <div className="h-1 w-12 rounded-full bg-zinc-600" />
+        </div>
+        <div className="max-h-[88dvh] overflow-y-auto sm:max-h-[90dvh]">{children}</div>
       </div>
     </div>
   )

@@ -43,8 +43,8 @@ export const CalendarEditorRepeatSection = memo(function CalendarEditorRepeatSec
 }) {
   return (
     <div className="grid gap-1.5">
+      {/* Every N [cadence] + weekday picker */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Every N cadence */}
         <div className="flex h-9 items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950 px-2.5">
           <span className="text-xs text-zinc-500">Every</span>
           <div className="flex items-center rounded-md border border-zinc-800/60">
@@ -110,15 +110,17 @@ export const CalendarEditorRepeatSection = memo(function CalendarEditorRepeatSec
             })}
           </div>
         )}
+      </div>
 
-        {/* Recurrence end date */}
-        <span className="text-xs text-zinc-500">until</span>
+      {/* Until — always on its own row so the date input never overflows */}
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-xs text-zinc-500">until</span>
         <input
           type="date"
           value={recurrenceEndsOn}
           onChange={(event) => onRecurrenceEndsOnChange(event.target.value)}
           aria-label="Recurrence end date"
-          className="h-9 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 focus:outline-none focus:border-zinc-700"
+          className="h-9 min-w-0 flex-1 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 focus:border-zinc-700 focus:outline-none"
         />
       </div>
 

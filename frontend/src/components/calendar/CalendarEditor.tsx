@@ -132,6 +132,13 @@ export const CalendarEditor = memo(function CalendarEditor({
   function handleStartsAtChange(value: string) {
     setStartsAt(value)
     ensureWeeklySelection(value)
+    if (!allDay && durationMinutes != null && durationMinutes > 0) {
+      const newEnd = new Date(value)
+      if (!Number.isNaN(newEnd.getTime())) {
+        newEnd.setMinutes(newEnd.getMinutes() + durationMinutes)
+        setEndsAt(toLocalDateTimeValue(newEnd))
+      }
+    }
   }
 
   function handleRecurrenceModeChange(value: RecurrenceMode) {
@@ -218,12 +225,12 @@ export const CalendarEditor = memo(function CalendarEditor({
     <form
       onSubmit={(event) => void handleSubmit(event)}
       aria-busy={submitting}
-      className="rounded-2xl border border-zinc-800/80 bg-linear-to-br from-zinc-950/85 via-zinc-950/70 to-zinc-900/35 p-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.2)]"
+      className="overflow-hidden rounded-t-2xl border border-zinc-800/80 bg-zinc-950 shadow-[0_-8px_40px_rgba(0,0,0,0.5)] sm:rounded-2xl sm:shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
     >
       {/* Header */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
         <div className="flex min-w-0 items-center gap-2">
-          <p className="rounded-full border border-zinc-800 bg-zinc-950/80 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+          <p className="shrink-0 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
             {mode === 'edit' ? 'Edit event' : 'Add event'}
           </p>
           <p className="truncate text-xs text-zinc-500">{dashboardLabel}</p>
@@ -231,49 +238,28 @@ export const CalendarEditor = memo(function CalendarEditor({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg px-2 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-900/50 hover:text-zinc-200"
+          className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200"
         >
           Cancel
         </button>
       </div>
 
-      <div className="mt-2 grid gap-2">
-        {/* Title + actions */}
-        <div className="flex items-center gap-2">
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            className="h-10 min-w-0 flex-1 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
-            placeholder="Event title"
-            aria-label="Event title"
-            required
-          />
-          <button
-            type="button"
-            onClick={() => setShowOptionalFields((current) => !current)}
-            className="h-10 shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/35 px-3 text-sm text-zinc-400 transition-colors hover:border-zinc-700 hover:bg-zinc-900/55 hover:text-zinc-200"
-          >
-            {showOptionalFields ? 'Hide details' : 'Details'}
-          </button>
-          <button
-            type="submit"
-            disabled={submitting || Boolean(scheduleError)}
-            className="h-10 shrink-0 rounded-xl bg-zinc-100 px-4 text-sm font-medium text-zinc-950 shadow-[0_10px_24px_rgba(255,255,255,0.06)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-          >
-            {submitting
-              ? mode === 'edit'
-                ? 'Saving...'
-                : 'Creating...'
-              : mode === 'edit'
-                ? 'Save changes'
-                : 'Create'}
-          </button>
-        </div>
+      {/* Body */}
+      <div className="grid gap-3 px-4 pb-4">
+        {/* Title */}
+        <input
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-3.5 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:bg-zinc-900 focus:outline-none sm:h-10 sm:text-sm"
+          placeholder="Event title"
+          aria-label="Event title"
+          required
+        />
 
         {/* Optional details */}
         {showOptionalFields && (
-          <div className="grid gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/25 p-2.5 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-            <label className="grid gap-1 text-sm">
+          <div className="grid gap-2 rounded-xl border border-zinc-800/60 bg-zinc-900/30 p-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <label className="grid gap-1">
               <span className="px-0.5 text-xs text-zinc-500">Location</span>
               <input
                 value={eventLocation}
@@ -282,61 +268,65 @@ export const CalendarEditor = memo(function CalendarEditor({
                 placeholder="Kitchen"
               />
             </label>
-            <label className="grid gap-1 text-sm">
+            <label className="grid gap-1">
               <span className="px-0.5 text-xs text-zinc-500">Notes</span>
               <textarea
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                rows={1}
-                className="resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
+                rows={2}
+                className="resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
                 placeholder="Optional details"
               />
             </label>
           </div>
         )}
 
-        {/* Timing row — single flex row, no above-labels */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="flex flex-wrap items-center gap-2">
+        {/* Timing section */}
+        <div className="grid gap-2">
+          {/* All-day toggle + date picker (all-day mode) */}
+          <div className="flex items-center gap-2">
             <AllDayToggle allDay={allDay} onAllDayChange={setAllDay} />
-
-            {allDay ? (
+            {allDay && (
               <input
                 type="date"
                 value={startsAt.slice(0, 10)}
                 onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
                 aria-label="Date"
-                className={cn(INPUT_CLASS, 'flex-1 sm:flex-none')}
+                className={cn(INPUT_CLASS, 'flex-1')}
                 required
               />
-            ) : (
-              <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
-                <input
-                  type="datetime-local"
-                  value={startsAt}
-                  onChange={(event) => handleStartsAtChange(event.target.value)}
-                  aria-label="Start time"
-                  className={cn(INPUT_CLASS, 'flex-1 min-w-0')}
-                  required
-                />
-                <span className="select-none text-zinc-600">–</span>
-                <input
-                  type="datetime-local"
-                  value={endsAt}
-                  onChange={(event) => setEndsAt(event.target.value)}
-                  aria-invalid={Boolean(scheduleError)}
-                  aria-label="End time"
-                  className={cn(
-                    INPUT_CLASS,
-                    'flex-1 min-w-0',
-                    scheduleError && 'border-rose-500/40 focus:border-rose-400',
-                  )}
-                  required
-                />
-              </div>
             )}
           </div>
 
+          {/* Start + end datetime — stacked on mobile, side-by-side on sm+ */}
+          {!allDay && (
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+              <input
+                type="datetime-local"
+                value={startsAt}
+                onChange={(event) => handleStartsAtChange(event.target.value)}
+                aria-label="Start time"
+                className={cn(INPUT_CLASS, 'w-full')}
+                required
+              />
+              <span className="hidden select-none text-zinc-600 sm:block">–</span>
+              <input
+                type="datetime-local"
+                value={endsAt}
+                onChange={(event) => setEndsAt(event.target.value)}
+                aria-invalid={Boolean(scheduleError)}
+                aria-label="End time"
+                className={cn(
+                  INPUT_CLASS,
+                  'w-full',
+                  scheduleError && 'border-rose-500/40 focus:border-rose-400',
+                )}
+                required
+              />
+            </div>
+          )}
+
+          {/* Duration + repeat */}
           <div className="flex flex-wrap items-center gap-2">
             {!allDay && (
               <DurationControl
@@ -360,7 +350,7 @@ export const CalendarEditor = memo(function CalendarEditor({
           </div>
         </div>
 
-        {/* Repeat section */}
+        {/* Repeat configuration */}
         {isRepeating && (
           <CalendarEditorRepeatSection
             recurrenceMode={recurrenceMode}
@@ -382,6 +372,30 @@ export const CalendarEditor = memo(function CalendarEditor({
             {scheduleError || overlapWarning}
           </div>
         )}
+      </div>
+
+      {/* Action bar */}
+      <div className="flex items-center gap-2 border-t border-zinc-800/60 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setShowOptionalFields((current) => !current)}
+          className="shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-sm text-zinc-400 transition-colors hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200"
+        >
+          {showOptionalFields ? 'Hide details' : 'Details'}
+        </button>
+        <button
+          type="submit"
+          disabled={submitting || Boolean(scheduleError)}
+          className="h-11 flex-1 rounded-xl bg-zinc-100 px-4 text-sm font-semibold text-zinc-950 shadow-[0_2px_20px_rgba(255,255,255,0.08)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500 sm:h-10"
+        >
+          {submitting
+            ? mode === 'edit'
+              ? 'Saving...'
+              : 'Creating...'
+            : mode === 'edit'
+              ? 'Save changes'
+              : 'Create event'}
+        </button>
       </div>
     </form>
   )

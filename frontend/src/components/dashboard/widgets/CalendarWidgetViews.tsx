@@ -88,7 +88,7 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
         <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">This week</p>
       </div>
 
-      <div className="grid grid-cols-[repeat(7,minmax(0,1fr))] gap-1 flex-1 min-h-0">
+      <div className="grid grid-cols-7 gap-1 flex-1 min-h-0">
         {days.map((day) => {
           const dayOccurrences = occurrencesByDate.get(dateKey(day)) ?? []
           const isToday = dateKey(day) === dateKey(new Date())
@@ -180,7 +180,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
 
       <div
         className={cn(
-          'grid grid-cols-[repeat(7,minmax(0,1fr))] text-[10px] text-zinc-500',
+          'grid grid-cols-7 text-[10px] text-zinc-500',
           ultraCompact ? 'gap-0.5 mb-0.5' : 'gap-1 mb-1',
         )}
       >
@@ -193,7 +193,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
 
       <div
         className={cn(
-          'grid grid-cols-[repeat(7,minmax(0,1fr))] auto-rows-fr flex-1 min-h-0',
+          'grid grid-cols-7 auto-rows-fr flex-1 min-h-0',
           ultraCompact ? 'gap-0.5' : 'gap-1',
         )}
       >
