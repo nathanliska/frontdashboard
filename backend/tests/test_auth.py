@@ -88,7 +88,7 @@ async def test_verify_email_authenticates_user(db_client: AsyncClient) -> None:
     assert "csrf_token" in resp.cookies
 
 
-async def test_verify_email_allows_successful_token_replay(db_client: AsyncClient) -> None:
+async def test_verify_email_rejects_consumed_token_replay(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
         json={"email": "replay@example.com", "password": "mypassword", "display_name": "Replay"},
@@ -97,14 +97,14 @@ async def test_verify_email_allows_successful_token_replay(db_client: AsyncClien
 
     first = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
     assert first.status_code == 200
+    assert "access_token" in first.cookies
 
     replay = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
-    assert replay.status_code == 200
-    assert replay.json()["email"] == "replay@example.com"
-    assert replay.json()["email_verified_at"] == first.json()["email_verified_at"]
-    assert "access_token" in replay.cookies
-    assert "refresh_token" in replay.cookies
-    assert "csrf_token" in replay.cookies
+    assert replay.status_code == 409
+    assert replay.json()["detail"] == "Email already verified. Please sign in."
+    assert "access_token" not in replay.cookies
+    assert "refresh_token" not in replay.cookies
+    assert "csrf_token" not in replay.cookies
 
 
 async def test_verify_email_rejects_invalidated_token_after_resend(db_client: AsyncClient) -> None:

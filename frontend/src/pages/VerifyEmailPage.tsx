@@ -4,7 +4,10 @@ import { ApiError, apiResendVerification } from '../api/auth'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 
-function getVerificationErrorMessage(err: unknown) {
+export function getVerificationErrorMessage(err: unknown) {
+  if (err instanceof ApiError && err.status === 409) {
+    return 'Your email is already verified — please sign in below.'
+  }
   if (err instanceof ApiError && err.status === 400) {
     return 'That verification link is invalid or expired. Request a new link below.'
   }

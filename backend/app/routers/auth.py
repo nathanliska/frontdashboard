@@ -268,12 +268,14 @@ async def verify_email(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
 
     if token.used_at is not None:
-        if user.email_verified_at != token.used_at:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
-    else:
-        token.used_at = now
-        user.email_verified_at = now
+        # Replay of an already-consumed link must never mint a new session.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already verified. Please sign in.",
+        )
 
+    token.used_at = now
+    user.email_verified_at = now
     await _create_session(user, response, db)
     await db.commit()
     await db.refresh(user)
