@@ -1,4 +1,5 @@
 import { apiFetch } from './client'
+import { requestVoid } from './http'
 import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
 const listDetailRequests = new Map<string, Promise<ListDetail>>()
@@ -119,10 +120,11 @@ export async function apiUpdateList(
 }
 
 export async function apiDeleteList(id: string, options?: ListMutationOptions): Promise<void> {
-  await apiFetch(`/api/lists/${id}`, {
-    method: 'DELETE',
-    headers: buildListMutationHeaders(options),
-  })
+  await requestVoid(
+    `/api/lists/${id}`,
+    { method: 'DELETE', headers: buildListMutationHeaders(options) },
+    'Failed to delete list',
+  )
 }
 
 export async function apiCreateItem(
@@ -159,10 +161,11 @@ export async function apiDeleteItem(
   itemId: string,
   options?: ListMutationOptions,
 ): Promise<void> {
-  await apiFetch(`/api/lists/${listId}/items/${itemId}`, {
-    method: 'DELETE',
-    headers: buildListMutationHeaders(options),
-  })
+  await requestVoid(
+    `/api/lists/${listId}/items/${itemId}`,
+    { method: 'DELETE', headers: buildListMutationHeaders(options) },
+    'Failed to delete item',
+  )
 }
 
 export async function apiGetListShares(listId: string): Promise<ResourceAccessSummary> {

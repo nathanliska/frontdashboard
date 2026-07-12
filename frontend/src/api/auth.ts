@@ -1,4 +1,7 @@
 import { apiFetch } from './client'
+import { readError } from './http'
+
+export { ApiError } from './http'
 
 export interface UserPreferences {
   home_dashboard_id?: string | null
@@ -15,21 +18,6 @@ export interface User {
 
 export interface RegistrationResponse {
   email: string
-}
-
-export class ApiError extends Error {
-  status: number
-
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-  }
-}
-
-async function readError(res: Response, fallback: string): Promise<ApiError> {
-  const data = (await res.json().catch(() => ({}))) as { detail?: string }
-  return new ApiError(data.detail ?? fallback, res.status)
 }
 
 // Plain fetch — no refresh loop; caller decides what to do on 401
