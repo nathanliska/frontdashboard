@@ -268,11 +268,14 @@ async def verify_email(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
 
     if token.used_at is not None:
-        # Replay of an already-consumed link must never mint a new session.
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already verified. Please sign in.",
-        )
+        if user.email_verified_at == token.used_at:
+            # Replay of the link that already verified this user — never mint a new session.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already verified. Please sign in.",
+            )
+        # Token was superseded (e.g. a newer link was requested) without verifying it.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
 
     token.used_at = now
     user.email_verified_at = now
