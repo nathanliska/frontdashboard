@@ -3,17 +3,25 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    groups:
+      actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: "uv"
     directory: "/backend"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    groups:
+      backend:
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
       react:
         patterns:
@@ -21,3 +29,6 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+      frontend:
+        patterns:
+          - "*"
