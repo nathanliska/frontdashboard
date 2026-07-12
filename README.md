@@ -86,7 +86,7 @@ frontdashboard/
 └── .env.example
 ```
 
-See [PLAN.md](PLAN.md) for full architecture documentation.
+See [CONTEXT.md](CONTEXT.md) for current project state and [docs/references/original-plan.md](docs/references/original-plan.md) for the original architecture plan.
 
 ---
 
@@ -95,6 +95,5 @@ See [PLAN.md](PLAN.md) for full architecture documentation.
 - Commits must follow [Conventional Commits](https://www.conventionalcommits.org/) format; the subject is normalized in `prepare-commit-msg` and enforced in `commit-msg`.
 - Frontend dependency/security audits can be run with `make audit` or `cd frontend && npm run audit`.
 - Suggested automatic fixes can be applied with `make audit-fix` or `cd frontend && npm run audit:fix`.
-- No direct commits to `main`; branch protection enforces this in GitHub.
-- All PRs must pass tests and lint before merge.
-- See the [PR template](.github/pull_request_template.md) for the checklist.
+- Sole-contributor project: work is committed directly to `main` in logically grouped commits.
+- CI (lint, tests, build) runs on every push and must stay green.

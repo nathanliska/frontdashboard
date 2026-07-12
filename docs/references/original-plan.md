@@ -1,4 +1,9 @@
-# FrontDashboard - Project Plan
+# FrontDashboard - Project Plan (historical)
+
+> **Historical spec.** This is the original v1 plan, kept as a reference for intent and
+> roadmap. Parts have diverged from what was built (e.g., the dashboard model was revised to
+> multiple dashboards per user/group). For current truth read [CONTEXT.md](../../CONTEXT.md);
+> for how to work in the repo read [CLAUDE.md](../../CLAUDE.md).
 
 ## 1. Product Vision
 
