@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.list import ItemPriority, ListType
+from app.schemas.common import PatchModel
 
 
 class ListCreate(BaseModel):
@@ -39,7 +40,7 @@ class ListItemCreate(BaseModel):
     assigned_to: uuid.UUID | None = None
 
 
-class ListItemUpdate(BaseModel):
+class ListItemUpdate(PatchModel):
     text: str | None = Field(None, min_length=1, max_length=2000)
     checked: bool | None = None
     sort_order: int | None = None

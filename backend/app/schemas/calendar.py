@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.common import PatchModel
+
 
 def _ensure_aware(dt: datetime, field_name: str) -> None:
     if dt.tzinfo is None or dt.utcoffset() is None:
@@ -71,7 +73,7 @@ class CalendarEventCreate(CalendarEventBase):
     dashboard_id: uuid.UUID
 
 
-class CalendarEventUpdate(BaseModel):
+class CalendarEventUpdate(PatchModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     location: str | None = Field(default=None, max_length=200)

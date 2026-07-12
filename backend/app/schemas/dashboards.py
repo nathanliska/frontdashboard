@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.common import PatchModel
 from app.schemas.shares import ShareCreate
 
 
@@ -61,7 +62,7 @@ class DashboardCreate(BaseModel):
     shares: list[ShareCreate] = []
 
 
-class DashboardUpdate(BaseModel):
+class DashboardUpdate(PatchModel):
     name: str | None = None
     archived: bool | None = None
 

@@ -226,3 +226,37 @@ async def test_list_share_writes_return_dashboard_managed_error(auth_client: Asy
     delete_resp = await auth_client.delete(f"/api/lists/{lst['id']}/shares/{share_id}")
     assert delete_resp.status_code == 409
     assert delete_resp.json()["detail"] == "List permissions are managed on the parent dashboard"
+
+
+async def test_empty_item_patch_is_rejected(auth_client: AsyncClient) -> None:
+    dashboard = await _make_dashboard(auth_client)
+    lst = await _make_list(auth_client, dashboard["id"])
+    item = await _make_item(auth_client, lst["id"])
+
+    _csrf(auth_client)
+    resp = await auth_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={})
+    assert resp.status_code == 422
+
+
+async def test_viewer_empty_item_patch_is_rejected_not_written(auth_client: AsyncClient) -> None:
+    dashboard = await _make_dashboard(auth_client)
+    lst = await _make_list(auth_client, dashboard["id"])
+    item = await _make_item(auth_client, lst["id"])
+
+    other = await _register_client("viewer-empty@example.com")
+    try:
+        me = await other.get("/api/auth/me")
+        _csrf(auth_client)
+        await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/shares",
+            json={"principal_type": "user", "principal_id": me.json()["id"], "role": "viewer"},
+        )
+
+        _csrf(other)
+        empty = await other.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={})
+        assert empty.status_code == 422
+
+        real = await other.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"checked": True})
+        assert real.status_code == 403
+    finally:
+        await other.__aexit__(None, None, None)

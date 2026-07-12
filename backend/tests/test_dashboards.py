@@ -603,3 +603,11 @@ async def test_dashboard_update_events_include_current_version_and_client_mutati
         assert share_event.payload["changed_fields"] == ["shares"]
     finally:
         await shared_user.__aexit__(None, None, None)
+
+
+async def test_empty_dashboard_patch_is_rejected(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client)
+
+    set_csrf(auth_client)
+    resp = await auth_client.patch(f"/api/dashboards/{dashboard['id']}", json={})
+    assert resp.status_code == 422

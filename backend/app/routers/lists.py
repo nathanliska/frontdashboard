@@ -384,8 +384,7 @@ async def update_item(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    if body.model_fields_set:
-        permissions.assert_can_edit(role)
+    permissions.assert_can_edit(role)
 
     for field in body.model_fields_set:
         setattr(item, field, getattr(body, field))

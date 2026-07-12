@@ -206,3 +206,12 @@ async def test_event_shares_are_dashboard_managed(auth_client: AsyncClient) -> N
     delete_resp = await auth_client.delete(f"/api/calendar/events/{event['id']}/shares/{share_id}")
     assert delete_resp.status_code == 409
     assert delete_resp.json()["detail"] == "Event permissions are managed on the parent dashboard"
+
+
+async def test_empty_event_patch_is_rejected(auth_client: AsyncClient) -> None:
+    dashboard = await _make_dashboard(auth_client)
+    event = await _make_event(auth_client, dashboard["id"])
+
+    _csrf(auth_client)
+    resp = await auth_client.patch(f"/api/calendar/events/{event['id']}", json={})
+    assert resp.status_code == 422
