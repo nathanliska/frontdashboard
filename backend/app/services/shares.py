@@ -24,6 +24,7 @@ async def load_dashboard_access(
     db: AsyncSession,
     *,
     allow_archived: bool = False,
+    lock_for_update: bool = False,
 ) -> tuple[Dashboard, list[ResourceShare], ShareRole | None]:
     # Dashboard-scoped resources should load parent access through this helper so
     # archived dashboards automatically hide their child content unless a route
@@ -32,7 +33,11 @@ async def load_dashboard_access(
     if not allow_archived:
         dashboard_filters.append(Dashboard.archived.is_(False))
 
-    result = await db.execute(select(Dashboard).where(*dashboard_filters))
+    dashboard_query = select(Dashboard).where(*dashboard_filters)
+    if lock_for_update:
+        dashboard_query = dashboard_query.with_for_update()
+
+    result = await db.execute(dashboard_query)
     dashboard = result.scalar_one_or_none()
     if dashboard is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")

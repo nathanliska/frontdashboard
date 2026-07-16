@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import case, delete, literal, or_, select
+from sqlalchemy import case, delete, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -749,12 +749,24 @@ async def add_widget(
                     detail="Invalid list type",
                 ) from exc
 
+            # GET /lists orders all non-deleted lists (archived ones included), so
+            # the append position must be computed over that same set to land
+            # truly last (mirrors create_list's identical append-order fix).
+            max_order_result = await db.execute(
+                select(func.max(List.sort_order)).where(
+                    List.dashboard_id == dashboard.id,
+                    List.deleted_at.is_(None),
+                )
+            )
+            next_order = (max_order_result.scalar_one() or -1) + 1
+
             created_list = List(
                 dashboard_id=dashboard.id,
                 created_by=current_user.id,
                 updated_by=current_user.id,
                 name=list_name,
                 list_type=list_type,
+                sort_order=next_order,
             )
             db.add(created_list)
             await db.flush()

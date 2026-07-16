@@ -274,6 +274,35 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
     assert detail_resp.json()["layout"] == []
 
 
+async def test_widget_created_list_appends_last_after_reorder(auth_client: AsyncClient) -> None:
+    """A list created via the add-widget 'new list' path must append after
+    existing lists (same append-order bug already fixed for POST /lists) —
+    not inherit sort_order=0, which would tie it for first place."""
+    dashboard = await create_dashboard(auth_client, name="Widgets")
+    lst1 = await create_list(auth_client, dashboard["id"], name="L1")
+    lst2 = await create_list(auth_client, dashboard["id"], name="L2")
+
+    set_csrf(auth_client)
+    reorder_resp = await auth_client.put(
+        "/api/lists/order",
+        json={"dashboard_id": dashboard["id"], "list_ids": [lst2["id"], lst1["id"]]},
+    )
+    assert reorder_resp.status_code == 204
+
+    set_csrf(auth_client)
+    add_resp = await auth_client.post(
+        f"/api/dashboards/{dashboard['id']}/widgets",
+        json={"widget_type": "list", "config": {"name": "Errands", "list_type": "todo"}},
+    )
+    assert add_resp.status_code == 201
+    widget = add_resp.json()["widgets"][0]
+
+    lists = (await auth_client.get(f"/api/lists?dashboard_id={dashboard['id']}")).json()
+    assert lists[-1]["id"] == widget["resource_id"]
+    assert lists[-1]["sort_order"] == max(item["sort_order"] for item in lists)
+    assert lists[-1]["sort_order"] == 2
+
+
 async def test_calendar_widget_uses_small_default_layout(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Calendar Widgets")
 

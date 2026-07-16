@@ -13,11 +13,13 @@ from app.models.list import List, ListItem
 from app.models.share import ResourceShare, ResourceType, ShareRole
 from app.models.user import User
 from app.schemas.lists import (
+    ItemReorder,
     ListCreate,
     ListDetailResponse,
     ListItemCreate,
     ListItemResponse,
     ListItemUpdate,
+    ListReorder,
     ListResponse,
     ListUpdate,
 )
@@ -111,6 +113,7 @@ def _list_response(lst: List, item_count: int) -> ListResponse:
         dashboard_id=lst.dashboard_id,
         name=lst.name,
         list_type=lst.list_type,
+        sort_order=lst.sort_order,
         archived=lst.archived,
         created_by=lst.created_by,
         created_at=lst.created_at,
@@ -152,8 +155,25 @@ async def create_list(
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse:
     """Create a list on a dashboard the caller can edit."""
-    dashboard, shares, role = await load_dashboard_access(body.dashboard_id, current_user, db)
+    # Lock the parent dashboard row so concurrent creates don't race to pick the
+    # same append sort_order (mirrors create_item's per-list lock).
+    dashboard, shares, role = await load_dashboard_access(
+        body.dashboard_id,
+        current_user,
+        db,
+        lock_for_update=True,
+    )
     permissions.assert_can_edit(role)
+
+    # GET /lists orders all non-deleted lists (archived ones included), so the
+    # append position must be computed over that same set to land truly last.
+    max_order_result = await db.execute(
+        select(func.max(List.sort_order)).where(
+            List.dashboard_id == dashboard.id,
+            List.deleted_at.is_(None),
+        )
+    )
+    next_order = (max_order_result.scalar_one() or -1) + 1
 
     lst = List(
         dashboard_id=dashboard.id,
@@ -161,6 +181,7 @@ async def create_list(
         updated_by=current_user.id,
         name=body.name,
         list_type=body.list_type,
+        sort_order=next_order,
     )
     db.add(lst)
     await db.flush()
@@ -217,6 +238,52 @@ async def list_lists(
     return [_list_response(lst, counts.get(lst.id, 0)) for lst in lists]
 
 
+@router.put("/order", status_code=status.HTTP_204_NO_CONTENT)
+async def reorder_lists(
+    body: ListReorder,
+    client_mutation_id: ClientMutationIdHeader = None,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Atomically renumber a dashboard's non-archived lists to the submitted order."""
+    dashboard, shares, role = await load_dashboard_access(body.dashboard_id, current_user, db)
+    permissions.assert_can_edit(role)
+
+    lists_result = await db.execute(
+        select(List)
+        .where(
+            List.dashboard_id == body.dashboard_id,
+            List.deleted_at.is_(None),
+            List.archived.is_(False),
+        )
+        .order_by(List.id)
+        .with_for_update()
+    )
+    lists = {lst.id: lst for lst in lists_result.scalars().all()}
+
+    if set(body.list_ids) != set(lists.keys()):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lists changed, please retry")
+
+    for position, list_id in enumerate(body.list_ids):
+        lst = lists[list_id]
+        lst.sort_order = position
+        lst.updated_by = current_user.id
+
+    event_message = await _build_list_event_message(
+        db,
+        event_type=EventType.list_reordered,
+        current_user=current_user,
+        dashboard=dashboard,
+        entity_type="dashboard",
+        entity_id=body.dashboard_id,
+        payload={"list_ids": [str(i) for i in body.list_ids]},
+        client_mutation_id=client_mutation_id,
+    )
+    await db.commit()
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+
+
 @router.get("/{list_id}", response_model=ListDetailResponse)
 async def get_list(
     list_id: uuid.UUID,
@@ -234,6 +301,7 @@ async def get_list(
         dashboard_id=lst.dashboard_id,
         name=lst.name,
         list_type=lst.list_type,
+        sort_order=lst.sort_order,
         archived=lst.archived,
         created_by=lst.created_by,
         created_at=lst.created_at,
@@ -440,6 +508,44 @@ async def delete_item(
         client_mutation_id=client_mutation_id,
     )
     item.deleted_at = datetime.now(UTC)
+    await db.commit()
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+
+
+@router.put("/{list_id}/items/order", status_code=status.HTTP_204_NO_CONTENT)
+async def reorder_items(
+    list_id: uuid.UUID,
+    body: ItemReorder,
+    client_mutation_id: ClientMutationIdHeader = None,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Atomically renumber a list's items to the submitted order."""
+    lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db, lock_for_update=True)
+    permissions.assert_can_edit(role)
+
+    items_result = await db.execute(select(ListItem).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)))
+    items = {item.id: item for item in items_result.scalars().all()}
+
+    if set(body.item_ids) != set(items.keys()):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="List changed, please retry")
+
+    for position, item_id in enumerate(body.item_ids):
+        item = items[item_id]
+        item.sort_order = position
+        item.updated_by = current_user.id
+
+    event_message = await _build_list_event_message(
+        db,
+        event_type=EventType.list_item_reordered,
+        current_user=current_user,
+        dashboard=dashboard,
+        entity_type="list_item",
+        entity_id=list_id,
+        payload={"list_id": str(list_id), "item_ids": [str(i) for i in body.item_ids]},
+        client_mutation_id=client_mutation_id,
+    )
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
 

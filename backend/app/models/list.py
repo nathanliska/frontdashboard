@@ -2,7 +2,18 @@ import enum
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +37,7 @@ class List(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_lists_dashboard_id", "dashboard_id", "deleted_at"),
         Index("ix_lists_created_by", "created_by", "deleted_at"),
+        CheckConstraint("sort_order >= 0", name="ck_lists_sort_order_nonneg"),
     )
 
     dashboard_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dashboards.id"), nullable=False)
@@ -43,6 +55,7 @@ class ListItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_list_items_list_id", "list_id", "sort_order", "deleted_at"),
         Index("ix_list_items_assigned_to", "assigned_to", "checked", "deleted_at"),
+        CheckConstraint("sort_order >= 0", name="ck_list_items_sort_order_nonneg"),
     )
 
     list_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("lists.id"), nullable=False)

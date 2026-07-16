@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.list import ItemPriority, ListType
 from app.schemas.common import PatchModel
@@ -25,6 +25,7 @@ class ListResponse(BaseModel):
     dashboard_id: uuid.UUID
     name: str
     list_type: ListType
+    sort_order: int
     archived: bool
     created_by: uuid.UUID
     created_at: datetime
@@ -43,11 +44,33 @@ class ListItemCreate(BaseModel):
 class ListItemUpdate(PatchModel):
     text: str | None = Field(None, min_length=1, max_length=2000)
     checked: bool | None = None
-    sort_order: int | None = None
     due_date: date | None = None
     priority: ItemPriority | None = None
     category: str | None = Field(None, max_length=100)
     assigned_to: uuid.UUID | None = None
+
+
+def _reject_duplicate_ids(value: list[uuid.UUID]) -> list[uuid.UUID]:
+    if len(set(value)) != len(value):
+        raise ValueError("ids must be unique")
+    return value
+
+
+class ItemReorder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+
+    _no_dupes = field_validator("item_ids")(_reject_duplicate_ids)
+
+
+class ListReorder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dashboard_id: uuid.UUID
+    list_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+
+    _no_dupes = field_validator("list_ids")(_reject_duplicate_ids)
 
 
 class ListItemResponse(BaseModel):
