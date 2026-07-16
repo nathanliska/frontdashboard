@@ -84,8 +84,10 @@ Same pattern, scoped to the dashboard's non-deleted, **non-archived** lists. Ren
 > the user can re-drag.
 
 ### Schemas (`schemas/lists.py`)
-- New `ItemReorder { item_ids: list[UUID]; client_mutation_id: str | None }`.
-- New `ListReorder { dashboard_id: UUID; list_ids: list[UUID]; client_mutation_id: str | None }`.
+- New `ItemReorder { item_ids: list[UUID] }`.
+- New `ListReorder { dashboard_id: UUID; list_ids: list[UUID] }`.
+- `client_mutation_id` is **not** a body field — it rides the existing
+  `X-Client-Mutation-Id` header (`ClientMutationIdHeader`), like every other list mutation.
 - Add `sort_order: int` to `ListResponse` (already on `ListItemResponse`).
 - **Boundary validation (satisfies review-findings #14's reorder slice):** both DTOs use
   `extra='forbid'`; `*_ids` is a non-empty list (`min_length=1`) with a sane upper bound and
@@ -96,6 +98,13 @@ Same pattern, scoped to the dashboard's non-deleted, **non-archived** lists. Ren
   persistence" concern for items — arbitrary `sort_order` can no longer be PATCHed in. The
   frontend `apiUpdateItem`/`updateListItem` already only send `{ text?, checked? }`, so no
   client contract breaks.
+
+### Models / migration (`models/list.py` + Alembic)
+- Add `CheckConstraint("sort_order >= 0")` to both `List` and `ListItem` `__table_args__`
+  (named `ck_lists_sort_order_nonneg` / `ck_list_items_sort_order_nonneg`) **and** a
+  hand-authored migration adding them. The constraint lives in the ORM `__table_args__` so the
+  test suite (`Base.metadata.create_all`) enforces it, and in a migration so production does.
+- No column migration for `sort_order` itself — the columns already exist.
 
 ### Activity / SSE (`models/activity.py`)
 - Add `EventType` values `list.reordered` and `list.item.reordered`.
@@ -207,22 +216,34 @@ Since `sort_order` is removed from `ListItemUpdate`, confirm the existing empty-
 
 ## Relation to review-findings.md
 
-This work closes the **reorder-input slice of finding #14** ("Validate … and reorder inputs
-at the boundary"). Finding #14 called for "a transactional bulk-reorder DTO"; the changelog
-note (review-findings.md, lines 58-61) had dropped that DTO only because no bulk-reorder
-endpoint existed yet, and left `sort_order ge=0` open. These endpoints supply exactly that
-transactional, boundary-validated bulk-reorder path, and removing `sort_order` from
-`ListItemUpdate` closes the negative/duplicate-sort-order-via-PATCH concern for items.
+This work closes two intersecting slices of the backlog, since they cover exactly the surface
+the reorder feature touches:
 
-#14 is unphased (not in the rollout table), so there is no phase row to move. **On ship:**
-add a `◐ Partially done` **Disposition** line to finding #14 (date + commit SHA(s), noting
-the reorder slice + `sort_order` PATCH removal are done; dashboard name/layout/widget/profile
-validation remain open) and a Changelog entry — in the same commit, per the standing rule.
-The dashboard-layout reorder concern (finding #11) is **not** touched here.
+- **Finding #14** ("Validate … and reorder inputs at the boundary") called for "a
+  transactional bulk-reorder DTO"; the changelog note (review-findings.md, lines 58-61)
+  dropped that DTO only because no bulk-reorder endpoint existed yet, and left
+  `sort_order ge=0` open. These endpoints supply exactly that transactional,
+  boundary-validated bulk-reorder path (`extra='forbid'`, non-empty, no-duplicate ids), and
+  removing `sort_order` from `ListItemUpdate` closes the negative/duplicate-sort-order-via-
+  PATCH concern for items.
+- **Finding #30** ("Put remaining domain invariants in PostgreSQL", `list.py:41-58`) wants
+  nonnegative ordering constraints. We add `sort_order >= 0` CHECK constraints on both `lists`
+  and `list_items` (model `__table_args__` + a migration) — which also lands the **DB half of
+  #14's `sort_order ge=0`**. Since the endpoints renumber to `0…n-1`, the constraint is a
+  defensive invariant against direct SQL / future code, not a behavior change.
+
+Both findings are in the unscheduled backlog row (not a numbered phase), and both are only
+**partially** addressed here (the sort-order slices), so their backlog-row membership stays;
+the detail rides on the Disposition lines. **On ship (same commit as the code, per the
+standing rule):** add `◐ Partially done` **Disposition** lines to #14 and #30 with date +
+SHA(s) noting exactly which slices landed and what remains, plus a Changelog entry. The
+dashboard-layout reorder concern (finding #11) and the rest of #14/#30 are **not** touched
+here.
 
 ## Out of scope / deferred
 - Reordering inside the dashboard `ListWidget`.
 - Auto-sink of checked items (explicitly rejected — stay in place).
 - Cross-list item moves (drag an item from one list into another).
 - The rest of finding #14 (dashboard name bounds, typed layout/widget config, `ProfileUpdate`,
-  bounded headers) — separate work, left open.
+  bounded headers) and #30 (widget-resource paired fields, assignee-in-audience, calendar
+  override membership) — separate work, left open.
