@@ -1,5 +1,8 @@
 # Docs Overhaul — Design (2026-07-11)
 
+**Status:** ✅ Shipped — docs restructure + review tracker landed 2026-07-14 (`3b45f1e`); CONTEXT.md
+rewrite and Phase 1 close-out completed 2026-07-16.
+
 ## Goal
 Make the repo's agent-facing documentation reflect reality and stay maintainable. The old
 CLAUDE.md was a scaffold-era stub, CONTEXT.md was a build-step checklist frozen at "v1.0

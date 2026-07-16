@@ -7,7 +7,7 @@ for agents working in this repo.
 
 ## Architecture (3 layers)
 - `backend/` — Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 16.
-- `frontend/` — React 18 + TypeScript, Vite, Tailwind CSS, Zustand stores, react-grid-layout v2.
+- `frontend/` — React 19 + TypeScript, Vite, Tailwind CSS, Zustand stores, react-grid-layout v2.
 - Infra — Docker Compose (dev + prod variants), Caddy reverse proxy (prod), `uv` (Python),
   `npm` (Node).
 
@@ -29,15 +29,19 @@ make audit-fix   # apply npm audit fixes (frontend)
   frontend build on every push and PR. Keep it green.
 
 ## Key architecture decisions
-- **Visibility model**: every scoped record has `visibility` (private/shared) + `group_id`
-  (null for private), enforced by a DB check constraint. Soft delete via `deleted_at`.
+- **Sharing model** (groups were removed): per-resource `ResourceShare` rows — dashboards are
+  shared directly with users (viewer/editor, owner = creator); lists and calendar events
+  **inherit** access from the dashboard whose widget binds them (their `/shares` endpoints are
+  deliberate 409 stubs). Soft delete via `deleted_at` on lists/items/events; dashboards are
+  hard-deleted.
 - **Auth**: JWT in HttpOnly cookies + CSRF double-submit pattern. No localStorage tokens.
-  Email verification + password reset flows exist; emails send in background tasks.
+  Email verification (required for login) + password reset flows; emails send in
+  background tasks.
 - **Real-time**: SSE (not WebSocket), single multiplexed connection per user.
 - **State**: Zustand stores shared between widgets and full pages. REST for initial fetch,
   SSE for incremental updates.
-- **Dashboards**: multiple per user/group, react-grid-layout with a version integer for
-  conflict detection (stale layout save → 409).
+- **Dashboards**: multiple per user, favorites + archiving, react-grid-layout with a version
+  integer for conflict detection (stale layout save → 409).
 
 ## HARD RULES (standing user constraints — do not violate)
 - **Confirm before commit AND before push** — the user reviews the files first, every time.
@@ -58,25 +62,18 @@ normalization), commit-msg (Conventional Commit enforcement — types: `feat`, `
 `refactor`, `chore`, `test`, `ci`, `perf`, `style`, `build`, `revert`).
 
 ## Where to read more
-**[CONTEXT.md](CONTEXT.md)** — current project state (what's built / in flight / deferred);
-read it first to orient, and keep it updated as features land.
+- **[CONTEXT.md](CONTEXT.md)** — current project state (built / in flight / deferred). Read it
+  first to orient.
+- `docs/references/` — standing policy + living reference docs; `docs/designs/` — in-flight
+  work; `docs/shipped/` — closed work. A doc moves to `shipped/` only when fully done.
+- `backend/CLAUDE.md` and `frontend/CLAUDE.md` — stack-specific conventions and gotchas
+  (auto-loaded when working in those trees).
 
-`docs/` is split by type into three sibling folders:
-- **`docs/references/`** — standing policy + living reference docs (never "done"):
-  `original-plan.md` (the historical v1 spec — intent and roadmap; diverged in places),
-  `review-findings.md` (rolling dated review log — findings + their dispositions).
-- **`docs/designs/`** — active design and in-flight work.
-- **`docs/shipped/`** — full design docs for completed features (work closed).
-
-Don't bucket by guesswork: a doc moves to `shipped/` only when its work is fully done;
-anything with an in-flight remainder lives in `designs/`; standing policy or a cited
-reference goes in `references/`.
-
-## Design review remediation (active)
-The 2026-07-11 review in `docs/references/review-findings.md` is being remediated
-**security-first, one theme per phase**. Each phase has a spec + plan in `docs/designs/`
-(`security-quick-wins-*` = Phase 1). `review-findings.md` holds the live rollout
-tracker (phase → findings → status) and per-finding **Disposition** lines.
-- **When a finding ships (or is deferred), update its `Disposition` line AND the rollout-status
-  table in `review-findings.md` in the same change** — with date and commit SHA(s). Don't let
-  the tracker drift from `git log`.
+## Documentation updates (which doc to touch, when)
+- **Feature lands or is deliberately deferred** → fold its *current behavior* into the right
+  CONTEXT.md section (it's a snapshot, not a changelog).
+- **Review finding ships/defers, or a remediation phase closes** → follow the update protocol
+  at the top of `docs/references/review-findings.md` (dispositions, rollout table, doc moves).
+  The 2026-07-11 review is remediated **security-first, one theme per phase**; that file is
+  the live tracker.
+- **New standing rule or gotcha discovered** → this file (or the stack CLAUDE.md it belongs to).

@@ -3,7 +3,7 @@
 **Date:** 2026-07-11
 **Source:** `docs/references/review-findings.md` findings #3, #4, #5
 **Phase:** 1 of the security-first rollout of the review backlog
-**Status:** Approved for planning
+**Status:** ✅ Shipped 2026-07-12 — #3 (`f1fdc11`, fixup `ac9f197`), #4 (`c879165`), #5 (`ed690c0`). Dispositions in `docs/references/review-findings.md`.
 
 ## Theme
 

@@ -5,8 +5,14 @@ Reviewed 2026-07-11. This review covers the tracked FastAPI/SQLAlchemy backend, 
 ## Rollout status
 
 Remediation runs **security-first, one theme per phase**; each phase gets its own spec + plan in
-`docs/designs/` and its findings are dispositioned inline below when shipped. Update this table and the
-finding's **Disposition** line whenever a finding ships or is deferred.
+`docs/designs/`.
+
+**Update protocol (do these in the same change — don't let this doc drift from `git log`):**
+- When a finding ships or is deferred: update its **Disposition** line below (date + commit SHA(s)
+  + one line on what actually shipped) AND the phase row in the rollout table.
+- When a phase closes: add a dated **Changelog** entry, then `git mv` its spec + plan to
+  `docs/shipped/` with their `Status:` lines flipped to shipped (date + SHAs).
+- New review pass = append a new dated section; never overwrite prior findings.
 
 | Phase | Theme | Findings | Status |
 |------:|-------|----------|--------|
@@ -18,7 +24,7 @@ finding's **Disposition** line whenever a finding ships or is deferred.
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
 | — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39 | ◻ Triage |
 
-Phase specs/plans: `docs/designs/security-quick-wins-design.md` + `-plan.md`.
+Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
 
 ### Changelog
 - **2026-07-12** — Phase 1 shipped: #3 (`f1fdc11`, fixup `ac9f197`), #4 (`c879165`), #5 (`ed690c0`).

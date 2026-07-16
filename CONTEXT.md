@@ -1,97 +1,75 @@
-# FrontDashboard — Working Context
+# FrontDashboard — Current State
 
-## Completed Phase
-**All 19 steps complete**
+> **This is a CURRENT-STATE doc, not a changelog.** When a feature lands, fold its *current
+> behavior* into the right section below; don't append dated entries. Remove what no longer
+> exists. Live remediation status lives in `docs/references/review-findings.md`.
 
-## Implementation Order (from PLAN.md §13)
-- [x] 1. Repository + git setup
-- [x] 2. Project scaffolding (Docker Compose, Caddy, FastAPI hello world, Vite hello world, .env.example)
-- [x] 3. Database + migrations (Alembic, initial schema)
-- [x] 4. Auth (registration, login, JWT cookies, refresh, CSRF, rate limiting)
-- [x] 5. Group management (create group, invites, join/leave, roles)
-- [x] 6. Permissions service
-- [x] 7. Sidebar layout
-- [x] 8. Lists module (backend)
-- [x] 9. Lists module (frontend)
-- [x] 10. Activity events
-- [x] 11. SSE infrastructure
-- [x] 12. Real-time list sync
-- [x] 13. Notifications
-- [x] 14. Dashboard system
-- [x] 15. Private dashboard (revised — see design note above)
-- [x] 16. Group dashboards page (merged into unified dashboard listing in Step 15)
-- [x] 17. List widget
-- [x] 18. Additional widgets (clock, welcome/status)
-- [x] 19. Polish
+_Last updated: 2026-07-16_
 
-## Step 15 Checklist
-- [x] Migration `h6i9k7e3l1f8`: add `name`, `is_favorite`; drop both partial unique indexes
-- [x] `Dashboard` model updated; removed `Dashboard` import from `groups.py`
-- [x] Group dashboard no longer auto-created on group creation
-- [x] `DashboardCreate` accepts optional `group_id` (private or group-shared)
-- [x] `DashboardSummary` schema for listing; `DashboardUpdate` for rename/favorite
-- [x] New router endpoints: `GET /api/dashboards`, `POST /api/dashboards`, `PATCH /{id}`, `DELETE /{id}`, `GET /{id}`
-- [x] `api/dashboards.ts` — full CRUD + list
-- [x] `stores/dashboard.ts` — summaries listing + active editor state
-- [x] `DashboardsPage` — card grid, favorites section, create modal with scope picker
-- [x] `DashboardEditorPage` — individual dashboard with back button
-- [x] Routes: `/` and `/dashboards` → listing; `/dashboard/:id` → editor
-- [x] Sidebar nav updated: "Dashboards" → `/dashboards`; removed separate Groups Dashboards entry
+## What's built
 
-## Step 14 Checklist
-- [x] `DashboardWidget` ORM model added to `dashboard.py`
-- [x] Alembic migration `g5h8j6d2k0e7_add_dashboard_widgets`
-- [x] `schemas/dashboards.py` — `DashboardResponse`, `WidgetResponse`, `LayoutUpdate`, `WidgetCreate`, `WidgetConfigUpdate`
-- [x] `routers/dashboards.py` — GET private/group, PUT layout (version conflict → 409), POST/PATCH/DELETE widgets
-- [x] Private dashboard auto-created on register (already in place); group dashboard on group creation (already in place)
-- [x] Dashboard router registered in `main.py`
-- [x] `react-grid-layout` added to `package.json` (run `npm install`)
-- [x] `api/dashboards.ts` — all API calls
-- [x] `stores/dashboard.ts` — Zustand store with conflict state
-- [x] `components/dashboard/WidgetContainer.tsx` — drag handle, remove button
-- [x] `components/dashboard/DashboardGrid.tsx` — WidthProvider + debounced layout save
-- [x] `components/dashboard/AddWidgetModal.tsx` — widget type picker
-- [x] `DashboardPage.tsx` — grid + conflict banner + add widget modal
+**Auth & account**
+- Registration → email verification (required before login) → JWT session in HttpOnly cookies
+  with CSRF double-submit; single-use rotating refresh tokens (7d) + 15-min access tokens.
+- Password reset via email (revokes all refresh tokens); authenticated password change and
+  profile rename (both re-issue the access cookie). Rate limits on all auth endpoints.
+- Emails send via Resend in background tasks; without an API key the sender logs the link
+  (how you get tokens locally). HTML templates exist for both flows.
+- Profile page: display name, password change, home-dashboard preference.
 
-## Dashboard Design Revision (diverges from PLAN.md)
+**Dashboards & widgets**
+- Multiple dashboards per user; default "My Dashboard" created on registration. Listing page
+  with favorites, create modal, archive (badge + section + editor banner), hard delete (also
+  removes owned lists/items/events/widgets/shares).
+- Editor: react-grid-layout drag/resize, debounced saves with optimistic version → 409
+  conflict banner + reload resolution; settings modal (rename/archive/share).
+- Widget types: **list** (bind existing or auto-create), **clock**, **calendar**, **agenda**
+  (today/overdue/upcoming). Add-widget wizard picks type → resource where applicable.
 
-Original PLAN.md had one auto-created private dashboard per user and one per group.
-**Revised design:**
-- Multiple dashboards per user and per group; both partial unique indexes dropped
-- One default "My Dashboard" auto-created on user registration as a starting point
-- **No** group dashboard auto-created on group creation — groups create them manually
-- Dashboard listing page (`/dashboards`): shows personal + group dashboards, create button, favorites section
-- Navigate to `/dashboard/:id` to view/edit a specific dashboard
-- **On creation**: user picks private or shared (and which group for shared)
-- **Scope change** (private↔shared): planned future feature — not yet implemented
-- `dashboards` table additions: `name VARCHAR(100)`, `is_favorite BOOL`
+**Sharing** (groups feature was removed — per-resource shares replaced it)
+- Dashboards are shared directly with users (search by name/email) as viewer/editor; owner =
+  creator. Lists and calendar events inherit access from the dashboard that binds them; their
+  `/shares` endpoints are deliberate 409 stubs. Share/unshare and archiving notify affected
+  users and clean up their preferences.
 
-## Step 17 Checklist
-- [x] `ListWidget.tsx` — check/uncheck, add item, progress bar, size-aware (ResizeObserver), soft-fail on deleted list
-- [x] `WidgetRenderer.tsx` — dispatches by `widget_type`; routes `list` → `ListWidget`, others → placeholder
-- [x] `WidgetContainer.tsx` — now uses `WidgetRenderer` instead of type label placeholder
-- [x] `AddWidgetModal.tsx` — two-step flow: pick type → for `list`, pick specific list; passes `resource_type`/`resource_id`
-- [x] `DashboardEditorPage.tsx` — updated to pass full `AddWidgetParams`
+**Lists**
+- Master/detail lists UI with nested routes + mobile slide nav; items support check, due date,
+  priority, category, assignee, manual sort order. Lists must be archived before delete (409
+  otherwise); delete cleans up bound widgets and shares. Soft delete throughout.
 
-## Step 18 Checklist
-- [x] `ClockWidget.tsx` — live ticking time + date, size-aware (hides seconds + date when tiny)
-- [x] `WelcomeWidget.tsx` — time-of-day greeting + user first name + date
-- [x] `WidgetRenderer.tsx` — clock and welcome registered; switch-case dispatch
+**Calendar**
+- Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration
+  toolbar, all-day, timezones; per-occurrence overrides and cancellation. Occurrence expansion
+  over a required window (max 366 days).
 
-## Step 19 Checklist
-- [x] Security headers middleware (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) on all responses
-- [x] Toast system: `stores/toast.ts` + `components/ui/Toaster.tsx` (auto-dismiss 4s, manual dismiss, success/error/info types)
-- [x] Confirm dialog: `stores/confirm.ts` + `components/ui/ConfirmDialog.tsx` (promise-based `await confirm(msg)`, usable from anywhere)
-- [x] `AppShell` mounts `<Toaster>` + `<ConfirmDialog>` globally
-- [x] `stores/dashboard.ts` + `stores/lists.ts` — all async actions wrapped in try/catch with `toast.error()`
-- [x] `WidgetContainer`: widget header shows meaningful labels (`list_name` from config, "Clock", "Welcome")
-- [x] `DashboardEditorPage`: `loadError` state shows "not found / no access" message with back link
-- [x] Delete dashboard, remove widget: guarded with `await confirm(...)` before executing
-- [x] `ListsPage`: auto-opens list on mount when navigated from a widget deep-link (`location.state.openListId`)
-- [x] `stores/toast.ts` — added architecture comments explaining hook vs. `getState()` usage pattern
+**Notifications & activity**
+- In-app inbox (unread-first, mark one/all read) with live SSE push; activity feed of the
+  caller's own events, keyset-paginated, hiding noisy event types by default.
 
-## Current Phase
-**All 19 steps complete**
+**Real-time (SSE)**
+- One multiplexed `EventSource('/api/sse')` per user; in-memory manager with bounded queues,
+  `connected` priming event, `resync` on reconnect with `Last-Event-ID`. Frontend routes
+  events to Zustand stores / scoped-query resource caches with client-mutation-id echo
+  suppression.
 
-## Open Questions / Decisions Pending
-- None currently
+**Infra / tooling**
+- Docker Compose dev + prod, Caddy in prod (behind Cloudflare), named volumes, health checks.
+- CI: lint (Ruff/Biome), tests (pytest via Testcontainers, Vitest), `ty` type check, frontend
+  build. Pre-commit hooks incl. Conventional Commit enforcement. Dependabot grouped/monthly.
+
+## In flight
+
+- **Design-review remediation** (see the live tracker in
+  `docs/references/review-findings.md`): Phase 1 (security quick wins #3/#4/#5) shipped
+  2026-07-12. **Phase 2 — auth/session hardening (#1, #6, #7, #8, #13, #31) is next**; no
+  spec/plan written yet.
+
+## Deliberately deferred / known dead code
+
+- Review-findings backlog phases 3–6 + unscheduled triage bucket — tracked in the rollout
+  table, not here.
+- `CalendarReminder` model + table exist with **no** router/service usage (vestigial; slated
+  for a decision when calendar work resumes).
+- `EventType.membership_*` values are vestiges of the removed groups feature.
+- Share principal types other than `user`, and share roles beyond viewer/editor, are
+  intentionally not built.

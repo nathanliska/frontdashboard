@@ -1,5 +1,7 @@
 # Security Quick Wins (Phase 1) Implementation Plan
 
+**Status:** ✅ Shipped 2026-07-12 — all three tasks landed (#3 `f1fdc11` + fixup `ac9f197`, #4 `c879165`, #5 `ed690c0`); checkboxes ticked retroactively at close-out. Outcomes per finding in `docs/references/review-findings.md` dispositions.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close review-findings #3, #4, #5 — stop verification-link session replay, make failed list/item deletes actually fail, and reject empty PATCH bodies before auth/mutation.
@@ -32,7 +34,7 @@
 
 **Context:** `verify_email` already row-locks the token (`.with_for_update()`, auth.py:259) and already detects a used token, but on the used branch it still falls through to `_create_session(...)` (line 277), minting a new session. Resend invalidates prior tokens and only issues when unverified (auth.py:294), so once verified no unused token can exist — the sole replay vector is the consumed token itself. True concurrent-row-lock testing is deferred to the #6 phase (which builds separate-session fixtures); the lock already exists here.
 
-- [ ] **Step 1: Replace the replay test (write it failing)**
+- [x] **Step 1: Replace the replay test (write it failing)**
 
 In `backend/tests/test_auth.py`, delete `test_verify_email_allows_successful_token_replay` (lines 91-107) and add:
 
@@ -56,12 +58,12 @@ async def test_verify_email_rejects_consumed_token_replay(db_client: AsyncClient
     assert "csrf_token" not in replay.cookies
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd backend && uv run pytest tests/test_auth.py::test_verify_email_rejects_consumed_token_replay -v`
 Expected: FAIL — replay currently returns 200 with cookies.
 
-- [ ] **Step 3: Make the replay branch reject without a session**
+- [x] **Step 3: Make the replay branch reject without a session**
 
 In `backend/app/routers/auth.py`, replace the block at lines 270-277:
 
@@ -93,12 +95,12 @@ with:
 
 (The `import` for `status` is already present; `status.HTTP_409_CONFLICT` needs no new import.)
 
-- [ ] **Step 4: Run backend tests for the file**
+- [x] **Step 4: Run backend tests for the file**
 
 Run: `cd backend && uv run pytest tests/test_auth.py -v`
 Expected: PASS, including the new test and the still-valid `test_verify_email_authenticates_user` and `test_verify_email_rejects_invalidated_token_after_resend`.
 
-- [ ] **Step 5: Write the failing frontend helper test**
+- [x] **Step 5: Write the failing frontend helper test**
 
 Create `frontend/src/pages/VerifyEmailPage.test.tsx`:
 
@@ -124,12 +126,12 @@ describe('getVerificationErrorMessage', () => {
 })
 ```
 
-- [ ] **Step 6: Run it to verify it fails**
+- [x] **Step 6: Run it to verify it fails**
 
 Run: `cd frontend && npm test -- VerifyEmailPage`
 Expected: FAIL — `getVerificationErrorMessage` is not exported and has no 409 branch.
 
-- [ ] **Step 7: Export the helper and add the 409 branch**
+- [x] **Step 7: Export the helper and add the 409 branch**
 
 In `frontend/src/pages/VerifyEmailPage.tsx`, replace lines 7-12:
 
@@ -158,16 +160,16 @@ export function getVerificationErrorMessage(err: unknown) {
 
 No other change is needed: on a 409 the existing `.catch` sets `status='idle'` and shows this message, and the page already renders an "Already verified? Sign in" link (lines 112-117).
 
-- [ ] **Step 8: Run frontend test + typecheck + lint**
+- [x] **Step 8: Run frontend test + typecheck + lint**
 
 Run: `cd frontend && npm test -- VerifyEmailPage && npm run lint`
 Expected: PASS.
 
-- [ ] **Step 9: Verify the real flow (verify skill)**
+- [x] **Step 9: Verify the real flow (verify skill)**
 
 With the app running: register → click the verification link once (lands logged in on home) → click the **same** link again → the verify page shows "Your email is already verified — please sign in below." with a working Sign in link, and no session is created.
 
-- [ ] **Step 10: Commit (confirm with user first)**
+- [x] **Step 10: Commit (confirm with user first)**
 
 ```bash
 git add backend/app/routers/auth.py backend/tests/test_auth.py frontend/src/pages/VerifyEmailPage.tsx frontend/src/pages/VerifyEmailPage.test.tsx
@@ -192,7 +194,7 @@ git commit -m "fix(auth): reject consumed verification links instead of minting 
 
 **Context:** `apiDeleteList`/`apiDeleteItem` ignore `Response.ok`, so a 4xx/5xx resolves as success and the resource layer (`listData.ts` `deleteList`/`deleteListItem`) removes data from caches on a server failure. The resource layer already `try/catch`es these calls — it just never sees a rejection today. The fix is contained to the API layer. A dedicated `http.ts` module (rather than adding to `client.ts`) keeps `requestVoid` unit-testable and avoids a `client.ts`↔`auth.ts` import cycle — a refinement of the spec's "shared helper" note.
 
-- [ ] **Step 1: Write the failing helper test**
+- [x] **Step 1: Write the failing helper test**
 
 Create `frontend/src/api/http.test.ts`:
 
@@ -239,12 +241,12 @@ describe('requestVoid', () => {
 })
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd frontend && npm test -- src/api/http`
 Expected: FAIL — `./http` does not exist.
 
-- [ ] **Step 3: Create `http.ts`**
+- [x] **Step 3: Create `http.ts`**
 
 Create `frontend/src/api/http.ts`:
 
@@ -276,12 +278,12 @@ export async function requestVoid(
 }
 ```
 
-- [ ] **Step 4: Run the helper test to verify it passes**
+- [x] **Step 4: Run the helper test to verify it passes**
 
 Run: `cd frontend && npm test -- src/api/http`
 Expected: PASS.
 
-- [ ] **Step 5: Move `ApiError`/`readError` out of `auth.ts`**
+- [x] **Step 5: Move `ApiError`/`readError` out of `auth.ts`**
 
 In `frontend/src/api/auth.ts`, delete the local `ApiError` class and `readError` function (lines 20-33) and change the top imports (lines 1) so `auth.ts` imports `readError` from `http` and re-exports `ApiError`:
 
@@ -294,7 +296,7 @@ export { ApiError } from './http'
 
 Leave every existing `throw await readError(res, '...')` call site in `auth.ts` unchanged — they now use the imported `readError`.
 
-- [ ] **Step 6: Route the DELETE wrappers through `requestVoid` — write failing tests**
+- [x] **Step 6: Route the DELETE wrappers through `requestVoid` — write failing tests**
 
 Create `frontend/src/api/lists.test.ts`:
 
@@ -336,7 +338,7 @@ describe('list delete wrappers surface server failures', () => {
 Run: `cd frontend && npm test -- src/api/lists`
 Expected: FAIL — the wrappers currently ignore `ok` and resolve.
 
-- [ ] **Step 7: Implement the wrapper change**
+- [x] **Step 7: Implement the wrapper change**
 
 In `frontend/src/api/lists.ts`, add to the imports (line 1 area):
 
@@ -372,16 +374,16 @@ export async function apiDeleteItem(
 }
 ```
 
-- [ ] **Step 8: Run tests + typecheck + lint**
+- [x] **Step 8: Run tests + typecheck + lint**
 
 Run: `cd frontend && npm test -- src/api && npm run lint`
 Expected: PASS. Typecheck confirms every `ApiError` importer (e.g. `VerifyEmailPage`) still resolves via the re-export.
 
-- [ ] **Step 9: Verify the real flow (verify skill)**
+- [x] **Step 9: Verify the real flow (verify skill)**
 
 With the app running, trigger a DELETE the server rejects (e.g. delete a list you only have viewer access to, or stop the backend mid-action): the item must **not** disappear from the UI and a "Failed to delete…" toast must appear (the existing `listData.ts` catch now fires).
 
-- [ ] **Step 10: Commit (confirm with user first)**
+- [x] **Step 10: Commit (confirm with user first)**
 
 ```bash
 git add frontend/src/api/http.ts frontend/src/api/http.test.ts frontend/src/api/auth.ts frontend/src/api/lists.ts frontend/src/api/lists.test.ts
@@ -408,7 +410,7 @@ git commit -m "fix(lists): fail list/item deletes on non-2xx responses"
 
 **Context:** List-item PATCH only checks permission `if body.model_fields_set:` (lists.py:387), so a viewer can write `updated_by`/history with `{}`. Calendar already asserts `can_edit` unconditionally (calendar.py:248); dashboard asserts per-field. Rejecting `{}` at the schema layer runs before the handler (before auth/mutation) and removes the false-history path for all three uniformly.
 
-- [ ] **Step 1: REGRESSION CHECK — confirm nothing sends an empty PATCH**
+- [x] **Step 1: REGRESSION CHECK — confirm nothing sends an empty PATCH**
 
 Run:
 
@@ -419,7 +421,7 @@ rg -n "apiUpdateItem|apiUpdateList|apiUpdateEvent|apiUpdateDashboard|method: 'PA
 
 Confirm every caller of the three target endpoints always sends at least one field (known callers `apiUpdateList`/`apiUpdateItem` do). **If any legitimate caller can send `{}`, STOP and ask the user before continuing** — rejecting it would be a behavior regression.
 
-- [ ] **Step 2: Write failing backend tests**
+- [x] **Step 2: Write failing backend tests**
 
 In `backend/tests/test_lists.py`, add (this file already defines local `_make_dashboard`, `_make_list`, `_register_client`, `_csrf`, and imports `create_list_item` patterns — mirror the existing `test_shared_dashboard_viewer_cannot_mutate` at lines 101-124):
 
@@ -484,12 +486,12 @@ async def test_empty_dashboard_patch_is_rejected(auth_client: AsyncClient) -> No
 
 (Use each test file's own local helper names for creating a dashboard/event — `_make_dashboard`/`_make_event` if present, otherwise the `tests.helpers` `create_dashboard`/`create_calendar_event` functions and `set_csrf`.)
 
-- [ ] **Step 3: Run the new tests to verify they fail**
+- [x] **Step 3: Run the new tests to verify they fail**
 
 Run: `cd backend && uv run pytest tests/test_lists.py -k empty -v tests/test_calendar.py -k empty tests/test_dashboards.py -k empty`
 Expected: FAIL — empty bodies currently return 200 (and the viewer empty PATCH returns 200, silently writing audit state).
 
-- [ ] **Step 4: Add the `PatchModel` base**
+- [x] **Step 4: Add the `PatchModel` base**
 
 Create `backend/app/schemas/common.py`:
 
@@ -509,7 +511,7 @@ class PatchModel(BaseModel):
         return self
 ```
 
-- [ ] **Step 5: Apply the base to the three Update schemas**
+- [x] **Step 5: Apply the base to the three Update schemas**
 
 `backend/app/schemas/lists.py` — add `from app.schemas.common import PatchModel` to the imports and change line 42:
 
@@ -529,7 +531,7 @@ class CalendarEventUpdate(PatchModel):
 class DashboardUpdate(PatchModel):
 ```
 
-- [ ] **Step 6: Make the list-item permission check unconditional**
+- [x] **Step 6: Make the list-item permission check unconditional**
 
 In `backend/app/routers/lists.py`, replace lines 387-388:
 
@@ -546,21 +548,21 @@ with:
 
 (The following `for field in body.model_fields_set:` loop is unchanged; the empty-body case can no longer reach here.)
 
-- [ ] **Step 7: Run the target tests to verify they pass**
+- [x] **Step 7: Run the target tests to verify they pass**
 
 Run: `cd backend && uv run pytest tests/test_lists.py tests/test_calendar.py tests/test_dashboards.py -v`
 Expected: PASS, including the new empty-body/viewer tests and all pre-existing tests (e.g. `test_shared_dashboard_viewer_cannot_mutate`).
 
-- [ ] **Step 8: Full backend lint + tests**
+- [x] **Step 8: Full backend lint + tests**
 
 Run: `cd backend && uv run ruff check . && uv run pytest -q`
 Expected: PASS.
 
-- [ ] **Step 9: Verify the real flow (verify skill)**
+- [x] **Step 9: Verify the real flow (verify skill)**
 
 With the app running, send `PATCH {}` (via curl/HTTP client with CSRF) to a list item, a calendar event, and a dashboard — each returns 422, and no activity/history entry is created. A normal single-field PATCH still succeeds.
 
-- [ ] **Step 10: Commit (confirm with user first)**
+- [x] **Step 10: Commit (confirm with user first)**
 
 ```bash
 git add backend/app/schemas/common.py backend/app/schemas/lists.py backend/app/schemas/calendar.py backend/app/schemas/dashboards.py backend/app/routers/lists.py backend/tests/test_lists.py backend/tests/test_calendar.py backend/tests/test_dashboards.py

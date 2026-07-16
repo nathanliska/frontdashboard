@@ -4,14 +4,15 @@ A self-hosted dashboard app that acts as a private household operating system. S
 
 ---
 
-## Features (v1.0)
+## Features
 
-- **Private dashboard** — personal cockpit with customizable widget layout
-- **Group dashboards** — shared coordination surface for households, roommates, etc.
+- **Dashboards** — multiple per user, customizable widget layouts, favorites, archiving
+- **Sharing** — share a dashboard with other users (viewer/editor); lists and events on it
+  inherit access
 - **Lists** — checklists, grocery lists, and todos with real-time sync
-- **Real-time updates** — SSE-based live sync across all connected members
+- **Calendar** — day/week/month views, recurring events, per-occurrence edits, agenda widget
+- **Real-time updates** — SSE-based live sync across all connected users
 - **Notifications** — in-app bell with inbox and activity history
-- **Invite system** — reusable invite codes to add group members
 
 ---
 
