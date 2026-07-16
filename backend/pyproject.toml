@@ -53,5 +53,10 @@ testpaths = ["tests"]
 [tool.ty]
 environment.python-version = "3.12"
 
+[tool.uv]
+constraint-dependencies = [
+    "urllib3>=2.7.0",
+]
+
 [tool.deptry.per_rule_ignores]
 DEP002 = ["uvicorn", "asyncpg", "email-validator"]

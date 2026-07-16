@@ -3,7 +3,10 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"
     groups:
       actions:
         patterns:
@@ -12,7 +15,10 @@ updates:
   - package-ecosystem: "uv"
     directory: "/backend"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "backend"
     groups:
       backend:
         patterns:
@@ -21,7 +27,10 @@ updates:
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "frontend"
     groups:
       react:
         patterns:
