@@ -46,9 +46,12 @@ _Last updated: 2026-07-16_
   archived lists are viewable but not reorderable (the server renumbers only non-archived
   lists, so the submitted set must equal that set). The dashboard `ListWidget` is deliberately
   not reorderable — it sits inside react-grid-layout, whose own drag would conflict.
-- Reorder SSE events carry the new id order, so other clients patch their cache in place with
-  no follow-up GET (one refetch only if the payload diverges from cache). Other list events
-  still invalidate-and-refetch — see `docs/designs/sse-hardening-design.md`.
+- The hot list SSE events — reorder, plus item check/update — carry the new state (id order, or
+  the changed fields' values), so other clients patch their caches in place with no follow-up
+  GET. A refetch happens only if the payload is absent (older events) or the patched result
+  diverges from cache. Rarer events (create/delete/archive) deliberately keep
+  invalidate-and-refetch: self-healing is worth more than bytes on cold paths. See
+  `docs/shipped/sse-hardening-design.md`.
 
 **Calendar**
 - Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration
@@ -64,6 +67,15 @@ _Last updated: 2026-07-16_
   `connected` priming event, `resync` on reconnect with `Last-Event-ID`. Frontend routes
   events to Zustand stores / scoped-query resource caches with client-mutation-id echo
   suppression.
+- A client whose queue overflows is evicted with a closed sentinel, so its stream ends with a
+  `resync` and reconnects — rather than staying connected and silently deaf.
+- A stream rejected with an HTTP error status (`readyState === CLOSED`, which `EventSource`
+  never retries) refreshes the session and reconnects on exponential backoff (1s → 30s cap,
+  indefinitely), redirecting to `/login` only if the refresh itself fails. Because a fresh
+  `EventSource` sends no `Last-Event-ID`, that path asks for the resync itself; the browser's
+  own auto-retry of a network drop is left alone and resyncs via the header as before.
+- **Streams are still authenticated only at connect** — they outlive JWT expiry and session
+  revocation (finding #8's open half, Phase 2 with #7).
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind Cloudflare), named volumes, health checks.
@@ -74,7 +86,8 @@ _Last updated: 2026-07-16_
 
 - **Design-review remediation** (see the live tracker in
   `docs/references/review-findings.md`): Phase 1 (security quick wins #3/#4/#5) shipped
-  2026-07-12. **Phase 2 — auth/session hardening (#1, #6, #7, #8, #13, #31) is next**; no
+  2026-07-12. SSE hardening shipped 2026-07-16, closing #8's eviction half.
+  **Phase 2 — auth/session hardening (#1, #6, #7, #8's authz half, #13, #31) is next**; no
   spec/plan written yet.
 
 ## Deliberately deferred / known dead code

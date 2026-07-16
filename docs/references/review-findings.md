@@ -34,7 +34,12 @@ Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (mo
 - **2026-07-16** — List/item drag-and-drop reordering shipped (`8543fab`, `35a1ea5`), closing
   #14's reorder-input slice and #30's nonnegative sort-order slice (both now ◐ partial).
   Reorder SSE events patch caches from the event payload instead of refetching; generalising
-  that pattern (with #8 as its prerequisite) is designed in `docs/designs/sse-hardening-design.md`.
+  that pattern (with #8 as its prerequisite) is designed in `docs/shipped/sse-hardening-design.md`.
+- **2026-07-16** — SSE hardening shipped (`44a9e15`, `8f2028f`, `6fd1f31`): #8's **eviction half**
+  closed (#8 stays ◐ — its authorization half is the security one and moves into Phase 2 with #7).
+  Payload-carrying events now cover list item update/check, so those no longer fan a GET out to
+  every open tab. Streams rejected on an HTTP error now refresh and reconnect with backoff, and
+  ask for a resync explicitly because a fresh `EventSource` sends no `Last-Event-ID`.
 
 ## Validation pass — 2026-07-16
 
@@ -172,6 +177,19 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — End connections at token expiry and require reauthentication; optionally recheck a session version. Add a closed sentinel/flag for queue eviction and tests for overflow, expiry, cancellation, and user/session revocation.
 - **Effort / Risk** — Medium / Medium.
 - **Impact** — Prevents stale-authority data exposure and leaked streaming tasks.
+- **Disposition** — ◐ Partially done 2026-07-16 (`44a9e15`, `6fd1f31`). This finding is two
+  unrelated problems and only the **eviction** half shipped: queue overflow now drains the
+  backlog, pushes a `CLOSED_SENTINEL`, and disconnects, so the generator yields a `resync` and
+  ends instead of staying registered-but-silent; the false comment about detecting closure is
+  gone. Overflow/eviction and cancellation are tested.
+  **Still open — the authorization half**, which is the security one: `get_current_user_for_stream`
+  still authenticates only at connect, so a stream outlives JWT expiry and session revocation.
+  Deliberately held for Phase 2 with **#7**, which builds the revocation mechanism this needs —
+  doing it here would mean inventing a second revocation path for #7 to reconcile. Narrowing:
+  *share* removal is already handled (the audience is recomputed per broadcast), so the live gap
+  is expired-JWT/revoked-session only. The client-side prerequisite is now in place (`6fd1f31`):
+  a rejected stream refreshes and reconnects with backoff, so closing streams at expiry is a fix
+  rather than a 15-minute outage.
 
 ### 9. Separate canonical dashboard layout from responsive projection
 

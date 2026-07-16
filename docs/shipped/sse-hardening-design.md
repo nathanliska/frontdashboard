@@ -1,7 +1,9 @@
 # Design — SSE hardening: reliable delivery, then payload-carrying events
 
 **Date:** 2026-07-16
-**Status:** 🚧 Design — not started
+**Status:** ✅ Shipped 2026-07-16 (`44a9e15`, `8f2028f`, `6fd1f31`). All three phases landed.
+#8's authorization half was never in this doc's scope and stays open — see
+`docs/references/review-findings.md`. Deviations from this design are recorded at the bottom.
 **Findings:** #8 (bound SSE authorization / close evicted streams), #21 (durable, multi-process
 delivery), #24 (lifecycle-aware query layer). Builds on the reorder work
 (`docs/shipped/list-reordering-design.md`), which introduced the payload-carrying pattern.
@@ -108,11 +110,60 @@ depends on that guarantee.
 > (drive `_generate()` and assert termination) rather than through the ASGI client — no new
 > transport needed.
 
-### Out of scope
+### Out of scope for Phase 1
 
 Finding #21's durable/multi-process delivery (Redis pub/sub, replay-from-`event_id`). The app runs
 a single uvicorn worker today, so the module-level manager is sufficient; #21 becomes real when a
 second worker does. Phase 1 does not block it.
+
+### #8's other half — deliberately deferred, and why
+
+Finding #8 bundles **two unrelated problems**. Phase 1 fixes the eviction one (the prerequisite for
+patching). The other — *"Authentication happens only when the stream opens, so a stream can receive
+household events beyond the 15-minute JWT lifetime or after account/session revocation"* — is **not**
+addressed here. `get_current_user_for_stream` authenticates once at connect; the stream then runs
+unbounded with no re-check. **#8 must therefore be marked ◐ Partially done, never ✅.**
+
+Reasons for deferring, not dodging:
+
+- **It belongs with #7.** The rollout table puts #8 in Phase 2 (Auth/session hardening) alongside
+  #7, whose own text says "existing access tokens and SSE streams also continue." Both need the same
+  session-revocation/expiry mechanism; building it here would duplicate what #7 must build anyway.
+- **The exposure is narrower than the finding's wording.** Share removal is already handled — the
+  audience is recomputed per broadcast from current shares (`load_dashboard_access` →
+  `_dashboard_user_ids`), so revoking a share stops that dashboard's events immediately. The live
+  gap is an **expired JWT or revoked session** (logout, password change) still streaming events for
+  dashboards the user retains shares on.
+- **Closing streams at expiry without a client refresh path would cause an outage, not security.**
+  See Phase 3 — that path doesn't exist yet, so it is the honest prerequisite.
+
+---
+
+## Phase 3 — client resilience (prerequisite for bounding stream lifetime)
+
+`frontend/src/hooks/useSSE.ts` has **no `onerror` handler at all**. Consequences:
+
+- `apiFetch`'s single-flight 401 refresh (`api/client.ts:10-23`) does not help: that is `fetch`;
+  `EventSource` is a separate browser API and cannot run that flow.
+- Per the HTML spec, `EventSource` auto-retries **network** drops (`readyState === CONNECTING`) but
+  **fails permanently on an HTTP error status** such as 401 (`readyState === CLOSED`, no retry).
+- So today, if the stream is ever rejected on auth, real-time updates die silently for that tab
+  until a reload — and any future "close the stream at token expiry" (the #8 authz half) would turn
+  that into a guaranteed outage every 15 minutes.
+
+`readyState` is the discriminator the missing status code denies us:
+
+- `CONNECTING` → the browser is already retrying a transient drop. Do nothing.
+- `CLOSED` → the server rejected us. Attempt a refresh; on success reconnect; on failure send the
+  user to `/login`, exactly as `apiFetch` does.
+
+Reuse `tryRefresh` (export it from `api/client.ts`) so SSE and REST share **one** single-flight
+refresh rather than racing two. Guard against a tight reconnect loop (a refresh that succeeds while
+the stream still rejects) with a bounded retry/backoff.
+
+This is worth doing now regardless of #8: it is small, it fixes a real silent-failure today, and #7
+needs it. It does **not** by itself close #8's authz half — it makes closing it possible without an
+outage.
 
 ---
 
@@ -154,22 +205,39 @@ correct — a patch writes authoritative data — and the reorder path depends o
 The cost: clearing `stale` also **discards the record of an earlier missed event**. An entry
 marked stale by an `invalidateWhere` that skipped its fetch (no live listeners) is silently marked
 fresh again by the next patch, and that missed update is lost until a resync. Phase 2 multiplies
-the number of patching events, so it must address this rather than inherit it:
+the number of patching events, so it must address this rather than inherit it.
 
-- **Option A (preferred):** track `staleReason`; a patch clears freshness doubt only for what it
-  actually wrote, so a prior missed invalidate survives.
-- **Option B:** leave `stale` set on event-driven patches. Costs one redundant GET per patched
-  scope (not an N+1 — an earlier comment overstated this), which partly defeats the point.
+**Decision: `updateWhere` must not touch `stale` at all.** A partial patch is not a refetch, so it
+has no business resolving "the server has changes you haven't seen." `fetch` already clears
+`stale` (`scopedQuery.ts:112`) when it writes authoritative *full* data — which is the only place
+that claim is true. This supersedes the `staleReason` tracking (Option A) an earlier draft
+proposed: it is strictly simpler and needs no new field.
 
-Option A, decided with #24 in view. **Audit every `updateWhere` caller before changing the
-semantics** — the mutation paths rely on current behavior too.
+Re-examining the supposed cost of this — a redundant GET per patched scope — it mostly does not
+exist:
 
-### Ordering coupling
+- On a reorder event **nothing marks the list caches stale**; only `agendaRemindersQuery` is
+  invalidated. So `stale` is already `false`, and `fetchIfStale` short-circuits on cache whether
+  or not `updateWhere` clears it. The GET-free property survives.
+- Where an entry **is** stale, the refetch is *correct* — there is genuinely unseen server state.
 
-`useSSE.onListEvent` fans each event to the list handler, then agenda, then dashboard. The list
-handler must run first — it clears `stale`, so the agenda's `fetchIfStale` resolves from cache.
-Documented in code; keep it true, and prefer removing the coupling (via Option A) over relying on
-it.
+**Verify, don't assume:** the reorder suite already asserts "no GET" with live listeners mounted.
+Removing the `stale` write must keep those tests green; that is the acceptance check, not this
+argument. **Audit every `updateWhere` caller** (mutation paths patch with authoritative server
+responses and may rely on current behavior).
+
+### Ordering coupling — verify before preserving
+
+`useSSE.onListEvent` fans each event to the list handler, then agenda, then dashboard. A code
+comment claims the list handler must run first because its `updateWhere` clears `stale`, letting
+the agenda's `fetchIfStale` resolve from cache — and that this is what keeps reorder GET-free.
+
+Per the analysis above **that claim looks wrong**: nothing marks the list caches stale on a
+reorder event, so the agenda's `fetchIfStale` resolves from cache regardless of ordering. If
+removing the `stale` write keeps the no-GET tests green, the coupling is not load-bearing and the
+comment must be corrected rather than preserved — an inaccurate comment on shared infrastructure
+is worse than none. Confirm empirically; do not delete the comment on the strength of this
+paragraph alone.
 
 ### Contract risk (finding #23)
 
@@ -200,3 +268,35 @@ frontend test asserting the patch.
 - Converting every event "for consistency" — self-healing is worth more than bytes on rare paths.
 - Redis / multi-process delivery while a single worker is deployed (#21).
 - Dashboard layout events.
+
+---
+
+## Deviations from this design (as shipped)
+
+Recorded so the next reader trusts the code over the plan.
+
+- **Phase 3 asked for a "bounded retry/backoff"; only the backoff shipped — deliberately.** A
+  bound was implemented first (3 attempts) and rejected in review: when the refresh keeps
+  succeeding but the stream keeps being rejected, `/login` never fires and the cap leaves an app
+  that looks live while receiving nothing, recoverable only by a reload. A toast was tried and
+  rejected too — toasts auto-dismiss in 4s, which is the wrong vehicle for a permanent
+  condition. Shipped instead: exponential backoff, 1s → 30s cap, retried indefinitely. There is
+  no dead state left to notify anyone about. No jitter (a household cannot thunder).
+- **The resync-on-reconnect requirement was missed by this design entirely.** Phase 1 assumed
+  "EventSource reconnects, sends `Last-Event-ID`, the server resyncs — the existing, already-working
+  recovery path". True of the *browser's* auto-retry; false of Phase 3's reconnect, which builds a
+  **fresh** `EventSource` whose empty last-event-id means no header and therefore no server
+  resync. Phase 3 would have silently voided Phase 1's guarantee — and Phase 2's patching is
+  exactly what makes that fatal rather than merely stale. The client now requests the resync
+  itself on `connected`. Found in review, not in testing.
+- **The ordering coupling is real but not for the reason assumed.** "Verify before preserving"
+  was the right instinct. The agenda's fetcher reads the list **summaries** cache synchronously;
+  the per-list *detail* fetches sit behind an `await` and are order-insensitive. The event that
+  actually breaks is `list.deleted` (agenda-first reads the deleted list from summaries, then
+  GETs a dead id → 404), not the `list.item.checked` the test pins.
+- **`updateWhere`/`stale` Option A (a `staleReason` field) was superseded**, as noted inline: the
+  fix is simply that `updateWhere` must not touch `stale` at all.
+- **Not verified end-to-end by an agent:** the eviction path and the backoff reconnect have unit
+  coverage but were never exercised against a live multi-tab browser session. The two-tab
+  one-way-update bug that prompted this work was never root-caused; the eviction fix is a
+  plausible cause, not a proven one.
