@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { tryRefresh } from '../api/client'
 import type { Notification } from '../api/notifications'
 import { handleAgendaResourceEvent } from '../resources/agendaData'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
@@ -42,6 +43,11 @@ const CALENDAR_EVENT_TYPES = [
   'calendar.event.occurrence.cancelled',
 ] as const
 
+// Reconnect backoff: 1s, 2s, 4s … capped at 30s, retried indefinitely. No jitter — a
+// household-sized user base cannot thunder, and every tab backs off independently anyway.
+const SSE_RECONNECT_BASE_MS = 1000
+export const SSE_RECONNECT_MAX_MS = 30_000
+
 const DASHBOARD_EVENT_TYPES = [
   'dashboard.created',
   'dashboard.updated',
@@ -65,22 +71,75 @@ export function useSSE(): void {
   const addNotification = useNotificationsStore((s) => s.addFromSse)
   const loadNotifications = useNotificationsStore((s) => s.load)
   const loadUnreadCount = useNotificationsStore((s) => s.loadUnreadCount)
+  const [reconnectNonce, setReconnectNonce] = useState(0)
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const needsResyncRef = useRef(false)
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reconnectNonce is bumped after an auth-refresh succeeds purely to force teardown/recreate of the EventSource; it's never read in the effect body.
   useEffect(() => {
     if (!user) return
 
+    let cancelled = false
     const es = new EventSource('/api/sse', { withCredentials: true })
+
+    es.onerror = () => {
+      // EventSource retries transient network drops itself (readyState CONNECTING) — that
+      // covers a dropped link or a server that is down, which fail below HTTP. It does NOT
+      // retry after an HTTP error status: the spec fails the connection and sets CLOSED. So
+      // CLOSED means the server actively rejected us (expired cookie, or a 4xx/5xx bug), and
+      // it is our only signal — the error event carries no status code.
+      if (es.readyState !== EventSource.CLOSED) return
+      if (reconnectTimerRef.current !== null) return
+
+      // Back off rather than capping attempts. A cap would leave the app looking live while
+      // receiving nothing, recoverable only by a reload; retrying forever on a widening delay
+      // costs one request per 30s at worst and self-heals whenever the server does.
+      const delay = Math.min(
+        SSE_RECONNECT_BASE_MS * 2 ** reconnectAttemptsRef.current,
+        SSE_RECONNECT_MAX_MS,
+      )
+      reconnectAttemptsRef.current += 1
+
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null
+        void tryRefresh().then((ok) => {
+          // The effect was torn down (logout, unmount) while the refresh was in flight.
+          if (cancelled) return
+          if (!ok) {
+            window.location.replace('/login')
+            return
+          }
+          // A fresh EventSource has an empty last-event-id, so it sends no Last-Event-ID header
+          // and the server will NOT send a resync frame (see _should_resync_on_connect). Unlike
+          // the browser's own auto-retry, this path must therefore ask for the resync itself, or
+          // events broadcast while we were disconnected are lost from the caches for good.
+          needsResyncRef.current = true
+          setReconnectNonce((n) => n + 1)
+        })
+      }, delay)
+    }
+
+    function onConnected() {
+      reconnectAttemptsRef.current = 0
+      if (needsResyncRef.current) {
+        needsResyncRef.current = false
+        onResync()
+      }
+    }
+    es.addEventListener('connected', onConnected)
 
     function onListEvent(e: MessageEvent<string>) {
       try {
         const data = JSON.parse(e.data) as SseEvent
-        // Order matters: handleListResourceEvent must run before handleAgendaResourceEvent.
-        // handleAgendaResourceEvent invalidates agenda reminders for every list.* event, which
-        // (if an agenda is mounted) triggers fetchAgendaReminders -> loadDashboardListDetails ->
-        // fetchIfStale on list summaries/details. handleListResourceEvent's reorder branch uses
-        // updateWhere, which clears `stale` on the list caches first, so those fetchIfStale
-        // calls resolve from cache instead of re-GETting the scope we just patched. That is what
-        // keeps a reorder event GET-free for observers — don't reorder these calls.
+        // Order is load-bearing, not convention. handleAgendaResourceEvent invalidates the
+        // agenda reminders, and (if an agenda is mounted — invalidateWhere skips fetching for
+        // unobserved scopes) that fetcher, loadDashboardListDetails, reads the list SUMMARIES
+        // cache synchronously, before its first await. So summaries must already carry this
+        // event's changes. Run the agenda first and a `list.deleted` leaves the deleted list in
+        // the summaries it reads, then fetches that dead id -> 404 -> the agenda widget errors.
+        // (Only summaries is read synchronously; the per-list detail fetches sit after an await
+        // and would see patched data either way.)
         handleListResourceEvent(data)
         handleAgendaResourceEvent(data)
         handleDashboardContentEvent(data)
@@ -144,6 +203,13 @@ export function useSSE(): void {
     es.addEventListener('resync', onResync)
 
     return () => {
+      cancelled = true
+      // A pending reconnect is always obsolete here: either we are unmounting/logging out, or
+      // the effect is re-running and about to open a fresh stream itself.
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
       es.close()
     }
   }, [
@@ -153,5 +219,6 @@ export function useSSE(): void {
     addNotification,
     loadNotifications,
     loadUnreadCount,
+    reconnectNonce,
   ])
 }

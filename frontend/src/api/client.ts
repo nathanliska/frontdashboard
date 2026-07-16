@@ -7,7 +7,7 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 let refreshPromise: Promise<boolean> | null = null
 
-function tryRefresh(): Promise<boolean> {
+export function tryRefresh(): Promise<boolean> {
   if (!refreshPromise) {
     refreshPromise = fetch('/api/auth/refresh', {
       method: 'POST',
