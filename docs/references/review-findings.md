@@ -31,6 +31,10 @@ Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (mo
 - **2026-07-16** — All 39 open findings re-verified against the code (adversarial pass, 7 parallel
   reviewers). **Zero refuted**; corrections recorded below. #42's documentation sub-items closed
   by the docs commits (`3b45f1e`, `9c7f148`).
+- **2026-07-16** — List/item drag-and-drop reordering shipped (`8543fab`, `35a1ea5`), closing
+  #14's reorder-input slice and #30's nonnegative sort-order slice (both now ◐ partial).
+  Reorder SSE events patch caches from the event payload instead of refetching; generalising
+  that pattern (with #8 as its prerequisite) is designed in `docs/designs/sse-hardening-design.md`.
 
 ## Validation pass — 2026-07-16
 
@@ -216,6 +220,14 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Use trimmed bounded fields, `extra='forbid'`, typed layout items with grid limits and unique widget IDs, discriminated per-widget config/resource models, bounded headers/body size, and a transactional bulk-reorder DTO.
 - **Effort / Risk** — Medium / Medium; requires coordinated client contract updates.
 - **Impact** — Converts corrupting/runtime failures into deterministic 422s and makes OpenAPI useful.
+- **Disposition** — ◐ Partially done 2026-07-16 (`8543fab`). The reorder-input slice landed with
+  list/item reordering: `ItemReorder`/`ListReorder` DTOs (`extra="forbid"`, `min_length=1`,
+  bounded, duplicate ids rejected at the schema layer → 422) behind transactional bulk-reorder
+  endpoints that renumber under a row lock with strict id-set equality (409 otherwise);
+  `sort_order` removed from `ListItemUpdate`, so arbitrary/negative/duplicate orders can no
+  longer be PATCHed in; the `sort_order ge=0` gap is closed at the DB instead (see #30). Still
+  open: dashboard name bounds, typed layout/widget-config models, `ProfileUpdate`, bounded
+  mutation headers/body size.
 
 ### 15. Configure rate limiting for the trusted-proxy topology
 
@@ -344,6 +356,14 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Add paired-field/type/check constraints and nonnegative ordering/reminder constraints; validate assignees against active participants. Verify occurrence membership before an atomic override upsert and cover invalid, DST, monthly/yearly, and concurrent cases.
 - **Effort / Risk** — Medium / Medium.
 - **Impact** — Makes invalid states impossible or locally diagnosable.
+- **Disposition** — ◐ Partially done 2026-07-16 (`8543fab`). The nonnegative-ordering slice
+  landed with list/item reordering: `ck_lists_sort_order_nonneg` and
+  `ck_list_items_sort_order_nonneg` CHECK constraints on `lists`/`list_items`, declared in the
+  model `__table_args__` (so `create_all`-built test schemas enforce them) **and** in migration
+  `a3f7c2e9d1b4`. This also closes #14's `sort_order ge=0` gap. Still open: widget-resource
+  paired-field constraints, reminder-offset constraint (defensive-only — `calendar_reminders` is
+  dead schema, see #41), assignee-in-audience validation, and calendar override
+  occurrence-membership.
 
 ### 31. Normalize email identity and validate production security settings
 

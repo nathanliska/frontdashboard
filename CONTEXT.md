@@ -36,6 +36,19 @@ _Last updated: 2026-07-16_
 - Master/detail lists UI with nested routes + mobile slide nav; items support check, due date,
   priority, category, assignee, manual sort order. Lists must be archived before delete (409
   otherwise); delete cleans up bound widgets and shares. Soft delete throughout.
+- **Drag-and-drop reorder** (dnd-kit) of items within a list and of lists in the sidebar, via
+  drag handles with keyboard support. Order persists through two transactional endpoints
+  (`PUT /lists/{id}/items/order`, `PUT /lists/order`) that renumber `sort_order` to `0..n-1`
+  under a row lock and require the submitted id set to match exactly (409 otherwise); DB CHECK
+  constraints keep `sort_order` nonnegative. Checked items stay in place — manual order is the
+  only order. New lists append last.
+- The sidebar has an **Active/Archived** selector: Active is the default and is reorderable;
+  archived lists are viewable but not reorderable (the server renumbers only non-archived
+  lists, so the submitted set must equal that set). The dashboard `ListWidget` is deliberately
+  not reorderable — it sits inside react-grid-layout, whose own drag would conflict.
+- Reorder SSE events carry the new id order, so other clients patch their cache in place with
+  no follow-up GET (one refetch only if the payload diverges from cache). Other list events
+  still invalidate-and-refetch — see `docs/designs/sse-hardening-design.md`.
 
 **Calendar**
 - Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration

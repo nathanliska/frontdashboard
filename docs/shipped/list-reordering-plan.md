@@ -1,5 +1,7 @@
 # List & Item Reordering Implementation Plan
 
+> **Shipped 2026-07-16** (`8543fab`, `35a1ea5`). Retained for history.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let household members drag-and-drop to reorder both their lists (sidebar) and the items within a list, persisted atomically server-side and synced live to all viewers without triggering a GET storm.

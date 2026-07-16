@@ -1,8 +1,27 @@
 # Design — Reorder lists and list items (drag-and-drop)
 
 **Date:** 2026-07-16
-**Status:** 🚧 Approved design — ready for implementation
-**Related:** closes the reorder-input slice of `docs/references/review-findings.md` #14
+**Status:** ✅ Shipped 2026-07-16 — backend (`8543fab`), frontend (`35a1ea5`). Dispositions for
+#14 / #30 recorded in `docs/references/review-findings.md`.
+**Related:** closed the reorder-input slice of `docs/references/review-findings.md` #14 and the
+nonnegative sort-order slice of #30.
+
+## Deviations from this design (as shipped)
+
+- **Archived lists in the sidebar.** This design assumed archived lists could simply be excluded
+  from the reorder set. In practice `GET /lists` returns archived lists and the sidebar had no
+  hide affordance, so gating drag on "no archived shown" disabled reordering permanently after a
+  single archive. Shipped instead with an **Active/Archived selector** — Active is the default
+  and reorderable, archived viewable but not.
+- **`create_list` / `add_widget` sort_order.** Neither assigned `sort_order`, so new lists took
+  the `0` default and landed mid-sidebar after any reorder. Both now append last. Not anticipated
+  here; found in review.
+- **Observers patch, not refetch.** Kept as designed, but note it depends on `updateWhere`
+  clearing `stale` and on the list handler running before the agenda handler in `useSSE`. Both
+  are now documented in code. Generalising this pattern is designed separately in
+  `sse-hardening-design.md`.
+- **Not done:** the manual two-browser verification in Testing below was never performed by an
+  agent (non-interactive session); it was validated by the maintainer instead.
 **Surfaces:** lists sidebar (`ListsLayout`), list detail (`ListDetailPage`). Dashboard `ListWidget` is explicitly out of scope (see UX §).
 
 ## Theme
