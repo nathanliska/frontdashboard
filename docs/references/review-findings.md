@@ -28,6 +28,70 @@ Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (mo
 
 ### Changelog
 - **2026-07-12** — Phase 1 shipped: #3 (`f1fdc11`, fixup `ac9f197`), #4 (`c879165`), #5 (`ed690c0`).
+- **2026-07-16** — All 39 open findings re-verified against the code (adversarial pass, 7 parallel
+  reviewers). **Zero refuted**; corrections recorded below. #42's documentation sub-items closed
+  by the docs commits (`3b45f1e`, `9c7f148`).
+
+## Validation pass — 2026-07-16
+
+Every open finding was independently re-verified against the current code before Phase 2
+implementation. All hold. Corrections that change scope, mechanism, or line refs (read these
+before implementing the finding; anything not listed verified as written, modulo small line drift):
+
+- **#1** — also reset the *module-level* machinery in `stores/dashboard.ts` (in-flight promise,
+  request serials, debounce timer, lines 64-71); a store-fields-only reset is insufficient.
+- **#2** — the reproducible blocker is the soft-deleted list/event row itself (`dashboards.id`
+  FKs have no `ondelete`, `q6s8u0w2y4a6:121,125`); "items under a soft-deleted list" only block
+  via their parent list. Fix should also delete items of soft-deleted lists to avoid orphans.
+  `dashboard_widgets` already cascades.
+- **#8** — mechanism correction: the evicted generator is not waiting forever (it wakes every 5s
+  and TCP teardown still ends it); the defect is that queue-overflow eviction sends no closed
+  sentinel, so an evicted-but-connected client silently receives nothing. The comment in
+  `sse/manager.py` claiming the generator detects closure is false.
+- **#9** — root cause located: `handleLayoutChange` (`DashboardGrid.tsx:108-114`) has no
+  `isMobile` guard (unlike `handleLayoutStop`), letting the one-column projection pollute the
+  draft.
+- **#10** — the "failed share adds clear the search" sub-claim is not in `handleAddShare`
+  (which catches and toasts); if real, it lives in the share-search child/`useShareSearch` —
+  verify separately.
+- **#13** — call sites drifted to `auth.py:223,348,371,489,501`.
+- **#14** — partially narrowed by Phase 1: `DashboardUpdate`/`ListItemUpdate` now have
+  `PatchModel` + `extra="forbid"` (`ed690c0`). `ListCreate`/item text/passwords were already
+  bounded. There is no bulk-reorder endpoint — drop that DTO from the proposal. Still open:
+  dashboard name bounds, layout/widget-config typing, `ProfileUpdate`, sort_order `ge=0`.
+- **#15** — the multi-process bucket divergence is latent (single worker today); the live defect
+  is all users collapsing into the Caddy container's IP bucket.
+- **#16** — daily/weekly recurrence already has skip-ahead; only monthly/yearly iterate from
+  series start. A 366-day cap bounds per-event expansion but not the all-events/all-overrides
+  load.
+- **#17** — fan-out is now list-reminders-only (occurrences are one separate request) and costs
+  per cold load/invalidation, not per render.
+- **#18** — direct child-share *creation* is already blocked (409 stubs); the real complexity is
+  unrestricted string types, missing FKs, and the inherited-access query fan-out.
+- **#20** — drift is worse than written: ORM `notification.user_id` lacks the FK *and* migration
+  `f4g7i5e1h9d6` carries an orphan `group_id` column absent from the ORM. Reconcile both.
+- **#23** — error paths are now typed via `readError`; success bodies remain unvalidated casts.
+- **#25** — notification flush is already batched (only `refresh` is per-row); child row deletes
+  are already set-based — only the per-child share cleanup loops.
+- **#27** — `CreateDashboardModal` labelling is fine (`aria-labelledby` present); the gaps are
+  ConfirmDialog (hardcoded "Delete", no focus trap/restore, unlinked message), sidebar popover
+  (no `aria-expanded`/Escape), Toaster (no live region), hover-only actions.
+- **#28** — frontend already gates queries at ≥2 chars; the API still allows `min_length=1` and
+  has no rate limit or active/verified filter.
+- **#30** — the reminder-offset constraint is defensive-only (`calendar_reminders` is dead
+  schema, see #41). Extra hazard found: a bogus occurrence override persists an orphan row while
+  responding as if cancelled.
+- **#31** — `frontend_base_url` scheme validation already exists (`86472fb`); remaining scope is
+  email canonicalization, environment enum, and secret-entropy startup checks.
+- **#36** — `backend/.dockerignore` and `frontend/.dockerignore` now exist, but the frontend
+  prod image builds from the repo **root** (`deploy.sh:16-19`), which they don't cover — a root
+  `.dockerignore` is still needed. Node mismatch confirmed (CI 22 vs `node:20-alpine`).
+- **#38** — notifications are silently capped at 50, not unbounded; the unbounded-growth risk is
+  dashboards/lists collections and token/activity tables.
+- **#41** — `App.css` is an empty file (not leftover styles); all other dead surfaces confirmed.
+- **#42** — Pydantic v2 deep-copies field defaults, so the mutable-default sub-item is cosmetic,
+  not a correctness fix. When fixing the email bearer-URL logging, preserve a token-free local
+  dev affordance (it's currently the only way to get tokens locally).
 
 ## Review baseline
 
@@ -376,6 +440,7 @@ Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (mo
 - **Proposal** — Rewrite architecture/user docs around the implemented visibility model; persist only `sidebarCollapsed`; queue or explicitly reject concurrent confirms and resolve them on unmount/logout; log token-free local email guidance rather than raw bearer URLs. Also replace mutable-looking Pydantic collection defaults with factories and remove unused async/parameters such as `backend/app/routers/dashboards.py:267-274`.
 - **Effort / Risk** — Small / Low.
 - **Impact** — Improves onboarding and removes several low-cost state, security, and maintenance hazards.
+- **Disposition** — ◐ Partially done 2026-07-16 (`3b45f1e`, `9c7f148`): documentation sub-items (README/CONTEXT.md group claims, stale PLAN.md) fixed by the docs overhaul. Still open: `ui.ts` persisted mobile overlay, `confirm.ts` concurrent-confirm overwrite, `email.py` bearer-URL logging, unused async/params; Pydantic-defaults sub-item downgraded to cosmetic (v2 deep-copies defaults).
 
 ## Top 10 highest-leverage
 
