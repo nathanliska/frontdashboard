@@ -234,6 +234,9 @@ describe('ListsLayout / ListDetailPage', () => {
 
     await screen.findByText('Take out recycling')
 
+    // The list is archived, so it's hidden from the default Active sidebar view — switch to
+    // Archived to reach its row (and the Delete action, which only archived rows expose).
+    fireEvent.click(screen.getByRole('button', { name: 'Archived' }))
     fireEvent.click(screen.getByTitle('Delete'))
     fireEvent.click(screen.getByTitle('Confirm delete'))
 
@@ -263,6 +266,9 @@ describe('ListsLayout / ListDetailPage', () => {
 
     await screen.findByText('Take out recycling')
 
+    // The list is archived, so it's hidden from the default Active sidebar view — switch to
+    // Archived to reach its row (and the Delete action, which only archived rows expose).
+    fireEvent.click(screen.getByRole('button', { name: 'Archived' }))
     fireEvent.click(screen.getByTitle('Delete'))
     fireEvent.click(screen.getByTitle('Confirm delete'))
 

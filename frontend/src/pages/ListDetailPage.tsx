@@ -1,13 +1,17 @@
 import { ArrowLeft } from 'lucide-react'
+import type { ComponentProps } from 'react'
 import { useEffect } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import type { ListItem } from '../api/lists'
 import { AddItemForm } from '../components/lists/AddItemForm'
 import { EditableListName } from '../components/lists/EditableListName'
 import { ListItemRow } from '../components/lists/ListItemRow'
+import { SortableList, useSortableRow } from '../components/lists/SortableList'
 import { TypeBadge } from '../components/lists/TypeBadge'
 import {
   addListItem,
   deleteListItem,
+  reorderListItems,
   updateListItem,
   updateListName,
   useListDetail,
@@ -15,6 +19,20 @@ import {
 import { ROUTES } from '../routes'
 import { useDashboardStore } from '../stores/dashboard'
 import { toast } from '../stores/toast'
+
+type ItemHandlers = Pick<
+  ComponentProps<typeof ListItemRow>,
+  'onToggleChecked' | 'onRename' | 'onDelete'
+>
+
+function SortableItemRow({
+  item,
+  sortingEnabled,
+  ...handlers
+}: { item: ListItem; sortingEnabled: boolean } & ItemHandlers) {
+  const sortable = useSortableRow(item.id, !sortingEnabled)
+  return <ListItemRow item={item} sortable={sortingEnabled ? sortable : undefined} {...handlers} />
+}
 
 export function ListDetailPage() {
   // listId is always defined — this component only mounts when the :listId route is matched
@@ -74,6 +92,8 @@ export function ListDetailPage() {
     await updateListItem(listId, itemId, { checked })
   }
 
+  const sortingEnabled = !!detail && !detail.archived && detail.items.length >= 2
+
   if (!detail) {
     return (
       <div className="flex-1 flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40">
@@ -115,15 +135,22 @@ export function ListDetailPage() {
           <p className="text-sm text-zinc-600 px-4 py-6">No items yet.</p>
         ) : (
           <ul>
-            {detail.items.map((item) => (
-              <ListItemRow
-                key={item.id}
-                item={item}
-                onToggleChecked={handleToggleItem}
-                onRename={handleRenameItem}
-                onDelete={handleDeleteItem}
-              />
-            ))}
+            <SortableList
+              items={detail.items}
+              onReorder={(orderedIds) => void reorderListItems(listId, orderedIds)}
+              disabled={!sortingEnabled}
+            >
+              {(item) => (
+                <SortableItemRow
+                  key={item.id}
+                  item={item}
+                  sortingEnabled={sortingEnabled}
+                  onToggleChecked={handleToggleItem}
+                  onRename={handleRenameItem}
+                  onDelete={handleDeleteItem}
+                />
+              )}
+            </SortableList>
           </ul>
         )}
       </div>

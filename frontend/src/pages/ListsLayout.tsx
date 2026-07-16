@@ -1,14 +1,17 @@
 import { Plus } from 'lucide-react'
+import type { ComponentProps } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { Outlet, useMatch, useNavigate, useSearchParams } from 'react-router-dom'
 import type { ListSummary, ListType } from '../api/lists'
 import { CreateListModal } from '../components/lists/CreateListModal'
 import { ListSidebarRow } from '../components/lists/ListSidebarRow'
+import { SortableList, useSortableRow } from '../components/lists/SortableList'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import {
   archiveList,
   createList,
   deleteList,
+  reorderLists,
   updateListName,
   useListSummaries,
 } from '../resources/listData'
@@ -17,11 +20,31 @@ import { useDashboardStore } from '../stores/dashboard'
 import { toast } from '../stores/toast'
 import { cn } from '../utils/shared/cn'
 
+type SidebarRowHandlers = Pick<
+  ComponentProps<typeof ListSidebarRow>,
+  'selectedId' | 'onSelect' | 'onRename' | 'onArchive' | 'onDelete'
+>
+
+function SortableSidebarRow({
+  list,
+  sortingEnabled,
+  ...handlers
+}: { list: ListSummary; sortingEnabled: boolean } & SidebarRowHandlers) {
+  const sortable = useSortableRow(list.id, !sortingEnabled)
+  return (
+    <ListSidebarRow list={list} sortable={sortingEnabled ? sortable : undefined} {...handlers} />
+  )
+}
+
 const TYPE_FILTERS: { value: ListType | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'checklist', label: 'Checklist' },
   { value: 'grocery', label: 'Grocery' },
   { value: 'todo', label: 'Todo' },
+]
+const VIEW_FILTERS: { value: boolean; label: string }[] = [
+  { value: false, label: 'Active' },
+  { value: true, label: 'Archived' },
 ]
 const EMPTY_LISTS: ListSummary[] = []
 
@@ -35,6 +58,7 @@ export function ListsLayout() {
   const dashboardsLoading = useDashboardStore((s) => s.summariesLoading)
 
   const [typeFilter, setTypeFilter] = useState<ListType | 'all'>('all')
+  const [showArchived, setShowArchived] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
 
   const requestedDashboardId = searchParams.get('dashboard_id')
@@ -62,10 +86,26 @@ export function ListsLayout() {
   const lists = listSummariesQuery.data ?? EMPTY_LISTS
   const { loading, error: listsError } = listSummariesQuery
 
+  // The sidebar has two views — Active (default) and Archived — rather than one flat list
+  // with an "archived" badge mixed in. Archived lists stay reachable (archive/unarchive/delete
+  // depend on it) but are never reorderable.
+  const viewLists = showArchived
+    ? lists.filter((l) => l.archived)
+    : lists.filter((l) => !l.archived)
   const filteredLists =
-    typeFilter === 'all' ? lists : lists.filter((l) => l.list_type === typeFilter)
+    typeFilter === 'all' ? viewLists : viewLists.filter((l) => l.list_type === typeFilter)
   const activeDashboard = activeDashboards.find((d) => d.id === effectiveDashboardId) ?? null
   const showVisibleCreate = showCreate && Boolean(effectiveDashboardId)
+
+  // Gate list reordering to exactly the set the backend will renumber: an unfiltered Active
+  // view on a known dashboard with at least 2 rows to reorder. A type filter or the Archived
+  // view would make the optimistic set diverge from the server's non-archived set, so drag is
+  // disabled entirely (no handle) rather than offered and 409ing.
+  const canReorderLists =
+    typeFilter === 'all' &&
+    !showArchived &&
+    effectiveDashboardId != null &&
+    filteredLists.length >= 2
 
   function listUrl(id: string) {
     return `${ROUTES.listDetail(id)}${effectiveDashboardId ? `?dashboard_id=${effectiveDashboardId}` : ''}`
@@ -149,25 +189,45 @@ export function ListsLayout() {
 
       <div
         className={cn(
-          'flex items-center gap-1 shrink-0 overflow-x-auto pb-1',
+          'flex items-center gap-2 shrink-0 overflow-x-auto pb-1',
           listId && 'hidden lg:flex',
         )}
       >
-        {TYPE_FILTERS.map(({ value, label }) => (
-          <button
-            type="button"
-            key={value}
-            onClick={() => setTypeFilter(value)}
-            className={cn(
-              'shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors',
-              typeFilter === value
-                ? 'bg-zinc-700 text-zinc-100'
-                : 'text-zinc-500 hover:text-zinc-300',
-            )}
-          >
-            {label}
-          </button>
-        ))}
+        <div className="flex items-center gap-1 shrink-0">
+          {VIEW_FILTERS.map(({ value, label }) => (
+            <button
+              type="button"
+              key={label}
+              onClick={() => setShowArchived(value)}
+              className={cn(
+                'shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                showArchived === value
+                  ? 'bg-zinc-700 text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-300',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="w-px self-stretch bg-zinc-800 shrink-0" />
+        <div className="flex items-center gap-1 shrink-0">
+          {TYPE_FILTERS.map(({ value, label }) => (
+            <button
+              type="button"
+              key={value}
+              onClick={() => setTypeFilter(value)}
+              className={cn(
+                'shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors',
+                typeFilter === value
+                  ? 'bg-zinc-700 text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-300',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="relative flex-1 min-h-0 overflow-hidden lg:overflow-visible lg:flex lg:flex-row lg:gap-4">
@@ -184,22 +244,33 @@ export function ListsLayout() {
             <p className="text-sm text-zinc-600 px-1">Could not load lists.</p>
           ) : filteredLists.length === 0 ? (
             <p className="text-sm text-zinc-600 px-1">
-              {effectiveDashboardId
-                ? 'No lists on this dashboard yet.'
-                : 'Select a dashboard to load its lists.'}
+              {!effectiveDashboardId
+                ? 'Select a dashboard to load its lists.'
+                : showArchived
+                  ? 'No archived lists.'
+                  : 'No lists on this dashboard yet.'}
             </p>
           ) : (
-            filteredLists.map((list) => (
-              <ListSidebarRow
-                key={list.id}
-                list={list}
-                selectedId={listId}
-                onSelect={(id) => navigate(listUrl(id))}
-                onRename={handleRenameList}
-                onArchive={archiveList}
-                onDelete={handleDeleteList}
-              />
-            ))
+            <SortableList
+              items={filteredLists}
+              onReorder={(orderedIds) => {
+                if (effectiveDashboardId) void reorderLists(effectiveDashboardId, orderedIds)
+              }}
+              disabled={!canReorderLists}
+            >
+              {(list) => (
+                <SortableSidebarRow
+                  key={list.id}
+                  list={list}
+                  sortingEnabled={canReorderLists}
+                  selectedId={listId}
+                  onSelect={(id) => navigate(listUrl(id))}
+                  onRename={handleRenameList}
+                  onArchive={archiveList}
+                  onDelete={handleDeleteList}
+                />
+              )}
+            </SortableList>
           )}
         </div>
 

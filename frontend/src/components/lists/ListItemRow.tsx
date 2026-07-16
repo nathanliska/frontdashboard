@@ -1,4 +1,6 @@
-import { Check, Pencil, Trash2, X } from 'lucide-react'
+import type { DraggableSyntheticListeners } from '@dnd-kit/core'
+import { Check, GripVertical, Pencil, Trash2, X } from 'lucide-react'
+import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { ListItem } from '../../api/lists'
 import { cn } from '../../utils/shared/cn'
@@ -8,11 +10,19 @@ export function ListItemRow({
   onToggleChecked,
   onRename,
   onDelete,
+  sortable,
 }: {
   item: ListItem
   onToggleChecked: (itemId: string, checked: boolean) => Promise<void>
   onRename: (itemId: string, text: string) => Promise<void>
   onDelete: (itemId: string) => Promise<void>
+  sortable?: {
+    setNodeRef: (el: HTMLElement | null) => void
+    style: CSSProperties
+    attributes: Record<string, unknown>
+    listeners: DraggableSyntheticListeners
+    isDragging: boolean
+  }
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
@@ -46,7 +56,25 @@ export function ListItemRow({
   }
 
   return (
-    <li className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 border-b border-zinc-800 group last:border-0">
+    <li
+      ref={sortable?.setNodeRef}
+      style={sortable?.style}
+      className={cn(
+        'flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 border-b border-zinc-800 group last:border-0',
+        sortable?.isDragging && 'opacity-60',
+      )}
+    >
+      {sortable && (
+        <button
+          type="button"
+          {...sortable.attributes}
+          {...sortable.listeners}
+          aria-label="Reorder item"
+          className="shrink-0 p-0.5 text-zinc-600 hover:text-zinc-300 cursor-grab touch-none sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+        >
+          <GripVertical size={14} />
+        </button>
+      )}
       <button
         type="button"
         onClick={() => void onToggleChecked(item.id, !item.checked)}

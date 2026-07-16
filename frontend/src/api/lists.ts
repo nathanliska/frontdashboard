@@ -168,6 +168,38 @@ export async function apiDeleteItem(
   )
 }
 
+export async function apiReorderItems(
+  listId: string,
+  itemIds: string[],
+  options?: ListMutationOptions,
+): Promise<void> {
+  await requestVoid(
+    `/api/lists/${listId}/items/order`,
+    {
+      method: 'PUT',
+      headers: buildListMutationHeaders(options),
+      body: JSON.stringify({ item_ids: itemIds }),
+    },
+    'Failed to reorder items',
+  )
+}
+
+export async function apiReorderLists(
+  dashboardId: string,
+  listIds: string[],
+  options?: ListMutationOptions,
+): Promise<void> {
+  await requestVoid(
+    `/api/lists/order`,
+    {
+      method: 'PUT',
+      headers: buildListMutationHeaders(options),
+      body: JSON.stringify({ dashboard_id: dashboardId, list_ids: listIds }),
+    },
+    'Failed to reorder lists',
+  )
+}
+
 export async function apiGetListShares(listId: string): Promise<ResourceAccessSummary> {
   const res = await apiFetch(`/api/lists/${listId}/shares`)
   if (!res.ok) throw new Error('Failed to load list shares')

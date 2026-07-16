@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { ApiError } from '../api/http'
 import {
   apiCreateItem,
   apiCreateList,
@@ -6,6 +7,8 @@ import {
   apiDeleteList,
   apiGetList,
   apiGetLists,
+  apiReorderItems,
+  apiReorderLists,
   apiUpdateItem,
   apiUpdateList,
   type ListDetail,
@@ -45,6 +48,19 @@ const listDetailQuery = createScopedQuery<ListDetailScope, ListDetail>({
   fetcher: (scope) => apiGetList(scope.listId),
   fallbackErrorMessage: 'Failed to load list.',
 })
+
+function orderByIds<T extends { id: string }>(rows: T[], orderedIds: string[]): T[] | null {
+  if (orderedIds.length !== rows.length) return null // divergence
+  if (new Set(orderedIds).size !== orderedIds.length) return null // divergence: duplicate ids
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  const next: T[] = []
+  for (const id of orderedIds) {
+    const row = byId.get(id)
+    if (!row) return null // divergence
+    next.push(row)
+  }
+  return next
+}
 
 function getEventPayload(event: SseEvent): Record<string, unknown> | null {
   return event.payload && typeof event.payload === 'object' ? event.payload : null
@@ -299,6 +315,81 @@ export async function deleteListItem(listId: string, itemId: string): Promise<vo
   }
 }
 
+export async function reorderListItems(listId: string, orderedIds: string[]): Promise<void> {
+  const previous = listDetailQuery.getState({ listId }).data?.items ?? null
+  const { clientMutationId, options } = nextListMutationOptions()
+
+  patchListDetailById(listId, (detail) => {
+    const items = orderByIds(detail.items, orderedIds)
+    return items ? { ...detail, items } : detail
+  })
+
+  try {
+    await apiReorderItems(listId, orderedIds, options)
+  } catch (error) {
+    forgetPendingListMutation(clientMutationId)
+    if (previous) {
+      patchListDetailById(listId, (detail) => ({ ...detail, items: previous }))
+    }
+    if (error instanceof ApiError && error.status === 409) {
+      listDetailQuery.invalidateWhere((scope) => scope.listId === listId)
+      toast.error('Could not save order — refreshed.')
+    } else {
+      toast.error("Couldn't save the new order.")
+    }
+  }
+}
+
+/**
+ * Apply an Active-only list order to a full set of summaries.
+ *
+ * `orderedIds` covers only non-archived lists (the sidebar reorders the Active
+ * view, and the server renumbers only non-archived rows), while the cache holds
+ * every summary for the dashboard. Archived rows keep their stale `sort_order`
+ * and are appended after the active ones.
+ *
+ * Both the optimistic mutation and the `list.reordered` SSE branch go through
+ * here so their results cannot drift apart. Returns `null` on divergence.
+ */
+function applyActiveListOrder(rows: ListSummary[], orderedIds: string[]): ListSummary[] | null {
+  const archived = rows.filter((l) => l.archived)
+  const active = rows.filter((l) => !l.archived)
+  const orderedActive = orderByIds(active, orderedIds)
+  return orderedActive ? [...orderedActive, ...archived] : null
+}
+
+export async function reorderLists(dashboardId: string, orderedIds: string[]): Promise<void> {
+  const previous = listSummariesQuery.getState({ dashboardId }).data ?? null
+  const { clientMutationId, options } = nextListMutationOptions()
+
+  listSummariesQuery.updateWhere(
+    (scope) => scope.dashboardId === dashboardId,
+    (state) => {
+      if (!state.data) return state
+      const ordered = applyActiveListOrder(state.data, orderedIds)
+      return ordered ? { ...state, data: ordered } : state
+    },
+  )
+
+  try {
+    await apiReorderLists(dashboardId, orderedIds, options)
+  } catch (error) {
+    forgetPendingListMutation(clientMutationId)
+    if (previous) {
+      listSummariesQuery.updateWhere(
+        (scope) => scope.dashboardId === dashboardId,
+        (state) => ({ ...state, data: previous }),
+      )
+    }
+    if (error instanceof ApiError && error.status === 409) {
+      listSummariesQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
+      toast.error('Could not save order — refreshed.')
+    } else {
+      toast.error("Couldn't save the new order.")
+    }
+  }
+}
+
 export function handleListResourceEvent(event: SseEvent): void {
   if (event.event_type === 'resync') {
     listSummariesQuery.invalidateWhere(() => true)
@@ -311,6 +402,46 @@ export function handleListResourceEvent(event: SseEvent): void {
   const dashboardId = getEventDashboardId(event)
   const affectedListId = getAffectedListId(event)
   if (consumePendingListMutationEcho(event)) {
+    return
+  }
+
+  if (event.event_type === 'list.item.reordered') {
+    const payload = getEventPayload(event)
+    const itemIds = Array.isArray(payload?.item_ids) ? (payload.item_ids as string[]) : null
+    if (affectedListId && itemIds) {
+      let diverged = false
+      patchListDetailById(affectedListId, (detail) => {
+        const items = orderByIds(detail.items, itemIds)
+        if (!items) {
+          diverged = true
+          return detail
+        }
+        return { ...detail, items }
+      })
+      if (diverged) listDetailQuery.invalidateWhere((scope) => scope.listId === affectedListId)
+    }
+    return
+  }
+
+  if (event.event_type === 'list.reordered') {
+    const payload = getEventPayload(event)
+    const listIds = Array.isArray(payload?.list_ids) ? (payload.list_ids as string[]) : null
+    if (dashboardId && listIds) {
+      let diverged = false
+      listSummariesQuery.updateWhere(
+        (scope) => scope.dashboardId === dashboardId,
+        (state) => {
+          if (!state.data) return state
+          const ordered = applyActiveListOrder(state.data, listIds)
+          if (!ordered) {
+            diverged = true
+            return state
+          }
+          return { ...state, data: ordered }
+        },
+      )
+      if (diverged) listSummariesQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
+    }
     return
   }
 
@@ -342,4 +473,20 @@ export function resetListData(): void {
 export function __resetListDataForTests(): void {
   resetListData()
   __resetPendingListMutationsForTests()
+}
+
+export function __seedListDetailForTests(listId: string, detail: ListDetail): void {
+  listDetailQuery.getState({ listId })
+  listDetailQuery.updateWhere(
+    (scope) => scope.listId === listId,
+    () => ({ data: detail, loading: false, error: null }),
+  )
+}
+
+export function __seedListSummariesForTests(dashboardId: string, summaries: ListSummary[]): void {
+  listSummariesQuery.getState({ dashboardId })
+  listSummariesQuery.updateWhere(
+    (scope) => scope.dashboardId === dashboardId,
+    () => ({ data: summaries, loading: false, error: null }),
+  )
 }

@@ -1,4 +1,6 @@
-import { Archive, Check, Pencil, Trash2, X } from 'lucide-react'
+import type { DraggableSyntheticListeners } from '@dnd-kit/core'
+import { Archive, Check, GripVertical, Pencil, Trash2, X } from 'lucide-react'
+import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { ListSummary } from '../../api/lists'
 import { cn } from '../../utils/shared/cn'
@@ -11,6 +13,7 @@ export function ListSidebarRow({
   onRename,
   onArchive,
   onDelete,
+  sortable,
 }: {
   list: Pick<ListSummary, 'id' | 'name' | 'list_type' | 'item_count' | 'archived'>
   selectedId: string | null
@@ -18,6 +21,13 @@ export function ListSidebarRow({
   onRename: (listId: string, name: string) => Promise<void>
   onArchive: (id: string, archived: boolean) => Promise<void>
   onDelete: (listId: string) => Promise<void>
+  sortable?: {
+    setNodeRef: (el: HTMLElement | null) => void
+    style: CSSProperties
+    attributes: Record<string, unknown>
+    listeners: DraggableSyntheticListeners
+    isDragging: boolean
+  }
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(list.name)
@@ -53,6 +63,8 @@ export function ListSidebarRow({
   return (
     // biome-ignore lint/a11y/useSemanticElements: the row contains real action buttons, so the outer click target cannot itself be a button
     <div
+      ref={sortable?.setNodeRef}
+      style={sortable?.style}
       role="button"
       tabIndex={editing ? -1 : 0}
       aria-disabled={editing}
@@ -72,9 +84,26 @@ export function ListSidebarRow({
         selectedId === list.id
           ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
           : 'cursor-pointer bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700',
+        sortable?.isDragging && 'opacity-60',
       )}
     >
       <div className="flex items-start justify-between gap-2">
+        {sortable && (
+          <button
+            type="button"
+            {...sortable.attributes}
+            {...sortable.listeners}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              sortable.listeners?.onKeyDown?.(event)
+              event.stopPropagation()
+            }}
+            aria-label="Reorder list"
+            className="shrink-0 p-0.5 -ml-1 text-zinc-600 hover:text-zinc-300 cursor-grab touch-none sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+          >
+            <GripVertical size={13} />
+          </button>
+        )}
         {editing ? (
           <input
             ref={inputRef}

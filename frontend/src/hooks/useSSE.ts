@@ -26,10 +26,12 @@ const LIST_EVENT_TYPES = [
   'list.updated',
   'list.archived',
   'list.deleted',
+  'list.reordered',
   'list.item.created',
   'list.item.updated',
   'list.item.checked',
   'list.item.deleted',
+  'list.item.reordered',
 ] as const
 
 const CALENDAR_EVENT_TYPES = [
@@ -72,6 +74,13 @@ export function useSSE(): void {
     function onListEvent(e: MessageEvent<string>) {
       try {
         const data = JSON.parse(e.data) as SseEvent
+        // Order matters: handleListResourceEvent must run before handleAgendaResourceEvent.
+        // handleAgendaResourceEvent invalidates agenda reminders for every list.* event, which
+        // (if an agenda is mounted) triggers fetchAgendaReminders -> loadDashboardListDetails ->
+        // fetchIfStale on list summaries/details. handleListResourceEvent's reorder branch uses
+        // updateWhere, which clears `stale` on the list caches first, so those fetchIfStale
+        // calls resolve from cache instead of re-GETting the scope we just patched. That is what
+        // keeps a reorder event GET-free for observers — don't reorder these calls.
         handleListResourceEvent(data)
         handleAgendaResourceEvent(data)
         handleDashboardContentEvent(data)

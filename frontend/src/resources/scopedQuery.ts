@@ -166,6 +166,16 @@ export function createScopedQuery<Scope, Data>({
   ): void {
     for (const entry of entries.values()) {
       if (!predicate(entry.scope)) continue
+      // A patch writes authoritative data, so the entry is fresh afterwards. Event-driven
+      // patches (list reorder SSE events) depend on this: agenda reminders invalidate on every
+      // list.* event, and their fetchIfStale would otherwise re-GET a scope we just patched.
+      //
+      // Trade-off, if you change this: clearing `stale` also discards the record of an earlier
+      // missed event. An entry marked stale by an invalidateWhere that skipped its fetch (no
+      // live listeners) is silently marked fresh again by the next patch, so that missed update
+      // is lost until a resync. Leaving entries stale instead costs one redundant GET per
+      // patched scope — not the N+1 an earlier version of this comment claimed — but it must be
+      // weighed against every updateWhere caller, not just the reorder path.
       entry.stale = false
       setState(entry, updater(entry.state, entry.scope))
     }
