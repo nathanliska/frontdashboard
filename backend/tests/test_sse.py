@@ -102,6 +102,28 @@ async def test_manager_broadcast_targeted_users_reaches_non_actor() -> None:
 
 
 @pytest.mark.asyncio
+async def test_evicted_client_receives_close_sentinel() -> None:
+    """A client too far behind is told to resync, not silently dropped."""
+    from app.sse.manager import _QUEUE_MAX, CLOSED_SENTINEL, SseManager
+
+    mgr = SseManager()
+    user_id = uuid.uuid4()
+    client = mgr.connect(user_id)
+
+    # Fill the queue to capacity so the next broadcast evicts.
+    for _ in range(_QUEUE_MAX):
+        client.queue.put_nowait({"event": "filler", "data": "{}"})
+
+    await mgr.broadcast({"event": "list.updated", "data": "{}"}, user_ids={user_id}, actor_id=user_id)
+
+    # Evicted from the registry...
+    assert client not in mgr._clients
+    # ...and the backlog is replaced by a single close sentinel it will actually see.
+    assert client.queue.qsize() == 1
+    assert client.queue.get_nowait() is CLOSED_SENTINEL
+
+
+@pytest.mark.asyncio
 async def test_manager_multiple_connections_same_user() -> None:
     """Two open tabs for the same user both receive targeted events."""
     mgr = SseManager()
@@ -199,3 +221,58 @@ def test_connected_dict_primes_last_event_id() -> None:
     assert msg["id"] == "connected"
     data = json.loads(msg["data"])
     assert data == {}
+
+
+@pytest.mark.asyncio
+async def test_stream_ends_with_resync_on_close_sentinel() -> None:
+    """An evicted stream yields resync and terminates rather than hanging."""
+    from app.routers.sse import stream_events
+    from app.sse.manager import CLOSED_SENTINEL, SseManager
+
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4())
+
+    gen = stream_events(client, send_resync=False)
+    first = await gen.__anext__()
+    assert first["event"] == "connected"
+
+    client.queue.put_nowait({"event": "list.updated", "data": "{}"})
+    assert (await gen.__anext__())["event"] == "list.updated"
+
+    client.queue.put_nowait(CLOSED_SENTINEL)
+    assert (await gen.__anext__())["event"] == "resync"
+
+    with pytest.raises(StopAsyncIteration):
+        await gen.__anext__()
+
+
+@pytest.mark.asyncio
+async def test_stream_sends_resync_first_on_reconnect() -> None:
+    """send_resync=True (Last-Event-ID present) replays a resync up front."""
+    from app.routers.sse import stream_events
+    from app.sse.manager import SseManager
+
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4())
+
+    gen = stream_events(client, send_resync=True)
+    assert (await gen.__anext__())["event"] == "connected"
+    assert (await gen.__anext__())["event"] == "resync"
+    await gen.aclose()
+
+
+@pytest.mark.asyncio
+async def test_stream_deregisters_client_from_its_own_manager() -> None:
+    """Closing the stream removes the client from the manager that created it."""
+    from app.routers.sse import stream_events
+    from app.sse.manager import SseManager
+
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4())
+    assert client in mgr._clients
+
+    gen = stream_events(client, send_resync=False)
+    await gen.__anext__()  # 'connected'
+    await gen.aclose()
+
+    assert client not in mgr._clients

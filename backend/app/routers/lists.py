@@ -458,6 +458,13 @@ async def update_item(
         setattr(item, field, getattr(body, field))
     item.updated_by = current_user.id
 
+    # The values are exactly what the client submitted — Pydantic has already
+    # validated and coerced them, and each field is a plain setattr onto the ORM
+    # object, so the stored value is the submitted value. Deriving from the body
+    # avoids touching the (flush-expired) ORM instance, which is what forced the
+    # earlier manual updated_at stamp.
+    changed_values = body.model_dump(mode="json", include=body.model_fields_set)
+
     event_message = await _build_list_event_message(
         db,
         event_type=EventType.list_item_checked if "checked" in body.model_fields_set else EventType.list_item_updated,
@@ -465,7 +472,11 @@ async def update_item(
         dashboard=dashboard,
         entity_type="list_item",
         entity_id=item.id,
-        payload={"list_id": str(list_id), "fields": list(body.model_fields_set)},
+        payload={
+            "list_id": str(list_id),
+            "fields": list(body.model_fields_set),
+            "values": changed_values,
+        },
         client_mutation_id=client_mutation_id,
     )
     await db.commit()

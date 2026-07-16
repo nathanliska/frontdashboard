@@ -1,6 +1,11 @@
 import uuid
 
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.activity import ActivityEvent, EventType
+from tests.helpers import create_dashboard, create_list, create_list_item, set_csrf
 
 CSRF = "test-csrf-token"
 
@@ -260,3 +265,54 @@ async def test_viewer_empty_item_patch_is_rejected_not_written(auth_client: Asyn
         assert real.status_code == 403
     finally:
         await other.__aexit__(None, None, None)
+
+
+async def test_item_update_event_payload_carries_new_values(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Observers must be able to apply the change without refetching the list."""
+    dashboard = await create_dashboard(auth_client)
+    lst = await create_list(auth_client, dashboard["id"])
+    item = await create_list_item(auth_client, lst["id"], text="original")
+
+    set_csrf(auth_client)
+    resp = await auth_client.patch(
+        f"/api/lists/{lst['id']}/items/{item['id']}",
+        json={"checked": True},
+    )
+    assert resp.status_code == 200
+
+    result = await db_session.execute(select(ActivityEvent).order_by(ActivityEvent.event_id.desc()).limit(1))
+    event = result.scalar_one()
+    assert event.event_type == EventType.list_item_checked
+    assert event.payload["fields"] == ["checked"]
+    assert event.payload["values"] == {"checked": True}
+
+
+async def test_item_update_event_values_are_json_safe(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """due_date/priority serialise to the same shapes the API returns."""
+    dashboard = await create_dashboard(auth_client)
+    lst = await create_list(auth_client, dashboard["id"])
+    item = await create_list_item(auth_client, lst["id"], text="original")
+
+    set_csrf(auth_client)
+    resp = await auth_client.patch(
+        f"/api/lists/{lst['id']}/items/{item['id']}",
+        json={"text": "renamed", "due_date": "2026-08-01", "priority": "high"},
+    )
+    assert resp.status_code == 200
+
+    result = await db_session.execute(select(ActivityEvent).order_by(ActivityEvent.event_id.desc()).limit(1))
+    event = result.scalar_one()
+    assert event.event_type == EventType.list_item_updated
+    assert event.payload["values"] == {
+        "text": "renamed",
+        "due_date": "2026-08-01",
+        "priority": "high",
+    }
+    # Only the submitted fields are echoed.
+    assert set(event.payload["values"]) == set(event.payload["fields"])

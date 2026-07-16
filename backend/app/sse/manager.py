@@ -16,10 +16,16 @@ from dataclasses import dataclass, field
 
 _QUEUE_MAX = 256
 
+# Pushed onto a client's queue when it is evicted for falling too far behind.
+# The stream generator ends the response on this, so the browser's EventSource
+# reconnects and the Last-Event-ID -> resync path restores consistency.
+CLOSED_SENTINEL = object()
+
 
 @dataclass
 class _Client:
     user_id: uuid.UUID
+    manager: "SseManager"
     queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=_QUEUE_MAX))
 
 
@@ -29,7 +35,7 @@ class SseManager:
 
     def connect(self, user_id: uuid.UUID) -> _Client:
         """Register a new SSE connection and return its client handle."""
-        client = _Client(user_id=user_id)
+        client = _Client(user_id=user_id, manager=self)
         self._clients.append(client)
         return client
 
@@ -60,8 +66,14 @@ class SseManager:
             try:
                 client.queue.put_nowait(message)
             except asyncio.QueueFull:
-                # Client is stalled — drop it so the generator's finally block
-                # calls disconnect() when it next times out and detects closure.
+                # Too far behind to catch up: drop the backlog and leave only a
+                # close sentinel, so the generator ends the stream and the client
+                # reconnects + resyncs instead of silently receiving nothing.
+                while not client.queue.empty():
+                    with contextlib.suppress(asyncio.QueueEmpty):
+                        client.queue.get_nowait()
+                with contextlib.suppress(asyncio.QueueFull):
+                    client.queue.put_nowait(CLOSED_SENTINEL)
                 self.disconnect(client)
 
 
