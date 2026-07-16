@@ -390,6 +390,26 @@ export async function reorderLists(dashboardId: string, orderedIds: string[]): P
   }
 }
 
+// Fields an item-update event may patch. Identity, ownership and timestamps are
+// never taken from the payload: a stray `id` would silently break React keys and
+// send every later event for this item down the divergence path.
+const PATCHABLE_ITEM_FIELDS = [
+  'text',
+  'checked',
+  'due_date',
+  'priority',
+  'category',
+  'assigned_to',
+] as const
+
+function pickPatchableItemFields(values: Record<string, unknown>): Partial<ListItem> {
+  const patch: Record<string, unknown> = {}
+  for (const field of PATCHABLE_ITEM_FIELDS) {
+    if (field in values) patch[field] = values[field]
+  }
+  return patch as Partial<ListItem>
+}
+
 export function handleListResourceEvent(event: SseEvent): void {
   if (event.event_type === 'resync') {
     listSummariesQuery.invalidateWhere(() => true)
@@ -405,19 +425,62 @@ export function handleListResourceEvent(event: SseEvent): void {
     return
   }
 
+  if (event.event_type === 'list.item.checked' || event.event_type === 'list.item.updated') {
+    const payload = getEventPayload(event)
+    const values = payload?.values
+    const itemId = event.entity_id
+    // Only patch when the event carries the new values; otherwise fall through to
+    // invalidate-and-refetch so an older/unknown payload still converges.
+    if (affectedListId && values && typeof values === 'object' && !Array.isArray(values)) {
+      // If the cache has no data yet (never loaded, still in flight, or the last fetch
+      // errored), there is nothing to patch — treat that as divergence up front rather than
+      // letting patchListDetailById's `if (!state.data) return state` guard silently no-op
+      // the updater below. Otherwise `diverged` would stay false and this event would be
+      // neither applied nor recorded, so the eventual GET resolves with pre-event data forever.
+      let diverged = listDetailQuery.getState({ listId: affectedListId }).data === null
+      if (!diverged) {
+        patchListDetailById(affectedListId, (detail) => {
+          if (!detail.items.some((item) => item.id === itemId)) {
+            diverged = true
+            return detail
+          }
+          return {
+            ...detail,
+            items: detail.items.map((item) =>
+              item.id === itemId
+                ? { ...item, ...pickPatchableItemFields(values as Record<string, unknown>) }
+                : item,
+            ),
+          }
+        })
+      }
+      if (diverged) {
+        listDetailQuery.invalidateWhere((scope) => scope.listId === affectedListId)
+      }
+      // Early return skips the generic tail's shouldReloadSummaries check below. That's
+      // only safe because shouldReloadSummaries is false for these two event types — if a
+      // future summary-visible field is added to the patchable set, revisit this.
+      return
+    }
+  }
+
   if (event.event_type === 'list.item.reordered') {
     const payload = getEventPayload(event)
     const itemIds = Array.isArray(payload?.item_ids) ? (payload.item_ids as string[]) : null
     if (affectedListId && itemIds) {
-      let diverged = false
-      patchListDetailById(affectedListId, (detail) => {
-        const items = orderByIds(detail.items, itemIds)
-        if (!items) {
-          diverged = true
-          return detail
-        }
-        return { ...detail, items }
-      })
+      // Same absent-cache hole as the item-update branch above: no data means nothing to
+      // patch, and patchListDetailById's no-op guard would otherwise swallow the event.
+      let diverged = listDetailQuery.getState({ listId: affectedListId }).data === null
+      if (!diverged) {
+        patchListDetailById(affectedListId, (detail) => {
+          const items = orderByIds(detail.items, itemIds)
+          if (!items) {
+            diverged = true
+            return detail
+          }
+          return { ...detail, items }
+        })
+      }
       if (diverged) listDetailQuery.invalidateWhere((scope) => scope.listId === affectedListId)
     }
     return
@@ -427,19 +490,24 @@ export function handleListResourceEvent(event: SseEvent): void {
     const payload = getEventPayload(event)
     const listIds = Array.isArray(payload?.list_ids) ? (payload.list_ids as string[]) : null
     if (dashboardId && listIds) {
-      let diverged = false
-      listSummariesQuery.updateWhere(
-        (scope) => scope.dashboardId === dashboardId,
-        (state) => {
-          if (!state.data) return state
-          const ordered = applyActiveListOrder(state.data, listIds)
-          if (!ordered) {
-            diverged = true
-            return state
-          }
-          return { ...state, data: ordered }
-        },
-      )
+      // Same absent-cache hole: if the summaries cache has no data yet, updateWhere's
+      // `if (!state.data) return state` guard would otherwise no-op the updater and this
+      // event would be silently dropped instead of marking the entry stale.
+      let diverged = listSummariesQuery.getState({ dashboardId }).data === null
+      if (!diverged) {
+        listSummariesQuery.updateWhere(
+          (scope) => scope.dashboardId === dashboardId,
+          (state) => {
+            if (!state.data) return state
+            const ordered = applyActiveListOrder(state.data, listIds)
+            if (!ordered) {
+              diverged = true
+              return state
+            }
+            return { ...state, data: ordered }
+          },
+        )
+      }
       if (diverged) listSummariesQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
     }
     return

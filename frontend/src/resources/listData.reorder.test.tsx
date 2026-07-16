@@ -314,6 +314,54 @@ describe('reorderListItems / list.item.reordered', () => {
     expect(apiGetList).not.toHaveBeenCalled()
     expect(hasPendingListMutation('55555555-5555-4555-8555-555555555555')).toBe(false)
   })
+
+  it('does not silently drop a reorder event when the list detail has no cached data (fetch in flight)', async () => {
+    let resolveFirstFetch!: (detail: ListDetail) => void
+    const firstFetch = new Promise<ListDetail>((resolve) => {
+      resolveFirstFetch = resolve
+    })
+    apiGetList.mockReturnValueOnce(firstFetch)
+    apiGetList.mockResolvedValueOnce(makeListDetail(['a', 'b', 'c']))
+
+    const { unmount } = render(<ItemsProbe listId="list-1" />)
+    // The mount effect fetches because the cache has no data yet — the widget-just-mounted,
+    // GET-in-flight state from the finding.
+    await waitFor(() => expect(apiGetList).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      handleListResourceEvent({
+        event_id: 20,
+        event_type: 'list.item.reordered',
+        entity_type: 'list_item',
+        entity_id: 'list-1',
+        entity_version: 2,
+        actor_id: 'other-user',
+        actor_display_name: 'Other User',
+        payload: { dashboard_id: 'dash-1', list_id: 'list-1', item_ids: ['c', 'b', 'a'] },
+        created_at: '2026-04-05T00:00:20Z',
+      })
+    })
+
+    // An invalidate must not start a duplicate request while one is already in flight.
+    expect(apiGetList).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveFirstFetch(makeListDetail(['a', 'b', 'c']))
+      await firstFetch
+    })
+
+    // The in-flight GET resolved with pre-event order — the silent-loss scenario: the
+    // reorder event raced the fetch and lost.
+    expect(screen.getByTestId('items-order')).toHaveTextContent('a,b,c')
+
+    unmount()
+    render(<ItemsProbe listId="list-1" />)
+
+    // The divergence must have marked the entry stale, so a later remount (standing in
+    // for any future resync/remount) triggers a second GET that converges the client.
+    // Against the pre-fix code this stays at 1 forever.
+    await waitFor(() => expect(apiGetList).toHaveBeenCalledTimes(2))
+  })
 })
 
 describe('reorderLists / list.reordered', () => {
