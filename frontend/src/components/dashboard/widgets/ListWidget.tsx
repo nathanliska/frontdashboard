@@ -4,6 +4,7 @@ import type { ListItem } from '../../../api/lists'
 import { addListItem, updateListItem, useListDetail } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
 import { cn } from '../../../utils/shared/cn'
+import { scrollToNewestItem } from '../../../utils/shared/scrollToNewestItem'
 
 export function ListWidget({
   listId,
@@ -15,6 +16,7 @@ export function ListWidget({
   config: Record<string, unknown>
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(300)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
   const { data: detail, error } = useListDetail(listId)
@@ -58,6 +60,7 @@ export function ListWidget({
 
     await addListItem(listId, text)
     form.reset()
+    scrollToNewestItem(scrollRef.current)
   }
 
   if (error) {
@@ -105,7 +108,7 @@ export function ListWidget({
       )}
 
       {/* Item list */}
-      <div className="flex-1 overflow-y-auto space-y-0.5 min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-0.5 min-h-0">
         {detail.items.map((item) => (
           <button
             key={item.id}
@@ -143,11 +146,12 @@ export function ListWidget({
           onSubmit={(event) => void handleAdd(event)}
           className="flex items-center gap-1.5 shrink-0 border-t border-zinc-800 pt-2"
         >
+          {/* text-base keeps mobile at 16px; below that iOS (any browser — all WebKit) zooms on focus */}
           <input
             name="item-text"
             required
             placeholder="Add item…"
-            className="flex-1 bg-transparent text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none min-w-0"
+            className="flex-1 bg-transparent text-base sm:text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none min-w-0"
           />
           <button
             type="submit"

@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'lucide-react'
 import type { ComponentProps } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ListItem } from '../api/lists'
 import { AddItemForm } from '../components/lists/AddItemForm'
@@ -19,6 +19,7 @@ import {
 import { ROUTES } from '../routes'
 import { useDashboardStore } from '../stores/dashboard'
 import { toast } from '../stores/toast'
+import { scrollToNewestItem } from '../utils/shared/scrollToNewestItem'
 
 type ItemHandlers = Pick<
   ComponentProps<typeof ListItemRow>,
@@ -41,6 +42,8 @@ export function ListDetailPage() {
   const [searchParams] = useSearchParams()
   const dashboards = useDashboardStore((s) => s.summaries)
 
+  const scrollRef = useRef<HTMLDivElement>(null)
+
   const detailQuery = useListDetail(listId ?? null)
   const detail = detailQuery.data
   const detailError = detailQuery.error
@@ -60,6 +63,7 @@ export function ListDetailPage() {
     const trimmedText = text.trim()
     if (!trimmedText) return
     await addListItem(listId, trimmedText)
+    scrollToNewestItem(scrollRef.current)
   }
 
   async function submitListNameEdit(name: string) {
@@ -130,7 +134,7 @@ export function ListDetailPage() {
         )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
         {detail.items.length === 0 ? (
           <p className="text-sm text-zinc-600 px-4 py-6">No items yet.</p>
         ) : (
