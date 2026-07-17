@@ -17,7 +17,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | Phase | Theme | Findings | Status |
 |------:|-------|----------|--------|
 | 1 | Security quick wins | #3, #4, #5 | ✅ Done (2026-07-12) |
-| 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | ⏳ Next |
+| 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | 🚧 In progress — split into 4 specs (see below) |
 | 3 | Dashboard correctness | #2, #9, #10, #11, #12 | ◻ Planned |
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
@@ -25,6 +25,20 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39 | ◻ Triage |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
+
+**Phase 2 is four specs, not one.** Its six findings share a theme but not a mechanism, so each
+ships independently rather than as one long plan:
+
+| # | Spec | Findings | Status |
+|--:|------|----------|--------|
+| 1 | `docs/designs/session-revocation-design.md` | #6, #7, #8 (authz half) | 🚧 Design |
+| 2 | not written | #1 (frontend auth-boundary reset) | ◻ Planned |
+| 3 | not written | #13 (Argon2 off the event loop) | ◻ Planned |
+| 4 | not written | #31 (email normalization + config validation) | ◻ Planned |
+
+Spec 1 also folds in an unlogged defect (`/auth/refresh` has no CSRF guard and no rate limit) and
+logs two new ones: #43 (login timing oracle, for spec 3) and #44 (`/auth/refresh` CSRF + rate
+limit, fixed in spec 1).
 
 ### Changelog
 - **2026-07-12** — Phase 1 shipped: #3 (`f1fdc11`, fixup `ac9f197`), #4 (`c879165`), #5 (`ed690c0`).
@@ -494,3 +508,40 @@ before implementing the finding; anything not listed verified as written, modulo
 | 8 | Expire and correctly close SSE streams | Authorization and resource safety | Medium | Medium |
 | 9 | Separate responsive and canonical layouts | Prevent user layout loss | Medium | Medium |
 | 10 | Standardize mutation failure contracts | Honest, recoverable UX | Medium | Medium |
+
+---
+
+## New findings — 2026-07-16 (design pass, session revocation spec)
+
+Found while mapping the auth surface for Phase 2 spec 1, not by the 2026-07-11 review. Numbering
+continues from #42.
+
+### 43. Remove the login user-enumeration timing oracle
+
+- **What & where** — `backend/app/routers/auth.py:371`; `backend/app/auth/hashing.py:4-16`
+- **Problem** — Login short-circuits on an unknown email (`if not user or not verify_password(...)`),
+  so a nonexistent account answers in ~0ms while a real one pays a full Argon2 verify (~50-100ms).
+  The response bodies are identical, but the timing is not — the endpoint reliably discloses whether
+  an email has an account. Argon2's deliberate cost is what makes the gap wide enough to measure
+  remotely.
+- **Proposal** — Verify against a fixed dummy hash on the miss path so both branches pay the same
+  cost. Fix alongside **#13** (which moves hashing to a thread pool and re-touches these exact
+  lines); doing it separately means two specs editing one code path.
+- **Effort / Risk** — Small / Low.
+- **Impact** — Closes account enumeration on the one endpoint that cannot be rate-limited into
+  uselessness.
+- **Disposition** — ◻ Open. Assigned to Phase 2 spec 3 (#13).
+
+### 44. `POST /auth/refresh` has no CSRF guard and no rate limit
+
+- **What & where** — `backend/app/routers/auth.py:381`
+- **Problem** — The only unauthenticated POST in the auth router with neither
+  `_csrf: None = Depends(require_csrf)` nor a `@limiter.limit` decorator. `backend/CLAUDE.md` states
+  every non-GET route must add the CSRF dependency; `logout`, `profile`, `password` and
+  `preferences` all do. A cross-site page can therefore force a token rotation, and the endpoint is
+  unmetered.
+- **Proposal** — Add both, matching the sibling routes.
+- **Effort / Risk** — Small / Low.
+- **Impact** — Restores the router's own invariant on the one route that skips it.
+- **Disposition** — ◻ Open. Folded into Phase 2 spec 1
+  (`docs/designs/session-revocation-design.md`), which rewrites the endpoint.
