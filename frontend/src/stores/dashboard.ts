@@ -356,7 +356,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           }
         } finally {
           guard.set({ summariesLoading: false })
-          inFlightSummariesLoad = null
+          if (inFlightSummariesLoad === promise) inFlightSummariesLoad = null
         }
       })()
 
@@ -774,6 +774,9 @@ export function resetDashboardData(): void {
   if (scheduledSummariesRefreshTimer) {
     clearTimeout(scheduledSummariesRefreshTimer)
   }
+  // Settle any pending debounce promise before dropping the handles, so a caller
+  // awaiting it (handleDashboardEvent) doesn't hang forever across the boundary.
+  resolveScheduledSummariesRefresh?.()
   inFlightDashboardLoad = null
   inFlightSummariesLoad = null
   queuedSummariesForceReload = false

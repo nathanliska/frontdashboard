@@ -272,6 +272,50 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().summaries).toEqual(refreshedSummaries)
   })
 
+  it('does not let a stale in-flight summaries load null out a newer session load handle (MIN-1)', async () => {
+    let resolveA!: (v: DashboardSummary[]) => void
+    let resolveB!: (v: DashboardSummary[]) => void
+
+    apiListDashboards
+      .mockImplementationOnce(
+        () =>
+          new Promise<DashboardSummary[]>((resolve) => {
+            resolveA = resolve
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<DashboardSummary[]>((resolve) => {
+            resolveB = resolve
+          }),
+      )
+      // Fallback used only if the bug reappears and a spurious 3rd fetch is made.
+      .mockResolvedValue([])
+
+    // Session A starts a summaries load (call #1) and never gets to finish before
+    // the boundary — its `finally` resolves only after we've moved on to session B.
+    const loadA = useDashboardStore.getState().loadSummaries()
+
+    resetDashboardData() // account boundary — bumps sessionGeneration, clears the handle
+
+    // Session B starts its own summaries load (call #2), which is still in flight.
+    const loadB = useDashboardStore.getState().loadSummaries()
+
+    // Now let A's stale request resolve and its `finally` run.
+    resolveA([])
+    await loadA
+
+    // A forced reload arrives while B is still in flight. If A's `finally` wrongly
+    // nulled the shared handle, this incorrectly thinks nothing is in flight and
+    // starts a 3rd fetch instead of coalescing onto B.
+    void useDashboardStore.getState().loadSummaries(true)
+
+    expect(apiListDashboards).toHaveBeenCalledTimes(2)
+
+    resolveB([])
+    await loadB
+  })
+
   it('reloads the active dashboard after dashboard share changes', async () => {
     apiListDashboards.mockResolvedValue([makeSummary()])
     apiGetDashboard.mockResolvedValue(makeDashboard())
@@ -744,6 +788,40 @@ describe('useDashboardStore', () => {
     expect(apiListDashboards).toHaveBeenCalledTimes(1)
     expect(useDashboardStore.getState().summaries).toEqual([nextSummary])
     vi.useRealTimers()
+  })
+
+  it('settles a pending debounced summaries-refresh promise on reset instead of hanging (MIN-2)', async () => {
+    useDashboardStore.setState({
+      summaries: [makeSummary()],
+      summariesLoaded: true,
+      dashboard: null,
+    })
+
+    // Not awaited yet: handleDashboardEvent runs synchronously up to `await
+    // summariesRefreshPromise`, which is the debounce promise from
+    // scheduleSummariesRefresh — so by the time this call returns, the pending
+    // debounce promise already exists in module state.
+    const handling = useDashboardStore.getState().handleDashboardEvent(
+      makeSseEvent({
+        event_type: 'dashboard.updated',
+        entity_id: 'dash-2',
+        payload: { dashboard_id: 'dash-2' },
+      }),
+    )
+
+    resetDashboardData() // account boundary while the debounce timer is still pending
+
+    // The debounce timer is cleared by the reset and will never fire, so without the
+    // fix `handling` would hang forever awaiting the never-settled promise. Guard
+    // with a short race so a regression fails fast instead of timing out the suite.
+    await expect(
+      Promise.race([
+        handling,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('handleDashboardEvent hung after reset')), 500),
+        ),
+      ]),
+    ).resolves.toBeUndefined()
   })
 
   it('handles resync events that do not include a payload', async () => {
