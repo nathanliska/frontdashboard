@@ -54,7 +54,10 @@ a user-enumeration timing oracle. Its fix is a dummy verify on the miss path, wh
 
 ## Data model
 
-**New table `sessions`** — one row per login, the `sid`:
+**New table `sessions`** — one row per login, the `sid`. The **model class is `UserSession`**, not
+`Session`: this codebase lives in `AsyncSession`/`sessionmaker` territory, and a model named
+`Session` sitting next to SQLAlchemy's own `Session` in the same import namespace is a footgun for
+every future reader. The table stays `sessions`.
 
 | Column | Notes |
 | --- | --- |
@@ -120,7 +123,7 @@ must not be mistaken for theft — so expiry is checked **before** the reuse bra
 | State | Meaning | Response |
 | --- | --- | --- |
 | No such token | garbage | 401 |
-| `expires_at` ≤ now, never revoked | ordinary expiry — the user was away | 401, **no** revocation |
+| `expires_at` ≤ now (rotated or not) | ordinary expiry — the user was away | 401, **no** revocation |
 | session already revoked | logged out / password changed | 401 |
 | `revoked_at` < 10s ago, session live | the tab stampede | **allow**: mint a successor in the same session |
 | `revoked_at` ≥ 10s ago | held and replayed — theft shape | **revoke the session**, 401 |
@@ -202,10 +205,16 @@ the migration → `/login`. Correct, and consistent with the migration's one-tim
 
 ## Enforcement on SSE streams (#8's authorization half)
 
-### Rejecting the finding's own proposal
+### #8's proposal is superseded by this design's premise, not overruled
 
-#8 proposes: *"End connections at token expiry and require reauthentication."* **This design
-deliberately does not do that**, because it is worse than the alternative on both axes:
+#8 proposes: *"End connections at token expiry and require reauthentication."* This design does not
+do that — but the reason is a **changed premise**, not a difference of preference, and the
+distinction matters to anyone auditing whether the finding was really addressed.
+
+The proposal was written for the code as it stands, where **the JWT is the only authority**. In that
+world, bounding the token's lifetime is the only lever available, and reaching for it is correct.
+This spec moves the authority to the session. Once it does, "bound the JWT" stops *being* a way to
+bound authorization and becomes a **proxy** for it — and a poor one:
 
 - **Weaker.** It bounds *JWT lifetime*, not *session authority*. Once `sessions` is the authority, a
   stream outliving a 15-minute JWT on a valid session is not a vulnerability — it is a long-lived
@@ -217,7 +226,18 @@ deliberately does not do that**, because it is worse than the alternative on bot
   blindness plus a GET storm across every tab, every 15 minutes, forever — the exact cost
   `docs/shipped/sse-hardening-design.md` exists to avoid.
 
-The departure must be recorded in #8's disposition, not left implicit.
+Note the direction of travel: revalidation is **more** work and a **stronger** guarantee than the
+proposal it replaces. The usual hazard when a spec deviates from a finding — quietly substituting
+something cheaper and declaring victory — runs the other way here.
+
+**#8's disposition must record this explicitly**, and must state the claim in terms a reader can
+check rather than in terms of compliance. Not *"did you end streams at token expiry?"* but:
+
+> **A revoked session stops streaming within 30 seconds, and stops being accepted on requests
+> immediately.**
+
+That is testable, and it is the thing the finding actually wanted. Whether the JWT's clock was
+involved is an implementation detail of a premise this spec removed.
 
 ### What this design does instead
 
@@ -328,8 +348,23 @@ Style: hand-authored 12-char slug, explicit `down_revision = "a3f7c2e9d1b4"`.
 
 **So a `concurrent_sessions` fixture is in scope for this spec.** It builds two independent sessions
 from `_test_engine` (already `NullPool`, so distinct connections) with **real** commits, and cleans
-up explicitly — real commits escape the outer rollback. Without it, the atomic-consume fix ships on
-faith, and it is the one change here whose failure mode is **silent**.
+up explicitly — real commits escape the outer rollback.
+
+The justification is #6's own sentence: *"Sequential tests cannot expose this race."* Shipping the
+atomic consume with only sequential tests reproduces the exact mistake the finding is about. And
+`UPDATE … RETURNING` being a well-understood pattern is not reassurance — its failure mode is that
+**both** requests silently win, which is indistinguishable from working.
+
+**Deliberately minimal — roughly 30 lines.** Create a dedicated user with a unique email, hand out
+two sessions, cascade-delete the user on teardown (the `sessions.user_id` FK is `ondelete=CASCADE`).
+
+- **Clean up by user, never `TRUNCATE`.** Real-committing tests share a container with
+  savepoint-based ones, whose transactions are open on other connections; a truncate would contend
+  with them.
+- **This is not the migration-testing project.** It does not run Alembic, does not replace
+  `create_all`, does not refactor `conftest`. That blind spot is real and is explicitly *not* being
+  fixed here (see "deliberately not doing"). If this fixture starts growing in that direction, stop
+  and spec it separately.
 
 ### Cases
 
@@ -365,7 +400,8 @@ faith, and it is the one change here whose failure mode is **silent**.
   nicety if refresh volume ever matters.
 - **A per-user `token_version`.** Rejected with "log out every device including your own" — see the
   revocation table.
-- **Expiry-bounded streams.** See above; recorded in #8's disposition.
+- **Expiry-bounded streams** (#8's literal proposal) — superseded by the premise change, not
+  overruled; see "Enforcement on SSE streams". Must be recorded in #8's disposition.
 - **Multi-process revocation** (#21) — deferred until a second worker exists.
 - **The login timing oracle** — logged as a new finding; belongs with #13.
 - **Reaping dead sessions.** Rows accumulate; nothing collects revoked or naturally-expired
