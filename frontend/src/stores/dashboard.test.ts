@@ -805,6 +805,25 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().summariesLoaded).toBe(false)
   })
 
+  it('drops a dashboard creation that resolves after a reset', async () => {
+    let resolveCreate!: (v: DashboardSummary) => void
+    apiCreateDashboard.mockReturnValue(
+      new Promise((r) => {
+        resolveCreate = r
+      }),
+    )
+
+    const creating = useDashboardStore.getState().createDashboard({ name: 'New Dashboard' })
+    resetDashboardData()
+
+    resolveCreate(makeSummary({ id: 'new-1', name: 'New Dashboard' }))
+    await creating.catch(() => {})
+
+    // The prepend write is a literal value, not a merge over current state, so a stale
+    // create landing after the boundary would be visible as a non-empty array.
+    expect(useDashboardStore.getState().summaries).toEqual([])
+  })
+
   it("does not leave loading stuck true when a reset lands between a queued dashboard load's loop iterations", async () => {
     let resolveFirstRequest!: (value: Dashboard) => void
 

@@ -365,11 +365,12 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async createDashboard(data) {
+      const guard = sessionGuard()
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
         const summary = await apiCreateDashboard(data, { clientMutationId })
-        set((s) => ({ summaries: [summary, ...s.summaries] }))
+        guard.set((s) => ({ summaries: [summary, ...s.summaries] }))
         return summary
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
@@ -379,11 +380,12 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async archiveDashboard(id, archived) {
+      const guard = sessionGuard()
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
         const updated = await apiUpdateDashboardMeta(id, { archived }, { clientMutationId })
-        set((s) => ({
+        guard.set((s) => ({
           summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
           dashboard:
             s.dashboard?.id === id
@@ -402,11 +404,12 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async deleteDashboard(id) {
+      const guard = sessionGuard()
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
         await apiDeleteDashboard(id, { clientMutationId })
-        set((s) => ({ summaries: s.summaries.filter((d) => d.id !== id) }))
+        guard.set((s) => ({ summaries: s.summaries.filter((d) => d.id !== id) }))
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to delete dashboard.')
@@ -414,6 +417,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async toggleFavorite(id, current) {
+      const guard = sessionGuard()
       try {
         const authState = useAuthStore.getState()
         const currentFavoriteIds = authState.user?.preferences.favorite_dashboard_ids ?? []
@@ -422,8 +426,9 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           : [...currentFavoriteIds.filter((favoriteId) => favoriteId !== id), id]
 
         const updatedUser = await apiUpdatePreferences({ favorite_dashboard_ids: nextFavoriteIds })
+        if (!guard.isCurrent()) return // boundary crossed mid-request — drop both writes
         useAuthStore.setState({ user: updatedUser })
-        set((s) => ({
+        guard.set((s) => ({
           summaries: s.summaries.map((d) => (d.id === id ? { ...d, is_favorite: !current } : d)),
           dashboard:
             s.dashboard?.id === id ? { ...s.dashboard, is_favorite: !current } : s.dashboard,
@@ -434,11 +439,12 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async renameDashboard(id, name) {
+      const guard = sessionGuard()
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
         const updated = await apiUpdateDashboardMeta(id, { name }, { clientMutationId })
-        set((s) => ({
+        guard.set((s) => ({
           summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
           dashboard:
             s.dashboard?.id === id
@@ -557,6 +563,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async saveLayout(layout) {
+      const guard = sessionGuard()
       const { dashboard } = get()
       if (!dashboard) return
       const clientMutationId = createClientMutationId()
@@ -569,10 +576,10 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           // Another editor saved a layout change between our load and this PUT.
           // Surface the conflict banner; user resolves by reloading.
           forgetPendingDashboardMutation(clientMutationId)
-          set({ conflict: true })
+          guard.set({ conflict: true })
           return
         }
-        set((s) => ({
+        guard.set((s) => ({
           dashboard: {
             ...result.dashboard,
             // Layout saves don't touch widget data. Preserve existing widget
@@ -588,13 +595,14 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async addWidget(widget) {
+      const guard = sessionGuard()
       const { dashboard } = get()
       if (!dashboard) return
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
         const updated = await apiAddWidget(dashboard.id, widget, { clientMutationId })
-        set({ dashboard: updated })
+        guard.set({ dashboard: updated })
       } catch (err) {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error(err instanceof Error ? err.message : 'Failed to add widget.')
@@ -602,6 +610,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async removeWidget(widgetId) {
+      const guard = sessionGuard()
       const { dashboard } = get()
       if (!dashboard) return
       const clientMutationId = createClientMutationId()
@@ -609,7 +618,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       try {
         await apiRemoveWidget(dashboard.id, widgetId, { clientMutationId })
         // Optimistic: remove from local state without a full refetch
-        set((s) => {
+        guard.set((s) => {
           if (!s.dashboard) return s
           return {
             dashboard: {
@@ -627,13 +636,14 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async updateWidget(widgetId, config) {
+      const guard = sessionGuard()
       const { dashboard } = get()
       if (!dashboard) return
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
         const updated = await apiUpdateWidget(dashboard.id, widgetId, config, { clientMutationId })
-        set((s) => {
+        guard.set((s) => {
           if (!s.dashboard) return s
           return {
             dashboard: {
