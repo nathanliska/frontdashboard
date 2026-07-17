@@ -331,6 +331,7 @@ async def test_reorder_lists_emits_exactly_one_event(
     )
     event = result.scalar_one()
     assert event.payload["list_ids"] == reordered
+    assert event.payload["dashboard_name"] == "Test Board"
 
 
 async def test_reorder_items_emits_exactly_one_event(
@@ -353,6 +354,7 @@ async def test_reorder_items_emits_exactly_one_event(
     )
     event = result.scalar_one()
     assert event.payload["item_ids"] == reordered
+    assert event.payload["list_name"] == "Shopping"
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ export interface ListSummary {
   dashboard_id: string
   name: string
   list_type: ListType
+  sort_order: number
   archived: boolean
   created_by: string
   created_at: string

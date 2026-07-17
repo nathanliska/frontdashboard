@@ -196,6 +196,8 @@ async def test_list_item_created_event(db_client: AsyncClient, db_session: Async
     assert event.entity_type == "list_item"
     assert str(event.entity_id) == item["id"]
     assert event.actor_display_name == "Alice"
+    assert event.payload["text"] == "Eggs"
+    assert event.payload["list_name"] == "My List"
 
 
 @pytest.mark.asyncio
@@ -212,6 +214,8 @@ async def test_list_item_checked_event(db_client: AsyncClient, db_session: Async
     event = await _latest_event(db_session)
     assert event.event_type == EventType.list_item_checked
     assert str(event.entity_id) == item["id"]
+    assert event.payload["text"] == "Milk"
+    assert event.payload["list_name"] == "My List"
 
 
 @pytest.mark.asyncio
@@ -228,6 +232,8 @@ async def test_list_item_updated_event(db_client: AsyncClient, db_session: Async
     event = await _latest_event(db_session)
     assert event.event_type == EventType.list_item_updated
     assert str(event.entity_id) == item["id"]
+    assert event.payload["text"] == "New text"
+    assert event.payload["list_name"] == "My List"
 
 
 @pytest.mark.asyncio
@@ -244,6 +250,8 @@ async def test_list_item_deleted_event(db_client: AsyncClient, db_session: Async
     event = await _latest_event(db_session)
     assert event.event_type == EventType.list_item_deleted
     assert str(event.entity_id) == item["id"]
+    assert event.payload["text"] == "Milk"
+    assert event.payload["list_name"] == "My List"
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import not_, select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -17,12 +17,6 @@ from app.schemas.notifications import ActivityEventResponse, NotificationRespons
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 _PAGE_LIMIT = 50
-_HIDDEN_ACTIVITY_EVENT_TYPES = (
-    EventType.dashboard_updated.value,
-    EventType.list_item_checked.value,
-)
-
-
 # ---------------------------------------------------------------------------
 # Notifications
 # ---------------------------------------------------------------------------
@@ -123,11 +117,18 @@ async def list_activity(
     q = select(ActivityEvent).where(ActivityEvent.actor_id == current_user.id)
 
     # Hide structural churn by default so the Activity tab reads like a timeline,
-    # not a transport log. Callers can still request a specific event_type.
+    # not a transport log. Keep meaningful dashboard metadata changes visible.
     q = (
         q.where(ActivityEvent.event_type == event_type)
         if event_type is not None
-        else q.where(not_(ActivityEvent.event_type.in_(_HIDDEN_ACTIVITY_EVENT_TYPES)))
+        else q.where(
+            ActivityEvent.event_type != EventType.list_item_checked.value,
+            or_(
+                ActivityEvent.event_type != EventType.dashboard_updated.value,
+                ActivityEvent.payload.contains({"changed_fields": ["name"]}),
+                ActivityEvent.payload.contains({"changed_fields": ["archived"]}),
+            ),
+        )
     )
     if before_event_id is not None:
         q = q.where(ActivityEvent.event_id < before_event_id)

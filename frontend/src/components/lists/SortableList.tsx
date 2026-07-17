@@ -2,6 +2,8 @@ import {
   closestCenter,
   DndContext,
   type DragEndEvent,
+  type DraggableAttributes,
+  type DraggableSyntheticListeners,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
@@ -15,7 +17,15 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+
+export type SortableRow = {
+  setNodeRef: (node: HTMLElement | null) => void
+  style: CSSProperties
+  attributes: Partial<DraggableAttributes>
+  listeners: DraggableSyntheticListeners
+  isDragging: boolean
+}
 
 /**
  * Compute the reordered id array for a drag-end move, or null when it's a
@@ -34,7 +44,7 @@ export function reorderIds(ids: string[], activeId: string, overId: string): str
   return next
 }
 
-export function useSortableRow(id: string, disabled?: boolean) {
+export function useSortableRow(id: string, disabled?: boolean): SortableRow {
   const { setNodeRef, transform, transition, attributes, listeners, isDragging } = useSortable({
     id,
     disabled,

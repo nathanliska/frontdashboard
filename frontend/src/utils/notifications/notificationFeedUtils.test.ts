@@ -17,9 +17,45 @@ function activityEvent(eventType: string, payload: Record<string, unknown> = {})
 
 describe('formatActivityEvent', () => {
   it.each([
-    ['dashboard.updated', { name: 'Roadmap' }, 'Dashboard', 'You updated "Roadmap".'],
+    [
+      'dashboard.updated',
+      { name: 'Roadmap', changed_fields: ['name'] },
+      'Dashboard',
+      'You renamed "Roadmap".',
+    ],
+    [
+      'dashboard.updated',
+      { name: 'Roadmap', archived: true, changed_fields: ['archived'] },
+      'Dashboard',
+      'You archived "Roadmap".',
+    ],
+    ['list.reordered', { dashboard_name: 'Home' }, 'List', 'You reordered lists in "Home".'],
     ['list.reordered', {}, 'List', 'You reordered your lists.'],
+    [
+      'list.item.reordered',
+      { list_name: 'Groceries' },
+      'List item',
+      'You reordered items in "Groceries".',
+    ],
     ['list.item.reordered', {}, 'List item', 'You reordered items in a list.'],
+    [
+      'list.item.created',
+      { text: 'Milk', list_name: 'Groceries' },
+      'List item',
+      'You added "Milk" to "Groceries".',
+    ],
+    [
+      'list.item.updated',
+      { text: 'Oat milk', list_name: 'Groceries' },
+      'List item',
+      'You updated "Oat milk" in "Groceries".',
+    ],
+    [
+      'list.item.deleted',
+      { text: 'Milk', list_name: 'Groceries' },
+      'List item',
+      'You deleted "Milk" from "Groceries".',
+    ],
     ['list.item.checked', { values: { checked: true } }, 'List item', 'You checked a list item.'],
     [
       'list.item.checked',

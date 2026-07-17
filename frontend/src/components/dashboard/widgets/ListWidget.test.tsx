@@ -22,6 +22,7 @@ function makeListDetail(overrides: Partial<ListDetail> = {}): ListDetail {
     dashboard_id: 'dash-1',
     name: 'Groceries',
     list_type: 'todo',
+    sort_order: 0,
     archived: false,
     created_by: 'user-1',
     item_count: 1,

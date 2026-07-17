@@ -195,15 +195,24 @@ async def test_dashboard_share_notifications_and_activity_filtering(
         )
         assert rename_resp.status_code == 200
 
+        set_csrf(auth_client)
+        layout_resp = await auth_client.put(
+            f"/api/dashboards/{dashboard['id']}/layout",
+            json={"layout": [], "version": rename_resp.json()["version"]},
+        )
+        assert layout_resp.status_code == 200
+
         activity_resp = await auth_client.get("/api/activity")
         assert activity_resp.status_code == 200
-        event_types = [event["event_type"] for event in activity_resp.json()]
+        activity = activity_resp.json()
+        event_types = [event["event_type"] for event in activity]
         assert "dashboard.share_added" in event_types
         assert "dashboard.share_updated" in event_types
         assert "dashboard.share_removed" in event_types
         assert "list.created" in event_types
         assert "list.item.created" in event_types
-        assert "dashboard.updated" not in event_types
+        dashboard_updates = [event for event in activity if event["event_type"] == "dashboard.updated"]
+        assert [event["payload"]["changed_fields"] for event in dashboard_updates] == [["name"]]
         assert "list.item.checked" not in event_types
 
         notification_rows = (

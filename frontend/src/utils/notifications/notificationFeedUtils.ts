@@ -58,11 +58,23 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
         badge: 'Dashboard',
         summary: `You deleted ${quoted(payloadString(payload, 'name'), 'a dashboard')}.`,
       }
-    case 'dashboard.updated':
+    case 'dashboard.updated': {
+      const changedFields = Array.isArray(payload.changed_fields) ? payload.changed_fields : []
+      const name = quoted(payloadString(payload, 'name'), 'a dashboard')
+      if (changedFields.includes('archived')) {
+        return {
+          badge: 'Dashboard',
+          summary:
+            payloadBoolean(payload, 'archived') === false
+              ? `You unarchived ${name}.`
+              : `You archived ${name}.`,
+        }
+      }
       return {
         badge: 'Dashboard',
-        summary: `You updated ${quoted(payloadString(payload, 'name'), 'a dashboard')}.`,
+        summary: changedFields.includes('name') ? `You renamed ${name}.` : `You updated ${name}.`,
       }
+    }
     case 'dashboard.share_added':
       return {
         badge: 'Sharing',
@@ -109,38 +121,55 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
     case 'list.reordered':
       return {
         badge: 'List',
-        summary: 'You reordered your lists.',
+        summary: payloadString(payload, 'dashboard_name')
+          ? `You reordered lists in ${quoted(payloadString(payload, 'dashboard_name'), 'a dashboard')}.`
+          : 'You reordered your lists.',
       }
-    case 'list.item.created':
+    case 'list.item.created': {
+      const item = quoted(payloadString(payload, 'text'), 'a list item')
+      const listName = payloadString(payload, 'list_name')
       return {
         badge: 'List item',
-        summary: `You added ${quoted(payloadString(payload, 'text'), 'a list item')}.`,
+        summary: listName ? `You added ${item} to "${listName}".` : `You added ${item}.`,
       }
-    case 'list.item.updated':
+    }
+    case 'list.item.updated': {
+      const item = quoted(payloadString(payload, 'text'), 'a list item')
+      const listName = payloadString(payload, 'list_name')
       return {
         badge: 'List item',
-        summary: 'You updated a list item.',
+        summary: listName ? `You updated ${item} in "${listName}".` : `You updated ${item}.`,
       }
+    }
     case 'list.item.checked': {
       const checked = payload.values
       const checkedValue =
         typeof checked === 'object' && checked !== null
           ? payloadBoolean(checked as Record<string, unknown>, 'checked')
           : null
+      const item = quoted(payloadString(payload, 'text'), 'a list item')
+      const listName = payloadString(payload, 'list_name')
+      const location = listName ? ` in "${listName}"` : ''
       return {
         badge: 'List item',
-        summary: checkedValue === false ? 'You unchecked a list item.' : 'You checked a list item.',
+        summary:
+          checkedValue === false
+            ? `You unchecked ${item}${location}.`
+            : `You checked ${item}${location}.`,
       }
     }
-    case 'list.item.deleted':
+    case 'list.item.deleted': {
+      const item = quoted(payloadString(payload, 'text'), 'a list item')
+      const listName = payloadString(payload, 'list_name')
       return {
         badge: 'List item',
-        summary: 'You deleted a list item.',
+        summary: listName ? `You deleted ${item} from "${listName}".` : `You deleted ${item}.`,
       }
+    }
     case 'list.item.reordered':
       return {
         badge: 'List item',
-        summary: 'You reordered items in a list.',
+        summary: `You reordered items in ${quoted(payloadString(payload, 'list_name'), 'a list')}.`,
       }
     case 'membership.added':
       return {

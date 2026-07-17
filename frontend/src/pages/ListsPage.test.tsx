@@ -30,6 +30,7 @@ function makeSummary(overrides: Partial<ListSummary> = {}): ListSummary {
     dashboard_id: 'dash-1',
     name: 'Weekend chores',
     list_type: 'checklist',
+    sort_order: 0,
     archived: false,
     created_by: 'user-1',
     created_at: '2026-04-21T00:00:00Z',

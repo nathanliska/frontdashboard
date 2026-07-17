@@ -1,9 +1,8 @@
-import type { DraggableSyntheticListeners } from '@dnd-kit/core'
 import { Check, GripVertical, Pencil, Trash2, X } from 'lucide-react'
-import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { ListItem } from '../../api/lists'
 import { cn } from '../../utils/shared/cn'
+import type { SortableRow } from './SortableList'
 
 export function ListItemRow({
   item,
@@ -16,13 +15,7 @@ export function ListItemRow({
   onToggleChecked: (itemId: string, checked: boolean) => Promise<void>
   onRename: (itemId: string, text: string) => Promise<void>
   onDelete: (itemId: string) => Promise<void>
-  sortable?: {
-    setNodeRef: (el: HTMLElement | null) => void
-    style: CSSProperties
-    attributes: Record<string, unknown>
-    listeners: DraggableSyntheticListeners
-    isDragging: boolean
-  }
+  sortable?: SortableRow
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)

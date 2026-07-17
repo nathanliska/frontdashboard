@@ -62,8 +62,12 @@ type InFlightDashboardLoad = {
   promise: Promise<void>
 }
 
+type InFlightSummariesLoad = {
+  promise: Promise<void>
+}
+
 let inFlightDashboardLoad: InFlightDashboardLoad | null = null
-let inFlightSummariesLoad: Promise<void> | null = null
+let inFlightSummariesLoad: InFlightSummariesLoad | null = null
 let queuedSummariesForceReload = false
 let latestDashboardRequest: { id: string; serial: number } | null = null
 let scheduledSummariesRefreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -332,11 +336,13 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       if (!force && summariesLoaded && !summariesLoading) return
       if (inFlightSummariesLoad) {
         if (force) queuedSummariesForceReload = true
-        return inFlightSummariesLoad
+        return inFlightSummariesLoad.promise
       }
 
       set({ summariesLoading: true })
-      const promise = (async () => {
+      const currentLoad: InFlightSummariesLoad = { promise: Promise.resolve() }
+      inFlightSummariesLoad = currentLoad
+      currentLoad.promise = (async () => {
         try {
           while (true) {
             queuedSummariesForceReload = false
@@ -356,12 +362,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           }
         } finally {
           guard.set({ summariesLoading: false })
-          if (inFlightSummariesLoad === promise) inFlightSummariesLoad = null
+          if (inFlightSummariesLoad === currentLoad) inFlightSummariesLoad = null
         }
       })()
 
-      inFlightSummariesLoad = promise
-      return promise
+      return currentLoad.promise
     },
 
     async createDashboard(data) {

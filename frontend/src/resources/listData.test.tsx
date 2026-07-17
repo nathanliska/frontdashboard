@@ -56,6 +56,7 @@ function makeListSummary(overrides: Partial<ListSummary> = {}): ListSummary {
     dashboard_id: 'dash-1',
     name: 'Groceries',
     list_type: 'todo',
+    sort_order: 0,
     archived: false,
     created_by: 'user-1',
     created_at: '2026-04-05T00:00:00Z',

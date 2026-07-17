@@ -277,7 +277,10 @@ async def reorder_lists(
         dashboard=dashboard,
         entity_type="dashboard",
         entity_id=body.dashboard_id,
-        payload={"list_ids": [str(i) for i in body.list_ids]},
+        payload={
+            "dashboard_name": dashboard.name,
+            "list_ids": [str(i) for i in body.list_ids],
+        },
         client_mutation_id=client_mutation_id,
     )
     await db.commit()
@@ -421,7 +424,7 @@ async def create_item(
         dashboard=dashboard,
         entity_type="list_item",
         entity_id=item.id,
-        payload={"text": item.text, "list_id": str(list_id)},
+        payload={"text": item.text, "list_id": str(list_id), "list_name": lst.name},
         client_mutation_id=client_mutation_id,
     )
     await db.commit()
@@ -440,7 +443,7 @@ async def update_item(
     db: AsyncSession = Depends(get_db),
 ) -> ListItemResponse:
     """Update fields on a list item the caller can access."""
-    _lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
+    lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     item_result = await db.execute(
         select(ListItem).where(
             ListItem.id == item_id,
@@ -474,6 +477,8 @@ async def update_item(
         entity_id=item.id,
         payload={
             "list_id": str(list_id),
+            "list_name": lst.name,
+            "text": item.text,
             "fields": list(body.model_fields_set),
             "values": changed_values,
         },
@@ -494,7 +499,7 @@ async def delete_item(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Soft-delete a list item and broadcast the change."""
-    _lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
+    lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     permissions.assert_can_edit(role)
 
     item_result = await db.execute(
@@ -515,7 +520,7 @@ async def delete_item(
         dashboard=dashboard,
         entity_type="list_item",
         entity_id=item.id,
-        payload={"list_id": str(list_id)},
+        payload={"list_id": str(list_id), "list_name": lst.name, "text": item.text},
         client_mutation_id=client_mutation_id,
     )
     item.deleted_at = datetime.now(UTC)
@@ -554,7 +559,11 @@ async def reorder_items(
         dashboard=dashboard,
         entity_type="list_item",
         entity_id=list_id,
-        payload={"list_id": str(list_id), "item_ids": [str(i) for i in body.item_ids]},
+        payload={
+            "list_id": str(list_id),
+            "list_name": lst.name,
+            "item_ids": [str(i) for i in body.item_ids],
+        },
         client_mutation_id=client_mutation_id,
     )
     await db.commit()

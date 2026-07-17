@@ -9,6 +9,7 @@ updates:
       - "ci"
     groups:
       actions:
+        applies-to: "version-updates"
         patterns:
           - "*"
 
@@ -21,6 +22,14 @@ updates:
       - "backend"
     groups:
       backend:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      backend-security:
+        applies-to: "security-updates"
         patterns:
           - "*"
 
@@ -33,11 +42,20 @@ updates:
       - "frontend"
     groups:
       react:
+        applies-to: "version-updates"
         patterns:
           - "react"
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
       frontend:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      frontend-security:
+        applies-to: "security-updates"
         patterns:
           - "*"

@@ -535,6 +535,7 @@ async def update_dashboard_meta(
         dashboard=dashboard,
         payload={
             "name": dashboard.name,
+            "archived": dashboard.archived,
             "changed_fields": sorted(body.model_fields_set),
         },
         client_mutation_id=client_mutation_id,
