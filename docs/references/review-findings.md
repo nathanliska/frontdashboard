@@ -22,7 +22,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
-| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39 | ◻ Triage |
+| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45 | ◻ Triage |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
 
@@ -61,12 +61,28 @@ limit, fixed in spec 1).
   signs in once more. Two findings logged during the design pass: #43 (login timing oracle,
   deferred to spec 3) and #44 (fixed here). An auth-dependency refactor (one cached decode+query)
   and a critical frontend CSRF fix rode along. Phase 2 remainder: #1, #13 (+#43), #31.
+- **2026-07-17** — #38 **token/session half shipped** (`a92bc28`): a scheduled,
+  advisory-locked retention sweep deletes expired refresh/verification/reset tokens and idle,
+  fully-expired sessions — the first pruning machinery in the app. Logged #45 (horizontal-scaling
+  readiness) during the design. #38 stays ◐ partial: collection pagination + activity/notification
+  retention (the *should-grow* half) remain open.
   *Follow-ups logged during this work (Minor, not blocking):* a revoked session 401s with the
   message "User not found"; `logout` no-ops if the refresh cookie is absent though the session is
   identifiable from the access cookie; the refresh route re-queries `User` after `live_session`
   already validated it (dead `if not user` branch); `_drop_streams` runs just before its commit
   rather than after (self-healing); 429 on `/refresh` reads as a logout and the limiter buckets
   per-IP (household NAT). Row-retention analysis for `refresh_tokens`/`sessions` folded into #38.
+- **2026-07-17** — **The five minor follow-ups above are fixed** (`6ad1243` backend, `ff85c0e` frontend): the 401 detail is
+  now "Session is no longer valid"; `logout` takes the session from the access token
+  (`get_current_session`) so it revokes even with no refresh cookie; `live_session` returns
+  `(session, user)` so `rotate_refresh_token` hands the router the user — no re-query, dead branch
+  gone; `revoke_session`/`revoke_user_sessions` now return the revoked ids and the routers call
+  `drop_session_streams(...)` **after** commit (the theft path carries the id on `RefreshRejected`);
+  and `tryRefresh` distinguishes a 429 (`'rate-limited'`) so `apiFetch`/`useSSE` back off instead of
+  logging the user out. Tests added: logout-without-refresh-cookie (backend), `tryRefresh` 429
+  mapping + SSE reconnect-not-logout (frontend). **Deliberately kept:** the limiter still buckets
+  per-IP — acceptable at household scale (a NAT'd household shares the generous 30/min), and
+  keying `/refresh` per-user isn't possible when the access token has expired.
 
 ## Validation pass — 2026-07-16
 
@@ -500,14 +516,40 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Standardize cursor envelopes (`items`, `next_cursor`) and active/archived filters; add documented retention horizons and scheduled indexed batch pruning for security tokens, notifications, and activity.
 - **Effort / Risk** — Medium / Medium; frontend contracts change.
 - **Impact** — Predictable API latency and bounded database growth.
-- **Scope + design notes added 2026-07-17** (from the session-revocation work, `22c9dfd`..`4089d88`) —
-  read these before implementing the token half; they are the difference between a correct prune and
-  one that silently deletes a security feature.
+- **Disposition** — ◐ Partially done 2026-07-17 (`a92bc28`). Shipped the **security-token/session half**: a scheduled,
+  advisory-locked retention reaper — `backend/app/services/retention.py` (`reap_expired_auth_rows`
+  pure core, `run_reaper_once` under `pg_try_advisory_xact_lock`, `reaper_loop`), wired via a new
+  app `lifespan` in `main.py`, config `reaper_enabled` (default on) + `reaper_interval_hours`
+  (default 6), tests `backend/tests/test_retention.py` (4, each mutation-verified sensitive). Runs at
+  startup then every 6h; off in tests (lifespan does not fire under `ASGITransport`). Deletes expired
+  refresh/verification/reset tokens and idle sessions whose tokens are all expired, guarded against
+  early logout (`last_used_at` idle window) and against cascade-deleting reuse evidence (a session is
+  pinned while any unexpired token remains). **Still open — the *should-grow* half:** collection
+  pagination (dashboards/lists), a notification cursor, and an `activity_events` retention horizon —
+  bound these, do not prune them.
+- **Scope + design notes added 2026-07-17** (from the session-revocation work, `22c9dfd`..`4089d88`;
+  the token/session half **shipped the same day** — see Disposition). These record the design the
+  reaper implements and why a naive prune deletes a security feature; keep them for the still-open
+  collection/activity half.
+  - **Two categories, one finding — keep them separate.** *Should-grow* tables (`activity_events`
+    the append-only audit log, `notifications`) are legitimate history: bound them with a retention
+    horizon + pagination, never by deleting live rows. *Should-be-pruned* tables are the security
+    tokens, whose rows are pure dead weight once spent or expired. The user's stated concern is the
+    latter set; the token half below is what to build first if this is pulled forward.
+  - **The prune set is four token tables + `sessions`, not just `refresh_tokens`.** All of
+    `refresh_tokens`, `email_verification_tokens`, `password_reset_tokens`, and `sessions` are
+    never pruned (`sessions` grows per login; the two single-use token tables grow per
+    registration/reset — both trivial next to per-rotation `refresh_tokens`, but same profile: a
+    row that is dead once `used_at`/`expires_at` passes). The single-use token tables carry no
+    reuse-detection role, so the ⚠ caveat below is specific to `refresh_tokens`.
   - **`sessions` joins this finding's scope.** The new `sessions` table (one row per login) is never
     pruned either. It grows far slower than `refresh_tokens` (per login, not per rotation).
-  - **Verified: nothing anywhere prunes.** No reaper, no cron, no scheduler exists in the app — the
-    only cleanup machinery is `services/shares.py::cleanup_resource_shares`. Every rotation adds a
-    permanent `refresh_tokens` row.
+  - **Pulled forward as a small Phase 2 addendum (done).** Dead-token pruning is auth hygiene and
+    self-contained, so it shipped alongside the Phase 2 auth work rather than waiting on Phases 3–6
+    or the backlog. See Disposition.
+  - **Was true until 2026-07-17: nothing anywhere pruned.** Before the reaper, no cron/scheduler
+    existed — the only cleanup machinery was `services/shares.py::cleanup_resource_shares`, and every
+    rotation added a permanent `refresh_tokens` row. The reaper (Disposition) now bounds it.
   - **Scale is modest, not urgent.** A refresh fires when a request 401s, not on a timer, so growth is
     roughly single-digit MB/year at household scale, and every lookup is by `token_hash` through a
     unique B-tree, so query cost is unaffected. This is a hygiene/policy gap, not a live problem.
@@ -520,11 +562,33 @@ before implementing the finding; anything not listed verified as written, modulo
     now` fails) and the fall-through either finds it and rejects on `expires_at <= now`, or does not
     find it and rejects on `token is None` — both reject WITHOUT revoking the session
     (`app/services/sessions.py`). So pruning `WHERE expires_at < now()` is behaviour-preserving.
-  - **A cron-free option was designed and deliberately not built** (kept here rather than done
-    piecemeal): an opportunistic `DELETE FROM refresh_tokens WHERE user_id = ? AND expires_at <
-    now()` on each rotation. It rides the leading column of `ix_refresh_tokens_user_active`, costs one
-    indexed delete on a path that already writes, and bounds the table to a rolling 7-day window per
-    active user. Dormant users are swept on their next activity anywhere.
+  - **Recommended approach: a scheduled reaper, matched to industry norm.** Every framework that
+    solves this ships a periodic sweep, not cleanup-on-write (Django `clearsessions`/
+    `flushexpiredtokens`, Laravel `auth:clear-resets`/`passport:purge`, `connect-pg-simple`'s
+    interval prune, Supabase GoTrue's reaper, Keycloak). One idempotent `DELETE ... WHERE
+    expires_at < now()` per token table on an interval (~6–24h), plus the guarded `sessions` sweep
+    below. Delivery, matched to this app's shape (single uvicorn process — no `--workers` — and an
+    alpine Postgres image with no `pg_cron`): an **in-process task in a `lifespan` handler**
+    (none exists yet; APScheduler / `fastapi-utils @repeat_every` / a bare `asyncio` loop). Zero new
+    infra; `pg_cron` (custom image) and a separate cron container (extra service) are both
+    disproportionate at household scale.
+  - **Make it multi-process-safe now with a Postgres advisory lock.** (Shipped: `run_reaper_once`
+    wraps the sweep in `pg_try_advisory_xact_lock(<constant>)` and skips if not acquired — the
+    transaction-scoped variant, so the lock auto-releases on commit and a crash mid-sweep cannot
+    strand it.) The same code is correct at any process count — 1 uvicorn worker today, or N
+    processes across a cluster later — with exactly one reaper per interval and no Redis /
+    leader-election infra. The cheap forward-compatible choice, taken even though we run
+    single-process today. (See the horizontal-scaling readiness note, #45, for the pieces that are
+    *not* yet cluster-safe — SSE fan-out, the in-memory rate limiter, and startup migrations.)
+  - **Rejected: opportunistic delete on rotation.** An earlier idea ran `DELETE ... WHERE user_id = ?
+    AND expires_at < now()` on each refresh — cron-free and index-friendly, but inferior on reflection:
+    it never sweeps **dormant users** (someone who stops logging in keeps their dead rows, including
+    the `ip_hash`/`user_agent_hash` on `sessions` — the opposite of data-minimization), it adds write
+    amplification to the latency-sensitive login path, and it gives no deterministic bound on the
+    oldest row. The scheduled reaper sweeps globally and keeps cleanup off the hot path.
+  - **This is data-minimization, not just disk.** `sessions` retains hashed IP and user-agent; keeping
+    dead ones forever is exactly what retention-horizon norms tell you not to do. That reframes the
+    urgency: trivial on storage grounds, but worth doing correctly as security hygiene.
   - **Pruning `sessions` needs a guard.** A session whose refresh token has expired may still have a
     live 15-minute access token; deleting it logs that user out early. Gate on `last_used_at` older
     than `access_token_expire_minutes`.
@@ -624,3 +688,36 @@ continues from #42.
   (no `429` assertion pattern exists in the suite, and IP-bucketing under the test transport is
   unverified); the CSRF half is. Follow-up logged: a 429 on `/refresh` currently reads as logout,
   and the limiter buckets per-IP so a household behind one NAT shares the budget.
+
+### 45. Horizontal-scaling / multi-process readiness
+
+- **Logged 2026-07-17** (architecture note, not from the 2026-07-11 review pass). Surfaced while
+  designing the #38 token reaper — captured here so the cluster-readiness picture lives in one place.
+- **What & where** — SSE manager `backend/app/sse/manager.py:104` (`manager = SseManager()`, in-memory
+  `_clients`); rate limiter `backend/app/limiter.py:4` (`Limiter(key_func=get_remote_address)`, no
+  `storage_uri` → in-memory); startup migrations `backend/Dockerfile.prod:21` (`alembic upgrade head
+  && exec uvicorn`); connection pool sizing (per-process × node count).
+- **Context — the hard part is already done.** The session-revocation work moved auth *authority* out
+  of process memory into Postgres (sessions, tokens, revocation), and the revocation guarantee is
+  explicitly worker-agnostic (30s periodic revalidation is the guarantee; the in-process stream drop
+  is only a latency optimisation). So auth is already cluster-safe; what remains is delivery,
+  metering, and orchestration. Prod today runs a **single** uvicorn process (no `--workers`), so none
+  of this bites yet — this is forward-looking, currently YAGNI.
+- **Problem (ranked by blast radius under multi-process / multi-node):**
+  1. **SSE fan-out is process-local.** `broadcast()` only reaches clients connected to the same
+     process; a mutation on node A cannot push to a user's stream on node B — silent staleness. The
+     real blocker. Fix: a pub/sub backplane (Redis pub/sub or Postgres `LISTEN/NOTIFY`) so a broadcast
+     on any node fans out to all, each delivering to its local clients (Socket.IO Redis adapter /
+     Django Channels / ActionCable pattern).
+  2. **Rate limits are per-process.** In-memory slowapi buckets mean effective limit = N× intended
+     across workers. Fix: `storage_uri="redis://…"`.
+  3. **Startup migrations race.** N containers each running `alembic upgrade head` on boot contend on
+     the version table. Fix: run migrations as a separate init job/step, not in every app
+     entrypoint.
+  4. **Connection pool multiplies** into Postgres's ceiling (capacity, not correctness). Fix:
+     PgBouncer in front — transaction mode requires disabling async prepared-statement caching.
+- **Already forward-compatible:** the #38 reaper, if built with a `pg_try_advisory_lock` guard, is
+  correct at any process count with no extra infra — do it that way regardless of when clustering
+  lands. See #38.
+- **Effort / Risk** — Large / Medium (backplane is a real project). **Deferred** — no scaling need at
+  household scale; recorded so the four pieces are known before anyone reaches for a second replica.
