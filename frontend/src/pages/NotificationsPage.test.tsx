@@ -118,27 +118,25 @@ describe('NotificationsPage', () => {
       destinationLabel: 'Dashboards route',
       expectedNotificationId: 'notif-2',
     },
-  ])('opens the correct destination and marks the notification read', async ({
-    buttonName,
-    destinationPath,
-    destinationLabel,
-    expectedNotificationId,
-  }) => {
-    const markRead = vi.fn().mockResolvedValue(undefined)
-    useNotificationsStore.setState({ markRead })
+  ])(
+    'opens the correct destination and marks the notification read',
+    async ({ buttonName, destinationPath, destinationLabel, expectedNotificationId }) => {
+      const markRead = vi.fn().mockResolvedValue(undefined)
+      useNotificationsStore.setState({ markRead })
 
-    render(
-      <MemoryRouter initialEntries={['/notifications']}>
-        <Routes>
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path={destinationPath} element={<p>{destinationLabel}</p>} />
-        </Routes>
-      </MemoryRouter>,
-    )
+      render(
+        <MemoryRouter initialEntries={['/notifications']}>
+          <Routes>
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path={destinationPath} element={<p>{destinationLabel}</p>} />
+          </Routes>
+        </MemoryRouter>,
+      )
 
-    fireEvent.click(screen.getByRole('button', { name: buttonName }))
+      fireEvent.click(screen.getByRole('button', { name: buttonName }))
 
-    await screen.findByText(destinationLabel)
-    expect(markRead).toHaveBeenCalledWith(expectedNotificationId)
-  })
+      await screen.findByText(destinationLabel)
+      expect(markRead).toHaveBeenCalledWith(expectedNotificationId)
+    },
+  )
 })
