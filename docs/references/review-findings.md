@@ -31,7 +31,7 @@ ships independently rather than as one long plan:
 
 | # | Spec | Findings | Status |
 |--:|------|----------|--------|
-| 1 | `docs/designs/session-revocation-design.md` | #6, #7, #8 (authz half) | 🚧 Design |
+| 1 | `docs/shipped/session-revocation-design.md` | #6, #7, #8 (authz half), #44 | ✅ Shipped 2026-07-17 |
 | 2 | not written | #1 (frontend auth-boundary reset) | ◻ Planned |
 | 3 | not written | #13 (Argon2 off the event loop) | ◻ Planned |
 | 4 | not written | #31 (email normalization + config validation) | ◻ Planned |
@@ -54,6 +54,19 @@ limit, fixed in spec 1).
   Payload-carrying events now cover list item update/check, so those no longer fan a GET out to
   every open tab. Streams rejected on an HTTP error now refresh and reconnect with backoff, and
   ask for a resync explicitly because a fresh `EventSource` sends no `Last-Event-ID`.
+- **2026-07-17** — Phase 2 spec 1 (session revocation) shipped (`22c9dfd`, `54f7572`, `4089d88`,
+  `dfd8234`, `f182ea2`): **#6, #7, #8, #44 all ✅**. The app now has sessions — one row per login,
+  stable across rotation — so credentials revoke per device, token reuse is detected, and streams
+  end when authority is withdrawn. Existing sessions were revoked by the migration: everyone
+  signs in once more. Two findings logged during the design pass: #43 (login timing oracle,
+  deferred to spec 3) and #44 (fixed here). An auth-dependency refactor (one cached decode+query)
+  and a critical frontend CSRF fix rode along. Phase 2 remainder: #1, #13 (+#43), #31.
+  *Follow-ups logged during this work (Minor, not blocking):* a revoked session 401s with the
+  message "User not found"; `logout` no-ops if the refresh cookie is absent though the session is
+  identifiable from the access cookie; the refresh route re-queries `User` after `live_session`
+  already validated it (dead `if not user` branch); `_drop_streams` runs just before its commit
+  rather than after (self-healing); 429 on `/refresh` reads as a logout and the limiter buckets
+  per-IP (household NAT). Row-retention analysis for `refresh_tokens`/`sessions` folded into #38.
 
 ## Validation pass — 2026-07-16
 
@@ -175,6 +188,20 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Use `UPDATE ... WHERE used/revoked = false RETURNING` or `SELECT ... FOR UPDATE`; introduce refresh token families and revoke the family on reuse. Test concurrent requests using separate database sessions.
 - **Effort / Risk** — Medium / Medium.
 - **Impact** — Makes token rotation and one-time reset guarantees hold in real multi-tab/client use.
+- **Disposition** — ✅ Done 2026-07-17 (`54f7572`, `4089d88`, `dfd8234`). Both consumes are now
+  atomic `UPDATE … WHERE … RETURNING`, tested with a real two-connection `concurrent_sessions`
+  fixture (the savepoint harness cannot express a race). Refresh gained a session/family with a
+  **10s grace window**: a replay inside it mints a successor (the multi-tab stampede), a replay
+  outside it revokes the session (reuse detection). Expiry is checked before reuse, so a
+  week-away token reads as expiry, not theft.
+  **Honest scope note.** The grace window means the *refresh* double-mint is now deliberately
+  *allowed* inside 10s (tabs share one cookie and expire together, so an atomic consume without a
+  window would 401 the loser and log real users out). So atomicity did not close the refresh
+  double-mint — it was already bounded by the window; what it added is **reuse detection** (new)
+  and a genuinely-closed **password-reset** race (no grace window there, so the atomic consume
+  bites — proven RED against a read-then-write). The `pick-exactly-one-winner` test is what makes
+  the property regression-proof. Token *families*/`FOR UPDATE` from the proposal were not built;
+  the session row plus atomic consume achieve the same guarantee more simply.
 
 ### 7. Revoke sessions when credentials change
 
@@ -183,6 +210,13 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Revoke all refresh sessions on password change, optionally preserving a clearly identified current session. Add a per-user session/token version checked during access authentication and expose device sessions using the existing metadata fields.
 - **Effort / Risk** — Medium / Medium; changes session UX.
 - **Impact** — Gives password changes the containment behavior users expect.
+- **Disposition** — ✅ Done 2026-07-17 (`dfd8234`). Password change revokes every session except
+  the caller's; reset revokes all (unauthenticated flow — no session to spare); logout revokes the
+  current one. Because access authentication now joins `sessions` per request, revocation is
+  **immediate** rather than bounded by the 15-minute JWT — the "session/token version" the proposal
+  asked for is the `sessions` row itself. The metadata columns moved to `sessions` but the
+  device-list UI is deliberately not built (the row makes it cheap later). Asserted at the DB
+  level, and the "spare the caller" behaviour proven RED against a revoke-everything sabotage.
 
 ### 8. Bound SSE authorization and close evicted streams
 
@@ -191,19 +225,25 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — End connections at token expiry and require reauthentication; optionally recheck a session version. Add a closed sentinel/flag for queue eviction and tests for overflow, expiry, cancellation, and user/session revocation.
 - **Effort / Risk** — Medium / Medium.
 - **Impact** — Prevents stale-authority data exposure and leaked streaming tasks.
-- **Disposition** — ◐ Partially done 2026-07-16 (`44a9e15`, `6fd1f31`). This finding is two
-  unrelated problems and only the **eviction** half shipped: queue overflow now drains the
-  backlog, pushes a `CLOSED_SENTINEL`, and disconnects, so the generator yields a `resync` and
-  ends instead of staying registered-but-silent; the false comment about detecting closure is
-  gone. Overflow/eviction and cancellation are tested.
-  **Still open — the authorization half**, which is the security one: `get_current_user_for_stream`
-  still authenticates only at connect, so a stream outlives JWT expiry and session revocation.
-  Deliberately held for Phase 2 with **#7**, which builds the revocation mechanism this needs —
-  doing it here would mean inventing a second revocation path for #7 to reconcile. Narrowing:
-  *share* removal is already handled (the audience is recomputed per broadcast), so the live gap
-  is expired-JWT/revoked-session only. The client-side prerequisite is now in place (`6fd1f31`):
-  a rejected stream refreshes and reconnects with backoff, so closing streams at expiry is a fix
-  rather than a 15-minute outage.
+- **Disposition** — ✅ Done. Eviction half 2026-07-16 (`44a9e15`, `6fd1f31`); authorization half
+  2026-07-17 (`22c9dfd`, `dfd8234`). Both halves now closed, but the authorization half was
+  **not** built as the proposal describes, and the difference is deliberate:
+  > **Claim (stated so it can be checked, not in compliance terms): a revoked session stops
+  > streaming within 30 seconds, and stops being accepted on requests immediately.**
+
+  The proposal — *"end connections at token expiry and require reauthentication"* — was written
+  when the JWT was the only authority. This work moved authority to the `sessions` row, at which
+  point bounding the JWT stops *being* a way to bound authorization and becomes a poor *proxy* for
+  it: a session revoked one minute after a refresh would stream on for fourteen more, while every
+  tab would resync on the same 15-minute boundary (a GET storm the SSE-hardening work exists to
+  avoid). So instead the stream **revalidates its session every 30s** (the guarantee, checked on
+  every loop iteration — the existing 5s `wait_for` is an idle timeout, not a heartbeat, so a busy
+  stream would never hit it), and `revoke_session` also drops the stream **in-process instantly**
+  as a *non-load-bearing* optimisation (if it misfires or a second worker appears, the 30s check
+  still holds). `REVOKED_SENTINEL` ends the stream with no resync, distinct from eviction's
+  `CLOSED_SENTINEL`. Single-worker dependency is the manager's existing assumption; cross-process
+  revocation is #21, still deferred. Note this replaces the earlier "still open" text: the
+  client-side reconnect (`6fd1f31`) turned out to be the prerequisite, not the fix.
 
 ### 9. Separate canonical dashboard layout from responsive projection
 
@@ -460,6 +500,37 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Standardize cursor envelopes (`items`, `next_cursor`) and active/archived filters; add documented retention horizons and scheduled indexed batch pruning for security tokens, notifications, and activity.
 - **Effort / Risk** — Medium / Medium; frontend contracts change.
 - **Impact** — Predictable API latency and bounded database growth.
+- **Scope + design notes added 2026-07-17** (from the session-revocation work, `22c9dfd`..`4089d88`) —
+  read these before implementing the token half; they are the difference between a correct prune and
+  one that silently deletes a security feature.
+  - **`sessions` joins this finding's scope.** The new `sessions` table (one row per login) is never
+    pruned either. It grows far slower than `refresh_tokens` (per login, not per rotation).
+  - **Verified: nothing anywhere prunes.** No reaper, no cron, no scheduler exists in the app — the
+    only cleanup machinery is `services/shares.py::cleanup_resource_shares`. Every rotation adds a
+    permanent `refresh_tokens` row.
+  - **Scale is modest, not urgent.** A refresh fires when a request 401s, not on a timer, so growth is
+    roughly single-digit MB/year at household scale, and every lookup is by `token_hash` through a
+    unique B-tree, so query cost is unaffected. This is a hygiene/policy gap, not a live problem.
+  - **⚠ DO NOT prune consumed-but-unexpired tokens.** The consumed row **is** reuse detection's
+    evidence: a replay is detected by finding the row and reading its `revoked_at`. Delete it and a
+    detected theft silently degrades to a plain 401 with the thief's session intact. Rotation-time
+    "delete the old token" is exactly this mistake.
+  - **Only expired rows are inert — traced and provable.** For a token past `expires_at`, the outcome
+    is identical whether its row exists or not: the atomic `UPDATE` cannot match it (`expires_at >
+    now` fails) and the fall-through either finds it and rejects on `expires_at <= now`, or does not
+    find it and rejects on `token is None` — both reject WITHOUT revoking the session
+    (`app/services/sessions.py`). So pruning `WHERE expires_at < now()` is behaviour-preserving.
+  - **A cron-free option was designed and deliberately not built** (kept here rather than done
+    piecemeal): an opportunistic `DELETE FROM refresh_tokens WHERE user_id = ? AND expires_at <
+    now()` on each rotation. It rides the leading column of `ix_refresh_tokens_user_active`, costs one
+    indexed delete on a path that already writes, and bounds the table to a rolling 7-day window per
+    active user. Dormant users are swept on their next activity anywhere.
+  - **Pruning `sessions` needs a guard.** A session whose refresh token has expired may still have a
+    live 15-minute access token; deleting it logs that user out early. Gate on `last_used_at` older
+    than `access_token_expire_minutes`.
+  - **Growth can exceed one row per rotation.** The refresh grace window deliberately lets racing tabs
+    each mint a successor, so a stampede forks the chain and leaves orphaned live tokens (bounded by
+    session revocation, which kills every token in the session). Retention math should not assume 1:1.
 
 ### 39. Extract application use cases from oversized routers
 
@@ -543,5 +614,13 @@ continues from #42.
 - **Proposal** — Add both, matching the sibling routes.
 - **Effort / Risk** — Small / Low.
 - **Impact** — Restores the router's own invariant on the one route that skips it.
-- **Disposition** — ◻ Open. Folded into Phase 2 spec 1
-  (`docs/designs/session-revocation-design.md`), which rewrites the endpoint.
+- **Disposition** — ✅ Done 2026-07-17 (`dfd8234` backend, `f182ea2` frontend). Added
+  `@limiter.limit("30/minute")` and a CSRF guard. `require_csrf` could not be reused — it depends
+  on `get_current_user`, and `/refresh` exists precisely because the access token expired — so
+  `require_csrf_without_session` compares the double-submit pair directly and `require_csrf`
+  delegates to it. **The backend guard shipped with a matching frontend fix in the same batch,
+  and had to:** `tryRefresh` sent no header, so the guard alone would have 403'd every refresh and
+  logged out every user at the 15-minute access-token expiry. Rate-limit behaviour is not tested
+  (no `429` assertion pattern exists in the suite, and IP-bucketing under the test transport is
+  unverified); the CSRF half is. Follow-up logged: a 429 on `/refresh` currently reads as logout,
+  and the limiter buckets per-IP so a household behind one NAT shares the budget.

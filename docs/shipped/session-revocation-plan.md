@@ -1,8 +1,10 @@
 # Session Revocation Implementation Plan
 
+**Status:** ✅ Shipped 2026-07-17 (`22c9dfd`, `54f7572`, `4089d88`, `dfd8234`, `f182ea2`). See the design doc's "Deviations from this design (as shipped)" for where execution diverged (Tasks 1+2 merged, a mid-plan dependency refactor, three insensitive tests rewritten, a frontend CSRF fix added).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Spec:** `docs/designs/session-revocation-design.md`. Read it for rationale; this plan is the how.
+**Spec:** `docs/shipped/session-revocation-design.md`. Read it for rationale; this plan is the how.
 
 **Goal:** Give the app a real session — one row per login, stable across refresh rotation — so that
 credentials can be revoked per device, token reuse can be detected, and SSE streams stop when their
@@ -1880,8 +1882,8 @@ git commit -m "feat(sse): end streams whose session has been revoked"
 **Files:**
 - Modify: `docs/references/review-findings.md`
 - Modify: `CONTEXT.md`
-- Modify: `docs/designs/session-revocation-design.md` (status)
-- Move: `docs/designs/session-revocation-{design,plan}.md` → `docs/shipped/`
+- Modify: `docs/shipped/session-revocation-design.md` (status)
+- Move: `docs/shipped/session-revocation-{design,plan}.md` → `docs/shipped/`
 
 > **Run this task LAST — it needs the real commit SHAs from Tasks 1-7.**
 
@@ -1963,8 +1965,8 @@ In **In flight**, update the Phase 2 line to name what remains: #1, #13 (+ #43),
 - [ ] **Step 5: Move the spec and plan to shipped**
 
 ```bash
-git mv docs/designs/session-revocation-design.md docs/shipped/session-revocation-design.md
-git mv docs/designs/session-revocation-plan.md docs/shipped/session-revocation-plan.md
+git mv docs/shipped/session-revocation-design.md docs/shipped/session-revocation-design.md
+git mv docs/shipped/session-revocation-plan.md docs/shipped/session-revocation-plan.md
 ```
 
 Flip both `Status:` lines to `✅ Shipped 2026-07-16 (<SHAs>)`. Add a **"Deviations from this design

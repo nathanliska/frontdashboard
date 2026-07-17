@@ -11,8 +11,14 @@ _Last updated: 2026-07-16_
 **Auth & account**
 - Registration → email verification (required before login) → JWT session in HttpOnly cookies
   with CSRF double-submit; single-use rotating refresh tokens (7d) + 15-min access tokens.
-- Password reset via email (revokes all refresh tokens); authenticated password change and
-  profile rename (both re-issue the access cookie). Rate limits on all auth endpoints.
+- **Sessions are first-class**: one `sessions` row per login, stable across refresh rotation. The
+  access JWT carries its `sid` and every request checks the session is live, so revocation is
+  immediate. Password change revokes every *other* session and keeps yours; reset and logout
+  revoke accordingly. Refresh rotation consumes atomically with a 10s grace window so racing tabs
+  (which share one cookie and expire together) both survive; a replay after that window is treated
+  as reuse and revokes the session. `/auth/refresh` is CSRF-guarded and rate-limited.
+- Password reset via email; authenticated password change and profile rename (both re-issue the
+  access cookie). Rate limits on all auth endpoints.
 - Emails send via Resend in background tasks; without an API key the sender logs the link
   (how you get tokens locally). HTML templates exist for both flows.
 - Profile page: display name, password change, home-dashboard preference.
@@ -74,8 +80,10 @@ _Last updated: 2026-07-16_
   indefinitely), redirecting to `/login` only if the refresh itself fails. Because a fresh
   `EventSource` sends no `Last-Event-ID`, that path asks for the resync itself; the browser's
   own auto-retry of a network drop is left alone and resyncs via the header as before.
-- **Streams are still authenticated only at connect** — they outlive JWT expiry and session
-  revocation (finding #8's open half, Phase 2 with #7).
+- Streams revalidate their session every 30s and end when it is revoked; revocation also drops
+  them in-process immediately (the drop is a latency optimisation, not the guarantee — the periodic
+  check is worker-agnostic and holds without it). Closes #8's authorization half: a revoked session
+  stops streaming within 30s and stops being accepted on requests immediately.
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind Cloudflare), named volumes, health checks.
@@ -86,8 +94,10 @@ _Last updated: 2026-07-16_
 
 - **Design-review remediation** (see the live tracker in
   `docs/references/review-findings.md`): Phase 1 (security quick wins #3/#4/#5) shipped
-  2026-07-12. SSE hardening shipped 2026-07-16, closing #8's eviction half.
-  **Phase 2 — auth/session hardening (#1, #6, #7, #8's authz half, #13, #31) is next**; no
+  2026-07-12. SSE hardening shipped 2026-07-16, closing #8's eviction half. **Session revocation
+  (Phase 2 spec 1) shipped 2026-07-17, closing #6, #7, #8, #44.**
+  **Phase 2 remainder — #1 (frontend auth-boundary reset), #13 + #43 (Argon2 + login timing),
+  #31 (email/config) — is next**, each its own spec; no
   spec/plan written yet.
 
 ## Deliberately deferred / known dead code

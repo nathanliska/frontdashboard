@@ -1,7 +1,8 @@
 # Design — Session revocation: real sessions, atomic rotation, revocable streams
 
 **Date:** 2026-07-16
-**Status:** 🚧 Design — not started
+**Status:** ✅ Shipped 2026-07-17 (`22c9dfd`, `54f7572`, `4089d88`, `dfd8234`, `f182ea2`).
+Deviations from this design as shipped are recorded at the bottom.
 **Findings:** #6 (single-use tokens under concurrency), #7 (revoke sessions when credentials
 change), #8 (**authorization half only** — the eviction half shipped 2026-07-16, `44a9e15`).
 Also folds in one unlogged defect found while designing: `POST /auth/refresh` has neither
@@ -410,3 +411,38 @@ two sessions, cascade-delete the user on teardown (the `sessions.user_id` FK is 
 - **Migration-exercising tests.** A standing blind spot (`create_all`, not Alembic), and a real one —
   but it is its own piece of work, and the no-backfill migration is what keeps this spec honest
   without it.
+
+---
+
+## Deviations from this design (as shipped)
+
+Recorded so the next reader trusts the code over the plan.
+
+- **Tasks 1 and 2 shipped as one commit** (`22c9dfd`). The plan split the schema change from the
+  code that satisfies it, but Task 1's migration makes `session_id` NOT NULL while the router still
+  built `RefreshToken` without it — Task 1 alone would have committed a red suite. Merged to keep
+  every commit green.
+- **The auth dependencies were refactored mid-plan** (not in this design). The first cut added
+  `get_current_session_id`, which decoded the JWT a *second* time and handed out a `sid` with no
+  session check. Replaced with one cached `get_auth_context` (the sole decode + sole query) feeding
+  `get_current_user`/`get_current_session`. Measured 2→1 decodes, queries unchanged at 1. Later
+  tasks that the plan pointed at `get_current_session_id` use `get_current_session[_for_stream]`.
+- **`#44`'s backend guard forced a frontend fix in the same batch** (`f182ea2`), which the design
+  did not anticipate. `tryRefresh` sent no CSRF header, so the guard alone would have 403'd every
+  refresh and logged out every user at the 15-minute expiry. The backend test passed *because it
+  sent a header the real client did not* — caught only by whole-app review, not the backend suite.
+- **The refresh grace window makes atomicity behaviourally moot for refresh** (but not reset).
+  With the 10s window, a read-then-write and the atomic consume produce the same observable outcome
+  for a refresh stampede — both racers succeed in one session. Atomicity genuinely bites only on
+  password *reset*, which has no window. What the refresh path actually gained is **reuse
+  detection**, which is new. See #6's disposition.
+- **Three of this plan's hand-written tests were insensitive by construction** and were rewritten
+  during execution: the refresh stampede test (the grace window masked the sabotage — replaced with
+  an exactly-one-winner test at a negative window), and *both* SSE tests (a 30s deadline against a
+  2s test bound meant `revalidate` never ran — fixed with an interval monkeypatch, a call-counter,
+  and a pre-queued sentinel so the "checked-but-ignored" regression is also caught). Each was found
+  by the plan's own "prove it can fail" step. Timing-bound async tests were the recurring trap.
+- **Not built, logged as follow-ups** (see `review-findings.md` #6/#7/#8/#44 dispositions and #38):
+  no reaper for expired `refresh_tokens`/`sessions` rows (analysis folded into #38); `_drop_streams`
+  runs just before its `db.commit()` rather than after (self-healing, not exploitable); a revoked
+  session 401s with the message "User not found"; `logout` no-ops if the refresh cookie is absent.
