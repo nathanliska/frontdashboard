@@ -12,6 +12,7 @@ import {
   type User,
   type UserPreferences,
 } from '../api/auth'
+import { tryRefresh } from '../api/client'
 import { resetAgendaData } from '../resources/agendaData'
 import { resetCalendarData } from '../resources/calendarData'
 import { resetListData } from '../resources/listData'
@@ -56,11 +57,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         return
       }
       // Access token may be expired — attempt silent refresh
-      const refreshRes = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'include',
-      }).catch(() => null)
-      if (refreshRes?.ok) {
+      const refreshed = await tryRefresh()
+      if (refreshed) {
         user = await apiGetMe()
         if (user) {
           set({ status: 'authenticated', user })

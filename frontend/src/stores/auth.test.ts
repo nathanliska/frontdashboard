@@ -32,6 +32,14 @@ const {
 
 const toastError = vi.hoisted(() => vi.fn())
 
+const { tryRefreshMock } = vi.hoisted(() => ({
+  tryRefreshMock: vi.fn<() => Promise<boolean>>(),
+}))
+
+vi.mock('../api/client', () => ({
+  tryRefresh: tryRefreshMock,
+}))
+
 vi.mock('../api/auth', () => ({
   apiChangePassword,
   apiGetMe,
@@ -87,27 +95,27 @@ describe('useAuthStore', () => {
 
   it('refreshes and retries when the current access token is stale', async () => {
     apiGetMe.mockResolvedValueOnce(null).mockResolvedValueOnce(user)
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-    } as Response)
+    tryRefreshMock.mockResolvedValue(true)
 
     await useAuthStore.getState().init()
 
-    expect(fetch).toHaveBeenCalledWith('/api/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-    })
+    // Bootstrap must go through the shared tryRefresh — it is the only refresh
+    // path that sends the X-CSRF-Token header and single-flights the request.
+    // A hand-rolled fetch here would 403 against the backend CSRF guard.
+    expect(tryRefreshMock).toHaveBeenCalledTimes(1)
+    expect(fetch).not.toHaveBeenCalled()
     expect(apiGetMe).toHaveBeenCalledTimes(2)
     expect(useAuthStore.getState().status).toBe('authenticated')
   })
 
   it('falls back to unauthenticated when refresh does not recover the session', async () => {
     apiGetMe.mockResolvedValue(null)
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-    } as Response)
+    tryRefreshMock.mockResolvedValue(false)
 
     await useAuthStore.getState().init()
+
+    expect(tryRefreshMock).toHaveBeenCalledTimes(1)
+    expect(fetch).not.toHaveBeenCalled()
 
     expect(useAuthStore.getState().status).toBe('unauthenticated')
     expect(useAuthStore.getState().user).toBeNull()

@@ -12,6 +12,7 @@ export function tryRefresh(): Promise<boolean> {
     refreshPromise = fetch('/api/auth/refresh', {
       method: 'POST',
       credentials: 'include',
+      headers: { 'X-CSRF-Token': getCsrfToken() },
     })
       .then((r) => r.ok)
       .catch(() => false)
