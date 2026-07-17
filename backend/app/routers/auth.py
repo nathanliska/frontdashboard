@@ -22,7 +22,6 @@ from app.limiter import limiter
 from app.models.dashboard import Dashboard
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
-from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
 from app.models.share import PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
@@ -43,6 +42,7 @@ from app.services.email import send_password_reset_email, send_verification_emai
 from app.services.password_reset import consume_password_reset_token
 from app.services.sessions import (
     RefreshRejected,
+    drop_session_streams,
     revoke_session,
     revoke_user_sessions,
     rotate_refresh_token,
@@ -344,8 +344,9 @@ async def confirm_password_reset(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
 
     user.password_hash = hash_password(body.new_password)
-    await revoke_user_sessions(user.id, db)
+    revoked_ids = await revoke_user_sessions(user.id, db)
     await db.commit()
+    drop_session_streams(revoked_ids)
 
 
 @router.post("/login", response_model=UserResponse)
@@ -383,16 +384,11 @@ async def refresh_tokens(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
 
     try:
-        session, raw_refresh = await rotate_refresh_token(refresh_token, db)
-    except RefreshRejected:
+        session, user, raw_refresh = await rotate_refresh_token(refresh_token, db)
+    except RefreshRejected as exc:
         await db.commit()  # a reuse-triggered revocation must persist
+        drop_session_streams([exc.revoked_session_id] if exc.revoked_session_id else [])
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token") from None
-
-    user_result = await db.execute(select(User).where(User.id == session.user_id, User.deleted_at.is_(None)))
-    user = user_result.scalar_one_or_none()
-    if not user:
-        await db.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     csrf = generate_csrf_token()
     await db.commit()
@@ -406,16 +402,17 @@ async def refresh_tokens(
 async def logout(
     response: Response,
     _csrf: None = Depends(require_csrf),
-    refresh_token: Annotated[str | None, Cookie()] = None,
+    session: UserSession = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Revoke the current session and clear auth cookies."""
-    if refresh_token:
-        result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token)))
-        record = result.scalar_one_or_none()
-        if record:
-            await revoke_session(record.session_id, db)
-            await db.commit()
+    """Revoke the current session and clear auth cookies.
+
+    The session comes from the access token (require_csrf already authenticated it),
+    so logout revokes the session even when the refresh cookie is absent.
+    """
+    revoked_id = await revoke_session(session.id, db)
+    await db.commit()
+    drop_session_streams([revoked_id] if revoked_id else [])
     _clear_auth_cookies(response)
 
 
@@ -479,8 +476,9 @@ async def change_password(
         )
 
     current_user.password_hash = hash_password(body.new_password)
-    await revoke_user_sessions(current_user.id, db, except_session_id=session.id)
+    revoked_ids = await revoke_user_sessions(current_user.id, db, except_session_id=session.id)
     await db.commit()
+    drop_session_streams(revoked_ids)
     _set_access_cookie(response, create_access_token(current_user.id, current_user.email, session.id))
 
 

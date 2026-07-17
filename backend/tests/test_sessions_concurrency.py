@@ -74,7 +74,7 @@ async def test_deleting_a_session_cascades_to_its_tokens(db_session: AsyncSessio
     assert remaining == []
 
 
-async def _rotate_and_commit(raw: str, db: AsyncSession) -> tuple[UserSession, str]:
+async def _rotate_and_commit(raw: str, db: AsyncSession) -> tuple[UserSession, User, str]:
     """Mirrors the router: each request commits right after its own rotate call,
     on both the success and the rejection path, not batched with another
     request's commit.

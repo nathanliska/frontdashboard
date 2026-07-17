@@ -52,7 +52,9 @@ async def _resolve_auth_context(
     )
     row = result.one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        # The token decoded, but its session is revoked / gone or the user is deleted.
+        # "User not found" was misleading — the common case is a revoked session.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session is no longer valid")
     session, user = row
     return AuthContext(session=session, user=user)
 

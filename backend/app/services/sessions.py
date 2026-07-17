@@ -5,6 +5,7 @@ which is what makes it something you can revoke, name, and check.
 """
 
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
@@ -42,10 +43,16 @@ async def issue_refresh_token(session: UserSession, db: AsyncSession, now: datet
     return raw
 
 
-async def live_session(session_id: uuid.UUID, db: AsyncSession) -> UserSession | None:
-    """The session, if it exists, is not revoked, and its user is not deleted."""
+async def live_session(session_id: uuid.UUID, db: AsyncSession) -> tuple[UserSession, User] | None:
+    """The session and its user, if the session exists, is not revoked, and its user
+    is not deleted.
+
+    Returns both because every caller that validates a session also needs the user
+    (to mint the next access token) — resolving them together is the same join either
+    way and spares the caller a redundant `users` lookup.
+    """
     result = await db.execute(
-        select(UserSession)
+        select(UserSession, User)
         .join(User, User.id == UserSession.user_id)
         .where(
             UserSession.id == session_id,
@@ -53,7 +60,8 @@ async def live_session(session_id: uuid.UUID, db: AsyncSession) -> UserSession |
             User.deleted_at.is_(None),
         )
     )
-    return result.scalar_one_or_none()
+    row = result.one_or_none()
+    return (row[0], row[1]) if row is not None else None
 
 
 async def session_is_live(session_id: uuid.UUID, db: AsyncSession) -> bool:
@@ -64,24 +72,46 @@ _GRACE_WINDOW = timedelta(seconds=10)
 
 
 class RefreshRejected(Exception):
-    """The refresh token cannot be rotated. The router turns this into a 401."""
+    """The refresh token cannot be rotated. The router turns this into a 401.
+
+    Carries the session id when the rejection revoked one (the theft path), so the
+    router can drop that session's streams AFTER it commits the revocation.
+    """
+
+    def __init__(self, revoked_session_id: uuid.UUID | None = None) -> None:
+        self.revoked_session_id = revoked_session_id
+        super().__init__()
 
 
-async def revoke_session(session_id: uuid.UUID, db: AsyncSession) -> None:
+async def revoke_session(session_id: uuid.UUID, db: AsyncSession) -> uuid.UUID | None:
     """Kill a session. The only way a single session dies — every trigger routes here.
 
     Individual tokens are left alone: every path that consumes one joins `sessions`
-    and rejects a revoked one, so the session flag alone is sufficient.
+    and rejects a revoked one, so the session flag alone is sufficient. Returns the
+    revoked id (or None if it was already revoked / absent) so the caller can drop
+    its streams once the write commits.
     """
-    await db.execute(update(UserSession).where(UserSession.id == session_id, UserSession.revoked_at.is_(None)).values(revoked_at=datetime.now(UTC)))
-    _drop_streams(session_id)
+    result = await db.execute(
+        update(UserSession)
+        .where(UserSession.id == session_id, UserSession.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(UTC))
+        .returning(UserSession.id)
+    )
+    return result.scalar_one_or_none()
 
 
-def _drop_streams(session_id: uuid.UUID) -> None:
-    """Latency optimisation only — stream_events revalidates on a deadline anyway."""
+def drop_session_streams(session_ids: Iterable[uuid.UUID]) -> None:
+    """Drop live SSE streams for revoked sessions.
+
+    Latency optimisation only — stream_events revalidates on a deadline regardless,
+    so a missed drop costs up to 30s of staleness, not correctness. Call this AFTER
+    the revocation commits: a stream torn down before the write is durable would only
+    reconnect, revalidate against a still-live session, and resume.
+    """
     from app.sse.manager import manager
 
-    manager.disconnect_session(session_id)
+    for session_id in session_ids:
+        manager.disconnect_session(session_id)
 
 
 async def revoke_user_sessions(
@@ -89,8 +119,9 @@ async def revoke_user_sessions(
     db: AsyncSession,
     *,
     except_session_id: uuid.UUID | None = None,
-) -> None:
-    """Revoke every live session for a user, optionally sparing one.
+) -> list[uuid.UUID]:
+    """Revoke every live session for a user, optionally sparing one. Returns the
+    revoked ids for the caller to drop post-commit.
 
     `except_session_id` is what lets a password change sign out your other devices
     without signing out the tab you changed it in.
@@ -102,12 +133,11 @@ async def revoke_user_sessions(
     if except_session_id is not None:
         query = query.where(UserSession.id != except_session_id)
     result = await db.execute(query.values(revoked_at=datetime.now(UTC)).returning(UserSession.id))
-    for revoked_id in result.scalars().all():
-        _drop_streams(revoked_id)
+    return list(result.scalars().all())
 
 
-async def rotate_refresh_token(raw_token: str, db: AsyncSession) -> tuple[UserSession, str]:
-    """Consume a refresh token and mint its successor.
+async def rotate_refresh_token(raw_token: str, db: AsyncSession) -> tuple[UserSession, User, str]:
+    """Consume a refresh token and mint its successor. Returns (session, user, raw).
 
     The database picks the winner, not the application: an application-level
     read-then-write lets two concurrent requests both observe a valid token and
@@ -129,10 +159,11 @@ async def rotate_refresh_token(raw_token: str, db: AsyncSession) -> tuple[UserSe
     winning_session_id = consumed.scalar_one_or_none()
 
     if winning_session_id is not None:
-        session = await live_session(winning_session_id, db)
-        if session is None:
+        live = await live_session(winning_session_id, db)
+        if live is None:
             raise RefreshRejected
-        return session, await issue_refresh_token(session, db, now)
+        session, user = live
+        return session, user, await issue_refresh_token(session, db, now)
 
     # We lost, or the token was never usable. Work out which — the order below is
     # load-bearing.
@@ -147,9 +178,10 @@ async def rotate_refresh_token(raw_token: str, db: AsyncSession) -> tuple[UserSe
     if token.expires_at <= now:
         raise RefreshRejected
 
-    session = await live_session(token.session_id, db)
-    if session is None:
+    live = await live_session(token.session_id, db)
+    if live is None:
         raise RefreshRejected
+    session, user = live
 
     if token.revoked_at is None:
         # Not expired, not revoked, yet the UPDATE matched nothing. Should be
@@ -160,8 +192,8 @@ async def rotate_refresh_token(raw_token: str, db: AsyncSession) -> tuple[UserSe
         # The tab stampede. Each racing tab gets its OWN successor (we store hashes
         # and cannot reissue the same raw token); both are valid, both belong to this
         # session, and the cookie jar keeps whichever lands last.
-        return session, await issue_refresh_token(session, db, now)
+        return session, user, await issue_refresh_token(session, db, now)
 
     # Held and replayed long after it was spent: the theft shape.
-    await revoke_session(token.session_id, db)
-    raise RefreshRejected
+    revoked_id = await revoke_session(token.session_id, db)
+    raise RefreshRejected(revoked_session_id=revoked_id)

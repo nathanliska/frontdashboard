@@ -475,6 +475,20 @@ async def test_logout_revokes_only_the_current_session(auth_client: AsyncClient,
     assert sum(s.revoked_at is None for s in sessions) == 1
 
 
+async def test_logout_revokes_without_the_refresh_cookie(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """Logout identifies the session from the access token, so it still revokes when
+    the refresh cookie is absent — it used to silently no-op."""
+    set_csrf(auth_client)
+    auth_client.cookies.delete("refresh_token")
+
+    resp = await auth_client.post(_LOGOUT_URL)
+    assert resp.status_code == 204
+
+    sessions = (await db_session.execute(select(UserSession))).scalars().all()
+    assert sessions, "the session row still exists"
+    assert all(s.revoked_at is not None for s in sessions), "the current session was revoked"
+
+
 async def test_password_reset_revokes_every_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
     """The reset flow is unauthenticated — there is no caller session to spare, so
     unlike a password change this revokes everything."""
