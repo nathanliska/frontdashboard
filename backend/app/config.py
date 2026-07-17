@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:5173"
     resend_api_key: str | None = None
     email_from: str = "FrontDashboard <noreply@frontdashboard.local>"
+    # Background retention sweep of expired auth rows (finding #38).
+    reaper_enabled: bool = True
+    reaper_interval_hours: int = 6
 
     @field_validator("frontend_base_url", mode="before")
     @classmethod
