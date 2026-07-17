@@ -5,6 +5,9 @@ event_type, actor, and entity metadata. Completeness check: after each
 mutation there should be exactly one more event than before.
 """
 
+import re
+from pathlib import Path
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -18,6 +21,15 @@ from app.models.activity import ActivityEvent, EventType
 # ---------------------------------------------------------------------------
 
 CSRF = "test-csrf-token"
+
+
+def test_all_activity_event_types_have_frontend_presentations() -> None:
+    formatter_path = Path(__file__).parents[2] / "frontend/src/utils/notifications/notificationFeedUtils.ts"
+    formatter_source = formatter_path.read_text().split("export function formatActivityEvent", 1)[1]
+    formatter_source = formatter_source.split("default:", 1)[0]
+    mapped_event_types = set(re.findall(r"case '([^']+)':", formatter_source))
+
+    assert mapped_event_types == {event_type.value for event_type in EventType}
 
 
 def _csrf(client: AsyncClient) -> None:

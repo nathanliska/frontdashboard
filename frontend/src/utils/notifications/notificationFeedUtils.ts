@@ -58,6 +58,11 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
         badge: 'Dashboard',
         summary: `You deleted ${quoted(payloadString(payload, 'name'), 'a dashboard')}.`,
       }
+    case 'dashboard.updated':
+      return {
+        badge: 'Dashboard',
+        summary: `You updated ${quoted(payloadString(payload, 'name'), 'a dashboard')}.`,
+      }
     case 'dashboard.share_added':
       return {
         badge: 'Sharing',
@@ -101,6 +106,11 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
         badge: 'List',
         summary: `You deleted ${quoted(payloadString(payload, 'name'), 'a list')}.`,
       }
+    case 'list.reordered':
+      return {
+        badge: 'List',
+        summary: 'You reordered your lists.',
+      }
     case 'list.item.created':
       return {
         badge: 'List item',
@@ -111,10 +121,41 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
         badge: 'List item',
         summary: 'You updated a list item.',
       }
+    case 'list.item.checked': {
+      const checked = payload.values
+      const checkedValue =
+        typeof checked === 'object' && checked !== null
+          ? payloadBoolean(checked as Record<string, unknown>, 'checked')
+          : null
+      return {
+        badge: 'List item',
+        summary: checkedValue === false ? 'You unchecked a list item.' : 'You checked a list item.',
+      }
+    }
     case 'list.item.deleted':
       return {
         badge: 'List item',
         summary: 'You deleted a list item.',
+      }
+    case 'list.item.reordered':
+      return {
+        badge: 'List item',
+        summary: 'You reordered items in a list.',
+      }
+    case 'membership.added':
+      return {
+        badge: 'Membership',
+        summary: 'You added a member.',
+      }
+    case 'membership.removed':
+      return {
+        badge: 'Membership',
+        summary: 'You removed a member.',
+      }
+    case 'membership.role_changed':
+      return {
+        badge: 'Membership',
+        summary: "You changed a member's role.",
       }
     case 'calendar.event.created':
       return {
