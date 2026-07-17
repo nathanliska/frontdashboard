@@ -39,6 +39,7 @@ import {
   createClientMutationId,
   forgetPendingDashboardMutation,
   recordPendingDashboardMutation,
+  resetPendingDashboardMutations,
 } from '../utils/dashboard/dashboardMutation'
 import { useAuthStore } from './auth'
 import { toast } from './toast'
@@ -69,6 +70,11 @@ let scheduledSummariesRefreshTimer: ReturnType<typeof setTimeout> | null = null
 let scheduledSummariesRefreshPromise: Promise<void> | null = null
 let resolveScheduledSummariesRefresh: (() => void) | null = null
 let rejectScheduledSummariesRefresh: ((error: unknown) => void) | null = null
+
+// Bumped by resetDashboardData() at every auth boundary. Async store writes capture
+// it via sessionGuard() and no-op if it has moved — so a request begun under one
+// account can never write into the next account's store.
+let sessionGeneration = 0
 
 const DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS = 100
 
@@ -298,438 +304,482 @@ interface DashboardState {
   resolveConflict: () => void
 }
 
-export const useDashboardStore = create<DashboardState>()((set, get) => ({
-  summaries: [],
-  summariesLoaded: false,
-  summariesLoading: false,
-  dashboard: null,
-  loading: false,
-  loadError: false,
-  conflict: false,
-
-  // ── Listing ────────────────────────────────────────────────────────────────
-
-  async loadSummaries(force = false) {
-    const { summariesLoaded, summariesLoading } = get()
-    if (!force && summariesLoaded && !summariesLoading) return
-    if (inFlightSummariesLoad) {
-      if (force) queuedSummariesForceReload = true
-      return inFlightSummariesLoad
+export const useDashboardStore = create<DashboardState>()((set, get) => {
+  function sessionGuard() {
+    const gen = sessionGeneration
+    return {
+      isCurrent: () => gen === sessionGeneration,
+      set: ((...args: Parameters<typeof set>) => {
+        if (gen === sessionGeneration) set(...args)
+      }) as typeof set,
     }
+  }
 
-    set({ summariesLoading: true })
-    const promise = (async () => {
-      try {
-        while (true) {
-          queuedSummariesForceReload = false
+  return {
+    summaries: [],
+    summariesLoaded: false,
+    summariesLoading: false,
+    dashboard: null,
+    loading: false,
+    loadError: false,
+    conflict: false,
 
-          try {
-            const nextSummaries = await apiListDashboards()
-            set({ summaries: nextSummaries, summariesLoaded: true })
-          } catch {
-            if (!queuedSummariesForceReload) {
-              toast.error('Failed to load dashboards.')
-              break
-            }
-            continue
-          }
+    // ── Listing ────────────────────────────────────────────────────────────────
 
-          if (!queuedSummariesForceReload) break
-        }
-      } finally {
-        set({ summariesLoading: false })
-        inFlightSummariesLoad = null
-      }
-    })()
-
-    inFlightSummariesLoad = promise
-    return promise
-  },
-
-  async createDashboard(data) {
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
-    try {
-      const summary = await apiCreateDashboard(data, { clientMutationId })
-      set((s) => ({ summaries: [summary, ...s.summaries] }))
-      return summary
-    } catch {
-      forgetPendingDashboardMutation(clientMutationId)
-      toast.error('Failed to create dashboard.')
-      throw new Error('create failed')
-    }
-  },
-
-  async archiveDashboard(id, archived) {
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
-    try {
-      const updated = await apiUpdateDashboardMeta(id, { archived }, { clientMutationId })
-      set((s) => ({
-        summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
-        dashboard:
-          s.dashboard?.id === id
-            ? {
-                ...s.dashboard,
-                archived: updated.archived,
-                version: updated.version,
-                name: updated.name,
-              }
-            : s.dashboard,
-      }))
-    } catch {
-      forgetPendingDashboardMutation(clientMutationId)
-      toast.error(`Failed to ${archived ? 'archive' : 'unarchive'} dashboard.`)
-    }
-  },
-
-  async deleteDashboard(id) {
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
-    try {
-      await apiDeleteDashboard(id, { clientMutationId })
-      set((s) => ({ summaries: s.summaries.filter((d) => d.id !== id) }))
-    } catch {
-      forgetPendingDashboardMutation(clientMutationId)
-      toast.error('Failed to delete dashboard.')
-    }
-  },
-
-  async toggleFavorite(id, current) {
-    try {
-      const authState = useAuthStore.getState()
-      const currentFavoriteIds = authState.user?.preferences.favorite_dashboard_ids ?? []
-      const nextFavoriteIds = current
-        ? currentFavoriteIds.filter((favoriteId) => favoriteId !== id)
-        : [...currentFavoriteIds.filter((favoriteId) => favoriteId !== id), id]
-
-      const updatedUser = await apiUpdatePreferences({ favorite_dashboard_ids: nextFavoriteIds })
-      useAuthStore.setState({ user: updatedUser })
-      set((s) => ({
-        summaries: s.summaries.map((d) => (d.id === id ? { ...d, is_favorite: !current } : d)),
-        dashboard: s.dashboard?.id === id ? { ...s.dashboard, is_favorite: !current } : s.dashboard,
-      }))
-    } catch {
-      toast.error('Failed to update favorite.')
-    }
-  },
-
-  async renameDashboard(id, name) {
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
-    try {
-      const updated = await apiUpdateDashboardMeta(id, { name }, { clientMutationId })
-      set((s) => ({
-        summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
-        dashboard:
-          s.dashboard?.id === id
-            ? {
-                ...s.dashboard,
-                name: updated.name,
-                archived: updated.archived,
-                version: updated.version,
-              }
-            : s.dashboard,
-      }))
-    } catch {
-      forgetPendingDashboardMutation(clientMutationId)
-      toast.error('Failed to rename dashboard.')
-    }
-  },
-
-  // ── Editor ─────────────────────────────────────────────────────────────────
-
-  async loadDashboard(id, options = {}) {
-    const requestedOptions = normalizeDashboardLoadOptions(options)
-    const requestSerial = beginDashboardRequest(id)
-
-    if (inFlightDashboardLoad?.id === id) {
-      inFlightDashboardLoad.latestRequestSerial = requestSerial
-      const shouldQueueFollowUp =
-        requestedOptions.background ||
-        !dashboardLoadSatisfiesRequest(inFlightDashboardLoad.options, requestedOptions)
-
-      if (shouldQueueFollowUp) {
-        inFlightDashboardLoad.queuedOptions = mergeDashboardLoadOptions(
-          inFlightDashboardLoad.queuedOptions,
-          requestedOptions,
-        )
+    async loadSummaries(force = false) {
+      const guard = sessionGuard()
+      const { summariesLoaded, summariesLoading } = get()
+      if (!force && summariesLoaded && !summariesLoading) return
+      if (inFlightSummariesLoad) {
+        if (force) queuedSummariesForceReload = true
+        return inFlightSummariesLoad
       }
 
-      return inFlightDashboardLoad.promise
-    }
+      set({ summariesLoading: true })
+      const promise = (async () => {
+        try {
+          while (true) {
+            queuedSummariesForceReload = false
 
-    const currentLoad: InFlightDashboardLoad = {
-      id,
-      options: requestedOptions,
-      queuedOptions: null,
-      latestRequestSerial: requestSerial,
-      promise: Promise.resolve(),
-    }
-    const promise = (async () => {
-      try {
-        let nextOptions: NormalizedLoadDashboardOptions | null = requestedOptions
-
-        while (nextOptions) {
-          const currentOptions = nextOptions
-          currentLoad.options = currentOptions
-          currentLoad.queuedOptions = null
-
-          const showLoading = !currentOptions.background
-
-          if (showLoading) {
-            set({ loading: true, loadError: false })
-          }
-
-          try {
-            const dashboard = await apiGetDashboard(id)
-            if (!isLatestDashboardRequest(id, currentLoad.latestRequestSerial)) {
-              nextOptions = currentLoad.queuedOptions
+            try {
+              const nextSummaries = await apiListDashboards()
+              guard.set({ summaries: nextSummaries, summariesLoaded: true })
+            } catch {
+              if (!queuedSummariesForceReload) {
+                toast.error('Failed to load dashboards.')
+                break
+              }
               continue
             }
-            set({
-              dashboard,
-              conflict: false,
-              loadError: false,
-              ...(showLoading ? { loading: false } : {}),
-            })
-          } catch (error) {
-            const status =
-              typeof (error as { status?: unknown }).status === 'number'
-                ? (error as { status: number }).status
-                : null
-            const shouldSurfaceBackgroundAccessLoss =
-              !showLoading && currentOptions.surfaceAccessLoss && (status === 403 || status === 404)
-            const isLatestRequest = isLatestDashboardRequest(id, currentLoad.latestRequestSerial)
 
-            // 404/403 land here — editor page reads loadError to show an error state.
-            // For background SSE refreshes, keep the current dashboard visible unless
-            // the event explicitly represents an access change and the server confirms
-            // the dashboard is now forbidden or missing for this user.
-            if (isLatestRequest && (showLoading || shouldSurfaceBackgroundAccessLoss)) {
-              set({
-                dashboard: shouldSurfaceBackgroundAccessLoss ? null : get().dashboard,
-                loadError: true,
-                loading: false,
-                conflict: false,
-              })
-            }
-          } finally {
-            if (showLoading && isLatestDashboardRequest(id, currentLoad.latestRequestSerial)) {
-              set({ loading: false })
-            }
+            if (!queuedSummariesForceReload) break
           }
-
-          nextOptions = currentLoad.queuedOptions
+        } finally {
+          guard.set({ summariesLoading: false })
+          inFlightSummariesLoad = null
         }
-      } finally {
-        if (inFlightDashboardLoad === currentLoad) {
-          inFlightDashboardLoad = null
-        }
-      }
-    })()
+      })()
 
-    currentLoad.promise = promise
-    inFlightDashboardLoad = currentLoad
-    return promise
-  },
+      inFlightSummariesLoad = promise
+      return promise
+    },
 
-  async saveLayout(layout) {
-    const { dashboard } = get()
-    if (!dashboard) return
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
-    try {
-      const result = await apiUpdateLayout(dashboard.id, layout, dashboard.version, {
-        clientMutationId,
-      })
-      if (result.conflict) {
-        // Another editor saved a layout change between our load and this PUT.
-        // Surface the conflict banner; user resolves by reloading.
+    async createDashboard(data) {
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        const summary = await apiCreateDashboard(data, { clientMutationId })
+        set((s) => ({ summaries: [summary, ...s.summaries] }))
+        return summary
+      } catch {
         forgetPendingDashboardMutation(clientMutationId)
-        set({ conflict: true })
-        return
+        toast.error('Failed to create dashboard.')
+        throw new Error('create failed')
       }
-      set((s) => ({
-        dashboard: {
-          ...result.dashboard,
-          // Layout saves don't touch widget data. Preserve existing widget
-          // references so memoized widget subtrees aren't invalidated on drag/resize.
-          widgets: s.dashboard?.widgets ?? result.dashboard.widgets,
-        },
-        conflict: false,
-      }))
-    } catch {
-      forgetPendingDashboardMutation(clientMutationId)
-      toast.error('Failed to save layout.')
-    }
-  },
+    },
 
-  async addWidget(widget) {
-    const { dashboard } = get()
-    if (!dashboard) return
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
-    try {
-      const updated = await apiAddWidget(dashboard.id, widget, { clientMutationId })
-      set({ dashboard: updated })
-    } catch (err) {
-      forgetPendingDashboardMutation(clientMutationId)
-      toast.error(err instanceof Error ? err.message : 'Failed to add widget.')
-    }
-  },
+    async archiveDashboard(id, archived) {
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        const updated = await apiUpdateDashboardMeta(id, { archived }, { clientMutationId })
+        set((s) => ({
+          summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
+          dashboard:
+            s.dashboard?.id === id
+              ? {
+                  ...s.dashboard,
+                  archived: updated.archived,
+                  version: updated.version,
+                  name: updated.name,
+                }
+              : s.dashboard,
+        }))
+      } catch {
+        forgetPendingDashboardMutation(clientMutationId)
+        toast.error(`Failed to ${archived ? 'archive' : 'unarchive'} dashboard.`)
+      }
+    },
 
-  async removeWidget(widgetId) {
-    const { dashboard } = get()
-    if (!dashboard) return
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
-    try {
-      await apiRemoveWidget(dashboard.id, widgetId, { clientMutationId })
-      // Optimistic: remove from local state without a full refetch
-      set((s) => {
-        if (!s.dashboard) return s
-        return {
-          dashboard: {
-            ...s.dashboard,
-            widgets: s.dashboard.widgets.filter((w: DashboardWidget) => w.id !== widgetId),
-            layout: s.dashboard.layout.filter((l: LayoutItem) => l.i !== widgetId),
-            version: s.dashboard.version + 1,
-          },
+    async deleteDashboard(id) {
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        await apiDeleteDashboard(id, { clientMutationId })
+        set((s) => ({ summaries: s.summaries.filter((d) => d.id !== id) }))
+      } catch {
+        forgetPendingDashboardMutation(clientMutationId)
+        toast.error('Failed to delete dashboard.')
+      }
+    },
+
+    async toggleFavorite(id, current) {
+      try {
+        const authState = useAuthStore.getState()
+        const currentFavoriteIds = authState.user?.preferences.favorite_dashboard_ids ?? []
+        const nextFavoriteIds = current
+          ? currentFavoriteIds.filter((favoriteId) => favoriteId !== id)
+          : [...currentFavoriteIds.filter((favoriteId) => favoriteId !== id), id]
+
+        const updatedUser = await apiUpdatePreferences({ favorite_dashboard_ids: nextFavoriteIds })
+        useAuthStore.setState({ user: updatedUser })
+        set((s) => ({
+          summaries: s.summaries.map((d) => (d.id === id ? { ...d, is_favorite: !current } : d)),
+          dashboard:
+            s.dashboard?.id === id ? { ...s.dashboard, is_favorite: !current } : s.dashboard,
+        }))
+      } catch {
+        toast.error('Failed to update favorite.')
+      }
+    },
+
+    async renameDashboard(id, name) {
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        const updated = await apiUpdateDashboardMeta(id, { name }, { clientMutationId })
+        set((s) => ({
+          summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
+          dashboard:
+            s.dashboard?.id === id
+              ? {
+                  ...s.dashboard,
+                  name: updated.name,
+                  archived: updated.archived,
+                  version: updated.version,
+                }
+              : s.dashboard,
+        }))
+      } catch {
+        forgetPendingDashboardMutation(clientMutationId)
+        toast.error('Failed to rename dashboard.')
+      }
+    },
+
+    // ── Editor ─────────────────────────────────────────────────────────────────
+
+    async loadDashboard(id, options = {}) {
+      const guard = sessionGuard()
+      const requestedOptions = normalizeDashboardLoadOptions(options)
+      const requestSerial = beginDashboardRequest(id)
+
+      if (inFlightDashboardLoad?.id === id) {
+        inFlightDashboardLoad.latestRequestSerial = requestSerial
+        const shouldQueueFollowUp =
+          requestedOptions.background ||
+          !dashboardLoadSatisfiesRequest(inFlightDashboardLoad.options, requestedOptions)
+
+        if (shouldQueueFollowUp) {
+          inFlightDashboardLoad.queuedOptions = mergeDashboardLoadOptions(
+            inFlightDashboardLoad.queuedOptions,
+            requestedOptions,
+          )
         }
-      })
-    } catch {
-      forgetPendingDashboardMutation(clientMutationId)
-      toast.error('Failed to remove widget.')
-    }
-  },
 
-  async updateWidget(widgetId, config) {
-    const { dashboard } = get()
-    if (!dashboard) return
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
-    try {
-      const updated = await apiUpdateWidget(dashboard.id, widgetId, config, { clientMutationId })
-      set((s) => {
-        if (!s.dashboard) return s
-        return {
-          dashboard: {
-            ...s.dashboard,
-            widgets: s.dashboard.widgets.map((w: DashboardWidget) =>
-              w.id === widgetId ? updated : w,
-            ),
-          },
+        return inFlightDashboardLoad.promise
+      }
+
+      const currentLoad: InFlightDashboardLoad = {
+        id,
+        options: requestedOptions,
+        queuedOptions: null,
+        latestRequestSerial: requestSerial,
+        promise: Promise.resolve(),
+      }
+      const promise = (async () => {
+        try {
+          let nextOptions: NormalizedLoadDashboardOptions | null = requestedOptions
+
+          while (nextOptions) {
+            const currentOptions = nextOptions
+            currentLoad.options = currentOptions
+            currentLoad.queuedOptions = null
+
+            const showLoading = !currentOptions.background
+
+            if (showLoading) {
+              guard.set({ loading: true, loadError: false })
+            }
+
+            try {
+              const dashboard = await apiGetDashboard(id)
+              if (!isLatestDashboardRequest(id, currentLoad.latestRequestSerial)) {
+                nextOptions = currentLoad.queuedOptions
+                continue
+              }
+              guard.set({
+                dashboard,
+                conflict: false,
+                loadError: false,
+                ...(showLoading ? { loading: false } : {}),
+              })
+            } catch (error) {
+              const status =
+                typeof (error as { status?: unknown }).status === 'number'
+                  ? (error as { status: number }).status
+                  : null
+              const shouldSurfaceBackgroundAccessLoss =
+                !showLoading &&
+                currentOptions.surfaceAccessLoss &&
+                (status === 403 || status === 404)
+              const isLatestRequest = isLatestDashboardRequest(id, currentLoad.latestRequestSerial)
+
+              // 404/403 land here — editor page reads loadError to show an error state.
+              // For background SSE refreshes, keep the current dashboard visible unless
+              // the event explicitly represents an access change and the server confirms
+              // the dashboard is now forbidden or missing for this user.
+              if (isLatestRequest && (showLoading || shouldSurfaceBackgroundAccessLoss)) {
+                guard.set({
+                  dashboard: shouldSurfaceBackgroundAccessLoss ? null : get().dashboard,
+                  loadError: true,
+                  loading: false,
+                  conflict: false,
+                })
+              }
+            } finally {
+              if (showLoading && isLatestDashboardRequest(id, currentLoad.latestRequestSerial)) {
+                guard.set({ loading: false })
+              }
+            }
+
+            nextOptions = currentLoad.queuedOptions
+          }
+        } finally {
+          if (inFlightDashboardLoad === currentLoad) {
+            inFlightDashboardLoad = null
+          }
         }
-      })
-    } catch {
-      forgetPendingDashboardMutation(clientMutationId)
-      toast.error('Failed to update widget.')
-    }
-  },
+      })()
 
-  async handleDashboardEvent(event) {
-    const activeDashboard = get().dashboard
-    const activeDashboardId = activeDashboard?.id ?? null
-    const eventDashboardId = getEventDashboardId(event)
-    const isLayoutOnlyEvent = isLayoutOnlyDashboardEvent(event)
-    const shouldSkipSummaryReload = canSkipDashboardSummaryReload(event)
-    const shouldSurfaceAccessLoss = isDashboardShareEvent(event) || event.event_type === 'resync'
-    const hasLocalMutationEcho =
-      event.event_type !== 'resync' && consumePendingDashboardMutationEcho(event)
-    const shouldSuppressLocalMutationReload =
-      hasLocalMutationEcho && canSuppressLocalDashboardEcho(event)
+      currentLoad.promise = promise
+      inFlightDashboardLoad = currentLoad
+      return promise
+    },
 
-    const { summaries, summariesLoaded, summariesLoading } = get()
-    let summariesRefreshPromise: Promise<void> | null = null
-    if (summariesLoaded || summariesLoading || summaries.length > 0) {
-      if (shouldSkipSummaryReload) {
-        set((state) => {
-          const nextSummaries = applyLocalDashboardSummaryUpdate(state.summaries, event)
-          return nextSummaries === state.summaries ? state : { summaries: nextSummaries }
+    async saveLayout(layout) {
+      const { dashboard } = get()
+      if (!dashboard) return
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        const result = await apiUpdateLayout(dashboard.id, layout, dashboard.version, {
+          clientMutationId,
         })
-      } else if (!shouldSuppressLocalMutationReload) {
-        summariesRefreshPromise =
-          event.event_type === 'resync'
-            ? get().loadSummaries(true)
-            : scheduleSummariesRefresh(() => get().loadSummaries(true))
+        if (result.conflict) {
+          // Another editor saved a layout change between our load and this PUT.
+          // Surface the conflict banner; user resolves by reloading.
+          forgetPendingDashboardMutation(clientMutationId)
+          set({ conflict: true })
+          return
+        }
+        set((s) => ({
+          dashboard: {
+            ...result.dashboard,
+            // Layout saves don't touch widget data. Preserve existing widget
+            // references so memoized widget subtrees aren't invalidated on drag/resize.
+            widgets: s.dashboard?.widgets ?? result.dashboard.widgets,
+          },
+          conflict: false,
+        }))
+      } catch {
+        forgetPendingDashboardMutation(clientMutationId)
+        toast.error('Failed to save layout.')
       }
-    }
+    },
 
-    if (
-      activeDashboardId &&
-      (event.event_type === 'resync' || eventDashboardId === activeDashboardId)
-    ) {
-      if (event.event_type === 'dashboard.deleted' && eventDashboardId === activeDashboardId) {
-        set({ dashboard: null, loadError: true, loading: false, conflict: false })
-        return
+    async addWidget(widget) {
+      const { dashboard } = get()
+      if (!dashboard) return
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        const updated = await apiAddWidget(dashboard.id, widget, { clientMutationId })
+        set({ dashboard: updated })
+      } catch (err) {
+        forgetPendingDashboardMutation(clientMutationId)
+        toast.error(err instanceof Error ? err.message : 'Failed to add widget.')
       }
+    },
 
-      if (shouldSuppressLocalMutationReload) {
-        await summariesRefreshPromise
-        return
+    async removeWidget(widgetId) {
+      const { dashboard } = get()
+      if (!dashboard) return
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        await apiRemoveWidget(dashboard.id, widgetId, { clientMutationId })
+        // Optimistic: remove from local state without a full refetch
+        set((s) => {
+          if (!s.dashboard) return s
+          return {
+            dashboard: {
+              ...s.dashboard,
+              widgets: s.dashboard.widgets.filter((w: DashboardWidget) => w.id !== widgetId),
+              layout: s.dashboard.layout.filter((l: LayoutItem) => l.i !== widgetId),
+              version: s.dashboard.version + 1,
+            },
+          }
+        })
+      } catch {
+        forgetPendingDashboardMutation(clientMutationId)
+        toast.error('Failed to remove widget.')
+      }
+    },
+
+    async updateWidget(widgetId, config) {
+      const { dashboard } = get()
+      if (!dashboard) return
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        const updated = await apiUpdateWidget(dashboard.id, widgetId, config, { clientMutationId })
+        set((s) => {
+          if (!s.dashboard) return s
+          return {
+            dashboard: {
+              ...s.dashboard,
+              widgets: s.dashboard.widgets.map((w: DashboardWidget) =>
+                w.id === widgetId ? updated : w,
+              ),
+            },
+          }
+        })
+      } catch {
+        forgetPendingDashboardMutation(clientMutationId)
+        toast.error('Failed to update widget.')
+      }
+    },
+
+    async handleDashboardEvent(event) {
+      const activeDashboard = get().dashboard
+      const activeDashboardId = activeDashboard?.id ?? null
+      const eventDashboardId = getEventDashboardId(event)
+      const isLayoutOnlyEvent = isLayoutOnlyDashboardEvent(event)
+      const shouldSkipSummaryReload = canSkipDashboardSummaryReload(event)
+      const shouldSurfaceAccessLoss = isDashboardShareEvent(event) || event.event_type === 'resync'
+      const hasLocalMutationEcho =
+        event.event_type !== 'resync' && consumePendingDashboardMutationEcho(event)
+      const shouldSuppressLocalMutationReload =
+        hasLocalMutationEcho && canSuppressLocalDashboardEcho(event)
+
+      const { summaries, summariesLoaded, summariesLoading } = get()
+      let summariesRefreshPromise: Promise<void> | null = null
+      if (summariesLoaded || summariesLoading || summaries.length > 0) {
+        if (shouldSkipSummaryReload) {
+          set((state) => {
+            const nextSummaries = applyLocalDashboardSummaryUpdate(state.summaries, event)
+            return nextSummaries === state.summaries ? state : { summaries: nextSummaries }
+          })
+        } else if (!shouldSuppressLocalMutationReload) {
+          summariesRefreshPromise =
+            event.event_type === 'resync'
+              ? get().loadSummaries(true)
+              : scheduleSummariesRefresh(() => get().loadSummaries(true))
+        }
       }
 
       if (
-        isLayoutOnlyEvent &&
-        activeDashboard?.id === eventDashboardId &&
-        activeDashboard.version >= event.entity_version
+        activeDashboardId &&
+        (event.event_type === 'resync' || eventDashboardId === activeDashboardId)
       ) {
-        await summariesRefreshPromise
+        if (event.event_type === 'dashboard.deleted' && eventDashboardId === activeDashboardId) {
+          set({ dashboard: null, loadError: true, loading: false, conflict: false })
+          return
+        }
+
+        if (shouldSuppressLocalMutationReload) {
+          await summariesRefreshPromise
+          return
+        }
+
+        if (
+          isLayoutOnlyEvent &&
+          activeDashboard?.id === eventDashboardId &&
+          activeDashboard.version >= event.entity_version
+        ) {
+          await summariesRefreshPromise
+          return
+        }
+
+        await Promise.all([
+          summariesRefreshPromise,
+          get().loadDashboard(activeDashboardId, {
+            background: true,
+            surfaceAccessLoss: shouldSurfaceAccessLoss,
+          }),
+        ])
         return
       }
 
-      await Promise.all([
-        summariesRefreshPromise,
-        get().loadDashboard(activeDashboardId, {
-          background: true,
-          surfaceAccessLoss: shouldSurfaceAccessLoss,
-        }),
-      ])
-      return
-    }
+      await summariesRefreshPromise
+    },
 
-    await summariesRefreshPromise
-  },
+    handleContentEvent(event) {
+      const activeDashboardId = get().dashboard?.id
+      const eventDashboardId = getEventDashboardId(event)
+      if (!activeDashboardId || eventDashboardId !== activeDashboardId) return
 
-  handleContentEvent(event) {
-    const activeDashboardId = get().dashboard?.id
-    const eventDashboardId = getEventDashboardId(event)
-    if (!activeDashboardId || eventDashboardId !== activeDashboardId) return
+      set((state) => {
+        if (!state.dashboard) return state
 
-    set((state) => {
-      if (!state.dashboard) return state
+        if (event.event_type === 'list.deleted') {
+          const nextWidgets = state.dashboard.widgets.filter(
+            (widget) =>
+              !(widget.resource_type === 'list' && widget.resource_id === event.entity_id),
+          )
+          const removedWidgetIds = new Set(
+            state.dashboard.widgets
+              .filter(
+                (widget) =>
+                  widget.resource_type === 'list' && widget.resource_id === event.entity_id,
+              )
+              .map((widget) => widget.id),
+          )
 
-      if (event.event_type === 'list.deleted') {
-        const nextWidgets = state.dashboard.widgets.filter(
-          (widget) => !(widget.resource_type === 'list' && widget.resource_id === event.entity_id),
-        )
-        const removedWidgetIds = new Set(
-          state.dashboard.widgets
-            .filter(
-              (widget) => widget.resource_type === 'list' && widget.resource_id === event.entity_id,
-            )
-            .map((widget) => widget.id),
-        )
-
-        return {
-          dashboard: {
-            ...state.dashboard,
-            widgets: nextWidgets,
-            layout: state.dashboard.layout.filter((item) => !removedWidgetIds.has(item.i)),
-            version:
-              removedWidgetIds.size > 0 ? state.dashboard.version + 1 : state.dashboard.version,
-          },
+          return {
+            dashboard: {
+              ...state.dashboard,
+              widgets: nextWidgets,
+              layout: state.dashboard.layout.filter((item) => !removedWidgetIds.has(item.i)),
+              version:
+                removedWidgetIds.size > 0 ? state.dashboard.version + 1 : state.dashboard.version,
+            },
+          }
         }
-      }
 
-      return state
-    })
-  },
+        return state
+      })
+    },
 
-  resolveConflict() {
-    const { dashboard, loadDashboard } = get()
-    set({ conflict: false })
-    if (dashboard) void loadDashboard(dashboard.id)
-  },
-}))
+    resolveConflict() {
+      const { dashboard, loadDashboard } = get()
+      set({ conflict: false })
+      if (dashboard) void loadDashboard(dashboard.id)
+    },
+  }
+})
+
+export function resetDashboardData(): void {
+  sessionGeneration += 1
+  if (scheduledSummariesRefreshTimer) {
+    clearTimeout(scheduledSummariesRefreshTimer)
+  }
+  inFlightDashboardLoad = null
+  inFlightSummariesLoad = null
+  queuedSummariesForceReload = false
+  latestDashboardRequest = null
+  scheduledSummariesRefreshTimer = null
+  scheduledSummariesRefreshPromise = null
+  resolveScheduledSummariesRefresh = null
+  rejectScheduledSummariesRefresh = null
+  resetPendingDashboardMutations()
+  useDashboardStore.setState({
+    summaries: [],
+    summariesLoaded: false,
+    summariesLoading: false,
+    dashboard: null,
+    loading: false,
+    loadError: false,
+    conflict: false,
+  })
+}

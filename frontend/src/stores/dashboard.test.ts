@@ -3,10 +3,11 @@ import type { Dashboard, DashboardSummary } from '../api/dashboards'
 import type { SseEvent } from '../hooks/useSSE'
 import {
   __resetPendingDashboardMutationsForTests,
+  consumePendingDashboardMutation,
   recordPendingDashboardMutation,
 } from '../utils/dashboard/dashboardMutation'
 import { useAuthStore } from './auth'
-import { useDashboardStore } from './dashboard'
+import { resetDashboardData, useDashboardStore } from './dashboard'
 
 const { apiUpdatePreferences } = vi.hoisted(() => ({
   apiUpdatePreferences: vi.fn(),
@@ -761,6 +762,83 @@ describe('useDashboardStore', () => {
 
     expect(apiGetDashboard).toHaveBeenCalledWith('dash-1')
     expect(useDashboardStore.getState().dashboard?.name).toBe('Refreshed Dashboard')
+  })
+
+  it('resetDashboardData clears store fields and the pending-mutation map', () => {
+    useDashboardStore.setState({
+      summaries: [makeSummary()],
+      summariesLoaded: true,
+      dashboard: makeDashboard(),
+      loadError: true,
+      conflict: true,
+    })
+    recordPendingDashboardMutation('m-1')
+
+    resetDashboardData()
+
+    const s = useDashboardStore.getState()
+    expect(s.summaries).toEqual([])
+    expect(s.summariesLoaded).toBe(false)
+    expect(s.dashboard).toBeNull()
+    expect(s.loadError).toBe(false)
+    expect(s.conflict).toBe(false)
+    // The stale account's pending-mutation id no longer suppresses an echo.
+    expect(consumePendingDashboardMutation('m-1')).toBe(false)
+  })
+
+  it('drops a summaries load that resolves after a reset', async () => {
+    let resolveList!: (v: DashboardSummary[]) => void
+    apiListDashboards.mockReturnValue(
+      new Promise((r) => {
+        resolveList = r
+      }),
+    )
+
+    const loading = useDashboardStore.getState().loadSummaries()
+    resetDashboardData() // account boundary while the fetch is in flight
+
+    resolveList([makeSummary()])
+    await loading
+
+    // The stale account's summaries must not land in the new session's store.
+    expect(useDashboardStore.getState().summaries).toEqual([])
+    expect(useDashboardStore.getState().summariesLoaded).toBe(false)
+  })
+
+  it("does not leave loading stuck true when a reset lands between a queued dashboard load's loop iterations", async () => {
+    let resolveFirstRequest!: (value: Dashboard) => void
+
+    apiGetDashboard
+      .mockImplementationOnce(
+        () =>
+          new Promise<Dashboard>((resolve) => {
+            resolveFirstRequest = resolve
+          }),
+      )
+      .mockResolvedValueOnce(makeDashboard({ name: 'Also Stale' }))
+
+    useDashboardStore.setState({
+      dashboard: makeDashboard(),
+      loading: false,
+      loadError: false,
+    })
+
+    // Background load starts first (showLoading = false for its own iteration)...
+    const initialLoad = useDashboardStore.getState().loadDashboard('dash-1', {
+      background: true,
+    })
+    // ...then a foreground request queues a follow-up iteration behind it.
+    const followUpLoad = useDashboardStore.getState().loadDashboard('dash-1', {})
+
+    resetDashboardData() // account boundary while the first fetch is still in flight
+
+    resolveFirstRequest(makeDashboard({ name: 'Stale Dashboard' }))
+    await Promise.all([initialLoad, followUpLoad])
+
+    // The queued (2nd) loop iteration's `loading: true` write must be dropped by the
+    // guard just like every other post-boundary write — it must not get stuck true.
+    expect(useDashboardStore.getState().loading).toBe(false)
+    expect(useDashboardStore.getState().dashboard).toBeNull()
   })
 
   it('marks a layout save conflict without replacing the dashboard', async () => {

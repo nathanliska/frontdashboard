@@ -28,6 +28,10 @@ export function consumePendingDashboardMutation(clientMutationId: string): boole
   return true
 }
 
-export function __resetPendingDashboardMutationsForTests(): void {
+export function resetPendingDashboardMutations(): void {
   pendingDashboardMutationIds.clear()
+}
+
+export function __resetPendingDashboardMutationsForTests(): void {
+  resetPendingDashboardMutations()
 }
