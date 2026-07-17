@@ -129,7 +129,7 @@ async def test_the_database_picks_exactly_one_winner(
         return_exceptions=True,
     )
 
-    winners = [r for r in results if not isinstance(r, Exception)]
+    winners = [r for r in results if not isinstance(r, BaseException)]
     rejected = [r for r in results if isinstance(r, RefreshRejected)]
     assert len(winners) == 1, f"exactly one racer may consume the token, got {results}"
     assert len(rejected) == 1, f"the losing racer must be rejected, got {results}"
@@ -166,6 +166,7 @@ async def test_replay_after_the_grace_window_revokes_the_session(
     first, _second, user_id = concurrent_sessions
 
     session, raw = await start_session(user_id, first)
+    session_id = session.id  # captured before expire_all() below expires `session` too
     await first.commit()
 
     await rotate_refresh_token(raw, first)
@@ -176,12 +177,18 @@ async def test_replay_after_the_grace_window_revokes_the_session(
         update(RefreshToken).where(RefreshToken.token_hash == hash_token(raw)).values(revoked_at=datetime.now(UTC) - timedelta(seconds=30))
     )
     await first.commit()
+    # Without this, the fall-through select() below would only see the backdated
+    # revoked_at because the ORM-enabled update() incidentally synchronised the
+    # already-in-identity-map object from `start_session` (expire_on_commit=False
+    # means commit() doesn't refresh it). Expire explicitly so the read is real,
+    # not incidental. `expire_all` is synchronous on AsyncSession — no await.
+    first.expire_all()
 
     with pytest.raises(RefreshRejected):
         await rotate_refresh_token(raw, first)
     await first.commit()
 
-    revoked = (await first.execute(select(UserSession).where(UserSession.id == session.id))).scalar_one()
+    revoked = (await first.execute(select(UserSession).where(UserSession.id == session_id))).scalar_one()
     assert revoked.revoked_at is not None
 
 
@@ -203,4 +210,42 @@ async def test_an_expired_token_is_expiry_not_theft(
     await first.commit()
 
     session_row = (await first.execute(select(UserSession).where(UserSession.id == session.id))).scalar_one()
+    assert session_row.revoked_at is None, "ordinary expiry must not revoke the session"
+
+
+async def test_an_expired_and_rotated_token_is_expiry_not_theft(
+    concurrent_sessions: tuple[AsyncSession, AsyncSession, uuid.UUID],
+) -> None:
+    """The token that matches BOTH predicates: previously rotated (outside the
+    grace window, so it also looks like replay) and expired. Expiry must win —
+    this is exactly the case the load-bearing ordering in rotate_refresh_token
+    exists to protect, and the case neither of the other two expiry/reuse tests
+    covers (one is expired-never-rotated, the other is rotated-but-not-expired)."""
+    first, _second, user_id = concurrent_sessions
+
+    session, raw = await start_session(user_id, first)
+    session_id = session.id  # captured before expire_all() below expires `session` too
+    await first.commit()
+
+    await rotate_refresh_token(raw, first)
+    await first.commit()
+
+    await first.execute(
+        update(RefreshToken)
+        .where(RefreshToken.token_hash == hash_token(raw))
+        .values(
+            revoked_at=datetime.now(UTC) - timedelta(seconds=30),
+            expires_at=datetime.now(UTC) - timedelta(days=1),
+        )
+    )
+    await first.commit()
+    # Explicit, not incidental — see test_replay_after_the_grace_window_revokes_the_session.
+    # `expire_all` is synchronous on AsyncSession — no await.
+    first.expire_all()
+
+    with pytest.raises(RefreshRejected):
+        await rotate_refresh_token(raw, first)
+    await first.commit()
+
+    session_row = (await first.execute(select(UserSession).where(UserSession.id == session_id))).scalar_one()
     assert session_row.revoked_at is None, "ordinary expiry must not revoke the session"
