@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -239,7 +239,17 @@ async def test_me_authenticated(auth_client: AsyncClient) -> None:
     assert resp.json()["email"] == "testuser@example.com"
 
 
+async def test_refresh_requires_csrf(auth_client: AsyncClient) -> None:
+    csrf = auth_client.cookies.get("csrf_token")
+    assert csrf is not None
+
+    assert (await auth_client.post(_REFRESH_URL)).status_code == 403
+    assert (await auth_client.post(_REFRESH_URL, headers={"X-CSRF-Token": "wrong"})).status_code == 403
+    assert (await auth_client.post(_REFRESH_URL, headers={"X-CSRF-Token": csrf})).status_code == 200
+
+
 async def test_refresh(auth_client: AsyncClient) -> None:
+    set_csrf(auth_client)
     resp = await auth_client.post(_REFRESH_URL)
     assert resp.status_code == 200
     assert "access_token" in resp.cookies
@@ -247,6 +257,7 @@ async def test_refresh(auth_client: AsyncClient) -> None:
 
 
 async def test_refresh_rotates_token(auth_client: AsyncClient) -> None:
+    set_csrf(auth_client)
     old_refresh = auth_client.cookies.get("refresh_token")
     await auth_client.post(_REFRESH_URL)
     new_refresh = auth_client.cookies.get("refresh_token")
@@ -274,7 +285,10 @@ async def test_refresh_after_logout_fails(auth_client: AsyncClient) -> None:
     csrf = auth_client.cookies.get("csrf_token")
     assert csrf is not None
     await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf})
-    resp = await auth_client.post(_REFRESH_URL)
+    # Logout clears the csrf_token cookie along with the rest — restore the
+    # double-submit pair so this exercises "no refresh token" (401), not CSRF (403).
+    auth_client.cookies.set("csrf_token", csrf)
+    resp = await auth_client.post(_REFRESH_URL, headers={"X-CSRF-Token": csrf})
     assert resp.status_code == 401
 
 
@@ -411,3 +425,68 @@ async def test_a_revoked_session_stops_being_accepted_immediately(auth_client: A
     # The access token is still perfectly valid and unexpired — the session is not.
     # This is #8's authorization half, at request level.
     assert (await auth_client.get(_ME_URL)).status_code == 401
+
+
+async def _second_device(email: str = "testuser@example.com", password: str = "testpassword123") -> AsyncClient:
+    """A second live session for the SAME user — auth_client's own credentials.
+
+    tests.helpers.register_client makes a different ACCOUNT, which is not the same
+    thing: revocation is per session, so the test needs one user with two.
+    """
+    device = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    await device.__aenter__()
+    resp = await device.post(_LOGIN_URL, json={"email": email, "password": password})
+    assert resp.status_code == 200, resp.text
+    return device
+
+
+async def test_password_change_revokes_other_sessions_but_not_the_callers(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """The containment users expect from a password change — without signing them
+    out of the tab they are standing in."""
+    other = await _second_device()
+    assert (await other.get(_ME_URL)).status_code == 200
+
+    set_csrf(auth_client)
+    resp = await auth_client.patch(
+        _PASSWORD_URL,
+        json={"current_password": "testpassword123", "new_password": "newpassword456"},
+    )
+    assert resp.status_code == 204, resp.text
+
+    assert (await auth_client.get(_ME_URL)).status_code == 200, "caller keeps their session"
+    assert (await other.get(_ME_URL)).status_code == 401, "other devices are signed out"
+    await other.aclose()
+
+    sessions = (await db_session.execute(select(UserSession))).scalars().all()
+    assert sum(s.revoked_at is None for s in sessions) == 1
+
+
+async def test_logout_revokes_only_the_current_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    other = await _second_device()
+
+    set_csrf(auth_client)
+    resp = await auth_client.post(_LOGOUT_URL)
+    assert resp.status_code == 204
+
+    assert (await other.get(_ME_URL)).status_code == 200, "other devices are untouched"
+    await other.aclose()
+
+    sessions = (await db_session.execute(select(UserSession))).scalars().all()
+    assert sum(s.revoked_at is None for s in sessions) == 1
+
+
+async def test_password_reset_revokes_every_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """The reset flow is unauthenticated — there is no caller session to spare, so
+    unlike a password change this revokes everything."""
+    other = await _second_device()
+
+    await auth_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "testuser@example.com"})
+    token = app.state.password_reset_tokens["testuser@example.com"]
+    resp = await auth_client.post(_PASSWORD_RESET_CONFIRM_URL, json={"token": token, "new_password": "resetpassword789"})
+    assert resp.status_code == 204, resp.text
+
+    assert (await other.get(_ME_URL)).status_code == 401
+    await other.aclose()
+
+    sessions = (await db_session.execute(select(UserSession))).scalars().all()
+    assert all(s.revoked_at is not None for s in sessions)

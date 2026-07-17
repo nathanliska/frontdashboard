@@ -21,10 +21,18 @@ _QUEUE_MAX = 256
 # reconnects and the Last-Event-ID -> resync path restores consistency.
 CLOSED_SENTINEL = object()
 
+# Pushed onto a client's queue when its session is revoked. Distinct from
+# CLOSED_SENTINEL: that means "you fell behind, resync", which is wrong here — a
+# revoked client that resynced would fire a burst of GETs that all 401 and end at
+# /login anyway. This ends the stream with no resync frame, so the client
+# reconnects, 401s, fails to refresh, and goes to /login directly.
+REVOKED_SENTINEL = object()
+
 
 @dataclass
 class _Client:
     user_id: uuid.UUID
+    session_id: uuid.UUID
     manager: "SseManager"
     queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=_QUEUE_MAX))
 
@@ -33,9 +41,9 @@ class SseManager:
     def __init__(self) -> None:
         self._clients: list[_Client] = []
 
-    def connect(self, user_id: uuid.UUID) -> _Client:
+    def connect(self, user_id: uuid.UUID, *, session_id: uuid.UUID) -> _Client:
         """Register a new SSE connection and return its client handle."""
-        client = _Client(user_id=user_id, manager=self)
+        client = _Client(user_id=user_id, session_id=session_id, manager=self)
         self._clients.append(client)
         return client
 
@@ -43,6 +51,21 @@ class SseManager:
         """Remove a client when its SSE connection closes."""
         with contextlib.suppress(ValueError):  # double-close guard
             self._clients.remove(client)
+
+    def disconnect_session(self, session_id: uuid.UUID) -> None:
+        """Drop every stream belonging to a revoked session.
+
+        A latency optimisation, NOT the guarantee: stream_events revalidates on a
+        deadline regardless, so a missed call here costs up to 30s of staleness
+        rather than correctness. That ordering is deliberate — it keeps this
+        method's single-worker assumption out of the security argument.
+        """
+        for client in list(self._clients):
+            if client.session_id != session_id:
+                continue
+            with contextlib.suppress(asyncio.QueueFull):
+                client.queue.put_nowait(REVOKED_SENTINEL)
+            self.disconnect(client)
 
     async def broadcast(
         self,

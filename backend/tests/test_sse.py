@@ -8,19 +8,29 @@ reconnect resync behavior.
 import json
 import uuid
 
+import anyio
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.routers.sse import _should_resync_on_connect
-from app.sse.manager import SseManager
+from app.sse.events import connected_dict
+from app.sse.manager import _QUEUE_MAX, CLOSED_SENTINEL, REVOKED_SENTINEL, SseManager
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 CSRF = "test-csrf-token"
+
+
+async def _always_live(_session_id: uuid.UUID) -> bool:
+    return True
+
+
+async def _never_live(_session_id: uuid.UUID) -> bool:
+    return False
 
 
 def _csrf(client: AsyncClient) -> None:
@@ -50,7 +60,7 @@ async def test_manager_connect_disconnect() -> None:
     mgr = SseManager()
     u = uuid.uuid4()
 
-    client = mgr.connect(u)
+    client = mgr.connect(u, session_id=uuid.uuid4())
     assert len(mgr._clients) == 1
 
     mgr.disconnect(client)
@@ -60,7 +70,7 @@ async def test_manager_connect_disconnect() -> None:
 @pytest.mark.asyncio
 async def test_manager_disconnect_idempotent() -> None:
     mgr = SseManager()
-    client = mgr.connect(uuid.uuid4())
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
     mgr.disconnect(client)
     mgr.disconnect(client)  # should not raise
 
@@ -71,8 +81,8 @@ async def test_manager_broadcast_private_only_to_actor() -> None:
     actor_id = uuid.uuid4()
     other_id = uuid.uuid4()
 
-    actor_client = mgr.connect(actor_id)
-    other_client = mgr.connect(other_id)
+    actor_client = mgr.connect(actor_id, session_id=uuid.uuid4())
+    other_client = mgr.connect(other_id, session_id=uuid.uuid4())
 
     msg = {"data": "private", "event": "test"}
     await mgr.broadcast(msg, actor_id=actor_id)
@@ -88,9 +98,9 @@ async def test_manager_broadcast_targeted_users_reaches_non_actor() -> None:
     target_id = uuid.uuid4()
     outsider_id = uuid.uuid4()
 
-    actor_client = mgr.connect(actor_id)
-    target_client = mgr.connect(target_id)
-    outsider_client = mgr.connect(outsider_id)
+    actor_client = mgr.connect(actor_id, session_id=uuid.uuid4())
+    target_client = mgr.connect(target_id, session_id=uuid.uuid4())
+    outsider_client = mgr.connect(outsider_id, session_id=uuid.uuid4())
 
     msg = {"data": "dashboard update", "event": "dashboard.updated"}
     await mgr.broadcast(msg, user_ids={actor_id, target_id}, actor_id=actor_id)
@@ -104,11 +114,9 @@ async def test_manager_broadcast_targeted_users_reaches_non_actor() -> None:
 @pytest.mark.asyncio
 async def test_evicted_client_receives_close_sentinel() -> None:
     """A client too far behind is told to resync, not silently dropped."""
-    from app.sse.manager import _QUEUE_MAX, CLOSED_SENTINEL, SseManager
-
     mgr = SseManager()
     user_id = uuid.uuid4()
-    client = mgr.connect(user_id)
+    client = mgr.connect(user_id, session_id=uuid.uuid4())
 
     # Fill the queue to capacity so the next broadcast evicts.
     for _ in range(_QUEUE_MAX):
@@ -129,8 +137,8 @@ async def test_manager_multiple_connections_same_user() -> None:
     mgr = SseManager()
     user_id = uuid.uuid4()
 
-    tab1 = mgr.connect(user_id)
-    tab2 = mgr.connect(user_id)
+    tab1 = mgr.connect(user_id, session_id=uuid.uuid4())
+    tab2 = mgr.connect(user_id, session_id=uuid.uuid4())
 
     msg = {"data": "update", "event": "list.updated"}
     await mgr.broadcast(msg, user_ids={user_id}, actor_id=user_id)
@@ -227,12 +235,11 @@ def test_connected_dict_primes_last_event_id() -> None:
 async def test_stream_ends_with_resync_on_close_sentinel() -> None:
     """An evicted stream yields resync and terminates rather than hanging."""
     from app.routers.sse import stream_events
-    from app.sse.manager import CLOSED_SENTINEL, SseManager
 
     mgr = SseManager()
-    client = mgr.connect(uuid.uuid4())
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
 
-    gen = stream_events(client, send_resync=False)
+    gen = stream_events(client, send_resync=False, revalidate=_always_live)
     first = await gen.__anext__()
     assert first["event"] == "connected"
 
@@ -250,12 +257,11 @@ async def test_stream_ends_with_resync_on_close_sentinel() -> None:
 async def test_stream_sends_resync_first_on_reconnect() -> None:
     """send_resync=True (Last-Event-ID present) replays a resync up front."""
     from app.routers.sse import stream_events
-    from app.sse.manager import SseManager
 
     mgr = SseManager()
-    client = mgr.connect(uuid.uuid4())
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
 
-    gen = stream_events(client, send_resync=True)
+    gen = stream_events(client, send_resync=True, revalidate=_always_live)
     assert (await gen.__anext__())["event"] == "connected"
     assert (await gen.__anext__())["event"] == "resync"
     await gen.aclose()
@@ -265,14 +271,144 @@ async def test_stream_sends_resync_first_on_reconnect() -> None:
 async def test_stream_deregisters_client_from_its_own_manager() -> None:
     """Closing the stream removes the client from the manager that created it."""
     from app.routers.sse import stream_events
-    from app.sse.manager import SseManager
 
     mgr = SseManager()
-    client = mgr.connect(uuid.uuid4())
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
     assert client in mgr._clients
 
-    gen = stream_events(client, send_resync=False)
+    gen = stream_events(client, send_resync=False, revalidate=_always_live)
     await gen.__anext__()  # 'connected'
     await gen.aclose()
 
     assert client not in mgr._clients
+
+
+# ---------------------------------------------------------------------------
+# Session revocation tests (Task 7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stream_ends_when_revalidation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The guarantee: a revoked session stops streaming, with no help from the manager.
+
+    _REVALIDATE_EVERY is 30s in production — far longer than any test should run.
+    It's shrunk to 0 here (same as test_revalidation_deadline_fires_on_a_busy_stream)
+    so the deadline is already due and `_never_live` actually gets exercised, instead
+    of the stream just idling out via move_on_after before the real 30s check fires.
+
+    A stream that calls `revalidate` but doesn't act on its `False` result (e.g.
+    the guard collapsed to a bare `await revalidate(...)`) would still pass a
+    call-count check: it falls through to `wait_for` on an empty queue, blocks,
+    and gets cut off by move_on_after(2) with frames still == [connected_dict()]
+    — for the wrong reason (wall-clock, not correctness). To catch that, a single
+    sentinel item is pre-queued: correct code returns before ever reaching
+    `wait_for` (the deadline is already due at loop entry), so the item is never
+    drained. The "checked but ignored" regression falls through and drains it,
+    producing an extra frame that fails the frames assertion below.
+    """
+    from datetime import timedelta
+
+    from app.routers import sse as sse_router
+    from app.routers.sse import stream_events
+
+    monkeypatch.setattr(sse_router, "_REVALIDATE_EVERY", timedelta(seconds=0))
+
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+    client.queue.put_nowait({"event": "x", "data": "{}"})
+
+    calls = 0
+
+    async def revalidate(session_id: uuid.UUID) -> bool:
+        nonlocal calls
+        calls += 1
+        return await _never_live(session_id)
+
+    frames = []
+    gen = stream_events(client, send_resync=False, revalidate=revalidate)
+    with anyio.move_on_after(2):
+        async for frame in gen:
+            frames.append(frame)
+
+    assert calls >= 1, "revalidate was never called — the deadline never fired"
+    assert frames == [connected_dict()], "no resync frame — the client must re-auth, not refetch"
+
+
+@pytest.mark.asyncio
+async def test_revalidation_deadline_fires_on_a_busy_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The idle-timeout trap: a stream receiving a steady trickle of events must
+    still revalidate. A check hung off the TimeoutError branch would never run here.
+
+    _REVALIDATE_EVERY is 30s in production — far longer than any test should run.
+    It's shrunk to 0 here so the deadline is always already due, deterministically
+    (not dependent on how fast this machine drains 50 already-queued items, which
+    can be faster than any wall-clock interval we'd otherwise pick).
+    """
+    from datetime import timedelta
+
+    from app.routers import sse as sse_router
+    from app.routers.sse import stream_events
+
+    monkeypatch.setattr(sse_router, "_REVALIDATE_EVERY", timedelta(seconds=0))
+
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+    for _ in range(50):
+        client.queue.put_nowait({"event": "noise", "data": "{}"})
+
+    calls = 0
+
+    async def revalidate(_session_id: uuid.UUID) -> bool:
+        nonlocal calls
+        calls += 1
+        return calls < 2  # live once, then revoked
+
+    frames = []
+    with anyio.move_on_after(2):
+        async for frame in stream_events(client, send_resync=False, revalidate=revalidate):
+            frames.append(frame)
+
+    assert calls >= 2, "the deadline never fired while the queue was busy"
+    assert len(frames) < 51, "the stream must end, not drain the whole queue"
+
+
+@pytest.mark.asyncio
+async def test_revoked_sentinel_ends_the_stream_without_a_resync() -> None:
+    from app.routers.sse import stream_events
+
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+    client.queue.put_nowait(REVOKED_SENTINEL)
+
+    frames = []
+    with anyio.move_on_after(2):
+        async for frame in stream_events(client, send_resync=False, revalidate=_always_live):
+            frames.append(frame)
+
+    assert frames == [connected_dict()]
+
+
+@pytest.mark.asyncio
+async def test_disconnect_session_only_drops_that_session() -> None:
+    mgr = SseManager()
+    session_a, session_b = uuid.uuid4(), uuid.uuid4()
+    user = uuid.uuid4()
+    a = mgr.connect(user, session_id=session_a)
+    b = mgr.connect(user, session_id=session_b)
+
+    mgr.disconnect_session(session_a)
+
+    assert a.queue.get_nowait() is REVOKED_SENTINEL
+    assert b.queue.empty(), "the user's other devices are untouched"
+
+
+@pytest.mark.asyncio
+async def test_eviction_still_resyncs() -> None:
+    """No regression to 44a9e15: falling behind is not the same as being revoked."""
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+    for _ in range(_QUEUE_MAX + 5):
+        await mgr.broadcast({"event": "x", "data": "{}"}, actor_id=client.user_id)
+
+    assert client.queue.get_nowait() is CLOSED_SENTINEL

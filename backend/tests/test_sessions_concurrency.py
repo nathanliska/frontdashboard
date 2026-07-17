@@ -249,3 +249,30 @@ async def test_an_expired_and_rotated_token_is_expiry_not_theft(
 
     session_row = (await first.execute(select(UserSession).where(UserSession.id == session_id))).scalar_one()
     assert session_row.revoked_at is None, "ordinary expiry must not revoke the session"
+
+
+async def test_two_concurrent_reset_confirms_consume_the_token_once(
+    concurrent_sessions: tuple[AsyncSession, AsyncSession, uuid.UUID],
+) -> None:
+    from app.auth.tokens import create_opaque_token
+    from app.models.password_reset_token import PasswordResetToken
+    from app.services.password_reset import consume_password_reset_token
+
+    first, second, user_id = concurrent_sessions
+    raw, token_hash = create_opaque_token()
+    first.add(
+        PasswordResetToken(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+    await first.commit()
+
+    async def consume(db: AsyncSession) -> uuid.UUID | None:
+        won = await consume_password_reset_token(raw, db)
+        await db.commit()
+        return won
+
+    outcomes = await asyncio.gather(consume(first), consume(second))
+    assert sum(o is not None for o in outcomes) == 1, "exactly one confirm may win"

@@ -68,12 +68,42 @@ class RefreshRejected(Exception):
 
 
 async def revoke_session(session_id: uuid.UUID, db: AsyncSession) -> None:
-    """Kill a session. The only way a session dies — every trigger routes here.
+    """Kill a session. The only way a single session dies — every trigger routes here.
 
     Individual tokens are left alone: every path that consumes one joins `sessions`
     and rejects a revoked one, so the session flag alone is sufficient.
     """
     await db.execute(update(UserSession).where(UserSession.id == session_id, UserSession.revoked_at.is_(None)).values(revoked_at=datetime.now(UTC)))
+    _drop_streams(session_id)
+
+
+def _drop_streams(session_id: uuid.UUID) -> None:
+    """Latency optimisation only — stream_events revalidates on a deadline anyway."""
+    from app.sse.manager import manager
+
+    manager.disconnect_session(session_id)
+
+
+async def revoke_user_sessions(
+    user_id: uuid.UUID,
+    db: AsyncSession,
+    *,
+    except_session_id: uuid.UUID | None = None,
+) -> None:
+    """Revoke every live session for a user, optionally sparing one.
+
+    `except_session_id` is what lets a password change sign out your other devices
+    without signing out the tab you changed it in.
+    """
+    query = update(UserSession).where(
+        UserSession.user_id == user_id,
+        UserSession.revoked_at.is_(None),
+    )
+    if except_session_id is not None:
+        query = query.where(UserSession.id != except_session_id)
+    result = await db.execute(query.values(revoked_at=datetime.now(UTC)).returning(UserSession.id))
+    for revoked_id in result.scalars().all():
+        _drop_streams(revoked_id)
 
 
 async def rotate_refresh_token(raw_token: str, db: AsyncSession) -> tuple[UserSession, str]:
