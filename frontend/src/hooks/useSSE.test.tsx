@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RefreshOutcome } from '../api/client'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
 import { handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
@@ -29,7 +30,7 @@ vi.mock('../resources/agendaData', () => ({
 }))
 
 const { tryRefreshMock } = vi.hoisted(() => ({
-  tryRefreshMock: vi.fn<() => Promise<boolean>>(),
+  tryRefreshMock: vi.fn<() => Promise<RefreshOutcome>>(),
 }))
 
 vi.mock('../api/client', () => ({
@@ -374,7 +375,7 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('waits out the backoff before reconnecting rather than retrying immediately', async () => {
-    tryRefreshMock.mockResolvedValue(true)
+    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     const es = MockEventSource.instances[0]
@@ -400,7 +401,7 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('doubles the delay on each successive failure', async () => {
-    tryRefreshMock.mockResolvedValue(true)
+    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     await failLatest(1000)
@@ -424,7 +425,7 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('caps the delay and keeps retrying indefinitely instead of going permanently dead', async () => {
-    tryRefreshMock.mockResolvedValue(true)
+    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     // Ten consecutive failures: a capped backoff must still be reconnecting at the end. The
@@ -441,7 +442,7 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('resets the backoff once a stream connects successfully', async () => {
-    tryRefreshMock.mockResolvedValue(true)
+    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     await failLatest(1000)
@@ -458,7 +459,7 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('cancels a pending reconnect when the hook unmounts', async () => {
-    tryRefreshMock.mockResolvedValue(true)
+    tryRefreshMock.mockResolvedValue('refreshed')
     const view = render(<TestHarness />)
 
     const es = MockEventSource.instances[0]
@@ -482,9 +483,9 @@ describe('useSSE reconnect backoff', () => {
     // refresh is pending, so clearTimeout cannot help. Without the `cancelled` guard, logging
     // out during that window would bounce the user to /login on a failed refresh they no
     // longer care about.
-    let resolveRefresh!: (ok: boolean) => void
+    let resolveRefresh!: (outcome: RefreshOutcome) => void
     tryRefreshMock.mockReturnValue(
-      new Promise<boolean>((resolve) => {
+      new Promise<RefreshOutcome>((resolve) => {
         resolveRefresh = resolve
       }),
     )
@@ -502,7 +503,7 @@ describe('useSSE reconnect backoff', () => {
 
     view.unmount()
     await act(async () => {
-      resolveRefresh(false)
+      resolveRefresh('unauthorized')
       await Promise.resolve()
     })
 
@@ -511,7 +512,7 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('navigates to /login when the refresh fails, without reconnecting', async () => {
-    tryRefreshMock.mockResolvedValue(false)
+    tryRefreshMock.mockResolvedValue('unauthorized')
     render(<TestHarness />)
 
     await failLatest(1000)
@@ -520,8 +521,20 @@ describe('useSSE reconnect backoff', () => {
     expect(MockEventSource.instances).toHaveLength(1)
   })
 
+  it('reconnects instead of logging out when refresh is rate-limited (429)', async () => {
+    // A transient 429 on /refresh must not bounce the user to /login. The stream
+    // reconnects and re-enters the widening backoff, which self-throttles refreshes.
+    tryRefreshMock.mockResolvedValue('rate-limited')
+    render(<TestHarness />)
+
+    await failLatest(1000)
+
+    expect(replaceSpy).not.toHaveBeenCalled()
+    expect(MockEventSource.instances).toHaveLength(2)
+  })
+
   it('resyncs after a reconnect, because the fresh EventSource sends no Last-Event-ID', async () => {
-    tryRefreshMock.mockResolvedValue(true)
+    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     await failLatest(1000)

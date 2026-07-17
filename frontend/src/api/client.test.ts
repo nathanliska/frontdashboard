@@ -42,7 +42,7 @@ describe('tryRefresh', () => {
     setCsrfCookie('csrf-abc-123')
     vi.mocked(fetch).mockResolvedValue({ ok: true } as Response)
 
-    await expect(tryRefresh()).resolves.toBe(true)
+    await expect(tryRefresh()).resolves.toBe('refreshed')
 
     expect(fetch).toHaveBeenCalledTimes(1)
     const [url, init] = vi.mocked(fetch).mock.calls[0]
@@ -68,17 +68,26 @@ describe('tryRefresh', () => {
   it('still sends the header (empty) when no csrf_token cookie is present', async () => {
     vi.mocked(fetch).mockResolvedValue({ ok: false } as Response)
 
-    await expect(tryRefresh()).resolves.toBe(false)
+    await expect(tryRefresh()).resolves.toBe('unauthorized')
 
     const [, init] = vi.mocked(fetch).mock.calls[0]
     expect(headerOf(init, 'X-CSRF-Token')).toBe('')
   })
 
-  it('resolves false when refresh rejects', async () => {
+  it('resolves unauthorized when refresh rejects', async () => {
     setCsrfCookie('csrf-abc-123')
     vi.mocked(fetch).mockRejectedValue(new Error('network down'))
 
-    await expect(tryRefresh()).resolves.toBe(false)
+    await expect(tryRefresh()).resolves.toBe('unauthorized')
+  })
+
+  it('reports rate-limited on 429 so callers do not log the user out', async () => {
+    // A burst of tabs can exhaust the /refresh rate limit; a 429 is transient and
+    // must NOT be treated as a lost session.
+    setCsrfCookie('csrf-abc-123')
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 429 } as Response)
+
+    await expect(tryRefresh()).resolves.toBe('rate-limited')
   })
 
   it('single-flights concurrent refreshes into one request', async () => {
@@ -87,8 +96,8 @@ describe('tryRefresh', () => {
 
     const [a, b] = await Promise.all([tryRefresh(), tryRefresh()])
 
-    expect(a).toBe(true)
-    expect(b).toBe(true)
+    expect(a).toBe('refreshed')
+    expect(b).toBe('refreshed')
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

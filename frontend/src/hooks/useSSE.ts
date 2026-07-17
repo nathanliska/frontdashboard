@@ -103,13 +103,17 @@ export function useSSE(): void {
 
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null
-        void tryRefresh().then((ok) => {
+        void tryRefresh().then((outcome) => {
           // The effect was torn down (logout, unmount) while the refresh was in flight.
           if (cancelled) return
-          if (!ok) {
+          if (outcome === 'unauthorized') {
             window.location.replace('/login')
             return
           }
+          // 'rate-limited' falls through to reconnect just like 'refreshed': the token
+          // is still stale, so the new EventSource will be rejected and re-enter this
+          // widening backoff — which self-throttles our refreshes — rather than logging
+          // the user out over a transient 429.
           // A fresh EventSource has an empty last-event-id, so it sends no Last-Event-ID header
           // and the server will NOT send a resync frame (see _should_resync_on_connect). Unlike
           // the browser's own auto-retry, this path must therefore ask for the resync itself, or

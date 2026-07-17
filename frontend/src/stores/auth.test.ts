@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User } from '../api/auth'
+import type { RefreshOutcome } from '../api/client'
 import { useAuthStore } from './auth'
 
 const { resetCalendarData } = vi.hoisted(() => ({
@@ -33,7 +34,7 @@ const {
 const toastError = vi.hoisted(() => vi.fn())
 
 const { tryRefreshMock } = vi.hoisted(() => ({
-  tryRefreshMock: vi.fn<() => Promise<boolean>>(),
+  tryRefreshMock: vi.fn<() => Promise<RefreshOutcome>>(),
 }))
 
 vi.mock('../api/client', () => ({
@@ -95,7 +96,7 @@ describe('useAuthStore', () => {
 
   it('refreshes and retries when the current access token is stale', async () => {
     apiGetMe.mockResolvedValueOnce(null).mockResolvedValueOnce(user)
-    tryRefreshMock.mockResolvedValue(true)
+    tryRefreshMock.mockResolvedValue('refreshed')
 
     await useAuthStore.getState().init()
 
@@ -110,7 +111,7 @@ describe('useAuthStore', () => {
 
   it('falls back to unauthenticated when refresh does not recover the session', async () => {
     apiGetMe.mockResolvedValue(null)
-    tryRefreshMock.mockResolvedValue(false)
+    tryRefreshMock.mockResolvedValue('unauthorized')
 
     await useAuthStore.getState().init()
 

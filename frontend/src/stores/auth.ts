@@ -57,8 +57,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         return
       }
       // Access token may be expired — attempt silent refresh
-      const refreshed = await tryRefresh()
-      if (refreshed) {
+      const outcome = await tryRefresh()
+      if (outcome === 'refreshed') {
         user = await apiGetMe()
         if (user) {
           set({ status: 'authenticated', user })
