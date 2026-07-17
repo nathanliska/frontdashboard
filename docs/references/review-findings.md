@@ -22,7 +22,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
-| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45 | ◻ Triage |
+| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #46 | ◻ Triage |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
 
@@ -32,7 +32,7 @@ ships independently rather than as one long plan:
 | # | Spec | Findings | Status |
 |--:|------|----------|--------|
 | 1 | `docs/shipped/session-revocation-design.md` | #6, #7, #8 (authz half), #44 | ✅ Shipped 2026-07-17 |
-| 2 | `docs/designs/auth-boundary-reset-design.md` (+ `-plan.md`) | #1 (frontend auth-boundary reset) | ◻ Spec + plan written 2026-07-17 |
+| 2 | `docs/shipped/auth-boundary-reset-design.md` (+ `-plan.md`) | #1 (frontend auth-boundary reset) | ✅ Shipped 2026-07-17 |
 | 3 | not written | #13 (Argon2 off the event loop) | ◻ Planned |
 | 4 | not written | #31 (email normalization + config validation) | ◻ Planned |
 
@@ -83,6 +83,12 @@ limit, fixed in spec 1).
   mapping + SSE reconnect-not-logout (frontend). **Deliberately kept:** the limiter still buckets
   per-IP — acceptable at household scale (a NAT'd household shares the generous 30/min), and
   keying `/refresh` per-user isn't possible when the access token has expired.
+- **2026-07-17** — Phase 2 **spec 2 (#1, frontend auth-boundary reset) shipped** (`2c873bc`,
+  `26a6e59`, `2c7e5ec`, `8c813f3`): dashboard state resets at every auth boundary and every async
+  dashboard write is session-generation–guarded, closing the cross-account leak (a second account
+  reusing the first's `summariesLoaded` cache) and the late-write repopulation race. Whole-branch
+  review (opus) clean. Logged #46 (the same post-await straddle in `auth.ts`'s
+  `updatePreferences`/`updateProfile`). Phase 2 remainder: #13 (+#43), #31.
 
 ## Validation pass — 2026-07-16
 
@@ -161,6 +167,16 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Add a dashboard session reset that clears store and module-level state. Invoke it on unauthenticated initialization, logout, and before installing a new user; gate responses with a session generation or `AbortController`. Add an account-switch regression test.
 - **Effort / Risk** — Medium / Medium; asynchronous response races need an explicit policy.
 - **Impact** — Prevents cross-account dashboard metadata exposure and stale account state.
+- **Disposition** — ✅ Done 2026-07-17 (`2c873bc`, `26a6e59`, `2c7e5ec`, `8c813f3`). A unified
+  `resetSessionData()` clears the dashboard store's fields, module-level machinery (in-flight
+  promises, serials, debounce timer), and the pending-mutation map at all four auth boundaries
+  (init-unauth, logout, login, verifyEmail). Every async dashboard write — the two loads, all nine
+  mutations, and `toggleFavorite`'s cross-store auth write — routes through a session-generation
+  guard that no-ops if the generation moved, so a request begun under one account can't write into
+  the next. Chose the generation guard over `AbortController` (the right fit for the hand-rolled
+  store; per-request cancellation stays deferred to #23). Account-switch regression + write-drop
+  tests proven sensitive. **Logged during the work as #46:** the same post-await straddle exists in
+  `auth.ts`'s own `updatePreferences`/`updateProfile` (out of scope for #1, which is dashboard-scoped).
 
 ### 2. Make dashboard deletion honor all owned rows
 
@@ -721,3 +737,21 @@ continues from #42.
   lands. See #38.
 - **Effort / Risk** — Large / Medium (backplane is a real project). **Deferred** — no scaling need at
   household scale; recorded so the four pieces are known before anyone reaches for a second replica.
+
+### 46. Guard the auth store's own async writes at the session boundary
+
+- **Logged 2026-07-17** (surfaced by the #1 whole-branch review; out of scope for #1, which is
+  dashboard-scoped).
+- **What & where** — `frontend/src/stores/auth.ts` — `updatePreferences` (`set({ user: updated })`
+  after `await apiUpdatePreferences`) and `updateProfile` (`set({ user: updated })` after
+  `await apiUpdateProfile`).
+- **Problem** — Both write the user object into the store *after* an `await`, with no
+  session-generation gate. A preferences or profile change begun while signed in as account A that
+  resolves *after* a login as account B overwrites B's `user` (email, display name, preferences) with
+  A's data. Same class as #1, one store over. `toggleFavorite` (`dashboard.ts`) already shows the
+  intended pattern — it gates its cross-store `useAuthStore.setState` on `sessionGuard().isCurrent()`.
+- **Proposal** — Extend the session-generation guard (or an equivalent per-boundary token) to the
+  auth store's post-await user writes, so a stale account's write no-ops. Small, self-contained;
+  natural companion to #1.
+- **Effort / Risk** — Small / Low.
+- **Impact** — Closes the last same-tab cross-account write vector left after #1.

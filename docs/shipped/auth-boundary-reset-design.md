@@ -1,7 +1,7 @@
 # Design — Reset dashboard state at the authentication boundary
 
 **Date:** 2026-07-17
-**Status:** ◻ Planned. Phase 2 spec 2 of 4.
+**Status:** ✅ Shipped 2026-07-17 (`2c873bc`, `26a6e59`, `2c7e5ec`, `8c813f3`). Phase 2 spec 2 of 4.
 **Findings:** #1 (reset dashboard state at the authentication boundary), incorporating the
 2026-07-16 validation-pass correction (module-level machinery in `stores/dashboard.ts:64-71`, not
 just store fields, must reset).

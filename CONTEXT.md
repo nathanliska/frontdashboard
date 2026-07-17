@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Live remediation status lives in `docs/references/review-findings.md`.
 
-_Last updated: 2026-07-16_
+_Last updated: 2026-07-17_
 
 ## What's built
 
@@ -22,6 +22,11 @@ _Last updated: 2026-07-16_
 - Emails send via Resend in background tasks; without an API key the sender logs the link
   (how you get tokens locally). HTML templates exist for both flows.
 - Profile page: display name, password change, home-dashboard preference.
+- **Client state resets at every auth boundary** (login, logout, email verification, unauthenticated
+  startup): notifications, resource caches, and the dashboard store (fields, in-flight request
+  machinery, pending mutations) are all cleared, and every async dashboard write is
+  session-generation–guarded, so a prior account's in-flight response can't repopulate the next
+  account's state in the same tab.
 
 **Dashboards & widgets**
 - Multiple dashboards per user; default "My Dashboard" created on registration. Listing page
