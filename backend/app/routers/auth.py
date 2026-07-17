@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.csrf import generate_csrf_token
-from app.auth.dependencies import get_current_user, require_csrf
+from app.auth.dependencies import get_current_session_id, get_current_user, require_csrf
 from app.auth.hashing import hash_password, verify_password
 from app.auth.tokens import create_access_token, create_opaque_token, hash_token
 from app.config import settings
@@ -34,6 +34,7 @@ from app.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.services.email import send_password_reset_email, send_verification_email
+from app.services.sessions import issue_refresh_token, live_session, start_session
 
 logger = logging.getLogger(__name__)
 
@@ -131,16 +132,9 @@ async def _issue_password_reset(user: User, db: AsyncSession) -> str:
 
 
 async def _create_session(user: User, response: Response, db: AsyncSession) -> None:
-    raw_refresh, refresh_hash = create_opaque_token()
+    session, raw_refresh = await start_session(user.id, db)
     csrf = generate_csrf_token()
-    db.add(
-        RefreshToken(
-            user_id=user.id,
-            token_hash=refresh_hash,
-            expires_at=datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days),
-        )
-    )
-    access = create_access_token(user.id, user.email)
+    access = create_access_token(user.id, user.email, session.id)
     _set_auth_cookies(response, access, raw_refresh, csrf)
 
 
@@ -350,9 +344,9 @@ async def confirm_password_reset(
         update(RefreshToken)
         .where(
             RefreshToken.user_id == user.id,
-            RefreshToken.revoked.is_(False),
+            RefreshToken.revoked_at.is_(None),
         )
-        .values(revoked=True)
+        .values(revoked_at=now)
     )
     await db.commit()
 
@@ -392,7 +386,7 @@ async def refresh_tokens(
     result = await db.execute(
         select(RefreshToken).where(
             RefreshToken.token_hash == hash_token(refresh_token),
-            RefreshToken.revoked.is_(False),
+            RefreshToken.revoked_at.is_(None),
             RefreshToken.expires_at > now,
         )
     )
@@ -400,26 +394,21 @@ async def refresh_tokens(
     if not record:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
 
-    record.revoked = True
+    session = await live_session(record.session_id, db)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
 
-    user_result = await db.execute(select(User).where(User.id == record.user_id, User.deleted_at.is_(None)))
+    user_result = await db.execute(select(User).where(User.id == session.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
     if not user:
-        await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    raw_refresh, refresh_hash = create_opaque_token()
+    record.revoked_at = now
+    raw_refresh = await issue_refresh_token(session, db, now)
     csrf = generate_csrf_token()
-    db.add(
-        RefreshToken(
-            user_id=user.id,
-            token_hash=refresh_hash,
-            expires_at=datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days),
-        )
-    )
     await db.commit()
 
-    access = create_access_token(user.id, user.email)
+    access = create_access_token(user.id, user.email, session.id)
     _set_auth_cookies(response, access, raw_refresh, csrf)
     return UserResponse.model_validate(user)
 
@@ -436,7 +425,7 @@ async def logout(
         result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token)))
         record = result.scalar_one_or_none()
         if record:
-            record.revoked = True
+            record.revoked_at = datetime.now(UTC)
             await db.commit()
     _clear_auth_cookies(response)
 
@@ -453,6 +442,7 @@ async def update_profile(
     response: Response,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
+    session_id: uuid.UUID = Depends(get_current_session_id),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """Update editable profile fields for the current user."""
@@ -473,7 +463,7 @@ async def update_profile(
 
     await db.commit()
     await db.refresh(current_user)
-    _set_access_cookie(response, create_access_token(current_user.id, current_user.email))
+    _set_access_cookie(response, create_access_token(current_user.id, current_user.email, session_id))
     return UserResponse.model_validate(current_user)
 
 
@@ -483,6 +473,7 @@ async def change_password(
     response: Response,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
+    session_id: uuid.UUID = Depends(get_current_session_id),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Change the current user's password and refresh the access cookie."""
@@ -500,7 +491,7 @@ async def change_password(
 
     current_user.password_hash = hash_password(body.new_password)
     await db.commit()
-    _set_access_cookie(response, create_access_token(current_user.id, current_user.email))
+    _set_access_cookie(response, create_access_token(current_user.id, current_user.email, session_id))
 
 
 @router.patch("/preferences", response_model=UserResponse)

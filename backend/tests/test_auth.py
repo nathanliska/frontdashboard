@@ -4,10 +4,11 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.tokens import hash_token
+from app.auth.tokens import decode_access_token, hash_token
 from app.main import app
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
+from app.models.session import UserSession
 from tests.helpers import CSRF, create_dashboard, register_client, set_csrf
 
 _REGISTER_URL = "/api/auth/register"
@@ -390,3 +391,23 @@ async def test_update_preferences_rejects_inaccessible_favorite_dashboard(auth_c
         assert resp.json()["detail"] == "Access denied"
     finally:
         await other.__aexit__(None, None, None)
+
+
+async def test_access_token_carries_the_sid_of_a_real_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    session = (await db_session.execute(select(UserSession))).scalars().one()
+    assert session.revoked_at is None
+
+    payload = decode_access_token(auth_client.cookies["access_token"])
+    assert payload["sid"] == str(session.id)
+
+
+async def test_a_revoked_session_stops_being_accepted_immediately(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    assert (await auth_client.get(_ME_URL)).status_code == 200
+
+    session = (await db_session.execute(select(UserSession))).scalars().one()
+    session.revoked_at = datetime.now(UTC)
+    await db_session.commit()
+
+    # The access token is still perfectly valid and unexpired — the session is not.
+    # This is #8's authorization half, at request level.
+    assert (await auth_client.get(_ME_URL)).status_code == 401
