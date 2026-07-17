@@ -1,9 +1,12 @@
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 from testcontainers.postgres import PostgresContainer
@@ -11,6 +14,7 @@ from testcontainers.postgres import PostgresContainer
 from app.database import get_db
 from app.limiter import limiter
 from app.main import app
+from app.models.user import User
 
 _container: PostgresContainer | None = None
 _test_engine = None
@@ -92,6 +96,45 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
             if transaction.is_active:
                 await transaction.rollback()
+
+
+@pytest.fixture
+async def concurrent_sessions() -> AsyncGenerator[tuple[AsyncSession, AsyncSession, uuid.UUID], None]:
+    """Two independently-committing sessions plus a throwaway user.
+
+    Everything else in this suite runs in a savepoint that is rolled back. These
+    sessions really commit — which is the entire point, since the race depends on
+    cross-transaction visibility — so they must clean up after themselves.
+
+    Clean up by user, never TRUNCATE: savepoint-based tests hold open transactions
+    on other connections, and a truncate would contend with them.
+    """
+    assert _test_engine is not None
+    user_id = uuid.uuid4()
+
+    async with AsyncSession(_test_engine, expire_on_commit=False) as setup:
+        setup.add(
+            User(
+                id=user_id,
+                email=f"race-{user_id}@example.com",
+                password_hash="x",
+                display_name="Race",
+                email_verified_at=datetime.now(UTC),
+            )
+        )
+        await setup.commit()
+
+    first = AsyncSession(_test_engine, expire_on_commit=False)
+    second = AsyncSession(_test_engine, expire_on_commit=False)
+    try:
+        yield first, second, user_id
+    finally:
+        await first.close()
+        await second.close()
+        async with AsyncSession(_test_engine, expire_on_commit=False) as cleanup:
+            # refresh_tokens and sessions both cascade from users.
+            await cleanup.execute(delete(User).where(User.id == user_id))
+            await cleanup.commit()
 
 
 @pytest.fixture

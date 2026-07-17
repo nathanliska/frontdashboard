@@ -34,7 +34,7 @@ from app.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.services.email import send_password_reset_email, send_verification_email
-from app.services.sessions import issue_refresh_token, live_session, start_session
+from app.services.sessions import RefreshRejected, rotate_refresh_token, start_session
 
 logger = logging.getLogger(__name__)
 
@@ -382,29 +382,18 @@ async def refresh_tokens(
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
 
-    now = datetime.now(UTC)
-    result = await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.token_hash == hash_token(refresh_token),
-            RefreshToken.revoked_at.is_(None),
-            RefreshToken.expires_at > now,
-        )
-    )
-    record = result.scalar_one_or_none()
-    if not record:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
-
-    session = await live_session(record.session_id, db)
-    if session is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+    try:
+        session, raw_refresh = await rotate_refresh_token(refresh_token, db)
+    except RefreshRejected:
+        await db.commit()  # a reuse-triggered revocation must persist
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token") from None
 
     user_result = await db.execute(select(User).where(User.id == session.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
     if not user:
+        await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    record.revoked_at = now
-    raw_refresh = await issue_refresh_token(session, db, now)
     csrf = generate_csrf_token()
     await db.commit()
 
