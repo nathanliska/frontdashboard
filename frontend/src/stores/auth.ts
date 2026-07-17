@@ -16,10 +16,19 @@ import { tryRefresh } from '../api/client'
 import { resetAgendaData } from '../resources/agendaData'
 import { resetCalendarData } from '../resources/calendarData'
 import { resetListData } from '../resources/listData'
+import { resetDashboardData } from './dashboard'
 import { useNotificationsStore } from './notifications'
 import { toast } from './toast'
 
 let authInitPromise: Promise<void> | null = null
+
+function resetSessionData(): void {
+  useNotificationsStore.getState().reset()
+  resetAgendaData()
+  resetCalendarData()
+  resetListData()
+  resetDashboardData()
+}
 
 interface AuthState {
   status: 'loading' | 'authenticated' | 'unauthenticated'
@@ -43,13 +52,6 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     if (authInitPromise) return authInitPromise
 
     authInitPromise = (async () => {
-      const resetNotifications = useNotificationsStore.getState().reset
-      const resetSessionData = () => {
-        resetNotifications()
-        resetAgendaData()
-        resetCalendarData()
-        resetListData()
-      }
       // Try current access token first
       let user = await apiGetMe()
       if (user) {
@@ -76,6 +78,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   async login(email, password) {
     const user = await apiLogin(email, password)
+    resetSessionData()
     set({ status: 'authenticated', user })
   },
 
@@ -87,14 +90,12 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   async verifyEmail(token) {
     const user = await apiVerifyEmail(token)
+    resetSessionData()
     set({ status: 'authenticated', user })
   },
 
   async logout() {
-    useNotificationsStore.getState().reset()
-    resetAgendaData()
-    resetCalendarData()
-    resetListData()
+    resetSessionData()
     await apiLogout().catch(() => {})
     set({ status: 'unauthenticated', user: null })
   },

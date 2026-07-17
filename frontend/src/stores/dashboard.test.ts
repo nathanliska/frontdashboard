@@ -805,6 +805,20 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().summariesLoaded).toBe(false)
   })
 
+  it('a fresh loadSummaries refetches after a reset (no stale summariesLoaded)', async () => {
+    apiListDashboards.mockResolvedValue([makeSummary({ id: 'a' })])
+    await useDashboardStore.getState().loadSummaries()
+    expect(useDashboardStore.getState().summariesLoaded).toBe(true)
+
+    resetDashboardData() // account boundary
+
+    apiListDashboards.mockResolvedValue([makeSummary({ id: 'b' })])
+    await useDashboardStore.getState().loadSummaries()
+    // Without the reset, summariesLoaded would short-circuit the second load and
+    // the new account would see account A's card.
+    expect(useDashboardStore.getState().summaries.map((d) => d.id)).toEqual(['b'])
+  })
+
   it('drops a dashboard creation that resolves after a reset', async () => {
     let resolveCreate!: (v: DashboardSummary) => void
     apiCreateDashboard.mockReturnValue(

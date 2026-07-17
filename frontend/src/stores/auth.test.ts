@@ -11,6 +11,9 @@ const { resetListData } = vi.hoisted(() => ({
   resetListData: vi.fn(),
 }))
 
+const { resetDashboardData } = vi.hoisted(() => ({ resetDashboardData: vi.fn() }))
+vi.mock('./dashboard', () => ({ resetDashboardData }))
+
 const {
   apiChangePassword,
   apiGetMe,
@@ -131,11 +134,40 @@ describe('useAuthStore', () => {
     await useAuthStore.getState().login('user@example.com', 'password123')
     expect(useAuthStore.getState().status).toBe('authenticated')
     expect(useAuthStore.getState().user).toEqual(user)
+    expect(resetCalendarData).toHaveBeenCalledTimes(1)
+    expect(resetListData).toHaveBeenCalledTimes(1)
 
     await useAuthStore.getState().logout()
     expect(useAuthStore.getState().status).toBe('unauthenticated')
     expect(useAuthStore.getState().user).toBeNull()
-    expect(resetCalendarData).toHaveBeenCalledTimes(1)
-    expect(resetListData).toHaveBeenCalledTimes(1)
+    expect(resetCalendarData).toHaveBeenCalledTimes(2)
+    expect(resetListData).toHaveBeenCalledTimes(2)
+  })
+
+  it('resets dashboard state on logout', async () => {
+    apiLogout.mockResolvedValue(undefined)
+    useAuthStore.setState({ status: 'authenticated', user })
+    await useAuthStore.getState().logout()
+    expect(resetDashboardData).toHaveBeenCalledTimes(1)
+  })
+
+  it('resets dashboard state when unauthenticated init settles', async () => {
+    apiGetMe.mockResolvedValue(null)
+    tryRefreshMock.mockResolvedValue('unauthorized')
+    await useAuthStore.getState().init()
+    expect(resetDashboardData).toHaveBeenCalledTimes(1)
+  })
+
+  it('resets dashboard state on a fresh login, before authenticating', async () => {
+    apiLogin.mockResolvedValue(user)
+    await useAuthStore.getState().login('user@example.com', 'pw')
+    expect(resetDashboardData).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().status).toBe('authenticated')
+  })
+
+  it('resets dashboard state on email verification', async () => {
+    apiVerifyEmail.mockResolvedValue(user)
+    await useAuthStore.getState().verifyEmail('tok')
+    expect(resetDashboardData).toHaveBeenCalledTimes(1)
   })
 })
