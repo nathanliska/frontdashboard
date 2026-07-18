@@ -18,7 +18,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 |------:|-------|----------|--------|
 | 1 | Security quick wins | #3, #4, #5 | ✅ Done (2026-07-12) |
 | 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | ✅ Done (2026-07-17) — 4 specs, all shipped (see below) |
-| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | ◻ Planned |
+| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 In progress — #2 ✅ shipped 2026-07-18 (slice A); #9/#11, #10, #12 planned |
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
@@ -143,6 +143,12 @@ limit, fixed in spec 1).
   owner) degrades the common-case signup UX. `POST /register` keeps returning `409 "Email already
   registered"` for a known email. **Revisit if registration ever opens to the public.** With this, the
   only open security-review item is #52 (SSE resync griefing, Low); #45 stays deferred.
+- **2026-07-18** — **Phase 3 started; slice A (#2) shipped** (`264b24d`). Dashboard deletion now
+  sweeps soft-deleted child lists/events (application-level, no migration), so a dashboard that ever
+  had a list/event soft-deleted can be permanently deleted instead of 500ing on a child FK. Phase 3
+  is sliced like Phase 2 into independent specs: **A #2 (done)**, B #9+#11 (layout save
+  correctness), C #10 (mutation contracts), D #12 (midnight invalidation). Whole-branch review is
+  batched at phase close; slice docs live in `docs/designs/` until then.
 
 ## Validation pass — 2026-07-16
 
@@ -239,6 +245,16 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Define terminal ownership with `ON DELETE CASCADE` for dashboard-to-list-to-item and dashboard-to-event relationships, with matching ORM passive-delete behavior. Alternatively, hard-delete all children regardless of soft-delete state. Test deletion after soft-deleting both child types against a migrated schema.
 - **Effort / Risk** — Medium / Medium; requires constraint migration and destructive-semantics review.
 - **Impact** — Fixes a reproducible core lifecycle failure and makes cleanup atomic.
+- **Disposition** — ✅ Shipped 2026-07-18 (`264b24d`). Took the application-level option (not the FK
+  cascade): `delete_dashboard` now sweeps child lists **and** calendar events regardless of
+  `deleted_at`, so a previously soft-deleted list/event can no longer block the parent delete with a
+  `ForeignKeyViolation`; items of a soft-deleted list are swept by the existing set-based
+  `delete(ListItem)`, and event overrides/reminders cascade. Chose app-level over `ON DELETE CASCADE`
+  because the handler already deliberately owns child cleanup and because tests build the schema from
+  `create_all`, not migrations — a model cascade would mask migration drift (#20). Regression test
+  proven RED (the exact `calendar_events_dashboard_id_fkey` violation → 500) then GREEN. Spec/plan:
+  `docs/designs/dashboard-deletion-integrity-{design,plan}.md` (move to `docs/shipped/` at Phase 3
+  close). First slice of Phase 3.
 
 ### 3. Stop replaying consumed email-verification links into new sessions
 
