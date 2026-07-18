@@ -49,8 +49,16 @@ limiter = Limiter(key_func=client_ip_key)
 ```
 
 This is the entire production change — no router, Caddy, or Dockerfile edits. Header lookup is
-case-insensitive (Starlette). A blank/whitespace header falls through to the peer IP. Because the
-ingress is a tunnel, no "peer must be Cloudflare" validation is needed.
+case-insensitive (Starlette). A blank/whitespace header falls through to the peer IP.
+
+**Defense-in-depth (peer trust).** `CF-Connecting-IP` is honored only when the immediate peer is a
+private/loopback address (`_peer_is_trusted`) — i.e. the request came through our proxy chain (Caddy
+on the Docker network in prod, loopback in dev). A request arriving from a public peer (the origin
+reached outside the tunnel — e.g. a port accidentally published) is keyed on its real peer IP, not on
+its self-asserted header, so it cannot pick its own bucket. This uses `ipaddress.is_private /
+is_loopback` rather than a maintained Cloudflare IP list, because uvicorn's peer is Caddy (a Docker
+private IP), not Cloudflare's edge — a CF-range check would fail here and silently revert to the
+global bucket. Added in response to an automated review flagging the header as client-controllable.
 
 ## Testing (pytest, Testcontainers)
 

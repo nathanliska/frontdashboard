@@ -31,6 +31,14 @@ def test_client_ip_key_falls_back_when_blank() -> None:
     assert client_ip_key(_request({"CF-Connecting-IP": "   "}, client_host="198.51.100.4")) == "198.51.100.4"
 
 
+def test_client_ip_key_ignores_cf_header_from_untrusted_public_peer() -> None:
+    # A request that reached the origin from a public peer (i.e. outside the Cloudflare Tunnel) must
+    # not be able to assert its own rate-limit bucket via a forged CF-Connecting-IP. 8.8.8.8 is a
+    # genuinely globally-routable address (not private/loopback/documentation).
+    req = _request({"CF-Connecting-IP": "1.1.1.1"}, client_host="8.8.8.8")
+    assert client_ip_key(req) == "8.8.8.8"
+
+
 async def test_rate_limit_buckets_are_per_client_ip(db_client: AsyncClient) -> None:
     body = {"email": "nobody@example.com", "password": "whatever"}
 
