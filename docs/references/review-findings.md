@@ -22,7 +22,8 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
-| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #46 | ◻ Triage |
+| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #46, #47, #48, #49, #50, #51, #52 | ◻ Triage |
+| — | Security review (2026-07-17) | #46 + #47/#48 (same-tab store leaks — remediating now); #15 (High, elevate), #49–#52 batch, register enum (E) | 🚧 #46/#47/#48 in flight |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
 
@@ -105,6 +106,15 @@ limit, fixed in spec 1).
   every email path, the migration chain, and the enum gating independently verified. **This closes
   all of Phase 2 (auth/session hardening).** Remaining backlog now leads with #46 (auth-store
   post-await straddle) and the phase 3–6 tracks.
+- **2026-07-17** — **Phase 2 security review** (3 parallel adversarial opus auditors over the whole
+  auth surface `62a7a69..HEAD`). Core invariants verified solid (live session checks, refresh reuse
+  detection, JWT confinement, CSRF double-submit, `_DUMMY_HASH` timing, SSE audience scoping, reaper
+  locking, email injection safety). Survivors: **#46 confirmed High** + its twin **#47** (notifications
+  store) — same-tab cross-account PII leaks, **remediating now** with #48 (logout ordering). **#15
+  sharpened to High** (prod rate limits share one global bucket — no `--proxy-headers`). New lows
+  logged: #49 (reaper `last_used_at` invariant), #50 (`ENVIRONMENT` fail-open default), #51 (register
+  Unicode-email 500), #52 (SSE resync griefing). Register enumeration (fast-409 + timing) noted as a
+  pending product decision.
 
 ## Validation pass — 2026-07-16
 
@@ -798,3 +808,107 @@ continues from #42.
   natural companion to #1.
 - **Effort / Risk** — Small / Low.
 - **Impact** — Closes the last same-tab cross-account write vector left after #1.
+- **Disposition** — ◻ Open, **confirmed High** by the 2026-07-17 Phase 2 security review (adversarial
+  frontend audit). Being remediated together with #47 (its notifications-store twin) and #48. Exact
+  sites: `auth.ts` `updateProfile` `set({user})` and `updatePreferences` `set({user})`. Corrupting
+  `user.id` to A's also breaks B's SSE echo suppression (which keys off `user.id`).
+
+### 47. Guard the notifications store's async writes at the session boundary
+
+- **Logged 2026-07-17** (Phase 2 security review — adversarial frontend audit; twin of #46).
+- **What & where** — `frontend/src/stores/notifications.ts` — `load` (`set({ notifications, unreadCount,
+  loaded })`), `loadUnreadCount`, `markRead`, `markAllRead`, `addFromSse` — all write after an `await`
+  with no session-generation gate. `reset()` only nulls the module promise handles + clears state; it
+  does **not** stop an already-in-flight `apiGetNotifications()` whose `.then` still calls `set(...)`.
+- **Problem** — Same class as #1/#46. Account A has the notifications panel open (or any load in
+  flight); A logs out, B logs in in the same tab; A's fetch resolves post-boundary and writes **A's
+  notification list** — message bodies, actor display names, referenced entity ids — into B's session.
+  This is arguably the highest-PII cross-account leak of the set (other people's activity text).
+- **Proposal** — Extend the dashboard store's `sessionGeneration` pattern here: bump a counter in
+  `reset()`, capture it at each async method's entry, no-op the `set` if it moved. The nulled-promise
+  approach is insufficient — it prevents new duplicate fetches but not stale completions.
+- **Effort / Risk** — Small / Low.
+- **Impact** — Closes the most sensitive same-tab cross-account leak.
+
+### 48. `logout()` clears store state before tearing down the session/SSE
+
+- **Logged 2026-07-17** (Phase 2 security review — frontend audit; defense-in-depth).
+- **What & where** — `frontend/src/stores/auth.ts` `logout()` runs `resetSessionData()` first, then
+  `await apiLogout()`, then `set({ status:'unauthenticated', user:null })` — so `user`/`status` stay
+  authenticated and the `useSSE` EventSource stays open during the await.
+- **Problem** — A request *started after* the reset (e.g. an SSE event → `loadSummaries(true)`) runs
+  under the new generation with A's still-live cookie and passes the guard, writing A's data back into
+  a just-cleared store. Contained (B's login resets again; interim state only shows on `/login`), so
+  **Medium/defense-in-depth**, not a direct A→B leak — but it shows the guard doesn't cover
+  "request issued after reset while the cookie is still live."
+- **Proposal** — Tear the session down before clearing/awaiting: set `unauthenticated`/`user:null`
+  first (closes the EventSource on re-render), or move `resetSessionData()` to after `await apiLogout()`.
+- **Effort / Risk** — Small / Low.
+
+### 49. Reaper's "no live access token depends on this session" invariant is violable
+
+- **Logged 2026-07-17** (Phase 2 security review — backend audit).
+- **What & where** — `backend/app/services/retention.py` session-delete predicate
+  (`last_used_at < now - access_token_expire_minutes` AND `~has_unexpired_token`) vs
+  `backend/app/routers/auth.py` `/profile` and `/password`, which re-mint a 15-min access cookie via
+  `_set_access_cookie` **without** bumping `session.last_used_at` (only `issue_refresh_token` bumps it).
+- **Problem** — A user whose refresh tokens have all expired (>7d) but who kept minting access cookies
+  via `/profile` has `last_used_at` frozen and no unexpired refresh token → the reaper deletes the
+  session while a valid access token still references it → next request 401s (premature logout).
+  Fail-closed, narrow precondition → **Low**, but the stated soundness guard is genuinely violable.
+- **Proposal** — Bump `session.last_used_at = now` wherever an access token is re-issued
+  (profile/password), or derive the idle-cutoff from the access token's own `iat`/`exp`.
+- **Effort / Risk** — Small / Low.
+
+### 50. Production security gated on `ENVIRONMENT`, which defaults to `development` (fail-open)
+
+- **Logged 2026-07-17** (Phase 2 security review — backend audit; follows the #31 config work).
+- **What & where** — `backend/app/config.py` (`_validate_production_security` gated on
+  `environment is Environment.production`; field defaults to `development`); `_SECURE` in
+  `backend/app/routers/auth.py`.
+- **Problem** — A prod deploy that ships without `ENVIRONMENT=production` explicitly set silently
+  loses the `Secure` cookie flag and skips the secret-strength/placeholder + email validators, with no
+  runtime signal. Single-point config footgun rather than a code bug.
+- **Proposal** — Fail closed: default to production, or refuse to boot when `secret_key` is
+  short/placeholder regardless of environment, or at minimum log a loud startup warning when
+  `ENVIRONMENT` is unset.
+- **Effort / Risk** — Small / Low.
+
+### 51. `register` can 500 on a crafted Unicode email (`str.lower()` vs Postgres `lower()` divergence)
+
+- **Logged 2026-07-17** (Phase 2 security review — backend audit; follows the #31 email work).
+- **What & where** — `backend/app/schemas/auth.py` (`_normalize_email` uses Python `str.lower()`);
+  `backend/app/routers/auth.py` register dedup (`User.email == body.email`); `backend/app/models/user.py`
+  functional unique index on SQL `lower(email)`.
+- **Problem** — For a crafted non-ASCII address where `python_lower(x) != python_lower(y)` but
+  `pg_lower` folds them equal (locale cases like Turkish dotted-İ / combining marks), the app dedup
+  misses the duplicate and the INSERT trips `uq_users_email_lower` → uncaught `IntegrityError` → **500**
+  (which also leaks existence, cf. #52/register enumeration). No takeover; robustness/enumeration edge.
+- **Proposal** — Wrap the register INSERT to catch `IntegrityError` and return the same 409 (belt for
+  the concurrent-duplicate race too). Optionally normalize with Postgres's algorithm.
+- **Effort / Risk** — Small / Low.
+
+### 52. SSE queue-overflow eviction is attacker-inducible (co-member resync-loop griefing)
+
+- **Logged 2026-07-17** (Phase 2 security review — backend audit).
+- **What & where** — `backend/app/sse/manager.py` (`_QUEUE_MAX = 256`; overflow → drain +
+  `CLOSED_SENTINEL` → `resync_dict()` → stream closes → client reconnects + refetches).
+- **Problem** — Eviction is triggered by broadcast volume to a client's audience, which a semi-trusted
+  co-member controls. A, sharing/editor on a dashboard with victim B, drives >256 rapid mutations
+  faster than B drains its queue → B is pinned in a reconnect/resync/refetch loop (UX collapse + a
+  burst of authenticated GETs = server-load amplification). Self-limited, requires shared access, and
+  is **not** a silent deafen (the resync path always tells the client to re-sync) → **Low**.
+- **Proposal** — Rate-limit per-client evictions (backoff before re-arming resync), coalesce/drop-oldest
+  with a single resync instead of tearing the stream each overflow, and cap resyncs/min/connection.
+- **Effort / Risk** — Medium / Low; needs a small backpressure design.
+
+### 15-note (2026-07-17 security review)
+
+The Phase 2 security audit re-surfaced **#15** and sharpened its severity to **High**: uvicorn in prod
+(`backend/Dockerfile.prod`) runs **without `--proxy-headers`**, so `request.client.host` is Caddy's
+container IP for every request and *all* auth limits (`login 10/min`, `register 5/min`, reset/resend
+`3/min`, `refresh 30/min`) share one global bucket. A single host sending 10 logins/min locks out every
+user, and per-attacker brute-force isolation does not exist. Fix: run uvicorn with
+`--proxy-headers --forwarded-allow-ips=<caddy>` and/or a `key_func` reading a trusted edge header
+(Cloudflare `CF-Connecting-IP`, set/overwritten at the trusted boundary so clients can't spoof it).
+Recommend elevating #15 out of the backlog.
