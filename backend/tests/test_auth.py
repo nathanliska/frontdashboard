@@ -396,6 +396,23 @@ async def test_update_profile_rejects_overlong_display_name(auth_client: AsyncCl
     assert resp.json()["detail"] == "Display name must be at most 100 characters"
 
 
+async def test_profile_update_bumps_session_last_used_at(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    session = (await db_session.execute(select(UserSession))).scalars().one()
+    old = datetime.now(UTC) - timedelta(hours=1)
+    session.last_used_at = old
+    await db_session.flush()
+
+    set_csrf(auth_client)
+    resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "Bumped"})
+    assert resp.status_code == 200
+
+    await db_session.refresh(session)
+    assert session.last_used_at is not None
+    assert session.last_used_at > old
+
+
 async def test_change_password_updates_login_credentials(auth_client: AsyncClient) -> None:
     set_csrf(auth_client)
     resp = await auth_client.patch(

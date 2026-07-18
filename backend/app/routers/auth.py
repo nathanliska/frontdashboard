@@ -455,6 +455,7 @@ async def update_profile(
             )
         current_user.display_name = display_name
 
+    session.last_used_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(current_user)
     _set_access_cookie(response, create_access_token(current_user.id, current_user.email, session.id))
@@ -485,6 +486,7 @@ async def change_password(
 
     current_user.password_hash = await hash_password(body.new_password)
     revoked_ids = await revoke_user_sessions(current_user.id, db, except_session_id=session.id)
+    session.last_used_at = datetime.now(UTC)
     await db.commit()
     drop_session_streams(revoked_ids)
     _set_access_cookie(response, create_access_token(current_user.id, current_user.email, session.id))
