@@ -23,7 +23,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
 | — | Backlog (unscheduled) | #14, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #52 | ◻ Triage |
-| — | Security review (2026-07-17) | #46/#47/#48 + #15 + #49/#50/#51 ✅ shipped 2026-07-18; **open:** #52 (SSE griefing), register enum (E) | 🚧 all High + most Low closed; #52 + register-enum decision remain |
+| — | Security review (2026-07-17) | #46/#47/#48 + #15 + #49/#50/#51 ✅ shipped 2026-07-18; register enum (E) = **accepted risk**; **open:** #52 (SSE griefing, Low) | 🚧 all High/Medium closed; only #52 (Low, needs backpressure design) remains |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
 
@@ -136,6 +136,13 @@ limit, fixed in spec 1).
   adding it to `ci.yml`. **All High findings and all but one Low from the security review are now
   closed.** Remaining: #52 (SSE resync griefing — needs a backpressure design), register enumeration
   (product decision), #45 (multi-worker limiter store, deferred).
+- **2026-07-18** — **Register enumeration (E) accepted as a deliberate risk** (no code change). At
+  household scale — a handful of known members and near-closed registration — the real-world
+  enumeration risk is minimal, and the privacy-preserving alternative (identical "check your email"
+  response for existing vs. new addresses, with an "account already exists" notice emailed to the
+  owner) degrades the common-case signup UX. `POST /register` keeps returning `409 "Email already
+  registered"` for a known email. **Revisit if registration ever opens to the public.** With this, the
+  only open security-review item is #52 (SSE resync griefing, Low); #45 stays deferred.
 
 ## Validation pass — 2026-07-16
 
