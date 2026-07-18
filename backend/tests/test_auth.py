@@ -66,6 +66,14 @@ async def test_register_rejects_overlong_display_name(db_client: AsyncClient) ->
     assert resp.status_code == 422
 
 
+async def test_register_accepts_max_length_display_name(db_client: AsyncClient) -> None:
+    resp = await db_client.post(
+        _REGISTER_URL,
+        json={"email": "boundary100@example.com", "password": "password123", "display_name": "x" * 100},
+    )
+    assert resp.status_code == 201
+
+
 async def test_register_trims_display_name(db_client: AsyncClient) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
