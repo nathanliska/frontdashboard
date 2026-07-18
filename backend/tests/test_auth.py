@@ -1,7 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.hashing import _DUMMY_HASH
@@ -10,6 +12,7 @@ from app.main import app
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
 from app.models.session import UserSession
+from app.models.user import User
 from tests.helpers import CSRF, create_dashboard, register_client, set_csrf
 
 _REGISTER_URL = "/api/auth/register"
@@ -540,3 +543,49 @@ async def test_password_reset_revokes_every_session(auth_client: AsyncClient, db
 
     sessions = (await db_session.execute(select(UserSession))).scalars().all()
     assert all(s.revoked_at is not None for s in sessions)
+
+
+async def test_register_normalizes_email(db_client: AsyncClient) -> None:
+    resp = await db_client.post(
+        _REGISTER_URL,
+        json={"email": "Mixed@Example.COM ", "password": "password123", "display_name": "M"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["email"] == "mixed@example.com"
+
+
+async def test_login_is_case_insensitive(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "Case@Example.com", "password": "mypassword", "display_name": "C"},
+    )
+    token = app.state.email_verification_tokens["case@example.com"]
+    await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+
+    resp = await db_client.post(_LOGIN_URL, json={"email": "CASE@example.COM", "password": "mypassword"})
+    assert resp.status_code == 200
+
+
+async def test_register_rejects_case_variant_duplicate(db_client: AsyncClient) -> None:
+    payload = {"email": "dupe@example.com", "password": "password123", "display_name": "D"}
+    assert (await db_client.post(_REGISTER_URL, json=payload)).status_code == 201
+    variant = {"email": "Dupe@Example.com", "password": "password123", "display_name": "D2"}
+    assert (await db_client.post(_REGISTER_URL, json=variant)).status_code == 409
+
+
+async def test_password_reset_request_is_case_insensitive(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "reset-ci@example.com", "password": "oldpassword", "display_name": "R"},
+    )
+    resp = await db_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "Reset-CI@Example.com"})
+    assert resp.status_code == 204
+    assert "reset-ci@example.com" in app.state.password_reset_tokens
+
+
+async def test_email_uniqueness_is_case_insensitive_at_db(db_session: AsyncSession) -> None:
+    db_session.add(User(email="dbcase@example.com", password_hash="x", display_name="A"))
+    await db_session.flush()
+    db_session.add(User(email="DBCase@Example.com", password_hash="x", display_name="B"))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()

@@ -1,22 +1,30 @@
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, EmailStr, Field, field_validator
+
+
+def _normalize_email(v: str) -> str:
+    return v.strip().lower()
+
+
+NormalizedEmail = Annotated[EmailStr, AfterValidator(_normalize_email)]
 
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
     password: str = Field(min_length=8, max_length=128)
     display_name: str
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
     password: str
 
 
 class ResendVerificationRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
 
 
 class VerifyEmailRequest(BaseModel):
@@ -24,7 +32,7 @@ class VerifyEmailRequest(BaseModel):
 
 
 class PasswordResetRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
 
 
 class PasswordResetConfirmRequest(BaseModel):
