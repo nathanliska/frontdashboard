@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     email_verification_expire_hours: int = 1
     password_reset_expire_hours: int = 1
+    # Peak concurrent Argon2 hash/verify operations (each ~64 MiB). Bounds memory under an
+    # auth burst; excess auth requests queue while the event loop stays responsive (finding #13).
+    argon2_max_concurrency: int = 4
     frontend_base_url: str = "http://localhost:5173"
     resend_api_key: str | None = None
     email_from: str = "FrontDashboard <noreply@frontdashboard.local>"

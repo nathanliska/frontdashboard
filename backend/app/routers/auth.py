@@ -227,7 +227,7 @@ async def register(
 
     user = User(
         email=body.email,
-        password_hash=hash_password(body.password),
+        password_hash=await hash_password(body.password),
         display_name=body.display_name,
     )
     db.add(user)
@@ -343,7 +343,7 @@ async def confirm_password_reset(
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
 
-    user.password_hash = hash_password(body.new_password)
+    user.password_hash = await hash_password(body.new_password)
     revoked_ids = await revoke_user_sessions(user.id, db)
     await db.commit()
     drop_session_streams(revoked_ids)
@@ -360,7 +360,7 @@ async def login(
     """Authenticate a user and issue fresh session cookies."""
     result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user or not await verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if user.email_verified_at is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")
@@ -463,7 +463,7 @@ async def change_password(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Change the current user's password and refresh the access cookie."""
-    if not verify_password(body.current_password, current_user.password_hash):
+    if not await verify_password(body.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Current password is incorrect",
@@ -475,7 +475,7 @@ async def change_password(
             detail="New password must be different from the current password",
         )
 
-    current_user.password_hash = hash_password(body.new_password)
+    current_user.password_hash = await hash_password(body.new_password)
     revoked_ids = await revoke_user_sessions(current_user.id, db, except_session_id=session.id)
     await db.commit()
     drop_session_streams(revoked_ids)
