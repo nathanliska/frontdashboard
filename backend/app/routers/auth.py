@@ -14,7 +14,7 @@ from app.auth.dependencies import (
     require_csrf,
     require_csrf_without_session,
 )
-from app.auth.hashing import hash_password, verify_password
+from app.auth.hashing import _DUMMY_HASH, hash_password, verify_password
 from app.auth.tokens import create_access_token, create_opaque_token, hash_token
 from app.config import settings
 from app.database import get_db
@@ -360,7 +360,9 @@ async def login(
     """Authenticate a user and issue fresh session cookies."""
     result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
-    if not user or not await verify_password(body.password, user.password_hash):
+    password_hash = user.password_hash if user else _DUMMY_HASH
+    password_ok = await verify_password(body.password, password_hash)
+    if not user or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if user.email_verified_at is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")

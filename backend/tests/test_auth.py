@@ -161,6 +161,39 @@ async def test_login_wrong_password(db_client: AsyncClient) -> None:
     assert resp.status_code == 401
 
 
+async def test_login_nonexistent_email_still_performs_verify(db_client: AsyncClient, monkeypatch) -> None:
+    from app.routers import auth as auth_router
+
+    calls: list[tuple[str, str]] = []
+    original = auth_router.verify_password
+
+    async def spy(password: str, hashed: str) -> bool:
+        calls.append((password, hashed))
+        return await original(password, hashed)
+
+    monkeypatch.setattr(auth_router, "verify_password", spy)
+
+    resp = await db_client.post(_LOGIN_URL, json={"email": "ghost@example.com", "password": "whatever"})
+    assert resp.status_code == 401
+    # The oracle is closed: a miss must still pay exactly one verify (against the dummy hash).
+    assert len(calls) == 1
+
+
+async def test_login_unknown_and_wrong_password_are_indistinguishable(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "real@example.com", "password": "correctpassword", "display_name": "R"},
+    )
+    token = app.state.email_verification_tokens["real@example.com"]
+    await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+
+    unknown = await db_client.post(_LOGIN_URL, json={"email": "ghost@example.com", "password": "x"})
+    wrong = await db_client.post(_LOGIN_URL, json={"email": "real@example.com", "password": "wrongpassword"})
+
+    assert unknown.status_code == wrong.status_code == 401
+    assert unknown.json() == wrong.json()
+
+
 async def test_request_password_reset_issues_token(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
