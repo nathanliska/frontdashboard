@@ -16,7 +16,7 @@ from app.auth.dependencies import (
 )
 from app.auth.hashing import _DUMMY_HASH, hash_password, verify_password
 from app.auth.tokens import create_access_token, create_opaque_token, hash_token
-from app.config import settings
+from app.config import Environment, settings
 from app.database import get_db
 from app.limiter import limiter
 from app.models.dashboard import Dashboard
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_SECURE = settings.environment == "production"
+_SECURE = settings.environment == Environment.production
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str, csrf_token: str) -> None:

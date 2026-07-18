@@ -1,5 +1,17 @@
-from pydantic import field_validator
+from enum import StrEnum
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Environment(StrEnum):
+    development = "development"
+    production = "production"
+    test = "test"
+
+
+# Placeholder secrets shipped in example env files — never valid in production.
+_INSECURE_SECRETS = frozenset({"changeme", "change_me", "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"})
 
 
 class Settings(BaseSettings):
@@ -7,7 +19,7 @@ class Settings(BaseSettings):
     secret_key: str
     # Comma-separated origins, e.g. "http://localhost:5173,http://localhost:3000"
     cors_origins: str = "http://localhost:5173"
-    environment: str = "development"
+    environment: Environment = Environment.development
     log_level: str = "INFO"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
@@ -30,6 +42,21 @@ class Settings(BaseSettings):
         if not url.startswith(("http://", "https://")):
             raise ValueError("frontend_base_url must start with http:// or https://")
         return url
+
+    @model_validator(mode="after")
+    def _validate_production_security(self) -> "Settings":
+        if self.environment is not Environment.production:
+            return self
+        errors: list[str] = []
+        if len(self.secret_key) < 32 or self.secret_key in _INSECURE_SECRETS:
+            errors.append("secret_key must be at least 32 characters and not a placeholder")
+        if not self.resend_api_key:
+            errors.append("resend_api_key is required in production (email verification is mandatory)")
+        if "@frontdashboard.local" in self.email_from.lower():
+            errors.append("email_from must use a deliverable domain in production")
+        if errors:
+            raise ValueError("Invalid production configuration: " + "; ".join(errors))
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:
