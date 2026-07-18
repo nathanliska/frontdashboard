@@ -1,7 +1,7 @@
 # Design — Key rate limits on the real client IP (#15)
 
 **Date:** 2026-07-18
-**Status:** ◻ Planned.
+**Status:** ✅ Shipped 2026-07-18 (`dbad371`).
 **Finding:** #15 (rate limiting collapses to one global bucket behind the proxy), sharpened to **High**
 by the 2026-07-17 Phase 2 security review.
 

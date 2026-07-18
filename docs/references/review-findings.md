@@ -22,8 +22,8 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
-| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #49, #50, #51, #52 | ◻ Triage |
-| — | Security review (2026-07-17) | #46 + #47/#48 (same-tab store leaks) ✅ shipped 2026-07-18; **open:** #15 (High, elevate), #49–#52 batch, register enum (E) | 🚧 store leaks closed; #15 next |
+| — | Backlog (unscheduled) | #14, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #49, #50, #51, #52 | ◻ Triage |
+| — | Security review (2026-07-17) | #46/#47/#48 (store leaks) ✅ + #15 (rate-limit keying) ✅ shipped 2026-07-18; **open:** #49–#52 batch, register enum (E) | 🚧 Highs closed; low batch + register-enum decision remain |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
 
@@ -122,6 +122,12 @@ limit, fixed in spec 1).
   round-trip. Whole-branch review (opus) READY-TO-MERGE with the single-source-of-truth counter, guard
   timing, and cache safety independently verified. **Remaining security-review items:** #15 (High —
   elevate), #49–#52 (low batch), register enumeration (product decision).
+- **2026-07-18** — **#15 shipped** (`dbad371`): the rate limiter now keys on Cloudflare's
+  `CF-Connecting-IP` instead of the shared Caddy peer IP, so auth limits are per-client again (a
+  single host can no longer lock out everyone). Sound because the origin is a Cloudflare Tunnel
+  (non-public, header unspoofable); reviewed, fix-sensitivity of the bucket-isolation test proven by
+  revert. **Both High security-review findings are now closed.** Remaining: #49–#52 (low batch),
+  register enumeration (product decision), and #45 (multi-worker limiter store, still deferred).
 
 ## Validation pass — 2026-07-16
 
@@ -382,6 +388,13 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Trust only the Caddy network, parse the validated forwarding chain, and use a shared limiter store with endpoint, IP, and account keys. Test independent client IPs and spoofed headers through Caddy.
 - **Effort / Risk** — Small-Medium / Medium; proxy trust must be narrowly scoped.
 - **Impact** — Makes brute-force controls effective without household-wide lockouts.
+- **Disposition** — ✅ Shipped 2026-07-18 (`dbad371`). The limiter now keys on Cloudflare's
+  `CF-Connecting-IP` (the real client IP), falling back to the peer address in dev
+  (`app/limiter.py:client_ip_key`), so each client gets its own bucket instead of all sharing Caddy's
+  container IP. The origin is a Cloudflare **Tunnel** (not publicly reachable), so the header is
+  authoritative and unspoofable — no origin-allowlist needed; if the deployment ever exposes the
+  origin, `CF-Connecting-IP` must additionally be restricted to Cloudflare IP ranges. Multi-worker
+  shared-bucket storage stays deferred to #45 (single worker today).
 
 ### 16. Make calendar work proportional to the requested window
 

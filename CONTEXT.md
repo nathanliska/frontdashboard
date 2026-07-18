@@ -102,10 +102,14 @@ _Last updated: 2026-07-17_
   stops streaming within 30s and stops being accepted on requests immediately.
 
 **Infra / tooling**
-- Docker Compose dev + prod, Caddy in prod (behind Cloudflare), named volumes, health checks.
+- Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
 - **Production config fails fast**: `environment` is a validated enum, and production startup aborts
   on a weak/placeholder `secret_key` (< 32 chars), a missing `resend_api_key`, or an undeliverable
   `email_from` — a misconfigured prod can't silently boot with secure cookies off or email dead.
+- **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
+  origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
+  in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
+  are in-memory/per-process, correct for the current single worker (shared store tracked in #45).
 - CI: lint (Ruff/Biome), tests (pytest via Testcontainers, Vitest), `ty` type check, frontend
   build. Pre-commit hooks incl. Conventional Commit enforcement. Dependabot grouped/monthly.
 
