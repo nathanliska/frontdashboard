@@ -58,4 +58,38 @@ describe('notifications store session-boundary guard', () => {
 
     expect(useNotificationsStore.getState().unreadCount).toBe(1) // markRead write dropped
   })
+
+  it('drops a loadUnreadCount whose response lands after a session boundary', async () => {
+    useNotificationsStore.setState({ unreadCount: 3 })
+    let resolveCount!: (n: number) => void
+    apiGetUnreadCount.mockReturnValue(
+      new Promise<number>((r) => {
+        resolveCount = r
+      }),
+    )
+
+    const pending = useNotificationsStore.getState().loadUnreadCount()
+    bumpSessionGeneration()
+    resolveCount(99)
+    await pending
+
+    expect(useNotificationsStore.getState().unreadCount).toBe(3) // loadUnreadCount write dropped
+  })
+
+  it('drops a markAllRead whose response lands after a session boundary', async () => {
+    useNotificationsStore.setState({ notifications: [NOTIF_A], unreadCount: 1 })
+    let resolveMarkAll!: () => void
+    apiMarkAllRead.mockReturnValue(
+      new Promise<void>((r) => {
+        resolveMarkAll = r
+      }),
+    )
+
+    const pending = useNotificationsStore.getState().markAllRead()
+    bumpSessionGeneration()
+    resolveMarkAll()
+    await pending
+
+    expect(useNotificationsStore.getState().unreadCount).toBe(1) // markAllRead write dropped
+  })
 })
