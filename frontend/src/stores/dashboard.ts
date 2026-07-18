@@ -42,6 +42,7 @@ import {
   resetPendingDashboardMutations,
 } from '../utils/dashboard/dashboardMutation'
 import { useAuthStore } from './auth'
+import { bumpSessionGeneration, currentSessionGeneration } from './sessionGeneration'
 import { toast } from './toast'
 
 type LoadDashboardOptions = {
@@ -74,11 +75,6 @@ let scheduledSummariesRefreshTimer: ReturnType<typeof setTimeout> | null = null
 let scheduledSummariesRefreshPromise: Promise<void> | null = null
 let resolveScheduledSummariesRefresh: (() => void) | null = null
 let rejectScheduledSummariesRefresh: ((error: unknown) => void) | null = null
-
-// Bumped by resetDashboardData() at every auth boundary. Async store writes capture
-// it via sessionGuard() and no-op if it has moved — so a request begun under one
-// account can never write into the next account's store.
-let sessionGeneration = 0
 
 const DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS = 100
 
@@ -310,11 +306,11 @@ interface DashboardState {
 
 export const useDashboardStore = create<DashboardState>()((set, get) => {
   function sessionGuard() {
-    const gen = sessionGeneration
+    const gen = currentSessionGeneration()
     return {
-      isCurrent: () => gen === sessionGeneration,
+      isCurrent: () => gen === currentSessionGeneration(),
       set: ((...args: Parameters<typeof set>) => {
-        if (gen === sessionGeneration) set(...args)
+        if (gen === currentSessionGeneration()) set(...args)
       }) as typeof set,
     }
   }
@@ -775,7 +771,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
 })
 
 export function resetDashboardData(): void {
-  sessionGeneration += 1
+  bumpSessionGeneration()
   if (scheduledSummariesRefreshTimer) {
     clearTimeout(scheduledSummariesRefreshTimer)
   }
