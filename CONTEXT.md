@@ -11,6 +11,9 @@ _Last updated: 2026-07-17_
 **Auth & account**
 - Registration → email verification (required before login) → JWT session in HttpOnly cookies
   with CSRF double-submit; single-use rotating refresh tokens (7d) + 15-min access tokens.
+- **Email identity is case-insensitive**: addresses are normalized (trim + lowercase) at the API
+  boundary and a `lower(email)` functional unique index is the DB guarantee, so casing can't create
+  duplicate accounts or block login. Display names are bounded (trimmed, non-empty, ≤100 chars).
 - **Sessions are first-class**: one `sessions` row per login, stable across refresh rotation. The
   access JWT carries its `sid` and every request checks the session is live, so revocation is
   immediate. Password change revokes every *other* session and keeps yours; reset and logout
@@ -98,6 +101,9 @@ _Last updated: 2026-07-17_
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind Cloudflare), named volumes, health checks.
+- **Production config fails fast**: `environment` is a validated enum, and production startup aborts
+  on a weak/placeholder `secret_key` (< 32 chars), a missing `resend_api_key`, or an undeliverable
+  `email_from` — a misconfigured prod can't silently boot with secure cookies off or email dead.
 - CI: lint (Ruff/Biome), tests (pytest via Testcontainers, Vitest), `ty` type check, frontend
   build. Pre-commit hooks incl. Conventional Commit enforcement. Dependabot grouped/monthly.
 
@@ -105,11 +111,13 @@ _Last updated: 2026-07-17_
 
 - **Design-review remediation** (see the live tracker in
   `docs/references/review-findings.md`): Phase 1 (security quick wins #3/#4/#5) shipped
-  2026-07-12. SSE hardening shipped 2026-07-16, closing #8's eviction half. **Session revocation
-  (Phase 2 spec 1) shipped 2026-07-17, closing #6, #7, #8, #44.** **Spec 2 (#1, frontend
-  auth-boundary reset) and spec 3 (#13 Argon2 off the event loop + #43 login timing oracle) shipped
-  2026-07-17.** **Phase 2 remainder — #31 (email normalization + config validation) — is next**, its
-  own spec; no spec/plan written yet.
+  2026-07-12. SSE hardening shipped 2026-07-16, closing #8's eviction half. **Phase 2
+  (auth/session hardening) is fully shipped 2026-07-17** across four specs: session revocation
+  (#6/#7/#8/#44), frontend auth-boundary reset (#1), Argon2 off the event loop + login timing oracle
+  (#13/#43), and email normalization + production config validation (#31, plus the #14 display-name
+  slice). **Phases 3–6 and the unscheduled backlog remain** (see the rollout table in
+  `docs/references/review-findings.md`); the backlog now leads with #46 (auth-store post-await
+  straddle).
 
 ## Deliberately deferred / known dead code
 

@@ -17,7 +17,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | Phase | Theme | Findings | Status |
 |------:|-------|----------|--------|
 | 1 | Security quick wins | #3, #4, #5 | ✅ Done (2026-07-12) |
-| 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | 🚧 In progress — split into 4 specs (see below) |
+| 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | ✅ Done (2026-07-17) — 4 specs, all shipped (see below) |
 | 3 | Dashboard correctness | #2, #9, #10, #11, #12 | ◻ Planned |
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
@@ -34,7 +34,7 @@ ships independently rather than as one long plan:
 | 1 | `docs/shipped/session-revocation-design.md` | #6, #7, #8 (authz half), #44 | ✅ Shipped 2026-07-17 |
 | 2 | `docs/shipped/auth-boundary-reset-design.md` (+ `-plan.md`) | #1 (frontend auth-boundary reset) | ✅ Shipped 2026-07-17 |
 | 3 | `docs/shipped/argon2-offload-design.md` (+ `-plan.md`) | #13 (+ #43 login timing oracle) | ✅ Shipped 2026-07-17 |
-| 4 | `docs/designs/email-config-hardening-design.md` | #31 (email normalization + config validation) + #14 display-name slice | ◻ Spec written 2026-07-17 |
+| 4 | `docs/shipped/email-config-hardening-design.md` (+ `-plan.md`) | #31 (email normalization + config validation) + #14 display-name slice | ✅ Shipped 2026-07-17 |
 
 Spec 1 also folds in an unlogged defect (`/auth/refresh` has no CSRF guard and no rate limit) and
 logs two new ones: #43 (login timing oracle, for spec 3) and #44 (`/auth/refresh` CSRF + rate
@@ -96,6 +96,15 @@ limit, fixed in spec 1).
   miss path) with an identical 401 on both failure branches — closing the user-enumeration timing
   oracle. Whole-branch review (opus) READY-TO-MERGE with the GIL-release and import-safe-limiter
   claims empirically verified. Phase 2 remainder: **#31** only.
+- **2026-07-17** — Phase 2 **spec 4 (#31 + the #14 display-name slice) shipped** (`a1a5c53`,
+  `597e0ad`, `2997ff2`, boundary test `ce60ac0`): **#31 ✅**, #14 advanced. Email identity is now
+  case-insensitive (schema normalization + a `lower(email)` functional unique index, migration
+  `c7e0f2a4b6d8`); display names are bounded (≤100, trimmed, non-empty); and production startup
+  fails fast on an invalid `environment`, a weak/placeholder `secret_key`, a missing
+  `resend_api_key`, or an undeliverable `email_from`. Whole-branch review (opus) READY-TO-MERGE with
+  every email path, the migration chain, and the enum gating independently verified. **This closes
+  all of Phase 2 (auth/session hardening).** Remaining backlog now leads with #46 (auth-store
+  post-await straddle) and the phase 3–6 tracks.
 
 ## Validation pass — 2026-07-16
 
@@ -342,9 +351,12 @@ before implementing the finding; anything not listed verified as written, modulo
   bounded, duplicate ids rejected at the schema layer → 422) behind transactional bulk-reorder
   endpoints that renumber under a row lock with strict id-set equality (409 otherwise);
   `sort_order` removed from `ListItemUpdate`, so arbitrary/negative/duplicate orders can no
-  longer be PATCHed in; the `sort_order ge=0` gap is closed at the DB instead (see #30). Still
-  open: dashboard name bounds, typed layout/widget-config models, `ProfileUpdate`, bounded
-  mutation headers/body size.
+  longer be PATCHed in; the `sort_order ge=0` gap is closed at the DB instead (see #30). The
+  **display-name slice landed 2026-07-17** (`597e0ad`, `ce60ac0`) alongside #31: a shared
+  `DISPLAY_NAME_MAX_LENGTH=100`; `RegisterRequest.display_name` normalizes (trim, non-empty, ≤100)
+  at the schema, and `update_profile` gained the matching length bound (keeping its custom-message
+  contract). Still open: dashboard name bounds, typed layout/widget-config models, the rest of
+  `ProfileUpdate`/config typing, bounded mutation headers/body size.
 
 ### 15. Configure rate limiting for the trusted-proxy topology
 
@@ -489,6 +501,17 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Canonicalize email and enforce `lower(email)` uniqueness or `citext`, resolving existing conflicts explicitly. Model environment as an enum and fail production startup on insufficient secret entropy, insecure frontend URL, or missing required email settings.
 - **Effort / Risk** — Small-Medium / Medium due to existing data reconciliation.
 - **Impact** — Prevents account ambiguity and fail-open production cookie configuration.
+- **Disposition** — ✅ Shipped 2026-07-17 (`a1a5c53`, `2997ff2`; the `frontend_base_url` scheme
+  sub-part shipped earlier in `86472fb`). **Email is case-insensitive:** a `NormalizedEmail` type
+  (`.strip().lower()` after `EmailStr`) on all four auth request schemas, and a functional unique
+  index `uq_users_email_lower` on `lower(email)` (model `__table_args__` + migration `c7e0f2a4b6d8`,
+  which preflights for `lower(email)` collisions and aborts loudly, lowercases existing rows, and
+  drops the old `uq_users_email` constraint). **Config fails fast:** `environment` is an
+  `Environment` StrEnum (a typo now raises at startup instead of silently disabling secure cookies),
+  and a production-only `model_validator` rejects a short/placeholder `secret_key`, a missing
+  `resend_api_key`, and an undeliverable `email_from`; dev/test are unaffected. Reconciling
+  pre-existing case-duplicate accounts beyond the migration's abort-and-report is deliberately manual
+  (none expected at household scale).
 
 ### 32. Expand CI into migration, contract, browser, and supply-chain gates
 

@@ -1,7 +1,7 @@
 # Design — Email identity normalization + production config validation (#31)
 
 **Date:** 2026-07-17
-**Status:** ◻ Planned. Phase 2 spec 4 of 4 — the last spec in the auth/session-hardening theme.
+**Status:** ✅ Shipped 2026-07-17 (`a1a5c53`, `597e0ad`, `2997ff2`, boundary test `ce60ac0`). Phase 2 spec 4 of 4 — the last spec in the auth/session-hardening theme (this closes all of Phase 2).
 **Findings:** #31 (normalize email identity + validate production security settings). Also folds in
 the **display-name bounds slice of #14** (boundary input validation), because it lives in the exact
 auth schemas this spec edits and closes an obvious blank/oversized-display-name gap at registration.
