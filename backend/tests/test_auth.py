@@ -4,6 +4,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.hashing import _DUMMY_HASH
 from app.auth.tokens import decode_access_token, hash_token
 from app.main import app
 from app.models.email_verification_token import EmailVerificationToken
@@ -177,6 +178,8 @@ async def test_login_nonexistent_email_still_performs_verify(db_client: AsyncCli
     assert resp.status_code == 401
     # The oracle is closed: a miss must still pay exactly one verify (against the dummy hash).
     assert len(calls) == 1
+    # The miss path must verify against the dummy hash, not an empty/attacker-controllable value.
+    assert calls[0][1] == _DUMMY_HASH
 
 
 async def test_login_unknown_and_wrong_password_are_indistinguishable(db_client: AsyncClient) -> None:
