@@ -33,7 +33,7 @@ ships independently rather than as one long plan:
 |--:|------|----------|--------|
 | 1 | `docs/shipped/session-revocation-design.md` | #6, #7, #8 (authz half), #44 | ✅ Shipped 2026-07-17 |
 | 2 | `docs/shipped/auth-boundary-reset-design.md` (+ `-plan.md`) | #1 (frontend auth-boundary reset) | ✅ Shipped 2026-07-17 |
-| 3 | not written | #13 (Argon2 off the event loop) | ◻ Planned |
+| 3 | `docs/designs/argon2-offload-design.md` | #13 (+ #43 login timing oracle) | ◻ Spec written 2026-07-17 |
 | 4 | not written | #31 (email normalization + config validation) | ◻ Planned |
 
 Spec 1 also folds in an unlogged defect (`/auth/refresh` has no CSRF guard and no rate limit) and
