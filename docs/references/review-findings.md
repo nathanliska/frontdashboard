@@ -22,8 +22,8 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
-| — | Backlog (unscheduled) | #14, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #49, #50, #51, #52 | ◻ Triage |
-| — | Security review (2026-07-17) | #46/#47/#48 (store leaks) ✅ + #15 (rate-limit keying) ✅ shipped 2026-07-18; **open:** #49–#52 batch, register enum (E) | 🚧 Highs closed; low batch + register-enum decision remain |
+| — | Backlog (unscheduled) | #14, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #52 | ◻ Triage |
+| — | Security review (2026-07-17) | #46/#47/#48 + #15 + #49/#50/#51 ✅ shipped 2026-07-18; **open:** #52 (SSE griefing), register enum (E) | 🚧 all High + most Low closed; #52 + register-enum decision remain |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
 
@@ -128,6 +128,14 @@ limit, fixed in spec 1).
   (non-public, header unspoofable); reviewed, fix-sensitivity of the bucket-isolation test proven by
   revert. **Both High security-review findings are now closed.** Remaining: #49–#52 (low batch),
   register enumeration (product decision), and #45 (multi-worker limiter store, still deferred).
+- **2026-07-18** — **Low batch #49/#50/#51 shipped** (`717b0ef`, `1aa382d`, `b946207`, CI `418d00f`):
+  `last_used_at` is refreshed on access-cookie re-issue so the reaper can't prematurely delete a live
+  session (#49); `ENVIRONMENT` is required (fail-closed) with a startup posture log (#50); and a
+  register unique-index collision returns 409 instead of 500 (#51). Whole-branch review (opus) caught
+  that #50's fail-closed broke the CI backend job (no `.env`, `ENVIRONMENT` uninjected) — fixed by
+  adding it to `ci.yml`. **All High findings and all but one Low from the security review are now
+  closed.** Remaining: #52 (SSE resync griefing — needs a backpressure design), register enumeration
+  (product decision), #45 (multi-worker limiter store, deferred).
 
 ## Validation pass — 2026-07-16
 
@@ -886,6 +894,10 @@ continues from #42.
 - **Proposal** — Bump `session.last_used_at = now` wherever an access token is re-issued
   (profile/password), or derive the idle-cutoff from the access token's own `iat`/`exp`.
 - **Effort / Risk** — Small / Low.
+- **Disposition** — ✅ Shipped 2026-07-18 (`717b0ef`). `update_profile` and `change_password` now set
+  `session.last_used_at = datetime.now(UTC)` before commit, so while any issued access token is still
+  valid the session's `last_used_at` stays newer than the reaper's idle cutoff — the premature-deletion
+  window is fully closed (all other re-issue sites already bumped via `issue_refresh_token`).
 
 ### 50. Production security gated on `ENVIRONMENT`, which defaults to `development` (fail-open)
 
@@ -900,6 +912,10 @@ continues from #42.
   short/placeholder regardless of environment, or at minimum log a loud startup warning when
   `ENVIRONMENT` is unset.
 - **Effort / Risk** — Small / Low.
+- **Disposition** — ✅ Shipped 2026-07-18 (`1aa382d`, CI `418d00f`). `environment` lost its default —
+  `Settings()` now fails fast if `ENVIRONMENT` is unset (fail-closed) — and startup logs the posture
+  (`INFO` for production, `WARNING` otherwise, naming Secure-cookie state + whether prod validation
+  ran). All four `.env` files + the CI backend job now set `ENVIRONMENT` explicitly.
 
 ### 51. `register` can 500 on a crafted Unicode email (`str.lower()` vs Postgres `lower()` divergence)
 
@@ -914,6 +930,10 @@ continues from #42.
 - **Proposal** — Wrap the register INSERT to catch `IntegrityError` and return the same 409 (belt for
   the concurrent-duplicate race too). Optionally normalize with Postgres's algorithm.
 - **Effort / Risk** — Small / Low.
+- **Disposition** — ✅ Shipped 2026-07-18 (`b946207`). `register`'s user flush is wrapped in
+  `try/except IntegrityError` → `rollback` → the same `409 "Email already registered"` as the pre-check,
+  so a `lower(email)` unique-index collision (Unicode edge or concurrent duplicate) returns 409, not an
+  uncaught 500.
 
 ### 52. SSE queue-overflow eviction is attacker-inducible (co-member resync-loop griefing)
 

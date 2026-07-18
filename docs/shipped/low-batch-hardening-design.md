@@ -1,7 +1,7 @@
 # Design — Low-severity security batch (#49, #50, #51)
 
 **Date:** 2026-07-18
-**Status:** ◻ Planned.
+**Status:** ✅ Shipped 2026-07-18 (`717b0ef`, `1aa382d`, `b946207`, CI `418d00f`).
 **Findings:** #49 (reaper `last_used_at` invariant), #50 (`ENVIRONMENT` fail-open default), #51
 (register `IntegrityError` → 500). All three from the 2026-07-17 Phase 2 security review; small,
 independent, batched into one spec. #52 (SSE resync griefing) and register enumeration are separate.

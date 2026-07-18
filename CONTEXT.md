@@ -103,9 +103,11 @@ _Last updated: 2026-07-17_
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
-- **Production config fails fast**: `environment` is a validated enum, and production startup aborts
-  on a weak/placeholder `secret_key` (< 32 chars), a missing `resend_api_key`, or an undeliverable
-  `email_from` — a misconfigured prod can't silently boot with secure cookies off or email dead.
+- **Production config fails fast**: `ENVIRONMENT` is a **required** validated enum (a prod deploy that
+  forgets it won't boot rather than silently running insecure), and production startup aborts on a
+  weak/placeholder `secret_key` (< 32 chars), a missing `resend_api_key`, or an undeliverable
+  `email_from`. Startup logs the active environment and cookie posture (`INFO` prod / `WARNING`
+  otherwise).
 - **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
