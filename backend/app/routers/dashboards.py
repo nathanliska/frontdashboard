@@ -578,7 +578,10 @@ async def delete_dashboard(
     # Permanent dashboard deletion owns cleanup for every dashboard-scoped child
     # resource. Future dashboard-owned resource tables should be cleaned up here
     # by dashboard_id as well.
-    list_result = await db.execute(select(List.id).where(List.dashboard_id == dashboard.id, List.deleted_at.is_(None)))
+    # Sweep ALL child lists, including soft-deleted ones: their dashboard_id FK
+    # has no ON DELETE cascade, so a leftover soft-deleted row would block this
+    # dashboard's delete. Do not re-add a deleted_at filter here.
+    list_result = await db.execute(select(List.id).where(List.dashboard_id == dashboard.id))
     list_ids = [row[0] for row in list_result.all()]
     for list_id in list_ids:
         await cleanup_resource_shares(ResourceType.list, list_id, db)
@@ -586,7 +589,8 @@ async def delete_dashboard(
         await db.execute(delete(ListItem).where(ListItem.list_id.in_(list_ids)))
         await db.execute(delete(List).where(List.id.in_(list_ids)))
 
-    event_result = await db.execute(select(CalendarEvent.id).where(CalendarEvent.dashboard_id == dashboard.id, CalendarEvent.deleted_at.is_(None)))
+    # Same as lists above — sweep soft-deleted events too (no FK cascade).
+    event_result = await db.execute(select(CalendarEvent.id).where(CalendarEvent.dashboard_id == dashboard.id))
     event_ids = [row[0] for row in event_result.all()]
     for event_id in event_ids:
         await cleanup_resource_shares(ResourceType.calendar_event, event_id, db)

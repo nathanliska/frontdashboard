@@ -1,9 +1,23 @@
+import uuid
+from datetime import UTC, datetime
+
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent
-from tests.helpers import create_calendar_event, create_dashboard, create_list, current_user, register_client, set_csrf
+from app.models.calendar import CalendarEvent
+from app.models.dashboard import Dashboard
+from app.models.list import List, ListItem
+from tests.helpers import (
+    create_calendar_event,
+    create_dashboard,
+    create_list,
+    create_list_item,
+    current_user,
+    register_client,
+    set_csrf,
+)
 
 
 async def test_default_dashboard_listing_and_shared_access(auth_client: AsyncClient) -> None:
@@ -178,6 +192,39 @@ async def test_delete_archived_dashboard_removes_dashboard_owned_lists_and_event
 
     event_resp = await auth_client.get(f"/api/calendar/events/{event['id']}")
     assert event_resp.status_code == 404
+
+
+async def test_delete_dashboard_sweeps_soft_deleted_children(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """A dashboard with soft-deleted lists/events must still delete cleanly.
+
+    The child FKs to dashboards.id have no ON DELETE cascade, so a soft-deleted
+    list or event left behind makes the final DELETE FROM dashboards raise a
+    ForeignKeyViolation (500). Deletion must sweep children regardless of
+    soft-delete state — including items under a soft-deleted list.
+    """
+    dashboard = await create_dashboard(auth_client, name="Has Deleted Children")
+    lst = await create_list(auth_client, dashboard["id"], name="Old List")
+    item = await create_list_item(auth_client, lst["id"], text="stale")
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Old Event")
+
+    # Soft-delete the list and event directly. This leaves the item in place under
+    # the soft-deleted list — the exact orphan hazard the fix must sweep.
+    now = datetime.now(UTC)
+    db_list = (await db_session.execute(select(List).where(List.id == uuid.UUID(lst["id"])))).scalar_one()
+    db_list.deleted_at = now
+    db_event = (await db_session.execute(select(CalendarEvent).where(CalendarEvent.id == uuid.UUID(event["id"])))).scalar_one()
+    db_event.deleted_at = now
+    await db_session.flush()
+
+    set_csrf(auth_client)
+    delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
+    assert delete_resp.status_code == 204
+
+    # No rows remain for the dashboard — parent, both children, and the item.
+    assert (await db_session.execute(select(Dashboard).where(Dashboard.id == uuid.UUID(dashboard["id"])))).scalar_one_or_none() is None
+    assert (await db_session.execute(select(List).where(List.id == uuid.UUID(lst["id"])))).scalar_one_or_none() is None
+    assert (await db_session.execute(select(ListItem).where(ListItem.id == uuid.UUID(item["id"])))).scalar_one_or_none() is None
+    assert (await db_session.execute(select(CalendarEvent).where(CalendarEvent.id == uuid.UUID(event["id"])))).scalar_one_or_none() is None
 
 
 async def test_update_dashboard_meta_rejects_legacy_favorite_field(auth_client: AsyncClient) -> None:
