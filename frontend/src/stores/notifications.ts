@@ -6,6 +6,7 @@ import {
   apiMarkRead,
   type Notification,
 } from '../api/notifications'
+import { bumpSessionGeneration, currentSessionGeneration } from './sessionGeneration'
 
 let notificationsPromise: Promise<void> | null = null
 let unreadCountPromise: Promise<void> | null = null
@@ -24,94 +25,110 @@ interface NotificationsState {
   reset: () => void
 }
 
-export const useNotificationsStore = create<NotificationsState>()((set, get) => ({
-  notifications: [],
-  unreadCount: 0,
-  panelOpen: false,
-  loaded: false,
+export const useNotificationsStore = create<NotificationsState>()((set, get) => {
+  function sessionGuard() {
+    const gen = currentSessionGeneration()
+    return {
+      set: ((...args: Parameters<typeof set>) => {
+        if (gen === currentSessionGeneration()) set(...args)
+      }) as typeof set,
+    }
+  }
 
-  async load() {
-    if (notificationsPromise) return notificationsPromise
+  return {
+    notifications: [],
+    unreadCount: 0,
+    panelOpen: false,
+    loaded: false,
 
-    notificationsPromise = (async () => {
+    async load() {
+      if (notificationsPromise) return notificationsPromise
+
+      notificationsPromise = (async () => {
+        const guard = sessionGuard()
+        try {
+          const notifications = await apiGetNotifications()
+          const unreadCount = notifications.filter((n) => n.read_at === null).length
+          guard.set({ notifications, unreadCount, loaded: true })
+        } catch {
+          // ignore — stale state is acceptable
+        }
+      })().finally(() => {
+        notificationsPromise = null
+      })
+
+      return notificationsPromise
+    },
+
+    async loadUnreadCount() {
+      if (unreadCountPromise) return unreadCountPromise
+
+      unreadCountPromise = (async () => {
+        const guard = sessionGuard()
+        try {
+          const count = await apiGetUnreadCount()
+          guard.set({ unreadCount: count })
+        } catch {
+          // ignore
+        }
+      })().finally(() => {
+        unreadCountPromise = null
+      })
+
+      return unreadCountPromise
+    },
+
+    async markRead(id) {
+      const guard = sessionGuard()
       try {
-        const notifications = await apiGetNotifications()
-        const unreadCount = notifications.filter((n) => n.read_at === null).length
-        set({ notifications, unreadCount, loaded: true })
-      } catch {
-        // ignore — stale state is acceptable
-      }
-    })().finally(() => {
-      notificationsPromise = null
-    })
-
-    return notificationsPromise
-  },
-
-  async loadUnreadCount() {
-    if (unreadCountPromise) return unreadCountPromise
-
-    unreadCountPromise = (async () => {
-      try {
-        const count = await apiGetUnreadCount()
-        set({ unreadCount: count })
+        const updated = await apiMarkRead(id)
+        guard.set((s) => ({
+          notifications: s.notifications.map((n) => (n.id === id ? updated : n)),
+          unreadCount: Math.max(0, s.unreadCount - 1),
+        }))
       } catch {
         // ignore
       }
-    })().finally(() => {
+    },
+
+    async markAllRead() {
+      const guard = sessionGuard()
+      try {
+        await apiMarkAllRead()
+        const now = new Date().toISOString()
+        guard.set((s) => ({
+          notifications: s.notifications.map((n) =>
+            n.read_at === null ? { ...n, read_at: now } : n,
+          ),
+          unreadCount: 0,
+        }))
+      } catch {
+        // ignore
+      }
+    },
+
+    setPanelOpen(open) {
+      set({ panelOpen: open })
+      if (open && !get().loaded) void get().load()
+    },
+
+    addFromSse(notif) {
+      set((s) => ({
+        notifications: [notif, ...s.notifications],
+        unreadCount: s.unreadCount + 1,
+      }))
+    },
+
+    reset() {
+      bumpSessionGeneration()
+      notificationsPromise = null
       unreadCountPromise = null
-    })
-
-    return unreadCountPromise
-  },
-
-  async markRead(id) {
-    try {
-      const updated = await apiMarkRead(id)
-      set((s) => ({
-        notifications: s.notifications.map((n) => (n.id === id ? updated : n)),
-        unreadCount: Math.max(0, s.unreadCount - 1),
-      }))
-    } catch {
-      // ignore
-    }
-  },
-
-  async markAllRead() {
-    try {
-      await apiMarkAllRead()
-      const now = new Date().toISOString()
-      set((s) => ({
-        notifications: s.notifications.map((n) =>
-          n.read_at === null ? { ...n, read_at: now } : n,
-        ),
+      set({
+        notifications: [],
         unreadCount: 0,
-      }))
-    } catch {
-      // ignore
-    }
-  },
-
-  setPanelOpen(open) {
-    set({ panelOpen: open })
-    if (open && !get().loaded) void get().load()
-  },
-
-  addFromSse(notif) {
-    set((s) => ({
-      notifications: [notif, ...s.notifications],
-      unreadCount: s.unreadCount + 1,
-    }))
-  },
-
-  reset() {
-    notificationsPromise = null
-    unreadCountPromise = null
-    set({
-      notifications: [],
-      unreadCount: 0,
-      panelOpen: false,
-      loaded: false,
-    })
-  },
-}))
+        panelOpen: false,
+        loaded: false,
+      })
+    },
+  }
+})
