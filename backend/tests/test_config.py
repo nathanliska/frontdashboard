@@ -7,6 +7,7 @@ _BASE = {
     "_env_file": None,
     "database_url": "postgresql+asyncpg://u:p@localhost/db",
     "secret_key": "x" * 40,
+    "environment": "development",
 }
 
 
@@ -55,3 +56,8 @@ def test_valid_production_config_constructs() -> None:
         email_from="FrontDashboard <noreply@example.com>",
     )
     assert settings.environment.value == "production"
+
+
+def test_environment_is_required() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, database_url="postgresql+asyncpg://u:p@localhost/db", secret_key="x" * 40)

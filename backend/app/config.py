@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     secret_key: str
     # Comma-separated origins, e.g. "http://localhost:5173,http://localhost:3000"
     cors_origins: str = "http://localhost:5173"
-    environment: Environment = Environment.development
+    environment: Environment
     log_level: str = "INFO"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7

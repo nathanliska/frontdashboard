@@ -10,7 +10,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api import api_router
-from app.config import settings
+from app.config import Environment, settings
 from app.limiter import limiter
 from app.services.retention import reaper_loop
 
@@ -31,6 +31,14 @@ _configure_app_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    logger = logging.getLogger("app")
+    if settings.environment == Environment.production:
+        logger.info("Starting: environment=production (Secure cookies ON, production config validated)")
+    else:
+        logger.warning(
+            "Starting: environment=%s (Secure cookies OFF, production validation skipped)",
+            settings.environment.value,
+        )
     reaper_task: asyncio.Task[None] | None = None
     if settings.reaper_enabled:
         reaper_task = asyncio.create_task(reaper_loop())
