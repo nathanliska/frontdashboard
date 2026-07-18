@@ -50,6 +50,20 @@ async def test_register_duplicate_email(db_client: AsyncClient) -> None:
     assert resp.status_code == 409
 
 
+async def test_register_collision_returns_409_not_500(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    # A mixed-case row inserted directly (bypassing schema normalization) is missed by register's
+    # exact-match pre-check but caught by the lower(email) unique index — the IntegrityError backstop.
+    db_session.add(User(email="Edge@Example.com", password_hash="x", display_name="Edge"))
+    await db_session.flush()
+
+    resp = await db_client.post(
+        _REGISTER_URL,
+        json={"email": "edge@example.com", "password": "password123", "display_name": "Edge2"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Email already registered"
+
+
 async def test_register_rejects_blank_display_name(db_client: AsyncClient) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
