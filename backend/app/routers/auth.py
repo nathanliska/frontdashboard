@@ -26,6 +26,7 @@ from app.models.session import UserSession
 from app.models.share import PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
 from app.schemas.auth import (
+    DISPLAY_NAME_MAX_LENGTH,
     LoginRequest,
     PasswordChangeRequest,
     PasswordResetConfirmRequest,
@@ -446,6 +447,11 @@ async def update_profile(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Display name cannot be empty",
+            )
+        if len(display_name) > DISPLAY_NAME_MAX_LENGTH:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Display name must be at most {DISPLAY_NAME_MAX_LENGTH} characters",
             )
         current_user.display_name = display_name
 

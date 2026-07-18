@@ -50,6 +50,33 @@ async def test_register_duplicate_email(db_client: AsyncClient) -> None:
     assert resp.status_code == 409
 
 
+async def test_register_rejects_blank_display_name(db_client: AsyncClient) -> None:
+    resp = await db_client.post(
+        _REGISTER_URL,
+        json={"email": "blankname@example.com", "password": "password123", "display_name": "   "},
+    )
+    assert resp.status_code == 422
+
+
+async def test_register_rejects_overlong_display_name(db_client: AsyncClient) -> None:
+    resp = await db_client.post(
+        _REGISTER_URL,
+        json={"email": "longname@example.com", "password": "password123", "display_name": "x" * 101},
+    )
+    assert resp.status_code == 422
+
+
+async def test_register_trims_display_name(db_client: AsyncClient) -> None:
+    resp = await db_client.post(
+        _REGISTER_URL,
+        json={"email": "trimname@example.com", "password": "password123", "display_name": "  Bob  "},
+    )
+    assert resp.status_code == 201
+    token = app.state.email_verification_tokens["trimname@example.com"]
+    verify = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+    assert verify.json()["display_name"] == "Bob"
+
+
 async def test_login(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
@@ -352,6 +379,13 @@ async def test_update_profile_rejects_blank_display_name(auth_client: AsyncClien
     resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "   "})
     assert resp.status_code == 422
     assert resp.json()["detail"] == "Display name cannot be empty"
+
+
+async def test_update_profile_rejects_overlong_display_name(auth_client: AsyncClient) -> None:
+    set_csrf(auth_client)
+    resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "x" * 101})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Display name must be at most 100 characters"
 
 
 async def test_change_password_updates_login_credentials(auth_client: AsyncClient) -> None:

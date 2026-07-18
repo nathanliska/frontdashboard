@@ -11,11 +11,25 @@ def _normalize_email(v: str) -> str:
 
 NormalizedEmail = Annotated[EmailStr, AfterValidator(_normalize_email)]
 
+DISPLAY_NAME_MAX_LENGTH = 100
+
+
+def _normalize_display_name(v: str) -> str:
+    v = v.strip()
+    if not v:
+        raise ValueError("Display name cannot be empty")
+    if len(v) > DISPLAY_NAME_MAX_LENGTH:
+        raise ValueError(f"Display name must be at most {DISPLAY_NAME_MAX_LENGTH} characters")
+    return v
+
+
+DisplayName = Annotated[str, AfterValidator(_normalize_display_name)]
+
 
 class RegisterRequest(BaseModel):
     email: NormalizedEmail
     password: str = Field(min_length=8, max_length=128)
-    display_name: str
+    display_name: DisplayName
 
 
 class LoginRequest(BaseModel):
