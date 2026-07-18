@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User } from '../api/auth'
 import type { RefreshOutcome } from '../api/client'
 import { useAuthStore } from './auth'
+import { bumpSessionGeneration } from './sessionGeneration'
 
 const { resetCalendarData } = vi.hoisted(() => ({
   resetCalendarData: vi.fn(),
@@ -169,5 +170,60 @@ describe('useAuthStore', () => {
     apiVerifyEmail.mockResolvedValue(user)
     await useAuthStore.getState().verifyEmail('tok')
     expect(resetDashboardData).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a profile update whose response lands after a session boundary', async () => {
+    const USER_B = { id: 'b', email: 'b@x.com', display_name: 'B', preferences: {} } as User
+    useAuthStore.setState({ status: 'authenticated', user: USER_B })
+
+    let resolveUpdate!: (u: User) => void
+    apiUpdateProfile.mockReturnValue(
+      new Promise<User>((r) => {
+        resolveUpdate = r
+      }),
+    )
+
+    const pending = useAuthStore.getState().updateProfile({ display_name: 'A-new' })
+    bumpSessionGeneration() // account boundary crosses while the request is in flight
+    resolveUpdate({ id: 'a', email: 'a@x.com', display_name: 'A-new', preferences: {} } as User)
+    await pending
+
+    expect(useAuthStore.getState().user).toBe(USER_B) // A's response was dropped
+  })
+
+  it('drops a preferences update whose response lands after a session boundary', async () => {
+    const USER_B = { id: 'b', email: 'b@x.com', display_name: 'B', preferences: {} } as User
+    useAuthStore.setState({ status: 'authenticated', user: USER_B })
+
+    let resolveUpdate!: (u: User) => void
+    apiUpdatePreferences.mockReturnValue(
+      new Promise<User>((r) => {
+        resolveUpdate = r
+      }),
+    )
+
+    const pending = useAuthStore.getState().updatePreferences({} as never)
+    bumpSessionGeneration()
+    resolveUpdate({ id: 'a', email: 'a@x.com', display_name: 'A', preferences: {} } as User)
+    await pending
+
+    expect(useAuthStore.getState().user).toBe(USER_B)
+  })
+
+  it('marks the session unauthenticated before apiLogout resolves', async () => {
+    useAuthStore.setState({ status: 'authenticated', user: { id: 'b' } as User })
+    let resolveLogout!: () => void
+    apiLogout.mockReturnValue(
+      new Promise<void>((r) => {
+        resolveLogout = r
+      }),
+    )
+
+    const pending = useAuthStore.getState().logout()
+    expect(useAuthStore.getState().status).toBe('unauthenticated')
+    expect(useAuthStore.getState().user).toBeNull()
+
+    resolveLogout()
+    await pending
   })
 })

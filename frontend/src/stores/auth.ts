@@ -18,6 +18,7 @@ import { resetCalendarData } from '../resources/calendarData'
 import { resetListData } from '../resources/listData'
 import { resetDashboardData } from './dashboard'
 import { useNotificationsStore } from './notifications'
+import { currentSessionGeneration } from './sessionGeneration'
 import { toast } from './toast'
 
 let authInitPromise: Promise<void> | null = null
@@ -95,14 +96,16 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   async logout() {
-    resetSessionData()
+    set({ status: 'unauthenticated', user: null }) // closes the SSE stream via useSSE cleanup
+    resetSessionData() // clears stores + bumps the generation
     await apiLogout().catch(() => {})
-    set({ status: 'unauthenticated', user: null })
   },
 
   async updatePreferences(prefs) {
+    const gen = currentSessionGeneration()
     try {
       const updated = await apiUpdatePreferences(prefs)
+      if (gen !== currentSessionGeneration()) return // boundary crossed mid-request — drop the write
       set({ user: updated })
     } catch {
       toast.error('Failed to update preferences.')
@@ -110,8 +113,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   async updateProfile(input) {
+    const gen = currentSessionGeneration()
     try {
       const updated = await apiUpdateProfile(input)
+      if (gen !== currentSessionGeneration()) return // boundary crossed mid-request — drop the write
       set({ user: updated })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to update profile.')
