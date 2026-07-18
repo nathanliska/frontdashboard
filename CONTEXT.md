@@ -19,6 +19,12 @@ _Last updated: 2026-07-17_
   as reuse and revokes the session. `/auth/refresh` is CSRF-guarded and rate-limited.
 - Password reset via email; authenticated password change and profile rename (both re-issue the
   access cookie). Rate limits on all auth endpoints.
+- **Password hashing is Argon2, run off the event loop**: `hash_password`/`verify_password` execute
+  in a worker thread via `anyio.to_thread.run_sync` under a shared, bounded capacity limiter
+  (`argon2_max_concurrency`, default 4), so an auth burst can't stall the event loop or exhaust
+  memory. **Login is enumeration-safe**: it always pays exactly one Argon2 verify (against a fixed
+  dummy hash when the email is unknown) and returns an identical 401 whether the account is missing
+  or the password is wrong — no timing side-channel.
 - Emails send via Resend in background tasks; without an API key the sender logs the link
   (how you get tokens locally). HTML templates exist for both flows.
 - Profile page: display name, password change, home-dashboard preference.
@@ -100,10 +106,10 @@ _Last updated: 2026-07-17_
 - **Design-review remediation** (see the live tracker in
   `docs/references/review-findings.md`): Phase 1 (security quick wins #3/#4/#5) shipped
   2026-07-12. SSE hardening shipped 2026-07-16, closing #8's eviction half. **Session revocation
-  (Phase 2 spec 1) shipped 2026-07-17, closing #6, #7, #8, #44.**
-  **Phase 2 remainder — #1 (frontend auth-boundary reset), #13 + #43 (Argon2 + login timing),
-  #31 (email/config) — is next**, each its own spec; no
-  spec/plan written yet.
+  (Phase 2 spec 1) shipped 2026-07-17, closing #6, #7, #8, #44.** **Spec 2 (#1, frontend
+  auth-boundary reset) and spec 3 (#13 Argon2 off the event loop + #43 login timing oracle) shipped
+  2026-07-17.** **Phase 2 remainder — #31 (email normalization + config validation) — is next**, its
+  own spec; no spec/plan written yet.
 
 ## Deliberately deferred / known dead code
 

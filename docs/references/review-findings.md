@@ -33,7 +33,7 @@ ships independently rather than as one long plan:
 |--:|------|----------|--------|
 | 1 | `docs/shipped/session-revocation-design.md` | #6, #7, #8 (authz half), #44 | ✅ Shipped 2026-07-17 |
 | 2 | `docs/shipped/auth-boundary-reset-design.md` (+ `-plan.md`) | #1 (frontend auth-boundary reset) | ✅ Shipped 2026-07-17 |
-| 3 | `docs/designs/argon2-offload-design.md` | #13 (+ #43 login timing oracle) | ◻ Spec written 2026-07-17 |
+| 3 | `docs/shipped/argon2-offload-design.md` (+ `-plan.md`) | #13 (+ #43 login timing oracle) | ✅ Shipped 2026-07-17 |
 | 4 | not written | #31 (email normalization + config validation) | ◻ Planned |
 
 Spec 1 also folds in an unlogged defect (`/auth/refresh` has no CSRF guard and no rate limit) and
@@ -89,6 +89,13 @@ limit, fixed in spec 1).
   reusing the first's `summariesLoaded` cache) and the late-write repopulation race. Whole-branch
   review (opus) clean. Logged #46 (the same post-await straddle in `auth.ts`'s
   `updatePreferences`/`updateProfile`). Phase 2 remainder: #13 (+#43), #31.
+- **2026-07-17** — Phase 2 **spec 3 (#13 + #43) shipped** (`fed8642`, `f37a9e1`, test hardening
+  `9931000`): **#13 and #43 both ✅**. Argon2 hashing/verification now runs off the event loop
+  through `anyio.to_thread.run_sync` under a bounded, shared `CapacityLimiter` (default 4), and
+  `login` pays exactly one Argon2 verify on every path (against a module-level `_DUMMY_HASH` on the
+  miss path) with an identical 401 on both failure branches — closing the user-enumeration timing
+  oracle. Whole-branch review (opus) READY-TO-MERGE with the GIL-release and import-safe-limiter
+  claims empirically verified. Phase 2 remainder: **#31** only.
 
 ## Validation pass — 2026-07-16
 
@@ -316,6 +323,12 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Execute password operations through `anyio.to_thread.run_sync` with a bounded capacity limiter; tune parameters and load-test concurrent auth traffic.
 - **Effort / Risk** — Small / Low-Medium.
 - **Impact** — Preserves service responsiveness and reduces an easy denial-of-service amplifier.
+- **Disposition** — ✅ Shipped 2026-07-17 (`fed8642`). `hashing.py` runs Argon2 through
+  `anyio.to_thread.run_sync` under a shared module-level `anyio.CapacityLimiter`
+  (`argon2_max_concurrency`, default 4 ≈ 256 MiB peak); all five call sites now await. The GIL is
+  released during the C hash (measured ~90% event-loop throughput under 20 concurrent hashes), so
+  the offload is real. Argon2 params stay at library defaults; parameter tuning + a concurrent-auth
+  load test are deliberately deferred (disproportionate at household scale).
 
 ### 14. Validate dashboard, layout, widget, profile, and reorder inputs at the boundary
 
@@ -681,7 +694,14 @@ continues from #42.
 - **Effort / Risk** — Small / Low.
 - **Impact** — Closes account enumeration on the one endpoint that cannot be rate-limited into
   uselessness.
-- **Disposition** — ◻ Open. Assigned to Phase 2 spec 3 (#13).
+- **Disposition** — ✅ Shipped 2026-07-17 (`f37a9e1`, test hardening `9931000`). `login` now
+  computes `password_hash = user.password_hash if user else _DUMMY_HASH` and awaits exactly one
+  Argon2 verify on every path; both failure branches collapse into an identical
+  `401 {"detail": "Invalid credentials"}`. `_DUMMY_HASH` is produced by the same `PasswordHasher`
+  at module load, so its verify cost tracks real hashes. The 403 "email verification required"
+  branch is only reachable after a successful verify, so it is not itself an oracle. Proven by a
+  verify-call spy (asserts one call, against `_DUMMY_HASH`, on the miss path), not a timing
+  assertion. Registration/reset-request enumeration remain separate, out-of-scope concerns.
 
 ### 44. `POST /auth/refresh` has no CSRF guard and no rate limit
 

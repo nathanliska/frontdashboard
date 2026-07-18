@@ -1,7 +1,7 @@
 # Design — Argon2 off the event loop (#13) + close the login timing oracle (#43)
 
 **Date:** 2026-07-17
-**Status:** ◻ Planned. Phase 2 spec 3 of 4.
+**Status:** ✅ Shipped 2026-07-17 (`fed8642`, `f37a9e1`, test hardening `9931000`). Phase 2 spec 3 of 4.
 **Findings:** #13 (move Argon2 work off the async event loop), #43 (remove the login
 user-enumeration timing oracle). They share one code path — the hashing module and the same five
 call sites — so they ship together, per #43's own note.
