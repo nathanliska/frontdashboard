@@ -33,9 +33,11 @@ _Last updated: 2026-07-17_
 - Profile page: display name, password change, home-dashboard preference.
 - **Client state resets at every auth boundary** (login, logout, email verification, unauthenticated
   startup): notifications, resource caches, and the dashboard store (fields, in-flight request
-  machinery, pending mutations) are all cleared, and every async dashboard write is
-  session-generation–guarded, so a prior account's in-flight response can't repopulate the next
-  account's state in the same tab.
+  machinery, pending mutations) are all cleared. A shared session-generation counter guards every
+  async write in the **dashboard, auth, and notifications** stores — each captures the generation at
+  entry and drops its post-await write if a boundary crossed — so a prior account's in-flight response
+  can't repopulate the next account's state (dashboards, `user`, or notifications) in the same tab.
+  Logout tears down the session view and SSE stream before its network round-trip.
 
 **Dashboards & widgets**
 - Multiple dashboards per user; default "My Dashboard" created on registration. Listing page

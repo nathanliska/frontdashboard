@@ -1,7 +1,7 @@
 # Design — Extend the session-boundary guard to the auth + notifications stores (#46, #47, #48)
 
 **Date:** 2026-07-17
-**Status:** ◻ Planned.
+**Status:** ✅ Shipped 2026-07-18 (`fa00095`, `6ec0263`, `492f160`, tests `ae5cdb9`).
 **Findings:** #46 (auth store's `set({user})` unguarded post-await), #47 (notifications store's
 post-await writes unguarded — its twin), #48 (`logout()` clears store state before tearing down the
 session/SSE). All three surfaced/confirmed by the 2026-07-17 Phase 2 security review and share one

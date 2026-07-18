@@ -22,8 +22,8 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
 | 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
-| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #46, #47, #48, #49, #50, #51, #52 | ◻ Triage |
-| — | Security review (2026-07-17) | #46 + #47/#48 (same-tab store leaks — remediating now); #15 (High, elevate), #49–#52 batch, register enum (E) | 🚧 #46/#47/#48 in flight |
+| — | Backlog (unscheduled) | #14, #15, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #49, #50, #51, #52 | ◻ Triage |
+| — | Security review (2026-07-17) | #46 + #47/#48 (same-tab store leaks) ✅ shipped 2026-07-18; **open:** #15 (High, elevate), #49–#52 batch, register enum (E) | 🚧 store leaks closed; #15 next |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
 
@@ -115,6 +115,13 @@ limit, fixed in spec 1).
   logged: #49 (reaper `last_used_at` invariant), #50 (`ENVIRONMENT` fail-open default), #51 (register
   Unicode-email 500), #52 (SSE resync griefing). Register enumeration (fast-409 + timing) noted as a
   pending product decision.
+- **2026-07-18** — **#46/#47/#48 shipped** (`fa00095`, `6ec0263`, `492f160`, tests `ae5cdb9`): the
+  same-tab cross-account store leaks from the security review are closed. A shared `sessionGeneration`
+  counter (extracted from the dashboard store) now guards the auth store's `set({user})` writes and the
+  notifications store's four post-`await` writes, and `logout()` tears down the session/SSE before its
+  round-trip. Whole-branch review (opus) READY-TO-MERGE with the single-source-of-truth counter, guard
+  timing, and cache safety independently verified. **Remaining security-review items:** #15 (High —
+  elevate), #49–#52 (low batch), register enumeration (product decision).
 
 ## Validation pass — 2026-07-16
 
@@ -808,10 +815,11 @@ continues from #42.
   natural companion to #1.
 - **Effort / Risk** — Small / Low.
 - **Impact** — Closes the last same-tab cross-account write vector left after #1.
-- **Disposition** — ◻ Open, **confirmed High** by the 2026-07-17 Phase 2 security review (adversarial
-  frontend audit). Being remediated together with #47 (its notifications-store twin) and #48. Exact
-  sites: `auth.ts` `updateProfile` `set({user})` and `updatePreferences` `set({user})`. Corrupting
-  `user.id` to A's also breaks B's SSE echo suppression (which keys off `user.id`).
+- **Disposition** — ✅ Shipped 2026-07-18 (`fa00095`, `6ec0263`). Confirmed High by the Phase 2
+  security review; `updateProfile`/`updatePreferences` now capture `currentSessionGeneration()` before
+  their `await` and drop the `set({user})` if a boundary crossed. Shipped with #47/#48 as one spec
+  (`docs/shipped/session-boundary-guard-design.md`); the guard rides a shared `sessionGeneration`
+  counter the dashboard store also uses.
 
 ### 47. Guard the notifications store's async writes at the session boundary
 
@@ -829,6 +837,9 @@ continues from #42.
   approach is insufficient — it prevents new duplicate fetches but not stale completions.
 - **Effort / Risk** — Small / Low.
 - **Impact** — Closes the most sensitive same-tab cross-account leak.
+- **Disposition** — ✅ Shipped 2026-07-18 (`492f160`, tests `ae5cdb9`). The store's four post-`await`
+  writes (`load`/`loadUnreadCount`/`markRead`/`markAllRead`) route through a `sessionGuard` captured at
+  entry, and `reset()` bumps the shared `sessionGeneration`. Shipped with #46/#48.
 
 ### 48. `logout()` clears store state before tearing down the session/SSE
 
@@ -844,6 +855,9 @@ continues from #42.
 - **Proposal** — Tear the session down before clearing/awaiting: set `unauthenticated`/`user:null`
   first (closes the EventSource on re-render), or move `resetSessionData()` to after `await apiLogout()`.
 - **Effort / Risk** — Small / Low.
+- **Disposition** — ✅ Shipped 2026-07-18 (`6ec0263`). `logout()` now sets
+  `{status:'unauthenticated', user:null}` first (closing the SSE stream), then `resetSessionData()`,
+  then `await apiLogout()`. Shipped with #46/#47.
 
 ### 49. Reaper's "no live access token depends on this session" invariant is violable
 
