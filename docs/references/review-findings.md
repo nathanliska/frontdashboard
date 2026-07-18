@@ -34,7 +34,7 @@ ships independently rather than as one long plan:
 | 1 | `docs/shipped/session-revocation-design.md` | #6, #7, #8 (authz half), #44 | ✅ Shipped 2026-07-17 |
 | 2 | `docs/shipped/auth-boundary-reset-design.md` (+ `-plan.md`) | #1 (frontend auth-boundary reset) | ✅ Shipped 2026-07-17 |
 | 3 | `docs/shipped/argon2-offload-design.md` (+ `-plan.md`) | #13 (+ #43 login timing oracle) | ✅ Shipped 2026-07-17 |
-| 4 | not written | #31 (email normalization + config validation) | ◻ Planned |
+| 4 | `docs/designs/email-config-hardening-design.md` | #31 (email normalization + config validation) + #14 display-name slice | ◻ Spec written 2026-07-17 |
 
 Spec 1 also folds in an unlogged defect (`/auth/refresh` has no CSRF guard and no rate limit) and
 logs two new ones: #43 (login timing oracle, for spec 3) and #44 (`/auth/refresh` CSRF + rate
