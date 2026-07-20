@@ -1,7 +1,9 @@
 # Design — Standardize dashboard mutation success/failure contracts (#10)
 
 **Date:** 2026-07-20
-**Status:** ◻ Planned
+**Status:** ✅ Shipped 2026-07-20 (`b958f04`, `8ef9967`). Stays in `docs/designs/` until Phase 3
+closes (its whole-branch review is batched across slices A–D), then moves to `docs/shipped/` with the
+plan.
 **Finding:** #10 (mutation success and failure contracts are inconsistent). Phase 3 (dashboard
 correctness), slice C.
 

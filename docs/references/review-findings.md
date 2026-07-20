@@ -18,7 +18,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 |------:|-------|----------|--------|
 | 1 | Security quick wins | #3, #4, #5 | ✅ Done (2026-07-12) |
 | 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | ✅ Done (2026-07-17) — 4 specs, all shipped (see below) |
-| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 In progress — #2 ✅ (slice A, 2026-07-18); #9 + #11 ✅ (slice B, 2026-07-19); #10, #12 planned |
+| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 In progress — #2 ✅ (slice A, 2026-07-18); #9 + #11 ✅ (slice B, 2026-07-19); #10 ✅ (slice C, 2026-07-20); #12 remains |
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | 🚧 In progress — #22 correctness slice ◐; pagination remains |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | 🚧 In progress — #20/#32 migration/build gates, #36 build context, and #37 DB lifecycle slices ◐ |
 | 6 | UX & cleanup | #27, #40, #41, #42 | 🚧 In progress — #41 route/dead-code and #42 transient-state slices ◐ |
@@ -183,6 +183,13 @@ limit, fixed in spec 1).
   itself stays **off** because ~12 UUID/identity primary keys legitimately carry DB-side defaults the
   ORM generates in Python, which would need `UUIDPrimaryKeyMixin` to declare them. Tracked as open
   under #20's remaining scope.
+
+- **2026-07-20** — **Phase 3 slice C (#10) shipped** (`b958f04`, `8ef9967`). Dashboard store
+  mutations now share one success/failure contract — never throw; resolve `T | null` / `boolean` —
+  so dialogs close, inputs clear, and navigation happen only after a confirmed success. Fixes the
+  add-widget/rename close-on-failure, the create unhandled-rejection, and the share-search
+  clear-on-failure (the last resolving a sub-question the review had left open). Phase 3 remainder:
+  **#12** (midnight invalidation) only.
 
 ## Validation pass — 2026-07-16
 
@@ -413,6 +420,20 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Make mutations consistently reject a normalized `ApiError` or return a typed `Result`; emit errors in one layer and close/reset UI only after confirmed success. Add failure-path component tests.
 - **Effort / Risk** — Medium / Medium; many call sites need a mechanical migration.
 - **Impact** — Removes misleading success flows and preserves recoverable input.
+- **Disposition** — ✅ Shipped 2026-07-20 (`b958f04`, `8ef9967`). One contract, chosen over the
+  proposal's `Result<T>` (unused elsewhere) and over "always reject" (contradicts the toast
+  convention): dashboard store mutations **never throw** — value-producers resolve `T | null`, void
+  ones resolve `boolean` — and the store keeps owning the `toast`, per `frontend/CLAUDE.md`. All four
+  verified sites fixed: the add-widget wizard and the rename modal close only on a truthy result
+  (`DashboardEditorPage`, `DashboardSettingsModal`); `createDashboard` returns `null` instead of
+  throwing so `CreateDashboardModal` no longer produces an unhandled rejection; and
+  `SharePanelAddAccess` clears the search only on a confirmed add — closing the review's open
+  sub-question (the clear lived in the share-search child at `SharePanelAddAccess.tsx`, not
+  `handleAddShare`). `saveLayout` keeps its own `conflict`-flag contract (slice B). `tsc` enforced
+  the contract across every consumer. Store contract TDD'd RED→GREEN; the two UI-behavior tests
+  proven sensitive by reverting the fixes and watching them fail. Out of scope: list/calendar
+  mutation handlers (same shape, different resource) — candidate follow-up. Spec/plan:
+  `docs/designs/dashboard-mutation-contracts-{design,plan}.md`.
 
 ### 11. Serialize and coalesce dashboard layout saves
 

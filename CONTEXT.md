@@ -52,6 +52,10 @@ _Last updated: 2026-07-19_
 - **Layout saves are serialized and coalesced**: one PUT in flight at a time plus one latest-pending
   layout, each send re-reading the version the previous save returned. Rapid drag/resize therefore
   can't conflict with itself or install an older layout; a 409 means a *real* other-editor conflict.
+- **Dashboard mutations share one success/failure contract**: store actions never throw —
+  value-producers resolve `T | null`, void ones resolve `boolean`, and the store owns the error
+  toast. Dialogs close, inputs clear, and navigation happen only on a truthy result, so a failed
+  create/rename/widget-add/share-add keeps the user's input instead of discarding it.
 - Widget types: **list** (bind existing or auto-create), **clock**, **calendar**, **agenda**
   (today/overdue/upcoming). Add-widget wizard picks type → resource where applicable.
 
@@ -137,9 +141,9 @@ _Last updated: 2026-07-19_
   slice). A follow-up security review (2026-07-17) is fully remediated: all High/Medium closed, with
   register enumeration accepted as a deliberate household-scale risk and only #52 (SSE resync
   griefing, Low) left open. **Phase 3 (dashboard correctness) is in progress**, sliced by mechanism:
-  slice A (#2, deletion integrity) and slice B (#9 + #11, layout save correctness) have shipped;
-  #10 (mutation contracts) and #12 (midnight invalidation) remain. **Phases 4–6 and the unscheduled
-  backlog also remain** (see the rollout table in `docs/references/review-findings.md`).
+  slice A (#2, deletion integrity), slice B (#9 + #11, layout save correctness), and slice C (#10,
+  mutation contracts) have shipped; only #12 (midnight invalidation) remains. **Phases 4–6 and the
+  unscheduled backlog also remain** (see the rollout table in `docs/references/review-findings.md`).
 
 ## Deliberately deferred / known dead code
 
