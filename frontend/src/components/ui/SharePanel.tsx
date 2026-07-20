@@ -40,7 +40,7 @@ export function SharePanel({
   loadingMessage = 'Loading permissions…',
 }: {
   items: SharePanelItem[]
-  onAdd: (share: SharePanelAddPayload) => void | Promise<void>
+  onAdd: (share: SharePanelAddPayload) => boolean | Promise<boolean>
   onUpdate: (item: SharePanelItem, role: ShareRole) => void | Promise<void>
   onRemove: (item: SharePanelItem) => void | Promise<void>
   title?: string

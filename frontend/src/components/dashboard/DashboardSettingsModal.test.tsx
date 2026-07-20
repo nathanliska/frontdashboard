@@ -148,6 +148,73 @@ describe('DashboardSettingsModal', () => {
     })
   })
 
+  it('keeps the modal open and the typed name when a rename fails (#10)', async () => {
+    apiGetDashboardShares.mockResolvedValue([])
+    const onClose = vi.fn()
+    const onRename = vi.fn().mockResolvedValue(false)
+
+    render(
+      <DashboardSettingsModal dashboard={makeSummary()} onClose={onClose} onRename={onRename} />,
+    )
+    await screen.findByText('Only you can access this dashboard right now.')
+
+    const input = screen.getByPlaceholderText('Dashboard name')
+    fireEvent.change(input, { target: { value: 'Renamed Board' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save name' }))
+
+    await waitFor(() => expect(onRename).toHaveBeenCalledWith('dash-1', 'Renamed Board'))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByPlaceholderText('Dashboard name')).toHaveValue('Renamed Board')
+  })
+
+  it('closes the modal when a rename succeeds (#10)', async () => {
+    apiGetDashboardShares.mockResolvedValue([])
+    const onClose = vi.fn()
+    const onRename = vi.fn().mockResolvedValue(true)
+
+    render(
+      <DashboardSettingsModal dashboard={makeSummary()} onClose={onClose} onRename={onRename} />,
+    )
+    await screen.findByText('Only you can access this dashboard right now.')
+
+    fireEvent.change(screen.getByPlaceholderText('Dashboard name'), {
+      target: { value: 'Renamed Board' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save name' }))
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('keeps the search query when adding a share fails (#10)', async () => {
+    apiGetDashboardShares.mockResolvedValue([])
+    apiSearchUsers.mockResolvedValue([
+      { id: 'user-3', display_name: 'Teammate', email: 'teammate@example.com' },
+    ])
+    apiAddDashboardShare.mockRejectedValue(new Error('boom'))
+
+    render(
+      <DashboardSettingsModal dashboard={makeSummary()} onClose={vi.fn()} onRename={vi.fn()} />,
+    )
+    await screen.findByText('Only you can access this dashboard right now.')
+
+    vi.useFakeTimers()
+    fireEvent.change(screen.getByPlaceholderText('Search people'), {
+      target: { value: 'Teammate' },
+    })
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+    expect(screen.getByText('Teammate')).toBeInTheDocument()
+    vi.useRealTimers()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => expect(apiAddDashboardShare).toHaveBeenCalled())
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Failed to add permission.'))
+    // The failed add must not clear the search.
+    expect(screen.getByPlaceholderText('Search people')).toHaveValue('Teammate')
+  })
+
   it('loads dashboard shares without fetching the full dashboard', async () => {
     apiGetDashboardShares.mockResolvedValue([])
 

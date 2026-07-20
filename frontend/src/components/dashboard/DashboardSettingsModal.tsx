@@ -32,7 +32,7 @@ export function DashboardSettingsModal({
 }: {
   dashboard: Pick<DashboardSummary, 'id' | 'name' | 'can_manage_shares'>
   onClose: () => void
-  onRename: (id: string, name: string) => Promise<void>
+  onRename: (id: string, name: string) => Promise<boolean>
 }) {
   const [submitting, setSubmitting] = useState(false)
   const [shares, setShares] = useState<ResourceShare[]>([])
@@ -103,8 +103,8 @@ export function DashboardSettingsModal({
 
     setSubmitting(true)
     try {
-      await onRename(dashboard.id, trimmed)
-      onClose()
+      // Keep the modal open (and the typed name intact) if the rename fails.
+      if (await onRename(dashboard.id, trimmed)) onClose()
     } finally {
       setSubmitting(false)
     }
@@ -146,7 +146,7 @@ export function DashboardSettingsModal({
     principal_id: string
     principal_name: string
     role: ShareRole
-  }) {
+  }): Promise<boolean> {
     const clientMutationId = createClientMutationId()
     try {
       const created = await apiAddDashboardShare(
@@ -159,8 +159,10 @@ export function DashboardSettingsModal({
         { clientMutationId },
       )
       setShares((current) => [...current, created])
+      return true
     } catch {
       toast.error('Failed to add permission.')
+      return false
     }
   }
 

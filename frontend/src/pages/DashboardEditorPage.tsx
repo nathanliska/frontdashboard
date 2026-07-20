@@ -168,8 +168,8 @@ export function DashboardEditorPage() {
           isSharedDashboard={dashboard.is_shared}
           dashboardName={dashboard.name}
           onAdd={async (params: AddWidgetParams) => {
-            await addWidget(params)
-            setShowAddWidget(false)
+            // Close the wizard only on a confirmed add — a failure keeps selections.
+            if (await addWidget(params)) setShowAddWidget(false)
           }}
           onClose={() => setShowAddWidget(false)}
         />

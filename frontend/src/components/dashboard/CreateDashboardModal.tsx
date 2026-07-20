@@ -25,7 +25,10 @@ export function CreateDashboardModal({
 }: {
   onCreated: (summary: DashboardSummary) => void
   onClose: () => void
-  createDashboard: (data: { name: string; shares?: ShareCreate[] }) => Promise<DashboardSummary>
+  createDashboard: (data: {
+    name: string
+    shares?: ShareCreate[]
+  }) => Promise<DashboardSummary | null>
 }) {
   const [draftShares, setDraftShares] = useState<DraftShare[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -63,7 +66,8 @@ export function CreateDashboardModal({
           role: share.role,
         })),
       })
-      onCreated(summary)
+      // Keep the modal open on failure (the store already toasted). No throw to leak.
+      if (summary) onCreated(summary)
     } finally {
       setSubmitting(false)
     }
@@ -140,6 +144,7 @@ export function CreateDashboardModal({
                   ...current,
                   { principal_id, principal_name, principal_type, role },
                 ])
+                return true // local draft add — cannot fail
               }}
               onUpdate={async (item, role) => {
                 updateDraftRole(item, role)

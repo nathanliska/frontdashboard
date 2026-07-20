@@ -54,7 +54,7 @@ const DashboardGridContent = memo(function DashboardGridContent({
   dashboardId: string
   isSharedDashboard: boolean
   canEdit: boolean
-  removeWidget: (widgetId: string) => Promise<void>
+  removeWidget: (widgetId: string) => Promise<boolean>
 }) {
   const handleRemove = useCallback(async () => {
     if (await confirm('Remove this widget from the dashboard?')) {

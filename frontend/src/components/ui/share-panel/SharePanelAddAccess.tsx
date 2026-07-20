@@ -17,7 +17,7 @@ export function SharePanelAddAccess({
   searchHint,
 }: {
   items: SharePanelItem[]
-  onAdd: (share: SharePanelAddPayload) => void | Promise<void>
+  onAdd: (share: SharePanelAddPayload) => boolean | Promise<boolean>
   roleOptions: ShareRoleOption[]
   searchPlaceholder: string
   searchHint: string
@@ -56,13 +56,14 @@ export function SharePanelAddAccess({
 
     setAddingKey(key)
     try {
-      await onAdd({
+      const ok = await onAdd({
         principal_type: candidate.principal_type,
         principal_id: candidate.id,
         principal_name: candidate.label,
         role: newShareRole,
       })
-      setQuery('')
+      // Only clear the search on a confirmed add — a failed add must not lose the query.
+      if (ok) setQuery('')
     } finally {
       setAddingKey(null)
     }
