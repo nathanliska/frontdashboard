@@ -149,7 +149,7 @@ limit, fixed in spec 1).
   is sliced like Phase 2 into independent specs: **A #2 (done)**, B #9+#11 (layout save
   correctness), C #10 (mutation contracts), D #12 (midnight invalidation). Whole-branch review is
   batched at phase close; slice docs live in `docs/designs/` until then.
-- **2026-07-19** — **Quick correctness + migration-gate batch** (working tree; commit SHA pending):
+- **2026-07-19** — **Quick correctness + migration-gate batch** (`d416b1d`):
   #22 no longer overwrites the authoritative unread count with the capped page, double-counts a
   duplicate SSE notification already in the store, or decrements an already-read notification;
   #14 now trims/bounds dashboard names and bounds mutation IDs; list metadata gained the #5 empty-
@@ -306,7 +306,7 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Effort / Risk** — Small / Low.
 - **Impact** — Closes a real authorization gap and restores audit accuracy.
 - **Disposition** — ✅ Done 2026-07-12 (`ed690c0`). Shared `PatchModel` base (`backend/app/schemas/common.py`) rejects empty bodies with 422 before auth/mutation on list-item/calendar/dashboard PATCH; list-item edit permission is now asserted unconditionally.
-  **Coverage follow-up 2026-07-19** (working tree; commit SHA pending): list-metadata PATCH now uses
+  **Coverage follow-up 2026-07-19** (`d416b1d`): list-metadata PATCH now uses
   the same guard, forbids unknown fields, and rejects explicit null no-ops, so it cannot emit false
   update activity from `{}`, `{ "name": null }`, or an ignored field. Profile and preference PATCH
   schemas now also reject empty bodies and unknown fields rather than accepting no-ops or typos.
@@ -437,7 +437,7 @@ before implementing the finding; anything not listed verified as written, modulo
   **display-name slice landed 2026-07-17** (`597e0ad`, `ce60ac0`) alongside #31: a shared
   `DISPLAY_NAME_MAX_LENGTH=100`; `RegisterRequest.display_name` normalizes (trim, non-empty, ≤100)
   at the schema, and `update_profile` gained the matching length bound (keeping its custom-message
-  contract). **Boundary slice 2026-07-19** (working tree; commit SHA pending): dashboard create and
+  contract). **Boundary slice 2026-07-19** (`d416b1d`): dashboard create and
   rename now share a trimmed, non-empty, ≤100-character name type; dashboard create forbids unknown
   fields; both dashboard/list mutation-ID headers are capped at 128 characters; and profile and
   preference updates forbid unknown fields and empty patches. Still open: typed layout/widget-config
@@ -489,7 +489,7 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Validate an active target and reject self-sharing. Use `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`, reject duplicate initial targets explicitly, and preferably gain user/dashboard FKs through finding 18.
 - **Effort / Risk** — Medium / Medium.
 - **Impact** — Restores deterministic authorization data and prevents ghost shares/500 races.
-- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). Both initial
+- **Disposition** — ◐ Partially done 2026-07-19 (`d416b1d`). Both initial
   dashboard shares and later share additions now reject self-sharing and any nonexistent, deleted,
   or unverified target before writing. Invalid targets share one generic 422 response, and duplicate
   initial targets are rejected at the request schema. Still open: replace the read-before-insert path
@@ -502,7 +502,7 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Add a PostgreSQL migration job that upgrades an empty database, runs `alembic check`, and validates schema invariants. Run API tests against that database in CI and add an upgrade test from a supported prior snapshot.
 - **Effort / Risk** — Medium / Low.
 - **Impact** — Catches deploy-blocking schema defects before self-hosters encounter them.
-- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). The shared pytest
+- **Disposition** — ◐ Partially done 2026-07-19 (`d416b1d`). The shared pytest
   database fixture now upgrades through the complete Alembic chain before API tests and a dedicated
   test runs `alembic current --check-heads` plus `alembic check`; `Base.metadata.create_all()` is no
   longer used. CI and ordinary full-suite runs use the same PostgreSQL 16 Testcontainers fallback;
@@ -526,7 +526,7 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Return cursor envelopes with an authoritative unread count, normalize notifications by ID with idempotent unread accounting, and implement load-more/infinite pagination for both tabs.
 - **Effort / Risk** — Medium / Low-Medium.
 - **Impact** — Produces correct badges and makes "View all" truthful as history grows.
-- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). Loading the capped
+- **Disposition** — ◐ Partially done 2026-07-19 (`d416b1d`). Loading the capped
   50-row page no longer overwrites the separately fetched authoritative unread total; duplicate SSE
   IDs already present in the store are ignored; and marking an already-read notification no longer
   decrements the badge. Still open: cursor envelopes/load-more for notifications and activity, plus
@@ -579,10 +579,14 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Define the household/discovery boundary, filter active verified users, mask email unless required for an explicit invite, require a longer query, rate-limit discovery, and add prefix/trigram indexes to match the chosen semantics.
 - **Effort / Risk** — Small-Medium / Medium; visibility is a product decision.
 - **Impact** — Reduces PII exposure and keeps sharing search responsive.
-- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). Search now excludes
+- **Disposition** — ◐ Partially done 2026-07-19 (`d416b1d`). Search now excludes
   deleted and unverified accounts and requires at least two non-whitespace characters server-side,
-  matching the frontend gate. Still open: decide/mask full-email visibility, rate-limit discovery,
-  choose prefix versus substring semantics, and add the matching index.
+  matching the frontend gate. **LIKE wildcards in the term are escaped** — without that the floor was
+  decorative: `q="%%"` passed it and matched every row, returning names and full emails to any
+  authenticated caller (found in review of this batch, proven with a live probe before the fix, and
+  regression-tested in `test_search_users_treats_like_wildcards_literally`). Still open:
+  decide/mask full-email visibility, rate-limit discovery, choose prefix versus substring semantics,
+  and add the matching index.
 
 ### 29. Add indexes and uniqueness for actual dashboard/widget paths
 
@@ -634,7 +638,7 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Add staged jobs for Alembic smoke/check/upgrades, backend/frontend coverage, OpenAPI generation diff, Playwright critical journeys and responsive drag tests, axe, production Docker builds, Compose config, `deptry`, OSV/pip audit, secret scanning, CodeQL/Semgrep, Trivy/Grype, SBOMs, and signed release images.
 - **Effort / Risk** — Medium-Large / Low; stage expensive jobs by PR/release cadence.
 - **Impact** — Detects schema, session, packaging, accessibility, and supply-chain failures before release.
-- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). The backend CI job
+- **Disposition** — ◐ Partially done 2026-07-19 (`d416b1d`). The backend CI job
   runs pytest with its PostgreSQL 16 Testcontainer; the shared fixture applies the Alembic chain, API
   tests use that migrated schema, and a dedicated test checks the current heads plus ORM drift. Unit
   tests are automatically marked and can run without PostgreSQL or Docker. Pre-existing `ty`
@@ -677,7 +681,7 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Pin image/tool digests, align Node versions, add a restrictive root `.dockerignore`, and run dedicated non-root users. Apply read-only filesystems, controlled tmpfs, dropped capabilities, `no-new-privileges`, and tested CPU/memory/PID limits.
 - **Effort / Risk** — Medium / Medium; Caddy/Python write paths must be enumerated.
 - **Impact** — Reduces supply-chain variance, build-context exposure, and container compromise blast radius.
-- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). The frontend
+- **Disposition** — ◐ Partially done 2026-07-19 (`d416b1d`). The frontend
   production build now uses Node 22, matching CI, and the root `.dockerignore` allowlists only the
   frontend source and production Caddyfile while excluding dependencies, build output, and env
   files. Still open: pin base/tool images by digest, run as non-root, and apply/test read-only
@@ -690,7 +694,7 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Split `/health/live` and bounded `/health/ready` (`SELECT 1` plus optional Alembic revision); configure pool size/overflow/pre-ping/recycle/connect/statement/lock timeouts and lifespan disposal. Emit structured request, error, pool, query, auth, and SSE metrics with correlation IDs.
 - **Effort / Risk** — Medium / Low after load testing.
 - **Impact** — Accurate deployments and enough telemetry to diagnose/tune failures.
-- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). SQLAlchemy now
+- **Disposition** — ◐ Partially done 2026-07-19 (`d416b1d`). SQLAlchemy now
   pre-pings pooled connections before checkout and the FastAPI lifespan disposes the engine during
   shutdown, with a focused lifecycle test. Still open: split live/ready probes with a bounded DB
   check, explicitly size/time-bound the pool and statements, and add request IDs, structured fields,
@@ -806,16 +810,22 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Lazy-load route modules with Suspense and preload authenticated destinations after login. Remove dead files/types/tables, or explicitly complete reminder CRUD/scheduling/delivery before retaining that schema. Verify bundles with a size budget.
 - **Effort / Risk** — Small-Medium / Low for code splitting/cleanup; reminder implementation would be Large.
 - **Impact** — Faster startup and less maintenance ambiguity.
-- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). Protected pages
+- **Disposition** — ◐ Partially done 2026-07-19 (`d416b1d`). Protected pages
   now load through route-level `React.lazy` boundaries while public authentication routes stay in
   the entry bundle. The production main JS chunk fell from 526.01 kB (151.69 kB gzip) to 310.46 kB
   (94.46 kB gzip), clearing Vite's 500 kB warning. The deprecated `@types/react-grid-layout` stub was
   also removed because `react-grid-layout` ships its own declarations. The two confirmed unused
-  alternative components and empty starter `App.css` were deleted. A scoped Knip CI gate now catches
-  unreachable files plus unused, unlisted, and unresolved dependencies without treating every
-  exported symbol as dead; it immediately identified `react-resizable` as an undeclared direct
-  dependency, which is now explicit. Still open: remove the dead calendar-reminder schema and
-  obsolete membership event variants (or complete their missing features explicitly).
+  alternative components and empty starter `App.css` were deleted. A Knip CI gate now catches
+  unreachable files plus unused, unlisted, and unresolved dependencies; it immediately identified
+  `react-resizable` as an undeclared direct dependency, which is now explicit. **The gate also covers
+  unused `exports` and `types`** — scoping it to files/dependencies alone left it unable to fail on a
+  dead export (verified during review of this batch: silent as first configured, 18 unused exports +
+  6 unused types once enabled). It now runs with `ignoreExportsUsedInFile`, three genuinely orphaned
+  exports removed, and `@knipignore` tags carrying an explicit reason on the child-share API wrappers
+  and `DashboardManagedAccessList` — retained scaffolding, since those endpoints are deliberate 409
+  stubs. Sensitivity proven by adding a throwaway dead export and watching the gate fail. Still open:
+  remove the dead calendar-reminder schema and obsolete membership event variants (or complete their
+  missing features explicitly).
 
 ### 42. Clean up documentation, transient UI state, and small correctness traps
 
@@ -826,7 +836,7 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Impact** — Improves onboarding and removes several low-cost state, security, and maintenance hazards.
 - **Disposition** — ◐ Partially done 2026-07-16 (`3b45f1e`, `9c7f148`): documentation sub-items
   (README/CONTEXT.md group claims, stale PLAN.md) fixed by the docs overhaul. **Transient-state slice
-  2026-07-19** (working tree; commit SHA pending): persistence now writes only `sidebarCollapsed` and
+  2026-07-19** (`d416b1d`): persistence now writes only `sidebarCollapsed` and
   ignores legacy stored `mobileSidebarOpen`; a concurrent confirmation resolves false without
   replacing the active resolver; authentication-boundary resets resolve the active confirmation
   false; component unmount does the same; and the unused async/database plumbing around dashboard-
