@@ -287,11 +287,14 @@ interface DashboardState {
 
   // ── Listing actions ────────────────────────────────────────────────────────
   loadSummaries: (force?: boolean) => Promise<void>
-  createDashboard: (data: { name: string; shares?: ShareCreate[] }) => Promise<DashboardSummary>
-  archiveDashboard: (id: string, archived: boolean) => Promise<void>
-  deleteDashboard: (id: string) => Promise<void>
-  toggleFavorite: (id: string, current: boolean) => Promise<void>
-  renameDashboard: (id: string, name: string) => Promise<void>
+  createDashboard: (data: {
+    name: string
+    shares?: ShareCreate[]
+  }) => Promise<DashboardSummary | null>
+  archiveDashboard: (id: string, archived: boolean) => Promise<boolean>
+  deleteDashboard: (id: string) => Promise<boolean>
+  toggleFavorite: (id: string, current: boolean) => Promise<boolean>
+  renameDashboard: (id: string, name: string) => Promise<boolean>
 
   // ── Editor actions ─────────────────────────────────────────────────────────
   loadDashboard: (id: string, options?: LoadDashboardOptions) => Promise<void>
@@ -301,9 +304,9 @@ interface DashboardState {
     config?: Record<string, unknown>
     resource_type?: string | null
     resource_id?: string | null
-  }) => Promise<void>
-  removeWidget: (widgetId: string) => Promise<void>
-  updateWidget: (widgetId: string, config: Record<string, unknown>) => Promise<void>
+  }) => Promise<boolean>
+  removeWidget: (widgetId: string) => Promise<boolean>
+  updateWidget: (widgetId: string, config: Record<string, unknown>) => Promise<boolean>
   handleDashboardEvent: (event: SseEvent) => Promise<void>
   handleContentEvent: (event: SseEvent) => void
   resolveConflict: () => void
@@ -381,7 +384,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to create dashboard.')
-        throw new Error('create failed')
+        return null
       }
     },
 
@@ -403,9 +406,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
                 }
               : s.dashboard,
         }))
+        return true
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error(`Failed to ${archived ? 'archive' : 'unarchive'} dashboard.`)
+        return false
       }
     },
 
@@ -416,9 +421,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       try {
         await apiDeleteDashboard(id, { clientMutationId })
         guard.set((s) => ({ summaries: s.summaries.filter((d) => d.id !== id) }))
+        return true
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to delete dashboard.')
+        return false
       }
     },
 
@@ -432,15 +439,17 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           : [...currentFavoriteIds.filter((favoriteId) => favoriteId !== id), id]
 
         const updatedUser = await apiUpdatePreferences({ favorite_dashboard_ids: nextFavoriteIds })
-        if (!guard.isCurrent()) return // boundary crossed mid-request — drop both writes
+        if (!guard.isCurrent()) return false // boundary crossed mid-request — drop both writes
         useAuthStore.setState({ user: updatedUser })
         guard.set((s) => ({
           summaries: s.summaries.map((d) => (d.id === id ? { ...d, is_favorite: !current } : d)),
           dashboard:
             s.dashboard?.id === id ? { ...s.dashboard, is_favorite: !current } : s.dashboard,
         }))
+        return true
       } catch {
         toast.error('Failed to update favorite.')
+        return false
       }
     },
 
@@ -462,9 +471,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
                 }
               : s.dashboard,
         }))
+        return true
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to rename dashboard.')
+        return false
       }
     },
 
@@ -632,22 +643,24 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     async addWidget(widget) {
       const guard = sessionGuard()
       const { dashboard } = get()
-      if (!dashboard) return
+      if (!dashboard) return false
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
         const updated = await apiAddWidget(dashboard.id, widget, { clientMutationId })
         guard.set({ dashboard: updated })
+        return true
       } catch (err) {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error(err instanceof Error ? err.message : 'Failed to add widget.')
+        return false
       }
     },
 
     async removeWidget(widgetId) {
       const guard = sessionGuard()
       const { dashboard } = get()
-      if (!dashboard) return
+      if (!dashboard) return false
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
@@ -664,16 +677,18 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
             },
           }
         })
+        return true
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to remove widget.')
+        return false
       }
     },
 
     async updateWidget(widgetId, config) {
       const guard = sessionGuard()
       const { dashboard } = get()
-      if (!dashboard) return
+      if (!dashboard) return false
       const clientMutationId = createClientMutationId()
       recordPendingDashboardMutation(clientMutationId)
       try {
@@ -689,9 +704,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
             },
           }
         })
+        return true
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to update widget.')
+        return false
       }
     },
 

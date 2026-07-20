@@ -501,6 +501,49 @@ describe('useDashboardStore', () => {
     expect(apiUpdateLayout).toHaveBeenCalledTimes(1)
   })
 
+  it('createDashboard resolves null on API failure instead of throwing (#10)', async () => {
+    apiCreateDashboard.mockRejectedValue(new Error('boom'))
+    useDashboardStore.setState({ summaries: [] })
+
+    await expect(useDashboardStore.getState().createDashboard({ name: 'X' })).resolves.toBeNull()
+    expect(toastError).toHaveBeenCalledWith('Failed to create dashboard.')
+  })
+
+  it('createDashboard resolves the summary on success (#10)', async () => {
+    const summary = makeSummary({ id: 'dash-new', name: 'X' })
+    apiCreateDashboard.mockResolvedValue(summary)
+    useDashboardStore.setState({ summaries: [] })
+
+    await expect(useDashboardStore.getState().createDashboard({ name: 'X' })).resolves.toEqual(
+      summary,
+    )
+  })
+
+  it('renameDashboard resolves false on failure and true on success (#10)', async () => {
+    useDashboardStore.setState({ summaries: [makeSummary()], dashboard: makeDashboard() })
+
+    apiUpdateDashboardMeta.mockRejectedValueOnce(new Error('boom'))
+    await expect(useDashboardStore.getState().renameDashboard('dash-1', 'New')).resolves.toBe(false)
+    expect(toastError).toHaveBeenCalledWith('Failed to rename dashboard.')
+
+    apiUpdateDashboardMeta.mockResolvedValueOnce(makeDashboard({ name: 'New' }))
+    await expect(useDashboardStore.getState().renameDashboard('dash-1', 'New')).resolves.toBe(true)
+  })
+
+  it('addWidget resolves false on failure and true on success (#10)', async () => {
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    apiAddWidget.mockRejectedValueOnce(new Error('boom'))
+    await expect(useDashboardStore.getState().addWidget({ widget_type: 'clock' })).resolves.toBe(
+      false,
+    )
+
+    apiAddWidget.mockResolvedValueOnce(makeDashboard({ version: 2 }))
+    await expect(useDashboardStore.getState().addWidget({ widget_type: 'clock' })).resolves.toBe(
+      true,
+    )
+  })
+
   it('skips the in-flight layout self-echo reload while saving layout', async () => {
     const randomUuidSpy = vi
       .spyOn(globalThis.crypto, 'randomUUID')
