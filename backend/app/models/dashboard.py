@@ -12,7 +12,10 @@ class Dashboard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "dashboards"
 
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    name: Mapped[str] = mapped_column(String(100), nullable=False, server_default="My Dashboard")
+    # No server_default: the column never had one in any migration, and every insert path supplies
+    # a name. It dates from the original one-auto-created-dashboard-per-user design and became
+    # vestigial when dashboards became multiple and explicitly created.
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     layout: Mapped[Any] = mapped_column(JSONB, nullable=False, server_default="[]")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
