@@ -97,7 +97,9 @@ need asserting by hand.
 `make test-unit` runs only the tests marked `unit`, which need neither PostgreSQL nor Docker.
 
 **Never point `TEST_DATABASE_URL` at a development or production database** — the suite runs
-migrations against it and some fixtures really commit and delete rows.
+migrations against it and some fixtures really commit and delete rows. This is enforced, not just
+asked: the database name must end in `_test`/`-test` or start with `test_`, and the suite refuses
+to start otherwise.
 
 ---
 

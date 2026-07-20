@@ -42,6 +42,26 @@ def _asyncpg_url(url: str) -> str:
     raise ValueError("TEST_DATABASE_URL must be a PostgreSQL URL")
 
 
+def _assert_disposable_test_database(url: str) -> None:
+    """Refuse a TEST_DATABASE_URL that doesn't look like a dedicated test database.
+
+    The suite runs `alembic upgrade head` against this database, and the
+    `concurrent_sessions` fixture really commits and deletes rows in it. Pointed at a
+    development or production database — easy to do by leaving the variable exported in a
+    shell — that is destructive and silent. A naming convention is a cheap, enforceable
+    invariant; documentation alone is not.
+    """
+    name = (urlparse(url).path or "").lstrip("/").split("?", 1)[0]
+    if not name:
+        raise ValueError(f"TEST_DATABASE_URL has no database name: {url!r}")
+    if not (name.endswith("_test") or name.endswith("-test") or name.startswith("test_")):
+        raise ValueError(
+            f"Refusing to run tests against database {name!r}: the suite applies migrations and "
+            "deletes rows, so TEST_DATABASE_URL must name a dedicated test database "
+            "(ending in '_test'/'-test' or starting with 'test_')."
+        )
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Classify tests from their resolved fixture graph."""
     for item in items:
@@ -60,6 +80,7 @@ def test_database() -> Generator[_TestDatabase, None, None]:
     container: PostgresContainer | None = None
     configured_url = os.getenv("TEST_DATABASE_URL")
     if configured_url:
+        _assert_disposable_test_database(configured_url)
         async_url = _asyncpg_url(configured_url)
     else:
         container = PostgresContainer("postgres:16-alpine")
