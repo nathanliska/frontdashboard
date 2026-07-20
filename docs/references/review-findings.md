@@ -18,7 +18,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 |------:|-------|----------|--------|
 | 1 | Security quick wins | #3, #4, #5 | ✅ Done (2026-07-12) |
 | 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | ✅ Done (2026-07-17) — 4 specs, all shipped (see below) |
-| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 In progress — #2 ✅ shipped 2026-07-18 (slice A); #9/#11, #10, #12 planned |
+| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 In progress — #2 ✅ (slice A, 2026-07-18); #9 + #11 ✅ (slice B, 2026-07-19); #10, #12 planned |
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | 🚧 In progress — #22 correctness slice ◐; pagination remains |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | 🚧 In progress — #20/#32 migration/build gates, #36 build context, and #37 DB lifecycle slices ◐ |
 | 6 | UX & cleanup | #27, #40, #41, #42 | 🚧 In progress — #41 route/dead-code and #42 transient-state slices ◐ |
@@ -170,6 +170,19 @@ limit, fixed in spec 1).
   through BuildKit's GitHub Actions cache, and checks high-signal dead files and dependency mistakes
   with Knip. The Knip pass also exposed and fixed the undeclared direct `react-resizable` dependency.
   All affected open findings remain partial; their dispositions state the remaining scope.
+
+- **2026-07-19** — **Phase 3 slice B (#9 + #11) shipped** (`e6878ba`). The mobile one-column
+  projection can no longer be written back into the canonical dashboard layout, and layout saves are
+  serialized and coalesced so rapid drag/resize can't self-conflict or install out of order. Both
+  proven RED before GREEN. Editable mobile layouts are explicitly preserved as a future change.
+  Phase 3 remainder: #10 (mutation contracts), #12 (midnight invalidation).
+- **2026-07-19** — Dropped a vestigial `server_default="My Dashboard"` from the `Dashboard.name`
+  model (`c7ef2d0`). It dated from the original one-auto-created-dashboard-per-user design and no
+  migration ever applied it, so the ORM had been describing a column default the database did not
+  have. Found by trialling `compare_server_default=True` during the review of `d416b1d`; the flag
+  itself stays **off** because ~12 UUID/identity primary keys legitimately carry DB-side defaults the
+  ORM generates in Python, which would need `UUIDPrimaryKeyMixin` to declare them. Tracked as open
+  under #20's remaining scope.
 
 ## Validation pass — 2026-07-16
 
@@ -382,6 +395,16 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Keep one canonical persisted layout separate from derived viewport layouts. Ignore library layout events in projected/read-only modes or persist layouts explicitly per breakpoint. Test mobile-to-desktop transitions and prove projections never trigger saves.
 - **Effort / Risk** — Medium / Medium.
 - **Impact** — Prevents accidental destruction of a user's dashboard arrangement.
+- **Disposition** — ✅ Shipped 2026-07-19 (`e6878ba`). Took the "ignore library layout events in
+  projected/read-only modes" option, not per-breakpoint persistence: `handleLayoutChange` now carries
+  the same `isMobile || !canEdit` guard `handleLayoutStop` always had, so the derived
+  `mobileStackLayout` projection can never be written back into the canonical draft. One canonical
+  layout is retained. Regression test proven RED first — after a mobile→desktop round-trip
+  `widget-1` came back `w: 1` instead of `w: 4` — plus a companion test that desktop edits still
+  write, so the guard cannot silently over-block. **Editable mobile layouts stay an open future
+  change**: the seam is the projection, not `isMobile`, and the design doc records exactly what a
+  per-breakpoint implementation would add. Spec/plan:
+  `docs/designs/dashboard-layout-save-correctness-{design,plan}.md`.
 
 ### 10. Standardize mutation success and failure contracts
 
@@ -398,6 +421,17 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Maintain one in-flight save per dashboard plus one latest pending layout. Send the pending value only after receiving the new version; expose saving/error state and define navigation/unmount flush behavior.
 - **Effort / Risk** — Medium / Medium.
 - **Impact** — Makes rapid editing reliable and removes self-created 409 conflicts.
+- **Disposition** — ✅ Shipped 2026-07-19 (`e6878ba`). `saveLayout` is now a serialized drain in the
+  store: one PUT in flight at a time plus one latest-pending layout (module-level, cleared in
+  `resetDashboardData`), with `dashboard.version` re-read on each pass so a follow-up save carries the
+  version the previous one produced. Self-conflicts and out-of-order installs are gone; a *real* 409
+  from another editor still raises the banner and drops coalesced work. Proven RED first —
+  three rapid saves fired three unsequenced PUTs on the same base version. Tests cover coalescing
+  (intermediate layout dropped, latest sent with the bumped version), conflict-stops-the-drain, and an
+  auth-boundary reset mid-flight. **Deliberately not built:** the proposal's saving/error indicator —
+  saves are fast and silent, failures already toast, conflicts already show a banner; and
+  navigation/unmount flush, since the drain is module-level and completes independently of the
+  component. Spec/plan: `docs/designs/dashboard-layout-save-correctness-{design,plan}.md`.
 
 ### 12. Invalidate time-dependent dashboard data at local midnight
 

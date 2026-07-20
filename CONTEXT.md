@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Live remediation status lives in `docs/references/review-findings.md`.
 
-_Last updated: 2026-07-17_
+_Last updated: 2026-07-19_
 
 ## What's built
 
@@ -43,8 +43,15 @@ _Last updated: 2026-07-17_
 - Multiple dashboards per user; default "My Dashboard" created on registration. Listing page
   with favorites, create modal, archive (badge + section + editor banner), hard delete (also
   removes owned lists/items/events/widgets/shares).
-- Editor: react-grid-layout drag/resize, debounced saves with optimistic version → 409
-  conflict banner + reload resolution; settings modal (rename/archive/share).
+- Editor: react-grid-layout drag/resize, saves with optimistic version → 409 conflict banner +
+  reload resolution; settings modal (rename/archive/share).
+- **The persisted layout is canonical; the mobile view is a derived projection.** Below 640px the
+  grid renders a computed one-column stack, and layout events are ignored there (and on read-only
+  dashboards), so the projection can never overwrite the desktop arrangement. Editable mobile
+  layouts would need their own per-breakpoint persisted layout — deliberately not built.
+- **Layout saves are serialized and coalesced**: one PUT in flight at a time plus one latest-pending
+  layout, each send re-reading the version the previous save returned. Rapid drag/resize therefore
+  can't conflict with itself or install an older layout; a 409 means a *real* other-editor conflict.
 - Widget types: **list** (bind existing or auto-create), **clock**, **calendar**, **agenda**
   (today/overdue/upcoming). Add-widget wizard picks type → resource where applicable.
 
@@ -127,9 +134,12 @@ _Last updated: 2026-07-17_
   (auth/session hardening) is fully shipped 2026-07-17** across four specs: session revocation
   (#6/#7/#8/#44), frontend auth-boundary reset (#1), Argon2 off the event loop + login timing oracle
   (#13/#43), and email normalization + production config validation (#31, plus the #14 display-name
-  slice). **Phases 3–6 and the unscheduled backlog remain** (see the rollout table in
-  `docs/references/review-findings.md`); the backlog now leads with #46 (auth-store post-await
-  straddle).
+  slice). A follow-up security review (2026-07-17) is fully remediated: all High/Medium closed, with
+  register enumeration accepted as a deliberate household-scale risk and only #52 (SSE resync
+  griefing, Low) left open. **Phase 3 (dashboard correctness) is in progress**, sliced by mechanism:
+  slice A (#2, deletion integrity) and slice B (#9 + #11, layout save correctness) have shipped;
+  #10 (mutation contracts) and #12 (midnight invalidation) remain. **Phases 4–6 and the unscheduled
+  backlog also remain** (see the rollout table in `docs/references/review-findings.md`).
 
 ## Deliberately deferred / known dead code
 

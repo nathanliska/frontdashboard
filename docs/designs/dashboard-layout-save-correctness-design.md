@@ -1,7 +1,8 @@
 # Design — Dashboard layout save correctness (#9 + #11)
 
 **Date:** 2026-07-18
-**Status:** ◻ Planned
+**Status:** ✅ Shipped 2026-07-19 (`e6878ba`). Stays in `docs/designs/` until Phase 3 closes (its
+whole-branch review is batched across slices A–D), then moves to `docs/shipped/` with the plan.
 **Findings:** #9 (mobile projection overwrites the canonical layout) and #11 (fire-and-forget layout
 saves self-conflict / install out of order). Phase 3 (dashboard correctness), slice B. Both live on
 the same save path — the `DashboardGrid` layout events and the store's `saveLayout` — so they ship
