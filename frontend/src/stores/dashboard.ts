@@ -69,6 +69,11 @@ type InFlightSummariesLoad = {
 
 let inFlightDashboardLoad: InFlightDashboardLoad | null = null
 let inFlightSummariesLoad: InFlightSummariesLoad | null = null
+// Layout saves are serialized: one PUT in flight at a time, plus at most one pending layout (the
+// latest wins). Drag/resize would otherwise fire unsequenced saves that all send the same base
+// version, so the second 409s against the user's own first save.
+let layoutSaveInFlight = false
+let pendingLayoutSave: { dashboardId: string; layout: LayoutItem[] } | null = null
 let queuedSummariesForceReload = false
 let latestDashboardRequest: { id: string; serial: number } | null = null
 let scheduledSummariesRefreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -564,34 +569,63 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async saveLayout(layout) {
-      const guard = sessionGuard()
       const { dashboard } = get()
       if (!dashboard) return
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
+      // Coalesce: keep only the newest requested layout.
+      pendingLayoutSave = { dashboardId: dashboard.id, layout }
+      // Serialize: a drain is already running and will pick the entry above up, with whatever
+      // version the in-flight save returns.
+      if (layoutSaveInFlight) return
+
+      layoutSaveInFlight = true
+      const guard = sessionGuard()
       try {
-        const result = await apiUpdateLayout(dashboard.id, layout, dashboard.version, {
-          clientMutationId,
-        })
-        if (result.conflict) {
-          // Another editor saved a layout change between our load and this PUT.
-          // Surface the conflict banner; user resolves by reloading.
-          forgetPendingDashboardMutation(clientMutationId)
-          guard.set({ conflict: true })
-          return
+        while (pendingLayoutSave) {
+          if (!guard.isCurrent()) return
+          const pending = pendingLayoutSave
+          pendingLayoutSave = null
+
+          const current = get().dashboard
+          // Re-read the dashboard each pass: the previous save bumped its version, and the user
+          // may have navigated to a different dashboard entirely.
+          if (!current || current.id !== pending.dashboardId) continue
+
+          const clientMutationId = createClientMutationId()
+          recordPendingDashboardMutation(clientMutationId)
+          try {
+            const result = await apiUpdateLayout(current.id, pending.layout, current.version, {
+              clientMutationId,
+            })
+            if (!guard.isCurrent()) {
+              forgetPendingDashboardMutation(clientMutationId)
+              return
+            }
+            if (result.conflict) {
+              // Another editor saved between our load and this PUT. Surface the conflict banner
+              // and drop coalesced work — the user resolves by reloading.
+              forgetPendingDashboardMutation(clientMutationId)
+              pendingLayoutSave = null
+              guard.set({ conflict: true })
+              return
+            }
+            guard.set((s) => ({
+              dashboard: {
+                ...result.dashboard,
+                // Layout saves don't touch widget data. Preserve existing widget
+                // references so memoized widget subtrees aren't invalidated on drag/resize.
+                widgets: s.dashboard?.widgets ?? result.dashboard.widgets,
+              },
+              conflict: false,
+            }))
+          } catch {
+            forgetPendingDashboardMutation(clientMutationId)
+            pendingLayoutSave = null
+            toast.error('Failed to save layout.')
+            return
+          }
         }
-        guard.set((s) => ({
-          dashboard: {
-            ...result.dashboard,
-            // Layout saves don't touch widget data. Preserve existing widget
-            // references so memoized widget subtrees aren't invalidated on drag/resize.
-            widgets: s.dashboard?.widgets ?? result.dashboard.widgets,
-          },
-          conflict: false,
-        }))
-      } catch {
-        forgetPendingDashboardMutation(clientMutationId)
-        toast.error('Failed to save layout.')
+      } finally {
+        layoutSaveInFlight = false
       }
     },
 
@@ -780,6 +814,8 @@ export function resetDashboardData(): void {
   resolveScheduledSummariesRefresh?.()
   inFlightDashboardLoad = null
   inFlightSummariesLoad = null
+  layoutSaveInFlight = false
+  pendingLayoutSave = null
   queuedSummariesForceReload = false
   latestDashboardRequest = null
   scheduledSummariesRefreshTimer = null

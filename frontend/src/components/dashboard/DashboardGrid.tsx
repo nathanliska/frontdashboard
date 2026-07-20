@@ -107,10 +107,16 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
 
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
+      // The mobile layout is a derived projection (mobileStackLayout), not a user arrangement, so
+      // it must never be written back to the canonical draft; read-only views can't edit either.
+      // Enabling real mobile editing later means giving mobile its own persisted per-breakpoint
+      // layout (see docs/designs/dashboard-layout-save-correctness-design.md) — not deleting this
+      // guard.
+      if (isMobile || !canEdit) return
       setDraftBaseVersion(dashboard.version)
       setDraftLayout([...newLayout] as unknown as LayoutItem[])
     },
-    [dashboard.version],
+    [canEdit, dashboard.version, isMobile],
   )
 
   const handleLayoutStop = useCallback(

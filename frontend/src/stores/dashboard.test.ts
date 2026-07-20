@@ -421,6 +421,86 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().dashboard).toEqual(refreshedDashboard)
   })
 
+  it('coalesces rapid layout saves and re-reads the bumped version (#11)', async () => {
+    const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
+    apiUpdateLayout.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
+
+    const layoutA = [{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }]
+    const layoutB = [{ i: 'w1', x: 2, y: 0, w: 4, h: 3 }]
+    const layoutC = [{ i: 'w1', x: 3, y: 0, w: 4, h: 3 }]
+
+    const savePromise = useDashboardStore.getState().saveLayout(layoutA)
+    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(1, 'dash-1', layoutA, 1, expect.anything())
+
+    // B then C arrive while A is still in flight: only the latest survives.
+    void useDashboardStore.getState().saveLayout(layoutB)
+    void useDashboardStore.getState().saveLayout(layoutC)
+    expect(apiUpdateLayout).toHaveBeenCalledTimes(1)
+
+    resolvers[0]({ conflict: false, dashboard: makeDashboard({ version: 2, layout: layoutA }) })
+    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(2))
+    // The follow-up PUT carries the bumped version and the coalesced latest layout (B dropped).
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutC, 2, expect.anything())
+
+    resolvers[1]({ conflict: false, dashboard: makeDashboard({ version: 3, layout: layoutC }) })
+    await savePromise
+    expect(useDashboardStore.getState().conflict).toBe(false)
+    expect(useDashboardStore.getState().dashboard?.version).toBe(3)
+  })
+
+  it('stops the drain and drops pending work on a real conflict (#11)', async () => {
+    const resolvers: ((v: { conflict: true }) => void)[] = []
+    apiUpdateLayout.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
+
+    const savePromise = useDashboardStore
+      .getState()
+      .saveLayout([{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }])
+    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
+    void useDashboardStore.getState().saveLayout([{ i: 'w1', x: 2, y: 0, w: 4, h: 3 }])
+
+    resolvers[0]({ conflict: true })
+    await savePromise
+
+    expect(useDashboardStore.getState().conflict).toBe(true)
+    expect(apiUpdateLayout).toHaveBeenCalledTimes(1) // pending dropped, never sent
+  })
+
+  it('drops the layout save when the session resets mid-flight (#11)', async () => {
+    const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
+    apiUpdateLayout.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
+
+    const savePromise = useDashboardStore
+      .getState()
+      .saveLayout([{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }])
+    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
+
+    resetDashboardData() // account boundary: bumps sessionGeneration and clears save state
+    resolvers[0]({ conflict: false, dashboard: makeDashboard({ version: 2 }) })
+    await savePromise
+
+    expect(useDashboardStore.getState().dashboard).toBeNull()
+    expect(apiUpdateLayout).toHaveBeenCalledTimes(1)
+  })
+
   it('skips the in-flight layout self-echo reload while saving layout', async () => {
     const randomUuidSpy = vi
       .spyOn(globalThis.crypto, 'randomUUID')
