@@ -171,21 +171,6 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
         badge: 'List item',
         summary: `You reordered items in ${quoted(payloadString(payload, 'list_name'), 'a list')}.`,
       }
-    case 'membership.added':
-      return {
-        badge: 'Membership',
-        summary: 'You added a member.',
-      }
-    case 'membership.removed':
-      return {
-        badge: 'Membership',
-        summary: 'You removed a member.',
-      }
-    case 'membership.role_changed':
-      return {
-        badge: 'Membership',
-        summary: "You changed a member's role.",
-      }
     case 'calendar.event.created':
       return {
         badge: 'Calendar',

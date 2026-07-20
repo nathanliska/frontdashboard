@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, field_validator
 
 from app.schemas.common import PatchModel
 from app.schemas.shares import ShareCreate
@@ -14,18 +14,72 @@ DashboardName = Annotated[
 ]
 
 
-class WidgetResponse(BaseModel):
+class _WidgetResponseBase(BaseModel):
     id: uuid.UUID
     dashboard_id: uuid.UUID
-    widget_type: str
     widget_version: int
-    config: dict[str, Any]
     resource_type: str | None
     resource_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ClockWidgetConfig(BaseModel):
+    timezone: str | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ClockWidgetResponse(_WidgetResponseBase):
+    widget_type: Literal["clock"]
+    config: ClockWidgetConfig
+
+
+class CalendarWidgetConfig(BaseModel):
+    # `view` is intentionally `str`, not a Literal: it is read back from persisted
+    # data, and a stored value outside a fixed set would otherwise 500 on read.
+    view: str | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class CalendarWidgetResponse(_WidgetResponseBase):
+    widget_type: Literal["calendar"]
+    config: CalendarWidgetConfig
+
+
+class ListWidgetConfig(BaseModel):
+    list_name: str | None = None
+    list_type: str | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ListWidgetResponse(_WidgetResponseBase):
+    widget_type: Literal["list"]
+    config: ListWidgetConfig
+
+
+class AgendaWidgetConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class AgendaWidgetResponse(_WidgetResponseBase):
+    widget_type: Literal["agenda"]
+    config: AgendaWidgetConfig
+
+
+WidgetResponse = Annotated[
+    ClockWidgetResponse | CalendarWidgetResponse | ListWidgetResponse | AgendaWidgetResponse,
+    Field(discriminator="widget_type"),
+]
+
+# `WidgetResponse` is a type alias (Annotated discriminated union), not a BaseModel
+# subclass, so it has no `.model_validate()`. Router code that needs to validate an
+# ORM `DashboardWidget` into this union uses this adapter instead.
+WidgetResponseAdapter: TypeAdapter[Any] = TypeAdapter(WidgetResponse)
 
 
 class DashboardSummary(BaseModel):

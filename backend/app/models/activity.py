@@ -30,10 +30,6 @@ class EventType(enum.StrEnum):
     list_item_checked = "list.item.checked"
     list_item_deleted = "list.item.deleted"
     list_item_reordered = "list.item.reordered"
-    # Membership
-    membership_added = "membership.added"
-    membership_removed = "membership.removed"
-    membership_role_changed = "membership.role_changed"
     # Dashboards
     dashboard_created = "dashboard.created"
     dashboard_updated = "dashboard.updated"

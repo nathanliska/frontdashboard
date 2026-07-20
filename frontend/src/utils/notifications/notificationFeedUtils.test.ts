@@ -63,9 +63,6 @@ describe('formatActivityEvent', () => {
       'List item',
       'You unchecked a list item.',
     ],
-    ['membership.added', {}, 'Membership', 'You added a member.'],
-    ['membership.removed', {}, 'Membership', 'You removed a member.'],
-    ['membership.role_changed', {}, 'Membership', "You changed a member's role."],
   ])('formats %s with user-facing copy', (eventType, payload, badge, summary) => {
     expect(formatActivityEvent(activityEvent(eventType, payload))).toEqual({ badge, summary })
   })

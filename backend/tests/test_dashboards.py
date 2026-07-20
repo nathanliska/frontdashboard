@@ -405,7 +405,15 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
         json={"config": {"title": "Pinned Errands"}},
     )
     assert update_resp.status_code == 200
-    assert update_resp.json()["config"] == {"title": "Pinned Errands"}
+    # The list widget's response config now has typed (optional) `list_name` /
+    # `list_type` keys; a PATCH that fully replaces the stored config with
+    # `{"title": ...}` (no list_name/list_type) round-trips those as null while
+    # `title` still survives via `extra="allow"`.
+    assert update_resp.json()["config"] == {
+        "title": "Pinned Errands",
+        "list_name": None,
+        "list_type": None,
+    }
 
     set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}/widgets/{widget['id']}")

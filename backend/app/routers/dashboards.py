@@ -22,6 +22,7 @@ from app.schemas.dashboards import (
     WidgetConfigUpdate,
     WidgetCreate,
     WidgetResponse,
+    WidgetResponseAdapter,
 )
 from app.schemas.shares import ShareCreate, ShareResponse, ShareUpdate
 from app.services import permissions
@@ -105,7 +106,7 @@ def _to_response(
         is_favorite=is_favorite,
         layout=layout,
         version=dashboard.version,
-        widgets=[WidgetResponse.model_validate(w) for w in widgets],
+        widgets=[WidgetResponseAdapter.validate_python(w) for w in widgets],
     )
 
 
@@ -933,7 +934,7 @@ async def update_widget(
     await db.commit()
     await db.refresh(widget)
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
-    return WidgetResponse.model_validate(widget)
+    return WidgetResponseAdapter.validate_python(widget)
 
 
 @router.delete("/{dashboard_id}/widgets/{widget_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +10,13 @@ from app.models.user import User
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/search")
+class UserSearchResult(BaseModel):
+    id: str
+    display_name: str
+    email: str
+
+
+@router.get("/search", response_model=list[UserSearchResult])
 async def search_users(
     q: str = Query(min_length=2, max_length=100),
     current_user: User = Depends(get_current_user),

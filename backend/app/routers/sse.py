@@ -12,6 +12,7 @@ from app.auth.dependencies import get_current_session_for_stream, get_current_us
 from app.database import async_session_factory
 from app.models.session import UserSession
 from app.models.user import User
+from app.schemas.sse import AnySseEvent
 from app.services.sessions import session_is_live
 from app.sse.events import connected_dict, resync_dict
 from app.sse.manager import CLOSED_SENTINEL, REVOKED_SENTINEL, _Client, manager
@@ -92,7 +93,7 @@ async def _revalidate_session(session_id: uuid.UUID) -> bool:
         return await session_is_live(session_id, db)
 
 
-@router.get("")
+@router.get("", responses={200: {"model": AnySseEvent, "content": {"text/event-stream": {}}}})
 async def sse_stream(
     request: Request,
     current_user: User = Depends(get_current_user_for_stream),
