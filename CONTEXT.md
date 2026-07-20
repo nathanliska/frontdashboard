@@ -90,6 +90,10 @@ _Last updated: 2026-07-19_
 - Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration
   toolbar, all-day, timezones; per-occurrence overrides and cancellation. Occurrence expansion
   over a required window (max 366 days).
+- **Day-dependent views refresh at local midnight.** A shared `useLocalDay()` hook re-renders at the
+  next local midnight (DST-safe) and on tab wake (visibility/focus); the calendar widget and page
+  re-derive "today" from it, and the agenda widget background-refetches on a day rollover — so an
+  always-on wall display never shows yesterday's agenda/highlights after midnight.
 
 **Notifications & activity**
 - In-app inbox (unread-first, mark one/all read) with live SSE push; activity feed of the
@@ -141,9 +145,10 @@ _Last updated: 2026-07-19_
   slice). A follow-up security review (2026-07-17) is fully remediated: all High/Medium closed, with
   register enumeration accepted as a deliberate household-scale risk and only #52 (SSE resync
   griefing, Low) left open. **Phase 3 (dashboard correctness) is in progress**, sliced by mechanism:
-  slice A (#2, deletion integrity), slice B (#9 + #11, layout save correctness), and slice C (#10,
-  mutation contracts) have shipped; only #12 (midnight invalidation) remains. **Phases 4–6 and the
-  unscheduled backlog also remain** (see the rollout table in `docs/references/review-findings.md`).
+  slice A (#2, deletion integrity), slice B (#9 + #11, layout save correctness), slice C (#10,
+  mutation contracts), and slice D (#12, midnight invalidation) have all shipped — a batched
+  whole-branch review runs before the phase is marked done. **Phases 4–6 and the unscheduled backlog
+  remain** (see the rollout table in `docs/references/review-findings.md`).
 
 ## Deliberately deferred / known dead code
 

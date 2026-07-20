@@ -18,7 +18,7 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 |------:|-------|----------|--------|
 | 1 | Security quick wins | #3, #4, #5 | ✅ Done (2026-07-12) |
 | 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | ✅ Done (2026-07-17) — 4 specs, all shipped (see below) |
-| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 In progress — #2 ✅ (slice A, 2026-07-18); #9 + #11 ✅ (slice B, 2026-07-19); #10 ✅ (slice C, 2026-07-20); #12 remains |
+| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 All 4 slices shipped (A #2 2026-07-18, B #9+#11 2026-07-19, C #10 + D #12 2026-07-20); whole-branch review in progress before close |
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | 🚧 In progress — #22 correctness slice ◐; pagination remains |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | 🚧 In progress — #20/#32 migration/build gates, #36 build context, and #37 DB lifecycle slices ◐ |
 | 6 | UX & cleanup | #27, #40, #41, #42 | 🚧 In progress — #41 route/dead-code and #42 transient-state slices ◐ |
@@ -190,6 +190,13 @@ limit, fixed in spec 1).
   add-widget/rename close-on-failure, the create unhandled-rejection, and the share-search
   clear-on-failure (the last resolving a sub-question the review had left open). Phase 3 remainder:
   **#12** (midnight invalidation) only.
+
+- **2026-07-20** — **Phase 3 slice D (#12) shipped** (`26937c0`, `8c88545`), the last slice. A shared
+  `useLocalDay()` hook ticks at local midnight (DST-safe) and on tab wake; the calendar widget/page
+  re-derive `today` from it, and the agenda background-refetches on a day rollover. An always-on wall
+  display no longer shows yesterday after midnight. Agenda growth avoided by refetching rather than
+  salting the cache key. **All four Phase 3 slices are now shipped**; a batched whole-branch review
+  (opus) runs before the phase is marked Done and the slice docs move to `docs/shipped/`.
 
 ## Validation pass — 2026-07-16
 
@@ -461,6 +468,20 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Add a shared local-day hook scheduled for the next midnight, including DST handling. Include day/window in query keys or invalidate at midnight and revalidate on focus/visibility.
 - **Effort / Risk** — Medium / Low-Medium.
 - **Impact** — Keeps the core wall-dashboard use case trustworthy across days.
+- **Disposition** — ✅ Shipped 2026-07-20 (`26937c0`, `8c88545`). A shared `useLocalDay()` hook
+  (`frontend/src/hooks/`) yields the local day as a `YYYY-MM-DD` key and re-renders consumers when it
+  rolls over — at local midnight (**DST-safe**: the next midnight is recomputed from local `Date`
+  parts, never `+24h`) and on `visibilitychange`/`focus` so a display that slept through midnight
+  corrects on wake; a functional `setState` bailout means same-day focus events cause no re-render.
+  `CalendarWidget` and `CalendarPage` derive `today` from it (fresh window, grid, and "today"
+  markers); `useAgendaItems` background-**refetches** its mounted queries on rollover. Chose
+  invalidation/refetch over salting the agenda cache key with the day — the key-salt would leak a new
+  cache entry every day, ironic growth on the exact always-on use case this targets; the agenda scope
+  stays `{ dashboardId }` (bounded). `useLocalDay` TDD'd (midnight rollover, visibility re-sync,
+  same-day no-op); the agenda refetch proven RED (no refetch on a day change) then GREEN, and
+  asserted to **not** fire on mount. The calendar window-per-day entry is the pre-existing #24
+  accumulation, unchanged here. Spec/plan:
+  `docs/designs/dashboard-midnight-invalidation-{design,plan}.md`. **This is the last Phase 3 slice.**
 
 ### 13. Move Argon2 work off the async event loop
 
