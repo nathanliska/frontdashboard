@@ -636,7 +636,10 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           }
         }
       } finally {
-        layoutSaveInFlight = false
+        // Only release ownership if this drain still belongs to the current session. A drain
+        // superseded by an auth boundary (whose flag resetDashboardData already cleared) must not
+        // clobber a newer session's drain flag, or two drains could run concurrently and self-409.
+        if (guard.isCurrent()) layoutSaveInFlight = false
       }
     },
 

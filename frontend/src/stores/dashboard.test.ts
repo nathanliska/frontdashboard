@@ -119,6 +119,8 @@ describe('useDashboardStore', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     __resetPendingDashboardMutationsForTests()
+    // Clear module-level load/layout-drain state so an in-flight drain from a prior test can't leak.
+    resetDashboardData()
     useAuthStore.setState({
       status: 'authenticated',
       user: {
@@ -542,6 +544,38 @@ describe('useDashboardStore', () => {
     await expect(useDashboardStore.getState().addWidget({ widget_type: 'clock' })).resolves.toBe(
       true,
     )
+  })
+
+  it('does not start a concurrent drain when a superseded save resolves after a session reset (#11)', async () => {
+    const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
+    apiUpdateLayout.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
+
+    // Old session: a drain is in flight, awaiting its PUT.
+    const oldSave = useDashboardStore.getState().saveLayout([{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }])
+    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
+
+    // Auth boundary: bumps the generation and clears the drain flag/state.
+    resetDashboardData()
+
+    // New session loads a dashboard and starts its own drain.
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
+    void useDashboardStore.getState().saveLayout([{ i: 'w1', x: 2, y: 0, w: 4, h: 3 }])
+    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(2))
+
+    // The old (superseded) PUT resolves — its drain must not release the new drain's flag.
+    resolvers[0]({ conflict: false, dashboard: makeDashboard({ version: 2 }) })
+    await oldSave
+
+    // A subsequent save must coalesce into the still-running new drain, not spawn a concurrent one.
+    void useDashboardStore.getState().saveLayout([{ i: 'w1', x: 3, y: 0, w: 4, h: 3 }])
+    await Promise.resolve()
+    expect(apiUpdateLayout).toHaveBeenCalledTimes(2)
   })
 
   it('skips the in-flight layout self-echo reload while saving layout', async () => {
