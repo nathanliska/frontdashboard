@@ -65,16 +65,28 @@ normalization), commit-msg (Conventional Commit enforcement — types: `feat`, `
 ## Where to read more
 - **[CONTEXT.md](CONTEXT.md)** — current project state (built / in flight / deferred). Read it
   first to orient.
-- `docs/references/` — standing policy + living reference docs; `docs/designs/` — in-flight
-  work; `docs/shipped/` — closed work. A doc moves to `shipped/` only when fully done.
+- **[docs/adr/INDEX.md](docs/adr/INDEX.md)** — Architecture Decision Records: *why* the
+  cross-cutting architecture is the way it is (context, decision, consequences).
+- **[docs/fdr/INDEX.md](docs/fdr/INDEX.md)** — Feature Decision Records: *what* each feature does
+  behaviorally and the design decisions behind it (cite ADRs, one direction FDR → ADR).
+- **[docs/GLOSSARY.md](docs/GLOSSARY.md)** — canonical vocabulary (UI / Product / Access / Backend).
+- **[docs/TODO.md](docs/TODO.md)** — the open remediation backlog (findings keep their numbers).
+  Closed work lives in git history; its durable decisions are distilled into the ADRs/FDRs.
 - `backend/CLAUDE.md` and `frontend/CLAUDE.md` — stack-specific conventions and gotchas
   (auto-loaded when working in those trees).
 
 ## Documentation updates (which doc to touch, when)
 - **Feature lands or is deliberately deferred** → fold its *current behavior* into the right
   CONTEXT.md section (it's a snapshot, not a changelog).
-- **Review finding ships/defers, or a remediation phase closes** → follow the update protocol
-  at the top of `docs/references/review-findings.md` (dispositions, rollout table, doc moves).
-  The 2026-07-11 review is remediated **security-first, one theme per phase**; that file is
-  the live tracker.
+- **A cross-cutting architectural decision is made/changed** → add or amend an ADR in `docs/adr/`
+  and update `docs/adr/INDEX.md`. Supersede (don't delete) when a decision is replaced. A decision
+  local to one feature belongs in that feature's FDR, not an ADR.
+- **A feature's behavior or design rationale changes** → update its FDR in `docs/fdr/` (rewrite the
+  affected section — FDRs describe the feature *today*, not a changelog), bump **Last reviewed**,
+  and cite any new ADR (citations flow FDR → ADR only).
+- **A project-specific term is coined or renamed** → add/rewrite its `docs/GLOSSARY.md` entry in the
+  right section (UI / Product / Access / Backend) and cross-link the owning FDR/ADR.
+- **A backlog finding ships or is deferred** → remove (or update) its item in `docs/TODO.md` in the
+  same change; if it established a cross-cutting decision, write/amend the ADR too. The execution
+  detail lives in the commit — don't reproduce it in a doc.
 - **New standing rule or gotcha discovered** → this file (or the stack CLAUDE.md it belongs to).

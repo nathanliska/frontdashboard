@@ -2,7 +2,7 @@
 
 > **This is a CURRENT-STATE doc, not a changelog.** When a feature lands, fold its *current
 > behavior* into the right section below; don't append dated entries. Remove what no longer
-> exists. Live remediation status lives in `docs/references/review-findings.md`.
+> exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
 _Last updated: 2026-07-19_
 
@@ -84,7 +84,7 @@ _Last updated: 2026-07-19_
   GET. A refetch happens only if the payload is absent (older events) or the patched result
   diverges from cache. Rarer events (create/delete/archive) deliberately keep
   invalidate-and-refetch: self-healing is worth more than bytes on cold paths. See
-  `docs/shipped/sse-hardening-design.md`.
+  [FDR-008](docs/fdr/FDR-008-realtime-sse.md) / [ADR-006](docs/adr/ADR-006-rest-fetch-sse-patch.md).
 
 **Calendar**
 - Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration
@@ -136,25 +136,18 @@ _Last updated: 2026-07-19_
 
 ## In flight
 
-- **Design-review remediation** (see the live tracker in
-  `docs/references/review-findings.md`): Phase 1 (security quick wins #3/#4/#5) shipped
-  2026-07-12. SSE hardening shipped 2026-07-16, closing #8's eviction half. **Phase 2
-  (auth/session hardening) is fully shipped 2026-07-17** across four specs: session revocation
-  (#6/#7/#8/#44), frontend auth-boundary reset (#1), Argon2 off the event loop + login timing oracle
-  (#13/#43), and email normalization + production config validation (#31, plus the #14 display-name
-  slice). A follow-up security review (2026-07-17) is fully remediated: all High/Medium closed, with
-  register enumeration accepted as a deliberate household-scale risk and only #52 (SSE resync
-  griefing, Low) left open. **Phase 3 (dashboard correctness) is in progress**, sliced by mechanism:
-  **Phase 3 (dashboard correctness) is complete** (2026-07-20): slice A (#2, deletion integrity),
-  slice B (#9 + #11, layout save correctness), slice C (#10, mutation contracts), and slice D (#12,
-  midnight invalidation), closed by a clean batched whole-branch review (one drain-flag race fixed).
-  **Phases 4–6 and the unscheduled backlog remain** (see the rollout table in
-  `docs/references/review-findings.md`).
+- **Design-review remediation** (open work tracked in [docs/TODO.md](docs/TODO.md)): the
+  security-first phases are done — Phase 1 (security quick wins), Phase 2 (auth/session hardening,
+  incl. the 2026-07-17 follow-up security review), and Phase 3 (dashboard correctness) all shipped by
+  2026-07-20. Register enumeration is an accepted household-scale risk; the durable decisions from
+  these phases are captured in the [ADRs](docs/adr/INDEX.md) / [FDRs](docs/fdr/INDEX.md). **Phases
+  4–6 (data layer & contracts, infra/CI/ops, UX & cleanup) and the unscheduled backlog remain** —
+  see [docs/TODO.md](docs/TODO.md).
 
 ## Deliberately deferred / known dead code
 
-- Review-findings backlog phases 3–6 + unscheduled triage bucket — tracked in the rollout
-  table, not here.
+- Remediation backlog (Phases 4–6 + unscheduled triage) — tracked in [docs/TODO.md](docs/TODO.md),
+  not here.
 - `CalendarReminder` model + table exist with **no** router/service usage (vestigial; slated
   for a decision when calendar work resumes).
 - `EventType.membership_*` values are vestiges of the removed groups feature.

@@ -114,7 +114,7 @@ frontdashboard/
 └── .env.example
 ```
 
-See [CONTEXT.md](CONTEXT.md) for current project state and [docs/references/original-plan.md](docs/references/original-plan.md) for the original architecture plan.
+See [CONTEXT.md](CONTEXT.md) for current project state, the [ADRs](docs/adr/INDEX.md) / [FDRs](docs/fdr/INDEX.md) for architecture and feature decisions, and [docs/TODO.md](docs/TODO.md) for the open backlog.
 
 ---
 
