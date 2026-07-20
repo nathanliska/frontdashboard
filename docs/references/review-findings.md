@@ -18,11 +18,11 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 |------:|-------|----------|--------|
 | 1 | Security quick wins | #3, #4, #5 | ✅ Done (2026-07-12) |
 | 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | ✅ Done (2026-07-17) — 4 specs, all shipped (see below) |
-| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 All 4 slices shipped (A #2 2026-07-18, B #9+#11 2026-07-19, C #10 + D #12 2026-07-20); whole-branch review in progress before close |
+| 3 | Dashboard correctness | #2, #9, #10, #11, #12 | ✅ Done (2026-07-20) — 4 slices (A #2, B #9+#11, C #10, D #12), whole-branch review clean (one drain-flag race fixed in `910ca63`) |
 | 4 | Data layer & contracts | #16, #17, #22, #23, #24 | 🚧 In progress — #22 correctness slice ◐; pagination remains |
 | 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | 🚧 In progress — #20/#32 migration/build gates, #36 build context, and #37 DB lifecycle slices ◐ |
 | 6 | UX & cleanup | #27, #40, #41, #42 | 🚧 In progress — #41 route/dead-code and #42 transient-state slices ◐ |
-| — | Backlog (unscheduled) | #14, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #52 | ◐ #14/#19/#28 advanced 2026-07-19; remainder triage |
+| — | Backlog (unscheduled) | #14, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #52, #53 | ◐ #14/#19/#28 advanced 2026-07-19; #53 logged 2026-07-20 (Phase 3 review); remainder triage |
 | — | Security review (2026-07-17) | #46/#47/#48 + #15 + #49/#50/#51 ✅ shipped 2026-07-18; register enum (E) = **accepted risk**; **open:** #52 (SSE griefing, Low) | 🚧 all High/Medium closed; only #52 (Low, needs backpressure design) remains |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
@@ -197,6 +197,15 @@ limit, fixed in spec 1).
   display no longer shows yesterday after midnight. Agenda growth avoided by refetching rather than
   salting the cache key. **All four Phase 3 slices are now shipped**; a batched whole-branch review
   (opus) runs before the phase is marked Done and the slice docs move to `docs/shipped/`.
+- **2026-07-20** — **Phase 3 (dashboard correctness) closed.** Batched whole-branch review (opus,
+  across A–D) returned **READY-TO-MERGE**. It caught one genuine narrow race in the #11 drain —
+  `saveLayout`'s `finally` released `layoutSaveInFlight` even for a session-superseded drain, letting
+  a logout+re-login+resolve sequence spawn two concurrent drains — fixed in `910ca63` (release only
+  when the drain still holds the current session generation; regression-tested RED-first, plus a
+  hermetic `resetDashboardData()` in the store test `beforeEach`). One non-blocking observation
+  logged as a **new backlog item #53** (tablet-band 640–959 drag can persist a 6-col layout over the
+  canonical 12-col — pre-existing, not a slice regression; the per-breakpoint-layout follow-up noted
+  in the layout-save design). All eight slice design/plan docs moved to `docs/shipped/`.
 
 ## Validation pass — 2026-07-16
 

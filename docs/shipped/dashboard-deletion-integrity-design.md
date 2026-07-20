@@ -1,8 +1,7 @@
 # Design — Dashboard deletion honors soft-deleted children (#2)
 
 **Date:** 2026-07-18
-**Status:** ✅ Shipped 2026-07-18 (`264b24d`). Stays in `docs/designs/` until Phase 3 closes (its
-whole-branch review is batched across slices A–D), then moves to `docs/shipped/` with the plan.
+**Status:** ✅ Shipped 2026-07-18 (`264b24d`). Phase 3 closed 2026-07-20 (whole-branch review clean); moved to `docs/shipped/` with the plan.
 **Finding:** #2 (dashboard deletion does not honor all owned rows), Phase 3 (dashboard
 correctness), 2026-07-11 review. First slice of Phase 3.
 

@@ -145,10 +145,11 @@ _Last updated: 2026-07-19_
   slice). A follow-up security review (2026-07-17) is fully remediated: all High/Medium closed, with
   register enumeration accepted as a deliberate household-scale risk and only #52 (SSE resync
   griefing, Low) left open. **Phase 3 (dashboard correctness) is in progress**, sliced by mechanism:
-  slice A (#2, deletion integrity), slice B (#9 + #11, layout save correctness), slice C (#10,
-  mutation contracts), and slice D (#12, midnight invalidation) have all shipped — a batched
-  whole-branch review runs before the phase is marked done. **Phases 4–6 and the unscheduled backlog
-  remain** (see the rollout table in `docs/references/review-findings.md`).
+  **Phase 3 (dashboard correctness) is complete** (2026-07-20): slice A (#2, deletion integrity),
+  slice B (#9 + #11, layout save correctness), slice C (#10, mutation contracts), and slice D (#12,
+  midnight invalidation), closed by a clean batched whole-branch review (one drain-flag race fixed).
+  **Phases 4–6 and the unscheduled backlog remain** (see the rollout table in
+  `docs/references/review-findings.md`).
 
 ## Deliberately deferred / known dead code
 

@@ -1,8 +1,7 @@
 # Design — Invalidate time-dependent dashboard data at local midnight (#12)
 
 **Date:** 2026-07-20
-**Status:** ✅ Shipped 2026-07-20 (`26937c0`, `8c88545`). Moves to `docs/shipped/` with the plan when
-Phase 3 closes (after the batched whole-branch review).
+**Status:** ✅ Shipped 2026-07-20 (`26937c0`, `8c88545`). Phase 3 closed 2026-07-20 (whole-branch review clean); moved to `docs/shipped/` with the plan.
 **Finding:** #12 (time-dependent dashboard data is not invalidated at local midnight). Phase 3
 (dashboard correctness), slice D — the last Phase 3 slice.
 
