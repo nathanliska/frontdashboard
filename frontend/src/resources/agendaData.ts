@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { CalendarOccurrence } from '../api/calendar'
 import { apiListOccurrences } from '../api/calendar'
 import type { ListItem, ListSummary } from '../api/lists'
+import { useLocalDay } from '../hooks/useLocalDay'
 import type { SseEvent } from '../hooks/useSSE'
 import { addDays, dateKey, startOfDay } from '../utils/calendar/calendarUtils'
 import { loadDashboardListDetails } from './listData'
@@ -146,6 +147,22 @@ export function useAgendaItems(dashboardId: string | null) {
     () => (dashboardId ? { dashboardId } : null),
     [dashboardId],
   )
+
+  // At local midnight the cached fetch window and today/overdue classification go stale. Refetch
+  // this mounted agenda in the background (rather than salting the cache key with the day, which
+  // would leak a new entry every day). A direct fetch, not invalidateWhere: we hold the mounted
+  // scope and want exactly it refreshed, without depending on listener-timing during this render.
+  // The ref skips the mount run — only a real day rollover refetches.
+  const dayKey = useLocalDay()
+  const previousDay = useRef(dayKey)
+  useEffect(() => {
+    if (previousDay.current === dayKey) return
+    previousDay.current = dayKey
+    if (!scope) return
+    void agendaOccurrencesQuery.fetch(scope, { background: true }).catch(() => undefined)
+    void agendaRemindersQuery.fetch(scope, { background: true }).catch(() => undefined)
+  }, [dayKey, scope])
+
   const occurrencesState = agendaOccurrencesQuery.useQuery(scope)
   const remindersState = agendaRemindersQuery.useQuery(scope)
 

@@ -7,6 +7,7 @@ import { CalendarDayNumber } from '../components/calendar/CalendarDayNumber'
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
+import { useLocalDay } from '../hooks/useLocalDay'
 import {
   createCalendarEvent,
   deleteCalendarEvent,
@@ -95,7 +96,9 @@ export function CalendarPage() {
     () => occurrencesForDate(occurrences, selectedDate),
     [occurrences, selectedDate],
   )
-  const today = useMemo(() => startOfDay(new Date()), [])
+  const dayKey = useLocalDay()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dayKey re-runs `new Date()` at the local-day rollover — an intentional trigger dep, not used inside.
+  const today = useMemo(() => startOfDay(new Date()), [dayKey])
   const activeDashboard = useMemo<DashboardContext | null>(() => {
     const summary = activeDashboards.find((d) => d.id === effectiveActiveDashboardId)
     return summary ? { id: summary.id, name: summary.name } : null
@@ -313,7 +316,7 @@ export function CalendarPage() {
                   const dayOccurrences = occurrencesForDate(occurrences, day)
                   const inMonth = day.getMonth() === monthCursor.getMonth()
                   const isSelected = dateKey(day) === dateKey(selectedDate)
-                  const isToday = dateKey(day) === dateKey(new Date())
+                  const isToday = dateKey(day) === dateKey(today)
                   const visibleOccurrences = dayOccurrences.slice(0, inMonth ? 4 : 2)
                   return (
                     <button
@@ -378,7 +381,7 @@ export function CalendarPage() {
                   <h2 className="text-sm font-semibold text-zinc-100">
                     {formatHeadingDate(selectedDate)}
                   </h2>
-                  {dateKey(selectedDate) === dateKey(new Date()) && (
+                  {dateKey(selectedDate) === dateKey(today) && (
                     <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-400">
                       Today
                     </span>

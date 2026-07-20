@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarOccurrence } from '../../../api/calendar'
+import { useLocalDay } from '../../../hooks/useLocalDay'
 import { useCalendarOccurrences } from '../../../resources/calendarData'
 import { useDashboardStore } from '../../../stores/dashboard'
 import {
@@ -33,7 +34,9 @@ export function CalendarWidget({
   const requestedView = typeof config.view === 'string' ? config.view : 'month'
   const view: CalendarWidgetView =
     requestedView === 'day' || requestedView === 'week' ? requestedView : 'month'
-  const today = useMemo(() => startOfDay(new Date()), [])
+  const dayKey = useLocalDay()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dayKey re-runs `new Date()` at the local-day rollover — an intentional trigger dep, not used inside.
+  const today = useMemo(() => startOfDay(new Date()), [dayKey])
   const ultraCompactMonth = view === 'month' && containerWidth < 280
   const widgetWindow = useMemo(() => getWidgetWindow(view, today), [today, view])
   const occurrencesQuery = useCalendarOccurrences(

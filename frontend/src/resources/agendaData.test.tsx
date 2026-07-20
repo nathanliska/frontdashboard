@@ -194,6 +194,31 @@ describe('agendaData', () => {
     expect(screen.getByText('Buy milk')).toBeInTheDocument()
   })
 
+  it('refetches the agenda when the local day rolls over, but not on mount (#12)', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(2026, 6, 19, 23, 59, 0)) // Jul 19, 23:59 local
+      apiListOccurrences.mockResolvedValue([makeOccurrence()])
+      apiGetLists.mockResolvedValue([makeListSummary()])
+      apiGetList.mockResolvedValue(makeListDetail())
+
+      render(<AgendaProbe />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0) // flush the initial fetch
+      })
+      // The rollover effect must NOT fire on mount.
+      expect(apiListOccurrences).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2 * 60 * 1000) // cross midnight into Jul 20
+      })
+      // Day rolled over → agenda invalidated → refetch.
+      expect(apiListOccurrences).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('refreshes list reminders without reloading calendar occurrences on list events', async () => {
     apiListOccurrences.mockResolvedValue([makeOccurrence()])
     apiGetLists.mockResolvedValue([makeListSummary()])
