@@ -3,6 +3,12 @@ import { Link } from 'react-router-dom'
 import type { InheritedDashboardAccess } from '../../../api/shares'
 import { ROUTES } from '../../../routes'
 
+/**
+ * @knipignore Renders the inherited-access ("managed by dashboards") section for a child
+ * resource's share panel. Child sharing is dashboard-inherited and the list/event `/shares`
+ * endpoints are deliberate 409 stubs, so no screen mounts this yet — intentionally retained
+ * scaffolding rather than dead code. See CLAUDE.md "Sharing model".
+ */
 export function DashboardManagedAccessList({
   dashboards,
   resourceLabel = 'resource',

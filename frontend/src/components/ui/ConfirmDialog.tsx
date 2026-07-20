@@ -13,6 +13,8 @@ export function ConfirmDialog() {
     cancelRef.current?.focus()
   }, [open])
 
+  useEffect(() => () => useConfirmStore.getState().reset(), [])
+
   if (!open) return null
 
   return (

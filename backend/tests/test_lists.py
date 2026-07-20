@@ -243,6 +243,20 @@ async def test_empty_item_patch_is_rejected(auth_client: AsyncClient) -> None:
     assert resp.status_code == 422
 
 
+async def test_empty_or_unknown_list_patch_is_rejected(auth_client: AsyncClient) -> None:
+    dashboard = await _make_dashboard(auth_client)
+    lst = await _make_list(auth_client, dashboard["id"])
+
+    _csrf(auth_client)
+    empty = await auth_client.patch(f"/api/lists/{lst['id']}", json={})
+    unknown = await auth_client.patch(f"/api/lists/{lst['id']}", json={"unknown": True})
+    null_name = await auth_client.patch(f"/api/lists/{lst['id']}", json={"name": None})
+
+    assert empty.status_code == 422
+    assert unknown.status_code == 422
+    assert null_name.status_code == 422
+
+
 async def test_viewer_empty_item_patch_is_rejected_not_written(auth_client: AsyncClient) -> None:
     dashboard = await _make_dashboard(auth_client)
     lst = await _make_list(auth_client, dashboard["id"])

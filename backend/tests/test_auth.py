@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.hashing import _DUMMY_HASH
 from app.auth.tokens import decode_access_token, hash_token
+from app.config import settings
 from app.main import app
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
@@ -27,6 +29,16 @@ _ME_URL = "/api/auth/me"
 _PROFILE_URL = "/api/auth/profile"
 _PASSWORD_URL = "/api/auth/password"
 _PREFERENCES_URL = "/api/auth/preferences"
+
+
+def test_access_token_tolerates_small_clock_skew() -> None:
+    token = jwt.encode(
+        {"iat": datetime.now(UTC) + timedelta(seconds=2)},
+        settings.secret_key,
+        algorithm="HS256",
+    )
+
+    decode_access_token(token)
 
 
 async def test_register(db_client: AsyncClient) -> None:
@@ -408,6 +420,18 @@ async def test_update_profile_rejects_overlong_display_name(auth_client: AsyncCl
     resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "x" * 101})
     assert resp.status_code == 422
     assert resp.json()["detail"] == "Display name must be at most 100 characters"
+
+
+async def test_profile_and_preferences_reject_empty_or_unknown_patches(auth_client: AsyncClient) -> None:
+    for url, payload in (
+        (_PROFILE_URL, {}),
+        (_PROFILE_URL, {"display_nam": "Typo"}),
+        (_PREFERENCES_URL, {}),
+        (_PREFERENCES_URL, {"home_dashbord_id": None}),
+    ):
+        set_csrf(auth_client)
+        response = await auth_client.patch(url, json=payload)
+        assert response.status_code == 422
 
 
 async def test_profile_update_bumps_session_last_used_at(auth_client: AsyncClient, db_session: AsyncSession) -> None:

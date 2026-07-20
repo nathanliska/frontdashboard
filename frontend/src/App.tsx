@@ -1,21 +1,44 @@
-import { type ReactNode, useEffect } from 'react'
+import { lazy, type ReactNode, Suspense, useEffect } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
 import { RequireAuth } from './components/auth/RequireAuth'
 import { AppShell } from './components/layout/AppShell'
-import { CalendarPage } from './pages/CalendarPage'
-import { DashboardEditorPage } from './pages/DashboardEditorPage'
-import { DashboardsPage } from './pages/DashboardsPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
-import { ListDetailPage } from './pages/ListDetailPage'
-import { ListsLayout } from './pages/ListsLayout'
 import { LoginPage } from './pages/LoginPage'
-import { NotificationsPage } from './pages/NotificationsPage'
-import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
 import { ROUTES } from './routes'
 import { useAuthStore } from './stores/auth'
+
+const CalendarPage = lazy(() =>
+  import('./pages/CalendarPage').then((module) => ({ default: module.CalendarPage })),
+)
+const DashboardEditorPage = lazy(() =>
+  import('./pages/DashboardEditorPage').then((module) => ({ default: module.DashboardEditorPage })),
+)
+const DashboardsPage = lazy(() =>
+  import('./pages/DashboardsPage').then((module) => ({ default: module.DashboardsPage })),
+)
+const ListDetailPage = lazy(() =>
+  import('./pages/ListDetailPage').then((module) => ({ default: module.ListDetailPage })),
+)
+const ListsLayout = lazy(() =>
+  import('./pages/ListsLayout').then((module) => ({ default: module.ListsLayout })),
+)
+const NotificationsPage = lazy(() =>
+  import('./pages/NotificationsPage').then((module) => ({ default: module.NotificationsPage })),
+)
+const ProfilePage = lazy(() =>
+  import('./pages/ProfilePage').then((module) => ({ default: module.ProfilePage })),
+)
+
+function RouteFallback() {
+  return (
+    <div className="flex h-64 items-center justify-center">
+      <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
+    </div>
+  )
+}
 
 function AuthInit({ children }: { children: ReactNode }) {
   const init = useAuthStore((s) => s.init)
@@ -50,37 +73,39 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthInit>
-        <Routes>
-          {/* Public */}
-          <Route path={ROUTES.login} element={<LoginPage />} />
-          <Route path={ROUTES.register} element={<RegisterPage />} />
-          <Route path={ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
-          <Route path={ROUTES.resetPassword} element={<ResetPasswordPage />} />
-          <Route path={ROUTES.verifyEmail} element={<VerifyEmailPage />} />
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            {/* Public */}
+            <Route path={ROUTES.login} element={<LoginPage />} />
+            <Route path={ROUTES.register} element={<RegisterPage />} />
+            <Route path={ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
+            <Route path={ROUTES.resetPassword} element={<ResetPasswordPage />} />
+            <Route path={ROUTES.verifyEmail} element={<VerifyEmailPage />} />
 
-          {/* Protected — RequireAuth shows spinner while loading, redirects if unauthed */}
-          <Route element={<RequireAuth />}>
-            <Route
-              element={
-                <AppShell>
-                  <Outlet />
-                </AppShell>
-              }
-            >
-              <Route path={ROUTES.home} element={<DefaultDashboardRedirect />} />
-              <Route path={ROUTES.dashboards} element={<DashboardsPage />} />
-              <Route path={ROUTES.dashboardPattern} element={<DashboardEditorPage />} />
-              <Route path={ROUTES.calendar} element={<CalendarPage />} />
-              <Route path={ROUTES.lists} element={<ListsLayout />}>
-                <Route path=":listId" element={<ListDetailPage />} />
+            {/* Protected — RequireAuth shows spinner while loading, redirects if unauthed */}
+            <Route element={<RequireAuth />}>
+              <Route
+                element={
+                  <AppShell>
+                    <Outlet />
+                  </AppShell>
+                }
+              >
+                <Route path={ROUTES.home} element={<DefaultDashboardRedirect />} />
+                <Route path={ROUTES.dashboards} element={<DashboardsPage />} />
+                <Route path={ROUTES.dashboardPattern} element={<DashboardEditorPage />} />
+                <Route path={ROUTES.calendar} element={<CalendarPage />} />
+                <Route path={ROUTES.lists} element={<ListsLayout />}>
+                  <Route path=":listId" element={<ListDetailPage />} />
+                </Route>
+                <Route path={ROUTES.notifications} element={<NotificationsPage />} />
+                <Route path={ROUTES.profile} element={<ProfilePage />} />
               </Route>
-              <Route path={ROUTES.notifications} element={<NotificationsPage />} />
-              <Route path={ROUTES.profile} element={<ProfilePage />} />
             </Route>
-          </Route>
 
-          <Route path="*" element={<Navigate to={ROUTES.home} replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to={ROUTES.home} replace />} />
+          </Routes>
+        </Suspense>
       </AuthInit>
     </BrowserRouter>
   )

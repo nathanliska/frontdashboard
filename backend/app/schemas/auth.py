@@ -2,7 +2,9 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.schemas.common import PatchModel
 
 
 def _normalize_email(v: str) -> str:
@@ -93,13 +95,17 @@ class UserResponse(BaseModel):
         return v
 
 
-class PreferencesUpdate(BaseModel):
+class PreferencesUpdate(PatchModel):
     home_dashboard_id: str | None = None
     favorite_dashboard_ids: list[str] | None = None
 
+    model_config = ConfigDict(extra="forbid")
 
-class ProfileUpdate(BaseModel):
+
+class ProfileUpdate(PatchModel):
     display_name: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class PasswordChangeRequest(BaseModel):

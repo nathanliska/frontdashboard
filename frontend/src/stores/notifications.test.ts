@@ -18,6 +18,10 @@ import { useNotificationsStore } from './notifications'
 import { bumpSessionGeneration } from './sessionGeneration'
 
 const NOTIF_A: Notification = { id: 'a', read_at: null } as Notification
+const READ_NOTIF_A: Notification = {
+  id: 'a',
+  read_at: '2026-07-17T00:00:00Z',
+} as Notification
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -91,5 +95,40 @@ describe('notifications store session-boundary guard', () => {
     await pending
 
     expect(useNotificationsStore.getState().unreadCount).toBe(1) // markAllRead write dropped
+  })
+})
+
+describe('notifications store unread accounting', () => {
+  it('does not replace the authoritative unread total with the capped notification page', async () => {
+    apiGetNotifications.mockResolvedValue([NOTIF_A])
+    useNotificationsStore.setState({ unreadCount: 75 })
+
+    await useNotificationsStore.getState().load()
+
+    expect(useNotificationsStore.getState().notifications).toEqual([NOTIF_A])
+    expect(useNotificationsStore.getState().unreadCount).toBe(75)
+  })
+
+  it('ignores duplicate notification SSE delivery', () => {
+    useNotificationsStore.setState({ notifications: [NOTIF_A], unreadCount: 1 })
+
+    useNotificationsStore.getState().addFromSse(NOTIF_A)
+
+    expect(useNotificationsStore.getState().notifications).toEqual([NOTIF_A])
+    expect(useNotificationsStore.getState().unreadCount).toBe(1)
+  })
+
+  it('only decrements unread count when an unread notification becomes read', async () => {
+    apiMarkRead.mockResolvedValue(READ_NOTIF_A)
+    useNotificationsStore.setState({ notifications: [READ_NOTIF_A], unreadCount: 4 })
+
+    await useNotificationsStore.getState().markRead('a')
+
+    expect(useNotificationsStore.getState().unreadCount).toBe(4)
+
+    useNotificationsStore.setState({ notifications: [NOTIF_A], unreadCount: 4 })
+    await useNotificationsStore.getState().markRead('a')
+
+    expect(useNotificationsStore.getState().unreadCount).toBe(3)
   })
 })

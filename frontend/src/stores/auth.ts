@@ -16,6 +16,7 @@ import { tryRefresh } from '../api/client'
 import { resetAgendaData } from '../resources/agendaData'
 import { resetCalendarData } from '../resources/calendarData'
 import { resetListData } from '../resources/listData'
+import { useConfirmStore } from './confirm'
 import { resetDashboardData } from './dashboard'
 import { useNotificationsStore } from './notifications'
 import { currentSessionGeneration } from './sessionGeneration'
@@ -24,6 +25,7 @@ import { toast } from './toast'
 let authInitPromise: Promise<void> | null = null
 
 function resetSessionData(): void {
+  useConfirmStore.getState().reset()
   useNotificationsStore.getState().reset()
   resetAgendaData()
   resetCalendarData()

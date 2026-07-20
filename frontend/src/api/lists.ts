@@ -201,12 +201,18 @@ export async function apiReorderLists(
   )
 }
 
+/**
+ * @knipignore Child-resource sharing is dashboard-inherited: the backend
+ * `/lists/{id}/shares` endpoints are deliberate 409 stubs, so these wrappers are
+ * intentionally unused scaffolding rather than dead code. See CLAUDE.md "Sharing model".
+ */
 export async function apiGetListShares(listId: string): Promise<ResourceAccessSummary> {
   const res = await apiFetch(`/api/lists/${listId}/shares`)
   if (!res.ok) throw new Error('Failed to load list shares')
   return res.json() as Promise<ResourceAccessSummary>
 }
 
+/** @knipignore Unused scaffolding — see the note on apiGetListShares above. */
 export async function apiAddListShare(listId: string, body: ShareCreate): Promise<ResourceShare> {
   const res = await apiFetch(`/api/lists/${listId}/shares`, {
     method: 'POST',
@@ -216,6 +222,7 @@ export async function apiAddListShare(listId: string, body: ShareCreate): Promis
   return res.json() as Promise<ResourceShare>
 }
 
+/** @knipignore Unused scaffolding — see the note on apiGetListShares above. */
 export async function apiUpdateListShare(
   listId: string,
   shareId: string,
@@ -229,6 +236,7 @@ export async function apiUpdateListShare(
   return res.json() as Promise<ResourceShare>
 }
 
+/** @knipignore Unused scaffolding — see the note on apiGetListShares above. */
 export async function apiRemoveListShare(listId: string, shareId: string): Promise<void> {
   const res = await apiFetch(`/api/lists/${listId}/shares/${shareId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Failed to remove list share')

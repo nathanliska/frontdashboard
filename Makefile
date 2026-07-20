@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down logs test lint typecheck format audit audit-fix migrate seed hooks help
+.PHONY: dev-up dev-down logs test test-unit lint typecheck format audit audit-fix migrate seed hooks help
 
 help:
 	@echo ""
@@ -6,6 +6,7 @@ help:
 	@echo "  make dev-down  Stop all services"
 	@echo "  make logs      Tail service logs"
 	@echo "  make test      Run all tests"
+	@echo "  make test-unit Run tests that need neither PostgreSQL nor Docker"
 	@echo "  make lint      Lint backend + frontend (check only)"
 	@echo "  make typecheck Run type checks for backend + frontend"
 	@echo "  make format    Format + auto-fix backend and frontend"
@@ -36,10 +37,16 @@ test:
 	cd backend && uv run pytest && uv run ty check
 	cd frontend && npm run test:run
 
+test-unit:
+	cd backend && uv run pytest -m unit && uv run ty check
+	cd frontend && npm run test:run
+
 # Linting — check only, no modifications
 lint:
 	cd backend && uv run ruff check .
+	cd backend && uv run deptry .
 	cd frontend && npm run lint
+	cd frontend && npm run knip
 
 # Formatting — ruff format + lint fix for backend, Biome lint:fix for frontend
 format:

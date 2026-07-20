@@ -9,7 +9,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  workflow:
+    name: Workflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Lint GitHub Actions workflows
+        uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2.1.2
+        with:
+          version: "1.7.12"
+          pyflakes: false
+
   backend:
     name: Backend
     runs-on: ubuntu-latest
@@ -34,6 +49,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run ty check
+      - run: uv run deptry .
       - run: uv run pytest
 
   frontend:
@@ -51,5 +67,16 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm run knip
       - run: npm run test:run
       - run: npm run build
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - name: Build production frontend image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: frontend/Dockerfile.prod
+          push: false
+          cache-from: type=gha,scope=frontdashboard-frontend
+          cache-to: type=gha,mode=max,scope=frontdashboard-frontend

@@ -112,8 +112,12 @@ _Last updated: 2026-07-17_
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
   are in-memory/per-process, correct for the current single worker (shared store tracked in #45).
-- CI: lint (Ruff/Biome), tests (pytest via Testcontainers, Vitest), `ty` type check, frontend
-  build. Pre-commit hooks incl. Conventional Commit enforcement. Dependabot grouped/monthly.
+- CI: lint (Ruff/Biome), dead-code and dependency gates (knip, deptry), workflow linting
+  (actionlint), tests (pytest, Vitest), `ty` type check, frontend build, and a production frontend
+  image build. Backend tests build their schema with `alembic upgrade head`, so **migrations run on
+  every CI job** and `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the
+  Docker-free subset. Pre-commit hooks incl. Conventional Commit enforcement. Dependabot
+  grouped/monthly.
 
 ## In flight
 

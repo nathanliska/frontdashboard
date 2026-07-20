@@ -1,63 +1,96 @@
 import asyncio
+import os
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 from testcontainers.postgres import PostgresContainer
 
+from alembic import command
 from app.database import get_db
 from app.limiter import limiter
 from app.main import app
 from app.models.user import User
 
-_container: PostgresContainer | None = None
-_test_engine = None
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    global _container, _test_engine
-
-    _container = PostgresContainer("postgres:16-alpine")
-    _container.start()
-
-    async_url = _container.get_connection_url().replace("+psycopg2", "+asyncpg")
-    # NullPool avoids cross-event-loop connection reuse between asyncio.run() calls
-    _test_engine = create_async_engine(async_url, echo=False, poolclass=NullPool)
-
-    import app.models.activity  # noqa: F401
-    import app.models.calendar  # noqa: F401
-    import app.models.dashboard  # noqa: F401
-    import app.models.email_verification_token  # noqa: F401
-    import app.models.list  # noqa: F401
-    import app.models.notification  # noqa: F401
-    import app.models.password_reset_token  # noqa: F401
-    import app.models.refresh_token  # noqa: F401
-    import app.models.session  # noqa: F401
-    import app.models.share  # noqa: F401
-    import app.models.user  # noqa: F401
-    from app.models.base import Base
-
-    async def _create_tables() -> None:
-        async with _test_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(_create_tables())
+@dataclass(frozen=True)
+class _TestDatabase:
+    engine: AsyncEngine
+    alembic_config: Config
 
 
-def pytest_unconfigure(config: pytest.Config) -> None:
-    global _container, _test_engine
-    if _test_engine:
-        asyncio.run(_test_engine.dispose())
-        _test_engine = None
-    if _container:
-        _container.stop()
-        _container = None
+def _asyncpg_url(url: str) -> str:
+    if url.startswith("postgresql+psycopg2://"):
+        return url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql+asyncpg://"):
+        return url
+    raise ValueError("TEST_DATABASE_URL must be a PostgreSQL URL")
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Classify tests from their resolved fixture graph."""
+    for item in items:
+        fixture_names = getattr(item, "fixturenames", ())
+        marker = pytest.mark.integration if "test_database" in fixture_names else pytest.mark.unit
+        item.add_marker(marker)
+
+
+@pytest.fixture(scope="session")
+def test_database() -> Generator[_TestDatabase, None, None]:
+    """Provide one migrated PostgreSQL database for integration tests.
+
+    TEST_DATABASE_URL selects a dedicated existing test database. When it is
+    absent, Testcontainers remains a convenient local fallback.
+    """
+    container: PostgresContainer | None = None
+    configured_url = os.getenv("TEST_DATABASE_URL")
+    if configured_url:
+        async_url = _asyncpg_url(configured_url)
+    else:
+        container = PostgresContainer("postgres:16-alpine")
+        try:
+            container.start()
+        except Exception as exc:
+            raise RuntimeError(
+                "Database tests need TEST_DATABASE_URL pointing to a dedicated PostgreSQL test database "
+                "or a running Docker daemon for the Testcontainers fallback"
+            ) from exc
+        async_url = _asyncpg_url(container.get_connection_url())
+
+    try:
+        alembic_config = Config(str(_BACKEND_ROOT / "alembic.ini"))
+        alembic_config.attributes["database_url"] = async_url
+        command.upgrade(alembic_config, "head")
+
+        # NullPool avoids cross-event-loop connection reuse between pytest-asyncio tests.
+        engine = create_async_engine(async_url, echo=False, poolclass=NullPool)
+        try:
+            yield _TestDatabase(engine=engine, alembic_config=alembic_config)
+        finally:
+            asyncio.run(engine.dispose())
+    finally:
+        if container is not None:
+            container.stop()
+
+
+@pytest.fixture(scope="session")
+def alembic_config(test_database: _TestDatabase) -> Config:
+    return test_database.alembic_config
 
 
 @pytest.fixture(autouse=True)
@@ -81,9 +114,8 @@ async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
 
 
 @pytest.fixture
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    assert _test_engine is not None
-    async with _test_engine.connect() as conn:
+async def db_session(test_database: _TestDatabase) -> AsyncGenerator[AsyncSession, None]:
+    async with test_database.engine.connect() as conn:
         transaction = await conn.begin()
         session = AsyncSession(
             bind=conn,
@@ -99,7 +131,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest.fixture
-async def concurrent_sessions() -> AsyncGenerator[tuple[AsyncSession, AsyncSession, uuid.UUID], None]:
+async def concurrent_sessions(test_database: _TestDatabase) -> AsyncGenerator[tuple[AsyncSession, AsyncSession, uuid.UUID], None]:
     """Two independently-committing sessions plus a throwaway user.
 
     Everything else in this suite runs in a savepoint that is rolled back. These
@@ -109,10 +141,9 @@ async def concurrent_sessions() -> AsyncGenerator[tuple[AsyncSession, AsyncSessi
     Clean up by user, never TRUNCATE: savepoint-based tests hold open transactions
     on other connections, and a truncate would contend with them.
     """
-    assert _test_engine is not None
     user_id = uuid.uuid4()
 
-    async with AsyncSession(_test_engine, expire_on_commit=False) as setup:
+    async with AsyncSession(test_database.engine, expire_on_commit=False) as setup:
         setup.add(
             User(
                 id=user_id,
@@ -124,14 +155,14 @@ async def concurrent_sessions() -> AsyncGenerator[tuple[AsyncSession, AsyncSessi
         )
         await setup.commit()
 
-    first = AsyncSession(_test_engine, expire_on_commit=False)
-    second = AsyncSession(_test_engine, expire_on_commit=False)
+    first = AsyncSession(test_database.engine, expire_on_commit=False)
+    second = AsyncSession(test_database.engine, expire_on_commit=False)
     try:
         yield first, second, user_id
     finally:
         await first.close()
         await second.close()
-        async with AsyncSession(_test_engine, expire_on_commit=False) as cleanup:
+        async with AsyncSession(test_database.engine, expire_on_commit=False) as cleanup:
             # refresh_tokens and sessions both cascade from users.
             await cleanup.execute(delete(User).where(User.id == user_id))
             await cleanup.commit()

@@ -7,6 +7,7 @@ interface ConfirmState {
   confirm: (message: string) => Promise<boolean>
   _accept: () => void
   _cancel: () => void
+  reset: () => void
 }
 
 export const useConfirmStore = create<ConfirmState>()((set, get) => ({
@@ -15,6 +16,9 @@ export const useConfirmStore = create<ConfirmState>()((set, get) => ({
   _resolve: null,
 
   confirm(message) {
+    // A modal is already collecting an answer. Treat a concurrent request as
+    // cancelled instead of orphaning the first caller's promise.
+    if (get()._resolve) return Promise.resolve(false)
     return new Promise<boolean>((resolve) => {
       set({ open: true, message, _resolve: resolve })
     })
@@ -28,6 +32,11 @@ export const useConfirmStore = create<ConfirmState>()((set, get) => ({
   _cancel() {
     get()._resolve?.(false)
     set({ open: false, _resolve: null })
+  },
+
+  reset() {
+    get()._resolve?.(false)
+    set({ open: false, message: '', _resolve: null })
   },
 }))
 

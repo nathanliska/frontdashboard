@@ -36,7 +36,7 @@ from app.sse.events import build_activity_sse_dict
 from app.sse.manager import manager
 
 router = APIRouter(prefix="/lists", tags=["lists"])
-ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id")]
+ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id", max_length=128)]
 
 
 def _dashboard_user_ids(

@@ -28,9 +28,15 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def database_url() -> str:
+    """Prefer an explicitly supplied URL for programmatic migration runs."""
+    configured_url = config.attributes.get("database_url")
+    return str(configured_url) if configured_url is not None else settings.database_url
+
+
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.database_url,
+        url=database_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -51,7 +57,7 @@ def do_run_migrations(connection) -> None:  # type: ignore[type-arg]
 
 
 async def run_async_migrations() -> None:
-    engine = create_async_engine(settings.database_url, poolclass=pool.NullPool)
+    engine = create_async_engine(database_url(), poolclass=pool.NullPool)
     async with engine.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await engine.dispose()

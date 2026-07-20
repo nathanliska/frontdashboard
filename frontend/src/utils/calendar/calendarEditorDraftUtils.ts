@@ -99,26 +99,6 @@ export function toMondayWeekday(jsDay: number): number {
   return (jsDay + 6) % 7
 }
 
-export function getDurationSummary(startsAt: string, endsAt: string): string | null {
-  const start = new Date(startsAt)
-  const end = new Date(endsAt)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null
-
-  let remainingMinutes = Math.round((end.getTime() - start.getTime()) / 60000)
-  const days = Math.floor(remainingMinutes / (60 * 24))
-  remainingMinutes -= days * 60 * 24
-  const hours = Math.floor(remainingMinutes / 60)
-  remainingMinutes -= hours * 60
-
-  const parts: string[] = []
-  if (days > 0) parts.push(`${days} day${days === 1 ? '' : 's'}`)
-  if (hours > 0) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`)
-  if (remainingMinutes > 0 || parts.length === 0) {
-    parts.push(`${remainingMinutes} minute${remainingMinutes === 1 ? '' : 's'}`)
-  }
-  return parts.join(' ')
-}
-
 export function getRecurringOverlapWarning(
   startsAt: string,
   endsAt: string,

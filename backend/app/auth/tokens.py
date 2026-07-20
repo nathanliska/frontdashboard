@@ -8,6 +8,7 @@ import jwt
 from app.config import settings
 
 _ALGORITHM = "HS256"
+_CLOCK_SKEW_LEEWAY_SECONDS = 30
 
 
 def create_access_token(user_id: uuid.UUID, email: str, session_id: uuid.UUID) -> str:
@@ -24,7 +25,12 @@ def create_access_token(user_id: uuid.UUID, email: str, session_id: uuid.UUID) -
 
 def decode_access_token(token: str) -> dict:
     """Decode and verify a JWT access token. Raises jwt.PyJWTError on failure."""
-    return jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
+    return jwt.decode(
+        token,
+        settings.secret_key,
+        algorithms=[_ALGORITHM],
+        leeway=_CLOCK_SKEW_LEEWAY_SECONDS,
+    )
 
 
 def create_opaque_token() -> tuple[str, str]:

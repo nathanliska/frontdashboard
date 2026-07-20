@@ -13,9 +13,18 @@ class ListCreate(BaseModel):
     dashboard_id: uuid.UUID
 
 
-class ListUpdate(BaseModel):
+class ListUpdate(PatchModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(None, min_length=1, max_length=200)
     archived: bool | None = None
+
+    @field_validator("name", "archived", mode="before")
+    @classmethod
+    def _reject_null_updates(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("List update fields cannot be null")
+        return value
 
 
 class ListResponse(BaseModel):

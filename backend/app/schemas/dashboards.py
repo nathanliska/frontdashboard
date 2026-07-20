@@ -1,11 +1,17 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.schemas.common import PatchModel
 from app.schemas.shares import ShareCreate
+
+DASHBOARD_NAME_MAX_LENGTH = 100
+DashboardName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=DASHBOARD_NAME_MAX_LENGTH),
+]
 
 
 class WidgetResponse(BaseModel):
@@ -58,15 +64,32 @@ class DashboardResponse(BaseModel):
 
 
 class DashboardCreate(BaseModel):
-    name: str
-    shares: list[ShareCreate] = []
+    name: DashboardName
+    shares: list[ShareCreate] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("shares")
+    @classmethod
+    def _reject_duplicate_share_targets(cls, shares: list[ShareCreate]) -> list[ShareCreate]:
+        targets = {(share.principal_type, share.principal_id) for share in shares}
+        if len(targets) != len(shares):
+            raise ValueError("Duplicate share targets are not allowed")
+        return shares
 
 
 class DashboardUpdate(PatchModel):
-    name: str | None = None
+    name: DashboardName | None = None
     archived: bool | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("name", "archived", mode="before")
+    @classmethod
+    def _reject_null_updates(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("Dashboard update fields cannot be null")
+        return value
 
 
 class LayoutUpdate(BaseModel):

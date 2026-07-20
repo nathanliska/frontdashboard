@@ -48,8 +48,9 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
         const guard = sessionGuard()
         try {
           const notifications = await apiGetNotifications()
-          const unreadCount = notifications.filter((n) => n.read_at === null).length
-          guard.set({ notifications, unreadCount, loaded: true })
+          // The list endpoint is capped, so it cannot authoritatively replace the
+          // separately loaded unread total.
+          guard.set({ notifications, loaded: true })
         } catch {
           // ignore — stale state is acceptable
         }
@@ -82,10 +83,16 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
       const guard = sessionGuard()
       try {
         const updated = await apiMarkRead(id)
-        guard.set((s) => ({
-          notifications: s.notifications.map((n) => (n.id === id ? updated : n)),
-          unreadCount: Math.max(0, s.unreadCount - 1),
-        }))
+        guard.set((s) => {
+          const current = s.notifications.find((notification) => notification.id === id)
+          const becameRead = current?.read_at === null && updated.read_at !== null
+          return {
+            notifications: s.notifications.map((notification) =>
+              notification.id === id ? updated : notification,
+            ),
+            unreadCount: becameRead ? Math.max(0, s.unreadCount - 1) : s.unreadCount,
+          }
+        })
       } catch {
         // ignore
       }
@@ -113,10 +120,13 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
     },
 
     addFromSse(notif) {
-      set((s) => ({
-        notifications: [notif, ...s.notifications],
-        unreadCount: s.unreadCount + 1,
-      }))
+      set((s) => {
+        if (s.notifications.some((notification) => notification.id === notif.id)) return s
+        return {
+          notifications: [notif, ...s.notifications],
+          unreadCount: notif.read_at === null ? s.unreadCount + 1 : s.unreadCount,
+        }
+      })
     },
 
     reset() {

@@ -45,11 +45,6 @@ export interface CalendarOccurrence {
   is_exception: boolean
 }
 
-export interface CalendarOccurrenceMutationResponse {
-  cancelled: boolean
-  occurrence: CalendarOccurrence | null
-}
-
 export interface CreateCalendarEventInput {
   dashboard_id?: string
   title: string
@@ -138,12 +133,18 @@ export async function apiDeleteEvent(eventId: string): Promise<void> {
   if (!res.ok) throw await readError(res, 'Failed to delete event')
 }
 
+/**
+ * @knipignore Child-resource sharing is dashboard-inherited: the backend
+ * `/calendar/events/{id}/shares` endpoints are deliberate 409 stubs, so these wrappers are
+ * intentionally unused scaffolding rather than dead code. See CLAUDE.md "Sharing model".
+ */
 export async function apiGetEventShares(eventId: string): Promise<ResourceAccessSummary> {
   const res = await apiFetch(`/api/calendar/events/${eventId}/shares`)
   if (!res.ok) throw await readError(res, 'Failed to load event shares')
   return res.json() as Promise<ResourceAccessSummary>
 }
 
+/** @knipignore Unused scaffolding — see the note on apiGetEventShares above. */
 export async function apiAddEventShare(eventId: string, body: ShareCreate): Promise<ResourceShare> {
   const res = await apiFetch(`/api/calendar/events/${eventId}/shares`, {
     method: 'POST',
@@ -153,6 +154,7 @@ export async function apiAddEventShare(eventId: string, body: ShareCreate): Prom
   return res.json() as Promise<ResourceShare>
 }
 
+/** @knipignore Unused scaffolding — see the note on apiGetEventShares above. */
 export async function apiUpdateEventShare(
   eventId: string,
   shareId: string,
@@ -166,6 +168,7 @@ export async function apiUpdateEventShare(
   return res.json() as Promise<ResourceShare>
 }
 
+/** @knipignore Unused scaffolding — see the note on apiGetEventShares above. */
 export async function apiRemoveEventShare(eventId: string, shareId: string): Promise<void> {
   const res = await apiFetch(`/api/calendar/events/${eventId}/shares/${shareId}`, {
     method: 'DELETE',

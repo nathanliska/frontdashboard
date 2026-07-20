@@ -48,7 +48,8 @@ from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
 from app.sse.manager import manager
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
-ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id")]
+ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id", max_length=128)]
+_INVALID_SHARE_TARGET_DETAIL = "Share targets must be active verified users other than the owner"
 
 
 async def _load_widgets(dashboard_id: uuid.UUID, db: AsyncSession) -> list[DashboardWidget]:
@@ -264,14 +265,41 @@ async def _list_accessible_dashboard_summaries(
     return summaries
 
 
-async def _dashboard_audience_user_ids(
+def _dashboard_audience_user_ids(
     dashboard: Dashboard,
     shares: list[ResourceShare],
-    db: AsyncSession,
 ) -> set[uuid.UUID]:
     audience_user_ids: set[uuid.UUID] = {dashboard.user_id}
     audience_user_ids.update({share.principal_id for share in shares if share.principal_type == PrincipalType.user})
     return audience_user_ids
+
+
+async def _validate_share_targets(
+    share_inputs: list[ShareCreate],
+    owner_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    target_ids = {share.principal_id for share in share_inputs}
+    if not target_ids:
+        return
+    if owner_id in target_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_INVALID_SHARE_TARGET_DETAIL,
+        )
+
+    result = await db.execute(
+        select(User.id).where(
+            User.id.in_(target_ids),
+            User.deleted_at.is_(None),
+            User.email_verified_at.is_not(None),
+        )
+    )
+    if set(result.scalars()) != target_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_INVALID_SHARE_TARGET_DETAIL,
+        )
 
 
 async def _remove_dashboard_from_user_preferences(
@@ -294,9 +322,8 @@ async def _broadcast_dashboard_event(
     dashboard: Dashboard,
     shares: list[ResourceShare],
     actor_id: uuid.UUID,
-    db: AsyncSession,
 ) -> None:
-    user_ids = await _dashboard_audience_user_ids(dashboard, shares, db)
+    user_ids = _dashboard_audience_user_ids(dashboard, shares)
 
     await manager.broadcast(
         message,
@@ -473,6 +500,7 @@ async def create_dashboard(
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
     """Create a dashboard and apply any initial shares."""
+    await _validate_share_targets(body.shares, current_user.id, db)
     dashboard = Dashboard(user_id=current_user.id, name=body.name)
     db.add(dashboard)
     await db.flush()
@@ -498,7 +526,7 @@ async def create_dashboard(
     )
     await db.commit()
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     await _broadcast_notification_messages(notification_messages, actor_id=current_user.id)
     return _to_summary(
         dashboard,
@@ -542,7 +570,7 @@ async def update_dashboard_meta(
     )
     await db.commit()
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
     access_description = "Owned by you" if dashboard.user_id == current_user.id else "Shared directly with you"
     return _to_summary(
@@ -602,7 +630,7 @@ async def delete_dashboard(
     await cleanup_resource_shares(ResourceType.dashboard, dashboard.id, db)
     await db.execute(delete(Dashboard).where(Dashboard.id == dashboard.id))
     await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
 
 
 @router.get("/default", response_model=DashboardResponse)
@@ -696,7 +724,7 @@ async def update_layout(
     )
     await db.commit()
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     widgets = await _load_widgets(dashboard.id, db)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
     return _to_response(
@@ -854,7 +882,7 @@ async def add_widget(
     )
     await db.commit()
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     widgets = await _load_widgets(dashboard.id, db)
     return _to_response(
         dashboard,
@@ -904,7 +932,7 @@ async def update_widget(
     )
     await db.commit()
     await db.refresh(widget)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     return WidgetResponse.model_validate(widget)
 
 
@@ -954,7 +982,7 @@ async def delete_widget(
         client_mutation_id=client_mutation_id,
     )
     await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
 
 
 @router.get("/{dashboard_id}/shares", response_model=list[ShareResponse])
@@ -982,6 +1010,7 @@ async def add_dashboard_share(
     """Create or upsert a direct share on a dashboard."""
     dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
+    await _validate_share_targets([body], dashboard.user_id, db)
     existing_share = next(
         (share for share in shares if share.principal_type == body.principal_type and share.principal_id == body.principal_id),
         None,
@@ -1015,7 +1044,7 @@ async def add_dashboard_share(
         client_mutation_id=client_mutation_id,
     )
     await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, current_shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, current_shares, current_user.id)
     await _broadcast_notification_messages(notification_messages, actor_id=current_user.id)
     return (await resolve_share_responses([share], db))[0]
 
@@ -1060,7 +1089,7 @@ async def update_dashboard_share(
     )
     await db.commit()
     await db.refresh(share)
-    await _broadcast_dashboard_event(event_message, dashboard, current_shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, current_shares, current_user.id)
     await _broadcast_notification_messages(notification_messages, actor_id=current_user.id)
     return (await resolve_share_responses([share], db))[0]
 
@@ -1105,5 +1134,5 @@ async def delete_dashboard_share(
             shared_user.preferences = remove_dashboard_from_preferences(shared_user.preferences, dashboard.id)
     await db.delete(share)
     await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id, db)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     await _broadcast_notification_messages(notification_messages, actor_id=current_user.id)

@@ -65,6 +65,7 @@ Caddy (`Caddyfile`) is for production — it unifies both behind port 80, adds s
 make dev-up      # Start all services (Docker Compose)
 make dev-down    # Stop all services
 make test        # Run all tests
+make test-unit   # Run tests that need neither PostgreSQL nor Docker
 make lint        # Lint backend + frontend
 make format      # Format backend + frontend
 make audit       # Run dependency/security audit checks
@@ -73,6 +74,30 @@ make migrate     # Run Alembic migrations
 make seed        # Seed development data
 make logs        # Tail service logs
 ```
+
+### Testing without Docker
+
+`make test-unit` runs the backend unit tests, backend type checks, and frontend tests without
+starting PostgreSQL or Docker.
+
+The full backend suite always uses real PostgreSQL. Set `TEST_DATABASE_URL` to a dedicated,
+disposable test database to run it without Docker:
+
+```bash
+cd backend
+TEST_DATABASE_URL=postgresql+asyncpg://user:password@localhost/frontdashboard_test uv run pytest
+```
+
+When `TEST_DATABASE_URL` is unset, the database-backed tests fall back to a temporary PostgreSQL 16
+Testcontainer. In both modes, Alembic builds the test schema and `tests/test_migrations.py` checks
+it with `alembic check`, which catches missing/extra tables, columns, indexes, foreign keys, and
+changed column types. It does **not** compare `server_default`s or CHECK constraints — those still
+need asserting by hand.
+
+`make test-unit` runs only the tests marked `unit`, which need neither PostgreSQL nor Docker.
+
+**Never point `TEST_DATABASE_URL` at a development or production database** — the suite runs
+migrations against it and some fixtures really commit and delete rows.
 
 ---
 

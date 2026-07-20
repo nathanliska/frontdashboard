@@ -22,8 +22,9 @@ make seed        # seed development data
 make audit       # dependency/security audit checks
 make audit-fix   # apply npm audit fixes (frontend)
 ```
-- Backend: `uv run ruff check --fix` / `uv run ruff format`; backend pytest uses
-  **Testcontainers and needs a Docker socket** — it cannot run without Docker available.
+- Backend: `uv run ruff check --fix` / `uv run ruff format`. Backend **integration** tests need
+  PostgreSQL — either a Docker socket (Testcontainers) or `TEST_DATABASE_URL` pointing at a
+  dedicated test database. `make test-unit` (`pytest -m unit`) needs neither.
 - Frontend: `npm run lint` / `npm run lint:fix` / `npm run format` (Biome), `npm test` (Vitest).
 - CI (GitHub Actions) runs backend + frontend lint, tests, `ty` type checking, and the
   frontend build on every push and PR. Keep it green.

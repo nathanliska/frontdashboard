@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.api import api_router
 from app.config import Environment, settings
+from app.database import engine
 from app.limiter import limiter
 from app.services.retention import reaper_loop
 
@@ -45,10 +46,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
-        if reaper_task is not None:
-            reaper_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await reaper_task
+        try:
+            if reaper_task is not None:
+                reaper_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await reaper_task
+        finally:
+            await engine.dispose()
 
 
 app = FastAPI(title="FrontDashboard", lifespan=lifespan)

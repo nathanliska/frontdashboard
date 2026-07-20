@@ -1,4 +1,5 @@
 import anyio
+from anyio.to_thread import run_sync
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
 
@@ -30,8 +31,8 @@ def _verify(password: str, hashed: str) -> bool:
 
 
 async def hash_password(password: str) -> str:
-    return await anyio.to_thread.run_sync(_hash, password, limiter=_argon2_limiter)
+    return await run_sync(_hash, password, limiter=_argon2_limiter)
 
 
 async def verify_password(password: str, hashed: str) -> bool:
-    return await anyio.to_thread.run_sync(_verify, password, hashed, limiter=_argon2_limiter)
+    return await run_sync(_verify, password, hashed, limiter=_argon2_limiter)

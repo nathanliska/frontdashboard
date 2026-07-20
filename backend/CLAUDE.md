@@ -31,13 +31,21 @@ Everything here is a convention an agent can't safely infer from one file.
 ## Migrations & models
 - Alembic revisions are hand-authored 12-char slugs with explicit `down_revision` chaining —
   match the style. Role/type enums are stored as plain `String` (StrEnum), not PG enums.
-- **A new model module must be imported in BOTH `alembic/env.py` and `tests/conftest.py`** or
-  it's invisible to autogenerate and to test table creation.
+- **A new model module must be imported in `alembic/env.py`** or it's invisible to autogenerate.
+  It also needs its own migration: the test schema is built by `alembic upgrade head`, so a model
+  without a migration has no table and every test touching it fails. Nothing needs adding to
+  `tests/conftest.py` — it no longer imports models.
 
 ## Tests & email
-- pytest uses Testcontainers (`postgres:16-alpine`, needs Docker). Schema comes from
-  `Base.metadata.create_all` — **migrations are never exercised by tests**, so Alembic drift
-  won't be caught there. Each test runs in a rolled-back savepoint.
+- Integration tests build the schema with **`alembic upgrade head`** (not `create_all`), against a
+  `postgres:16-alpine` Testcontainer or an existing database via `TEST_DATABASE_URL`. **Migrations
+  are exercised on every run**, and `tests/test_migrations.py` fails the build on ORM↔migration
+  drift via `alembic check` — but note that check is blind to `server_default`s and CHECK
+  constraints, so those still need asserting by hand. Each test runs in a rolled-back savepoint.
+- Tests are **auto-marked**: anything using the `test_database` fixture becomes `integration`,
+  everything else `unit`. So `make test-unit` (`pytest -m unit`) runs with no Docker at all — which
+  means **any test touching Postgres must go through the `test_database` fixture**, or it gets
+  mismarked as a unit test and runs without a database.
 - Tests monkeypatch email senders by the *router's* import path
   (`app.routers.auth.send_verification_email`) — import/call them that way. With
   `resend_api_key` unset the sender logs the link instead of sending (the only way to get a

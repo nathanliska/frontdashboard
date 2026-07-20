@@ -19,10 +19,10 @@ Remediation runs **security-first, one theme per phase**; each phase gets its ow
 | 1 | Security quick wins | #3, #4, #5 | ✅ Done (2026-07-12) |
 | 2 | Auth/session hardening | #1, #6, #7, #8, #13, #31 | ✅ Done (2026-07-17) — 4 specs, all shipped (see below) |
 | 3 | Dashboard correctness | #2, #9, #10, #11, #12 | 🚧 In progress — #2 ✅ shipped 2026-07-18 (slice A); #9/#11, #10, #12 planned |
-| 4 | Data layer & contracts | #16, #17, #22, #23, #24 | ◻ Planned |
-| 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | ◻ Planned |
-| 6 | UX & cleanup | #27, #40, #41, #42 | ◻ Planned |
-| — | Backlog (unscheduled) | #14, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #52 | ◻ Triage |
+| 4 | Data layer & contracts | #16, #17, #22, #23, #24 | 🚧 In progress — #22 correctness slice ◐; pagination remains |
+| 5 | Infra / CI / ops | #20, #32, #33, #34, #35, #36, #37 | 🚧 In progress — #20/#32 migration/build gates, #36 build context, and #37 DB lifecycle slices ◐ |
+| 6 | UX & cleanup | #27, #40, #41, #42 | 🚧 In progress — #41 route/dead-code and #42 transient-state slices ◐ |
+| — | Backlog (unscheduled) | #14, #18, #19, #21, #25, #26, #28, #29, #30, #38, #39, #45, #52 | ◐ #14/#19/#28 advanced 2026-07-19; remainder triage |
 | — | Security review (2026-07-17) | #46/#47/#48 + #15 + #49/#50/#51 ✅ shipped 2026-07-18; register enum (E) = **accepted risk**; **open:** #52 (SSE griefing, Low) | 🚧 all High/Medium closed; only #52 (Low, needs backpressure design) remains |
 
 Phase 1 spec/plan: `docs/shipped/security-quick-wins-design.md` + `-plan.md` (moved on close-out).
@@ -149,6 +149,27 @@ limit, fixed in spec 1).
   is sliced like Phase 2 into independent specs: **A #2 (done)**, B #9+#11 (layout save
   correctness), C #10 (mutation contracts), D #12 (midnight invalidation). Whole-branch review is
   batched at phase close; slice docs live in `docs/designs/` until then.
+- **2026-07-19** — **Quick correctness + migration-gate batch** (working tree; commit SHA pending):
+  #22 no longer overwrites the authoritative unread count with the capped page, double-counts a
+  duplicate SSE notification already in the store, or decrements an already-read notification;
+  #14 now trims/bounds dashboard names and bounds mutation IDs; list metadata gained the #5 empty-
+  PATCH guard; #28 excludes deleted/unverified users and enforces the frontend's two-character
+  search floor; #42 persists only the durable sidebar preference and preserves the active confirm
+  resolver; #20/#32 now build the API-test schema through the complete Alembic chain and check it
+  for ORM drift. Database setup accepts a dedicated `TEST_DATABASE_URL` without Docker and otherwise
+  falls back to Testcontainers, including in CI; unit tests initialize neither. Access-token
+  validation now tolerates 30 seconds of clock skew after repeated full-suite runs reproduced WSL
+  clock steps falsely rejecting freshly issued tokens. `deptry` now gates backend CI; production
+  frontend builds use Node 22 like CI and an allowlisted root Docker context; active confirmations
+  resolve false at authentication boundaries; and protected routes load on demand, reducing the
+  main production JS chunk from 526.01 kB to 310.46 kB. Follow-up batches reject empty/unknown
+  profile and preference patches plus duplicate initial share targets; remove three confirmed dead
+  frontend files; resolve confirmations on component unmount; pre-ping pooled DB connections and
+  dispose the engine at shutdown; and build the complete production frontend image in CI. CI now
+  cancels superseded runs, validates workflow files with actionlint, caches production image layers
+  through BuildKit's GitHub Actions cache, and checks high-signal dead files and dependency mistakes
+  with Knip. The Knip pass also exposed and fixed the undeclared direct `react-resizable` dependency.
+  All affected open findings remain partial; their dispositions state the remaining scope.
 
 ## Validation pass — 2026-07-16
 
@@ -215,7 +236,10 @@ before implementing the finding; anything not listed verified as written, modulo
 
 - Frontend validation passed: Biome, TypeScript, 18 Vitest files / 77 tests, and the Vite production build. The build emitted one 471.82 kB JavaScript chunk (133.34 kB gzip).
 - Backend Ruff formatting/lint and `ty` checks passed.
-- The backend pytest suite could not run in this review environment because its session bootstrap requires a Docker socket for Testcontainers (`backend/tests/conftest.py:19-45`). This is an environment limitation, not a reported test failure.
+- The backend pytest suite could not run in this review environment because its session bootstrap
+  required a Docker socket for Testcontainers. This was an environment limitation, not a reported
+  test failure. **Follow-up 2026-07-19:** unit tests no longer initialize PostgreSQL, and the full
+  suite can use `TEST_DATABASE_URL` instead of Docker.
 - Existing modifications to `backend/pyproject.toml` and `backend/uv.lock` predated this review and were not changed.
 
 ## Ranked findings
@@ -282,6 +306,10 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Effort / Risk** — Small / Low.
 - **Impact** — Closes a real authorization gap and restores audit accuracy.
 - **Disposition** — ✅ Done 2026-07-12 (`ed690c0`). Shared `PatchModel` base (`backend/app/schemas/common.py`) rejects empty bodies with 422 before auth/mutation on list-item/calendar/dashboard PATCH; list-item edit permission is now asserted unconditionally.
+  **Coverage follow-up 2026-07-19** (working tree; commit SHA pending): list-metadata PATCH now uses
+  the same guard, forbids unknown fields, and rejects explicit null no-ops, so it cannot emit false
+  update activity from `{}`, `{ "name": null }`, or an ignored field. Profile and preference PATCH
+  schemas now also reject empty bodies and unknown fields rather than accepting no-ops or typos.
 
 ### 6. Make refresh and password-reset tokens truly single-use under concurrency
 
@@ -409,8 +437,11 @@ before implementing the finding; anything not listed verified as written, modulo
   **display-name slice landed 2026-07-17** (`597e0ad`, `ce60ac0`) alongside #31: a shared
   `DISPLAY_NAME_MAX_LENGTH=100`; `RegisterRequest.display_name` normalizes (trim, non-empty, ≤100)
   at the schema, and `update_profile` gained the matching length bound (keeping its custom-message
-  contract). Still open: dashboard name bounds, typed layout/widget-config models, the rest of
-  `ProfileUpdate`/config typing, bounded mutation headers/body size.
+  contract). **Boundary slice 2026-07-19** (working tree; commit SHA pending): dashboard create and
+  rename now share a trimmed, non-empty, ≤100-character name type; dashboard create forbids unknown
+  fields; both dashboard/list mutation-ID headers are capped at 128 characters; and profile and
+  preference updates forbid unknown fields and empty patches. Still open: typed layout/widget-config
+  models, stronger field typing beyond the existing profile validation, and a request-body size bound.
 
 ### 15. Configure rate limiting for the trusted-proxy topology
 
@@ -458,6 +489,11 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Validate an active target and reject self-sharing. Use `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`, reject duplicate initial targets explicitly, and preferably gain user/dashboard FKs through finding 18.
 - **Effort / Risk** — Medium / Medium.
 - **Impact** — Restores deterministic authorization data and prevents ghost shares/500 races.
+- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). Both initial
+  dashboard shares and later share additions now reject self-sharing and any nonexistent, deleted,
+  or unverified target before writing. Invalid targets share one generic 422 response, and duplicate
+  initial targets are rejected at the request schema. Still open: replace the read-before-insert path
+  with an atomic upsert and add schema FKs through #18.
 
 ### 20. Run tests against Alembic's deployed schema
 
@@ -466,6 +502,14 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Add a PostgreSQL migration job that upgrades an empty database, runs `alembic check`, and validates schema invariants. Run API tests against that database in CI and add an upgrade test from a supported prior snapshot.
 - **Effort / Risk** — Medium / Low.
 - **Impact** — Catches deploy-blocking schema defects before self-hosters encounter them.
+- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). The shared pytest
+  database fixture now upgrades through the complete Alembic chain before API tests and a dedicated
+  test runs `alembic current --check-heads` plus `alembic check`; `Base.metadata.create_all()` is no
+  longer used. CI and ordinary full-suite runs use the same PostgreSQL 16 Testcontainers fallback;
+  local runs may instead select any dedicated PostgreSQL test database through `TEST_DATABASE_URL`.
+  The ORM now declares the deployed cascading FK on `notifications.user_id`; the legacy
+  notification/activity `group_id` columns cited by the original review were already removed. Still
+  open: add an upgrade test from a supported prior data snapshot.
 
 ### 21. Make SSE delivery durable and multi-process
 
@@ -482,6 +526,11 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Return cursor envelopes with an authoritative unread count, normalize notifications by ID with idempotent unread accounting, and implement load-more/infinite pagination for both tabs.
 - **Effort / Risk** — Medium / Low-Medium.
 - **Impact** — Produces correct badges and makes "View all" truthful as history grows.
+- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). Loading the capped
+  50-row page no longer overwrites the separately fetched authoritative unread total; duplicate SSE
+  IDs already present in the store are ignored; and marking an already-read notification no longer
+  decrements the badge. Still open: cursor envelopes/load-more for notifications and activity, plus
+  durable deduplication across reconnects when an ID is not currently retained in the client store.
 
 ### 23. Generate and validate frontend API/event contracts
 
@@ -530,6 +579,10 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Define the household/discovery boundary, filter active verified users, mask email unless required for an explicit invite, require a longer query, rate-limit discovery, and add prefix/trigram indexes to match the chosen semantics.
 - **Effort / Risk** — Small-Medium / Medium; visibility is a product decision.
 - **Impact** — Reduces PII exposure and keeps sharing search responsive.
+- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). Search now excludes
+  deleted and unverified accounts and requires at least two non-whitespace characters server-side,
+  matching the frontend gate. Still open: decide/mask full-email visibility, rate-limit discovery,
+  choose prefix versus substring semantics, and add the matching index.
 
 ### 29. Add indexes and uniqueness for actual dashboard/widget paths
 
@@ -581,6 +634,17 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Add staged jobs for Alembic smoke/check/upgrades, backend/frontend coverage, OpenAPI generation diff, Playwright critical journeys and responsive drag tests, axe, production Docker builds, Compose config, `deptry`, OSV/pip audit, secret scanning, CodeQL/Semgrep, Trivy/Grype, SBOMs, and signed release images.
 - **Effort / Risk** — Medium-Large / Low; stage expensive jobs by PR/release cadence.
 - **Impact** — Detects schema, session, packaging, accessibility, and supply-chain failures before release.
+- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). The backend CI job
+  runs pytest with its PostgreSQL 16 Testcontainer; the shared fixture applies the Alembic chain, API
+  tests use that migrated schema, and a dedicated test checks the current heads plus ORM drift. Unit
+  tests are automatically marked and can run without PostgreSQL or Docker. Pre-existing `ty`
+  diagnostics were also cleared so the gate is reachable in job order, and passing `deptry` analysis
+  now runs in the backend job. Superseded branch/PR runs are cancelled, workflow files are linted by
+  pinned actionlint tooling, and the frontend job checks high-signal dead files and dependency
+  mistakes with Knip. It also builds the complete production Node/Caddy image from the allowlisted
+  root context and reuses BuildKit layers through the GitHub Actions cache. Still open:
+  prior-version upgrades, contracts, coverage, browser/a11y, backend-production-image/Compose,
+  dependency/SAST/secret/image scanning, SBOMs, and release signing.
 
 ### 33. Move migrations out of application startup
 
@@ -613,6 +677,11 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Pin image/tool digests, align Node versions, add a restrictive root `.dockerignore`, and run dedicated non-root users. Apply read-only filesystems, controlled tmpfs, dropped capabilities, `no-new-privileges`, and tested CPU/memory/PID limits.
 - **Effort / Risk** — Medium / Medium; Caddy/Python write paths must be enumerated.
 - **Impact** — Reduces supply-chain variance, build-context exposure, and container compromise blast radius.
+- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). The frontend
+  production build now uses Node 22, matching CI, and the root `.dockerignore` allowlists only the
+  frontend source and production Caddyfile while excluding dependencies, build output, and env
+  files. Still open: pin base/tool images by digest, run as non-root, and apply/test read-only
+  filesystems, tmpfs, capability, privilege, and resource limits.
 
 ### 37. Add readiness, database lifecycle controls, and observability
 
@@ -621,6 +690,11 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Split `/health/live` and bounded `/health/ready` (`SELECT 1` plus optional Alembic revision); configure pool size/overflow/pre-ping/recycle/connect/statement/lock timeouts and lifespan disposal. Emit structured request, error, pool, query, auth, and SSE metrics with correlation IDs.
 - **Effort / Risk** — Medium / Low after load testing.
 - **Impact** — Accurate deployments and enough telemetry to diagnose/tune failures.
+- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). SQLAlchemy now
+  pre-pings pooled connections before checkout and the FastAPI lifespan disposes the engine during
+  shutdown, with a focused lifecycle test. Still open: split live/ready probes with a bounded DB
+  check, explicitly size/time-bound the pool and statements, and add request IDs, structured fields,
+  metrics, and slow-query visibility.
 
 ### 38. Bound collection APIs and retained rows
 
@@ -732,6 +806,16 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Lazy-load route modules with Suspense and preload authenticated destinations after login. Remove dead files/types/tables, or explicitly complete reminder CRUD/scheduling/delivery before retaining that schema. Verify bundles with a size budget.
 - **Effort / Risk** — Small-Medium / Low for code splitting/cleanup; reminder implementation would be Large.
 - **Impact** — Faster startup and less maintenance ambiguity.
+- **Disposition** — ◐ Partially done 2026-07-19 (working tree; commit SHA pending). Protected pages
+  now load through route-level `React.lazy` boundaries while public authentication routes stay in
+  the entry bundle. The production main JS chunk fell from 526.01 kB (151.69 kB gzip) to 310.46 kB
+  (94.46 kB gzip), clearing Vite's 500 kB warning. The deprecated `@types/react-grid-layout` stub was
+  also removed because `react-grid-layout` ships its own declarations. The two confirmed unused
+  alternative components and empty starter `App.css` were deleted. A scoped Knip CI gate now catches
+  unreachable files plus unused, unlisted, and unresolved dependencies without treating every
+  exported symbol as dead; it immediately identified `react-resizable` as an undeclared direct
+  dependency, which is now explicit. Still open: remove the dead calendar-reminder schema and
+  obsolete membership event variants (or complete their missing features explicitly).
 
 ### 42. Clean up documentation, transient UI state, and small correctness traps
 
@@ -740,22 +824,30 @@ before implementing the finding; anything not listed verified as written, modulo
 - **Proposal** — Rewrite architecture/user docs around the implemented visibility model; persist only `sidebarCollapsed`; queue or explicitly reject concurrent confirms and resolve them on unmount/logout; log token-free local email guidance rather than raw bearer URLs. Also replace mutable-looking Pydantic collection defaults with factories and remove unused async/parameters such as `backend/app/routers/dashboards.py:267-274`.
 - **Effort / Risk** — Small / Low.
 - **Impact** — Improves onboarding and removes several low-cost state, security, and maintenance hazards.
-- **Disposition** — ◐ Partially done 2026-07-16 (`3b45f1e`, `9c7f148`): documentation sub-items (README/CONTEXT.md group claims, stale PLAN.md) fixed by the docs overhaul. Still open: `ui.ts` persisted mobile overlay, `confirm.ts` concurrent-confirm overwrite, `email.py` bearer-URL logging, unused async/params; Pydantic-defaults sub-item downgraded to cosmetic (v2 deep-copies defaults).
+- **Disposition** — ◐ Partially done 2026-07-16 (`3b45f1e`, `9c7f148`): documentation sub-items
+  (README/CONTEXT.md group claims, stale PLAN.md) fixed by the docs overhaul. **Transient-state slice
+  2026-07-19** (working tree; commit SHA pending): persistence now writes only `sidebarCollapsed` and
+  ignores legacy stored `mobileSidebarOpen`; a concurrent confirmation resolves false without
+  replacing the active resolver; authentication-boundary resets resolve the active confirmation
+  false; component unmount does the same; and the unused async/database plumbing around dashboard-
+  audience calculation is gone. The only functional item still open is replacing raw bearer-URL
+  development logging while preserving a usable local flow; Pydantic-defaults remains cosmetic
+  (v2 deep-copies defaults).
 
-## Top 10 highest-leverage
+## Current highest-leverage open work — 2026-07-19
 
 | Rank | Improvement | Primary gain | Effort | Risk |
 |---:|---|---|---|---|
-| 1 | Reset dashboard state on auth changes | Cross-account privacy and correctness | Medium | Medium |
-| 2 | Fix dashboard deletion ownership/cascades | Data lifecycle integrity | Medium | Medium |
-| 3 | Disallow verification-token session replay | Authentication security | Small | Low |
-| 4 | Check DELETE response status | Client/server correctness | Small | Low |
-| 5 | Reject empty PATCH mutations | Authorization and audit integrity | Small | Low |
-| 6 | Atomically consume refresh/reset tokens | Session security under concurrency | Medium | Medium |
-| 7 | Revoke sessions on password change | Stolen-session containment | Medium | Medium |
-| 8 | Expire and correctly close SSE streams | Authorization and resource safety | Medium | Medium |
-| 9 | Separate responsive and canonical layouts | Prevent user layout loss | Medium | Medium |
-| 10 | Standardize mutation failure contracts | Honest, recoverable UX | Medium | Medium |
+| 1 | #9 Separate responsive and canonical layouts | Prevent user layout loss | Medium | Medium |
+| 2 | #11 Serialize and coalesce layout saves | Prevent self-created conflicts/lost edits | Medium | Medium |
+| 3 | #10 Standardize mutation failure contracts | Honest, recoverable UX | Medium | Medium |
+| 4 | #19 Finish atomic share writes | Authorization-data integrity | Medium | Medium |
+| 5 | #30 Enforce remaining domain invariants | Prevent invalid persisted state | Medium | Medium |
+| 6 | #37 Add readiness and DB lifecycle controls | Reliable deploys and diagnosis | Medium | Low-Medium |
+| 7 | #12 Invalidate date-dependent data at midnight | Trustworthy always-on dashboards | Medium | Low-Medium |
+| 8 | #29 Add dashboard/widget indexes and uniqueness | Core-query speed and widget integrity | Small | Low |
+| 9 | #22/#38 Paginate retained user history | Correct, bounded notification/activity history | Medium | Medium |
+| 10 | #36 Finish production container hardening | Reduce supply-chain and runtime blast radius | Medium | Medium |
 
 ---
 

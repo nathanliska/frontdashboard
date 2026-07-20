@@ -41,10 +41,13 @@ soft-delete state, keeping the handler's existing cleanup choreography. Chosen o
 - Dashboard deletion already *deliberately* owns child cleanup — the handler's own comment says
   future dashboard-owned tables should be swept here by `dashboard_id`. App-managed cleanup is the
   established pattern, not a workaround.
-- Tests build the schema from `Base.metadata.create_all` on the models, **not** migrations
-  (`backend/CLAUDE.md`). A model-level cascade would make `create_all` tests pass while masking a
-  mistake in the hand-written migration — exactly the #20 drift hazard. The app-level fix sidesteps
-  the whole class.
+- ~~Tests build the schema from `Base.metadata.create_all` on the models, **not** migrations, so a
+  model-level cascade would make tests pass while masking a mistake in the hand-written migration —
+  the #20 drift hazard.~~ **Superseded 2026-07-18:** the test harness now builds its schema with
+  `alembic upgrade head` and `tests/test_migrations.py` fails on ORM↔migration drift, so a model
+  cascade would no longer hide a bad migration. This argument no longer applies; the decision stands
+  on the point above (deletion already deliberately owns child cleanup), and the shipped fix is
+  unaffected. Recorded rather than deleted so the reasoning history stays honest.
 
 ## Change
 

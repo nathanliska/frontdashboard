@@ -9,6 +9,7 @@ from app.models.activity import ActivityEvent
 from app.models.calendar import CalendarEvent
 from app.models.dashboard import Dashboard
 from app.models.list import List, ListItem
+from app.models.user import User
 from tests.helpers import (
     create_calendar_event,
     create_dashboard,
@@ -69,6 +70,70 @@ async def test_default_dashboard_listing_and_shared_access(auth_client: AsyncCli
         await owner.__aexit__(None, None, None)
 
 
+async def test_dashboard_share_targets_must_be_active_verified_users(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    dashboard = await create_dashboard(auth_client)
+    owner = await current_user(auth_client)
+    unverified = User(email="unverified-share@example.com", password_hash="x", display_name="Unverified")
+    deleted = User(
+        email="deleted-share@example.com",
+        password_hash="x",
+        display_name="Deleted",
+        email_verified_at=datetime.now(UTC),
+        deleted_at=datetime.now(UTC),
+    )
+    db_session.add_all([unverified, deleted])
+    await db_session.flush()
+
+    for target_id in (owner["id"], str(uuid.uuid4()), str(unverified.id), str(deleted.id)):
+        set_csrf(auth_client)
+        response = await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/shares",
+            json={"principal_type": "user", "principal_id": target_id, "role": "viewer"},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Share targets must be active verified users other than the owner"
+
+
+async def test_dashboard_initial_shares_validate_targets(auth_client: AsyncClient) -> None:
+    set_csrf(auth_client)
+    response = await auth_client.post(
+        "/api/dashboards",
+        json={
+            "name": "Invalid Shared Board",
+            "shares": [
+                {
+                    "principal_type": "user",
+                    "principal_id": str(uuid.uuid4()),
+                    "role": "viewer",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+async def test_dashboard_initial_shares_reject_duplicate_targets(auth_client: AsyncClient) -> None:
+    target_id = str(uuid.uuid4())
+    set_csrf(auth_client)
+    response = await auth_client.post(
+        "/api/dashboards",
+        json={
+            "name": "Duplicate Shares",
+            "shares": [
+                {"principal_type": "user", "principal_id": target_id, "role": "viewer"},
+                {"principal_type": "user", "principal_id": target_id, "role": "editor"},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Duplicate share targets are not allowed" in str(response.json()["detail"])
+
+
 async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Planning")
 
@@ -100,6 +165,37 @@ async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> Non
     )
     assert conflict_resp.status_code == 409
     assert "Version conflict" in conflict_resp.json()["detail"]
+
+
+async def test_dashboard_names_are_trimmed_and_bounded(auth_client: AsyncClient) -> None:
+    set_csrf(auth_client)
+    created = await auth_client.post("/api/dashboards", json={"name": "  Planning  "})
+    assert created.status_code == 201
+    assert created.json()["name"] == "Planning"
+
+    dashboard_id = created.json()["id"]
+    set_csrf(auth_client)
+    renamed = await auth_client.patch(f"/api/dashboards/{dashboard_id}", json={"name": "  Renamed  "})
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "Renamed"
+
+    set_csrf(auth_client)
+    assert (await auth_client.post("/api/dashboards", json={"name": "   "})).status_code == 422
+    assert (await auth_client.post("/api/dashboards", json={"name": "x" * 101})).status_code == 422
+    assert (await auth_client.patch(f"/api/dashboards/{dashboard_id}", json={"name": None})).status_code == 422
+
+
+async def test_client_mutation_id_header_is_bounded(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client)
+
+    set_csrf(auth_client)
+    resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}",
+        json={"name": "Renamed"},
+        headers={"X-Client-Mutation-Id": "x" * 129},
+    )
+
+    assert resp.status_code == 422
 
 
 async def test_archive_dashboard_hides_and_restores_lists_and_events(auth_client: AsyncClient) -> None:

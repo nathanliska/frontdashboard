@@ -1,9 +1,11 @@
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
 
-_BASE = {
+_BASE: dict[str, Any] = {
     "_env_file": None,
     "database_url": "postgresql+asyncpg://u:p@localhost/db",
     "secret_key": "x" * 40,
@@ -11,7 +13,7 @@ _BASE = {
 }
 
 
-def _make(**overrides) -> Settings:
+def _make(**overrides: Any) -> Settings:
     return Settings(**{**_BASE, **overrides})
 
 
@@ -60,4 +62,8 @@ def test_valid_production_config_constructs() -> None:
 
 def test_environment_is_required() -> None:
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, database_url="postgresql+asyncpg://u:p@localhost/db", secret_key="x" * 40)
+        Settings(
+            _env_file=None,  # ty: ignore[unknown-argument]  # pydantic-settings runtime option
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            secret_key="x" * 40,
+        )

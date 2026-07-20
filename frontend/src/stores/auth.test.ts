@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User } from '../api/auth'
 import type { RefreshOutcome } from '../api/client'
 import { useAuthStore } from './auth'
+import { confirm } from './confirm'
 import { bumpSessionGeneration } from './sessionGeneration'
 
 const { resetCalendarData } = vi.hoisted(() => ({
@@ -150,6 +151,15 @@ describe('useAuthStore', () => {
     useAuthStore.setState({ status: 'authenticated', user })
     await useAuthStore.getState().logout()
     expect(resetDashboardData).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels an active confirmation on logout', async () => {
+    apiLogout.mockResolvedValue(undefined)
+    const pendingConfirmation = confirm('Delete this?')
+
+    await useAuthStore.getState().logout()
+
+    await expect(pendingConfirmation).resolves.toBe(false)
   })
 
   it('resets dashboard state when unauthenticated init settles', async () => {
