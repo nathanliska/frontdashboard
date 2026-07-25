@@ -1,9 +1,17 @@
 # CLAUDE.md — FrontDashboard
 
-Self-hosted household dashboard app — a private "household operating system": shared where
-coordination matters, private where personal space matters, modular in layout. Monorepo:
-`backend/` (FastAPI/Python) + `frontend/` (React/TypeScript). This file is the project memory
-for agents working in this repo.
+Self-hosted household dashboard app — a "household operating system": shared where coordination
+matters, private where personal space matters, modular in layout. Monorepo: `backend/`
+(FastAPI/Python) + `frontend/` (React/TypeScript). This file is the project memory for agents
+working in this repo.
+
+**Deployment posture — don't infer it from the domain.** The product is household-shaped; the
+deployment is not private. One instance is public on the internet with registration open to anyone
+holding a verifiable email, ~100 users and a few concurrent, on a single backend worker. So:
+scale-driven work (metrics stacks, multi-worker, fleet tooling) stays deferred, while abuse,
+enumeration and data-privacy findings get no small-deployment discount — "only a logged-in user can
+reach it" is not a mitigation when anyone can sign up. See the Scale/Exposure notes in
+[docs/TODO.md](docs/TODO.md).
 
 ## Architecture (3 layers)
 - `backend/` — Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 16.

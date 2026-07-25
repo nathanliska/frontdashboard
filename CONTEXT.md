@@ -145,10 +145,11 @@ _Last updated: 2026-07-19_
 - **Design-review remediation** (open work tracked in [docs/TODO.md](docs/TODO.md)): the
   security-first phases are done — Phase 1 (security quick wins), Phase 2 (auth/session hardening,
   incl. the 2026-07-17 follow-up security review), and Phase 3 (dashboard correctness) all shipped by
-  2026-07-20. Register enumeration is an accepted household-scale risk; the durable decisions from
+  2026-07-20. Register enumeration's acceptance rested on near-closed registration and has lapsed now
+  that signup is open — unchanged in behavior, pending re-decision (#55). The durable decisions from
   these phases are captured in the [ADRs](docs/adr/INDEX.md) / [FDRs](docs/fdr/INDEX.md). **Phases
-  4–6 (data layer & contracts, infra/CI/ops, UX & cleanup) and the unscheduled backlog remain** —
-  see [docs/TODO.md](docs/TODO.md).
+  4–6 (data layer/contracts/exposure, infra/CI/ops, UX & cleanup) and the unscheduled backlog
+  remain** — see [docs/TODO.md](docs/TODO.md).
 
 ## Deliberately deferred / known dead code
 

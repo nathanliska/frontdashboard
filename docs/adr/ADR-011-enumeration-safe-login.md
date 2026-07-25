@@ -25,8 +25,11 @@ Make login **constant-work and identical-response**:
   "unknown email" from "wrong password".
 - **Every login pays one verify**: even a login for a nonexistent account does the Argon2 work. That
   cost is intentional (it's what closes the timing channel) and is bounded by the limiter in ADR-010.
-- **Registration is a separate surface**: register-time enumeration is accepted as a deliberate
-  household-scale risk (see "Accepted risks" in [docs/TODO.md](../TODO.md)); this ADR governs
-  *login* only.
+- **Registration is a separate surface**: register-time enumeration was accepted as a deliberate
+  risk on the premise of near-closed registration; this ADR governs *login* only.
+  **2026-07-25 — that premise has lapsed:** registration is open to anyone with a verifiable email,
+  which is the condition this ADR named for revisiting. Login behavior above is unaffected and
+  stands; the registration decision is being re-taken under #55 in [docs/TODO.md](../TODO.md), and
+  this ADR will be amended or superseded by that outcome.
 - **The dummy hash must stay realistic**: it has to cost the same as a real verify, so it must be a
   genuine Argon2 hash with the same parameters — a cheap placeholder would reopen the timing channel.
