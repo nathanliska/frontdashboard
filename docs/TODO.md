@@ -29,7 +29,7 @@ and effort are noted inline where known.
 |------:|-------|---------------|
 | 4 | Data layer, contracts & exposure | #28◐, #55, #17, #22◐, #24 |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐, #32◐, #36◐, #37◐ |
-| 6 | UX & cleanup | #27, #40, #41◐, #42◐, #54 |
+| 6 | UX & cleanup | #27, #40, #42◐, #54 |
 | — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #29, #30◐, #38◐, #39, #52, #53, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
@@ -56,7 +56,6 @@ and effort are noted inline where known.
 
 - **#27 — Accessible dialog / popover / feedback / action primitives.** Dialogs duplicate incomplete focus trapping/labelling; popovers lack `aria-expanded`/Escape; Confirm always says "Delete"; toasts/errors aren't announced; card actions are hover-only. Adopt one tested Dialog/Popover primitive, parameterize label/tone, add live regions + field-linked errors, replace hover-only actions with a visible overflow menu (≥44px targets). *(Medium)*
 - **#40 — Simplify archive/delete into a recoverable lifecycle.** Lists need two-step archive-then-delete; dashboards expose archive + immediate permanent delete; row/card actions are hidden. Move to one "Move to trash" action with a trash view, restore, and retention-based purge; align dashboard/list behavior; explain dependent widgets first. *(Medium)*
-- **#41◐ — Remove dead surfaces.** Done: route-level lazy loading, knip CI gate, dead components/`App.css` removed, vestigial `membership.*` event variants removed. Remaining, all deletions: the `CalendarReminder` model + table, dead since it was written (no router, no service, no reference outside its own migration) — drop it or build reminders deliberately; the four copies of `getEventPayload` and the `typeof payload?.x === 'string'` guards in `listData`/`calendarData`/`agendaData`/`dashboard.ts`, ~50 lines that boundary validation now makes provably unreachable; and the main chunk, **376 kB / 109 kB gzip**, up from 311 kB when response validation landed — the generated types are free, the 14.5 kB is zod, and dropping to types-without-runtime is a one-flag change if the bundle ever matters more than the guarantee. *(Small)*
 - **#42◐ — Small correctness traps.** Done: docs rewritten, persistence writes only `sidebarCollapsed`, concurrent-confirm + unmount/boundary resolution, dead audience plumbing removed. Remaining: replace raw bearer-URL dev logging while keeping a usable local token flow. *(Small)*
 - **#54 — Consolidate the test suite.** 6,594 frontend + 4,676 backend test lines against 12,230 + 6,394 source lines, and the excess is duplication rather than coverage: `makeListDetail`, `makeListItem` and `makeSummary` are each redefined in five files; `vi.mock('../stores/toast')` appears in five, `vi.mock('../resources/listData')` in five, `vi.mock('../api/lists')` in four. List reorder alone spans five files and ~1,414 lines — `ListsLayout.reorder.test.tsx` (206) and `ListDetailPage.reorder.test.tsx` (160) assert the same drag-handle-visibility predicate through full jsdom renders behind ~70 lines of mock scaffolding each, and the lists/items halves of `listData.reorder.test.tsx` are the same eight cases twice. Add shared fixtures + mock helpers, make mirrored cases table-driven, and assert predicates directly instead of through a rendered page — keeping every behavior currently covered. *(Medium)*
 
@@ -69,7 +68,7 @@ and effort are noted inline where known.
 - **#25 — Remove avoidable access/query N+1s.** Dashboard access invokes irrelevant inherited-resource discovery; per-notification refresh; per-child share-cleanup loop. Add an owner-or-share `EXISTS` access query, one flush/RETURNING path, set-based cleanup. *(Medium)*
 - **#26 — Standardize API errors + visible recovery states.** Integrity/FK races surface as generic 500s, and outages render as "No events" / zero unread instead of something the user can retry. Translate the narrow `IntegrityError`s and render explicit retryable states. *(Small-Medium)*
 - **#29 — Indexes for real dashboard/widget paths.** `dashboards.user_id` is unindexed since the one-per-user index was dropped; widget reverse lookups aren't indexed; resource-widget uniqueness relies on read-before-insert. Add `(user_id, archived, updated_at)`, `(resource_type, resource_id, dashboard_id)`, and a partial unique constraint — cheap, do it with the next migration. *(Small)*
-- **#30◐ — Remaining domain invariants in Postgres.** Done: nonnegative `sort_order` CHECKs. Remaining: widget-resource paired-field constraints and calendar-override occurrence-membership. (The reminder-offset constraint dies with #41's `CalendarReminder`.) *(Small-Medium)*
+- **#30◐ — Remaining domain invariants in Postgres.** Done: nonnegative `sort_order` CHECKs. Remaining: widget-resource paired-field constraints and calendar-override occurrence-membership. (The `minutes_before` constraint lands with the reminders feature itself — see FDR-006.) *(Small-Medium)*
 - **#38◐ — Bound retained rows.** Done: scheduled advisory-locked reaper prunes expired tokens + idle sessions. Remaining: an `activity_events` retention horizon — that table grows forever. Collection pagination is #22's cursor. *(Small)*
 - **#39 — Extract use cases from the dashboard router.** 1,139 lines coupling validation, authz, persistence, activity, notification and SSE, repeating the same transaction/broadcast dance in every handler. Worth doing as the deletion it implies — one unit of work + staged outbox, routers as thin adapters — not as a speculative layer. *(Large)*
 - **#52 — SSE overflow eviction is attacker-inducible (Low).** A co-member driving >256 rapid mutations can pin a victim in a reconnect/resync/refetch loop. Stays low even under open registration: it isn't a silent deafen, and reaching a victim requires being *invited* to a dashboard they share (invites are by exact email), so a stranger who signs up cannot trigger it. Coalesce evictions into a single resync and cap resyncs per connection if it ever shows up in practice. *(Medium)*
@@ -93,6 +92,10 @@ weight, so the reasoning survives and nothing here has to be re-derived later.
 - **Container hardening beyond non-root + digest pinning** (read-only fs, tmpfs, dropped caps,
   `no-new-privileges`, resource/PID limits) — when the origin is reachable outside the Cloudflare
   Tunnel, or when it runs untrusted workloads.
+- **Dropping runtime response validation** — the generated types are free; the runtime half is
+  ~14.5 kB gzip of the main chunk (376 kB / 109 kB gzip, up from 311 kB). Revisit if bundle size
+  ever outweighs the guarantee — generating types without a runtime is a one-flag change
+  ([ADR-018](adr/ADR-018-generated-validated-contracts.md)).
 - **Multi-worker / horizontal scale** — see #21/#45. Needs an SSE backplane first; the DB pool and
   Argon2 limiter (#37) are the ceilings that bind before process count does.
 

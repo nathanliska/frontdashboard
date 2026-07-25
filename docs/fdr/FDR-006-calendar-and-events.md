@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-25
 
 ## Overview
 
@@ -59,8 +59,15 @@ Events inherit access from the dashboard whose widget binds them (owner / editor
 
 ## Open Questions
 
-- The `CalendarReminder` model/table exists with no router/service usage — vestigial, awaiting a
-  decision when calendar work resumes (CONTEXT.md "Deliberately deferred").
+- **Reminders are unbuilt, and the schema for them is kept on purpose (decided 2026-07-25).** The
+  `CalendarReminder` table — `calendar_event_id` + `minutes_before`, cascading on event delete — has
+  no router, service or reader, and nothing has ever written a row to it. It is reserved for a
+  future "notify me N minutes before" feature, not leftover from a removed one, so leave it in place
+  rather than re-flagging it as dead code. Building it needs a scheduler, notification delivery,
+  per-user opt-in and timezone handling — none of which exist. Its `minutes_before` CHECK constraint
+  (#30) lands with the feature, not before.
+- Not to be confused with the agenda widget's **list reminders**, which are list items carrying a due
+  date and have nothing to do with this table. See [FDR-005](FDR-005-lists.md).
 
 ## Related
 

@@ -155,7 +155,8 @@ _Last updated: 2026-07-19_
 
 - Remediation backlog (Phases 4–6 + unscheduled triage) — tracked in [docs/TODO.md](docs/TODO.md),
   not here.
-- `CalendarReminder` model + table exist with **no** router/service usage (vestigial; slated
-  for a decision when calendar work resumes).
+- `CalendarReminder` model + table exist with **no** router/service usage — reserved schema for a
+  future "notify me N minutes before" feature, kept deliberately (see
+  [FDR-006](docs/fdr/FDR-006-calendar-and-events.md)), not dead code to remove.
 - Share principal types other than `user`, and share roles beyond viewer/editor, are
   intentionally not built.

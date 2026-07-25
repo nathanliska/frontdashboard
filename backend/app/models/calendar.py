@@ -67,6 +67,14 @@ class CalendarEventOverride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class CalendarReminder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Reserved schema for a not-yet-built "notify me N minutes before" feature.
+
+    Deliberately has no router, service or reader, and nothing writes to it — kept rather than
+    dropped (decided 2026-07-25, see FDR-006). Don't remove it as dead code; delivering it needs a
+    scheduler, notification delivery, per-user opt-in and timezone handling first. Unrelated to the
+    agenda widget's "reminders", which are list items with a due date.
+    """
+
     __tablename__ = "calendar_reminders"
     __table_args__ = (
         UniqueConstraint("calendar_event_id", "minutes_before", name="uq_calendar_reminders_event_offset"),
