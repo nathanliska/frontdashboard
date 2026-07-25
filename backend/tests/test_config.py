@@ -60,7 +60,11 @@ def test_valid_production_config_constructs() -> None:
     assert settings.environment.value == "production"
 
 
-def test_environment_is_required() -> None:
+def test_environment_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `_env_file=None` only ignores .env — pydantic-settings still reads the process
+    # environment, and CI exports ENVIRONMENT for the app's own sake. Clear it here or this
+    # test silently asserts nothing locally and fails on the runner.
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
     with pytest.raises(ValidationError):
         Settings(
             _env_file=None,  # ty: ignore[unknown-argument]  # pydantic-settings runtime option
