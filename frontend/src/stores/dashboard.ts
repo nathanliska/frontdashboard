@@ -114,23 +114,16 @@ function scheduleSummariesRefresh(run: () => Promise<void>): Promise<void> {
   return scheduledSummariesRefreshPromise
 }
 
-function getEventPayload(event: SseEvent): Record<string, unknown> | undefined {
-  return event.payload && typeof event.payload === 'object' ? event.payload : undefined
-}
-
 function getEventDashboardId(event: SseEvent): string | null {
   if (event.entity_type === 'dashboard') {
     return event.entity_id
   }
 
-  const payload = getEventPayload(event)
-  return typeof payload?.dashboard_id === 'string' ? payload.dashboard_id : null
+  return event.payload.dashboard_id ?? null
 }
 
 function getDashboardEventChangedFields(event: SseEvent): string[] {
-  const payload = getEventPayload(event)
-  if (!Array.isArray(payload?.changed_fields)) return []
-  return payload.changed_fields.filter((value): value is string => typeof value === 'string')
+  return event.payload.changed_fields ?? []
 }
 
 function isDashboardShareEvent(event: SseEvent): boolean {
@@ -142,8 +135,7 @@ function isDashboardShareEvent(event: SseEvent): boolean {
 }
 
 function getDashboardEventClientMutationId(event: SseEvent): string | null {
-  const payload = getEventPayload(event)
-  return typeof payload?.client_mutation_id === 'string' ? payload.client_mutation_id : null
+  return event.payload.client_mutation_id ?? null
 }
 
 function isLayoutOnlyDashboardEvent(event: SseEvent): boolean {

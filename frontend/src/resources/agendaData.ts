@@ -48,13 +48,8 @@ const agendaRemindersQuery = createScopedQuery<AgendaScope, AgendaItem[]>({
   fallbackErrorMessage: 'Failed to load agenda.',
 })
 
-function getEventPayload(event: SseEvent): Record<string, unknown> | null {
-  return event.payload && typeof event.payload === 'object' ? event.payload : null
-}
-
 function getDashboardId(event: SseEvent): string | null {
-  const payload = getEventPayload(event)
-  return typeof payload?.dashboard_id === 'string' ? payload.dashboard_id : null
+  return event.payload.dashboard_id ?? null
 }
 
 function compareAgendaItems(a: AgendaItem, b: AgendaItem): number {

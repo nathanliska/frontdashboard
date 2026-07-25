@@ -62,13 +62,8 @@ function orderByIds<T extends { id: string }>(rows: T[], orderedIds: string[]): 
   return next
 }
 
-function getEventPayload(event: SseEvent): Record<string, unknown> | null {
-  return event.payload && typeof event.payload === 'object' ? event.payload : null
-}
-
 function getEventDashboardId(event: SseEvent): string | null {
-  const payload = getEventPayload(event)
-  return typeof payload?.dashboard_id === 'string' ? payload.dashboard_id : null
+  return event.payload.dashboard_id ?? null
 }
 
 function getAffectedListId(event: SseEvent): string | null {
@@ -76,13 +71,11 @@ function getAffectedListId(event: SseEvent): string | null {
     return event.entity_id
   }
 
-  const payload = getEventPayload(event)
-  return typeof payload?.list_id === 'string' ? payload.list_id : null
+  return event.payload.list_id ?? null
 }
 
 function getListEventClientMutationId(event: SseEvent): string | null {
-  const payload = getEventPayload(event)
-  return typeof payload?.client_mutation_id === 'string' ? payload.client_mutation_id : null
+  return event.payload.client_mutation_id ?? null
 }
 
 function consumePendingListMutationEcho(event: SseEvent): boolean {
@@ -415,12 +408,11 @@ export function handleListResourceEvent(event: ResourceEvent): void {
   }
 
   if (event.event_type === 'list.item.checked' || event.event_type === 'list.item.updated') {
-    const payload = getEventPayload(event)
-    const values = payload?.values
+    const values = event.payload.values
     const itemId = event.entity_id
     // Only patch when the event carries the new values; otherwise fall through to
     // invalidate-and-refetch so an older/unknown payload still converges.
-    if (affectedListId && values && typeof values === 'object' && !Array.isArray(values)) {
+    if (affectedListId && values) {
       // If the cache has no data yet (never loaded, still in flight, or the last fetch
       // errored), there is nothing to patch — treat that as divergence up front rather than
       // letting patchListDetailById's `if (!state.data) return state` guard silently no-op
@@ -436,9 +428,7 @@ export function handleListResourceEvent(event: ResourceEvent): void {
           return {
             ...detail,
             items: detail.items.map((item) =>
-              item.id === itemId
-                ? { ...item, ...pickPatchableItemFields(values as Record<string, unknown>) }
-                : item,
+              item.id === itemId ? { ...item, ...pickPatchableItemFields(values) } : item,
             ),
           }
         })
@@ -454,8 +444,7 @@ export function handleListResourceEvent(event: ResourceEvent): void {
   }
 
   if (event.event_type === 'list.item.reordered') {
-    const payload = getEventPayload(event)
-    const itemIds = Array.isArray(payload?.item_ids) ? (payload.item_ids as string[]) : null
+    const itemIds = event.payload.item_ids ?? null
     if (affectedListId && itemIds) {
       // Same absent-cache hole as the item-update branch above: no data means nothing to
       // patch, and patchListDetailById's no-op guard would otherwise swallow the event.
@@ -476,8 +465,7 @@ export function handleListResourceEvent(event: ResourceEvent): void {
   }
 
   if (event.event_type === 'list.reordered') {
-    const payload = getEventPayload(event)
-    const listIds = Array.isArray(payload?.list_ids) ? (payload.list_ids as string[]) : null
+    const listIds = event.payload.list_ids ?? null
     if (dashboardId && listIds) {
       // Same absent-cache hole: if the summaries cache has no data yet, updateWhere's
       // `if (!state.data) return state` guard would otherwise no-op the updater and this
