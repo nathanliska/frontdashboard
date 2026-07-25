@@ -1,31 +1,19 @@
 import { apiFetch } from './client'
-import { readError } from './http'
+import { RegistrationResponse, type UserPreferences, UserResponse } from './generated/contract'
+import { parseJson, readError } from './http'
 
+export type { RegistrationResponse, UserPreferences } from './generated/contract'
 export { ApiError } from './http'
 
-export interface UserPreferences {
-  home_dashboard_id?: string | null
-  favorite_dashboard_ids?: string[]
-}
-
-export interface User {
-  id: string
-  email: string
-  display_name: string
-  preferences: UserPreferences
-  email_verified_at?: string | null
-}
-
-export interface RegistrationResponse {
-  email: string
-}
+// Generated `UserResponse` re-exported under the name consumers already import.
+export type User = UserResponse
 
 // Plain fetch — no refresh loop; caller decides what to do on 401
 export async function apiGetMe(): Promise<User | null> {
   try {
     const res = await fetch('/api/auth/me', { credentials: 'include' })
     if (!res.ok) return null
-    return res.json() as Promise<User>
+    return parseJson(res, UserResponse)
   } catch {
     return null
   }
@@ -44,7 +32,7 @@ export async function apiLogin(email: string, password: string): Promise<User> {
   if (!res.ok) {
     throw await readError(res, 'Login failed')
   }
-  return res.json() as Promise<User>
+  return parseJson(res, UserResponse)
 }
 
 // Register doesn't require auth, so no CSRF cookie yet — use plain fetch
@@ -62,7 +50,7 @@ export async function apiRegister(
   if (!res.ok) {
     throw await readError(res, 'Registration failed')
   }
-  return res.json() as Promise<RegistrationResponse>
+  return parseJson(res, RegistrationResponse)
 }
 
 export async function apiVerifyEmail(token: string): Promise<User> {
@@ -73,7 +61,7 @@ export async function apiVerifyEmail(token: string): Promise<User> {
     body: JSON.stringify({ token }),
   })
   if (!res.ok) throw await readError(res, 'Email verification failed')
-  return res.json() as Promise<User>
+  return parseJson(res, UserResponse)
 }
 
 export async function apiResendVerification(email: string): Promise<void> {
@@ -116,7 +104,7 @@ export async function apiUpdatePreferences(prefs: UserPreferences): Promise<User
     body: JSON.stringify(prefs),
   })
   if (!res.ok) throw await readError(res, 'Failed to update preferences')
-  return res.json() as Promise<User>
+  return parseJson(res, UserResponse)
 }
 
 export async function apiUpdateProfile(input: { display_name?: string }): Promise<User> {
@@ -125,7 +113,7 @@ export async function apiUpdateProfile(input: { display_name?: string }): Promis
     body: JSON.stringify(input),
   })
   if (!res.ok) throw await readError(res, 'Failed to update profile')
-  return res.json() as Promise<User>
+  return parseJson(res, UserResponse)
 }
 
 export async function apiChangePassword(input: {

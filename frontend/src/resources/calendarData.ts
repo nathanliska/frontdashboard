@@ -10,7 +10,7 @@ import {
   type CreateCalendarEventInput,
   type UpdateCalendarEventInput,
 } from '../api/calendar'
-import type { SseEvent } from '../hooks/useSSE'
+import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { toast } from '../stores/toast'
 import { createScopedQuery } from './scopedQuery'
 
@@ -142,7 +142,7 @@ export async function deleteCalendarEvent(
   }
 }
 
-export function handleCalendarResourceEvent(event: SseEvent): void {
+export function handleCalendarResourceEvent(event: ResourceEvent): void {
   if (event.event_type === 'resync') {
     calendarOccurrencesQuery.invalidateWhere(() => true)
     calendarEventDetails.clear()

@@ -16,7 +16,7 @@ and effort are noted inline where known.
 
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
-| 4 | Data layer & contracts | #16, #17, #22◐, #23, #24 |
+| 4 | Data layer & contracts | #16, #17, #22◐, #24 |
 | 5 | Infra / CI / ops | #20◐, #32◐, #33, #34, #35, #36◐, #37◐ |
 | 6 | UX & cleanup | #27, #40, #41◐, #42◐ |
 | — | Backlog (unscheduled) | #14◐, #18, #19◐, #21, #25, #26, #28◐, #29, #30◐, #38◐, #39, #45 (deferred), #52, #53 |
@@ -28,13 +28,12 @@ and effort are noted inline where known.
 - **#16 — Make calendar work proportional to the requested window.** A window request loads every active event for every accessible dashboard, expands recurrence in Python, and sorts globally; monthly/yearly rules iterate from series start. Split recurring/non-recurring SQL, add indexes + persisted recurrence bounds, window-filter overrides, consider an RFC 5545 library. *(Large)*
 - **#17 — Replace the agenda's client-side 1+N request fan-out.** Agenda loads list summaries then one detail request per active list. Add a dashboard-scoped agenda/reminder endpoint (or batch list-detail), cached by dashboard + window. *(Medium-Large)*
 - **#22◐ — Notification counts / dedup / pagination.** Done: capped page no longer overwrites the authoritative unread total; duplicate SSE ids ignored; read-decrement fixed. Remaining: cursor envelopes / load-more for notifications and activity, and durable dedup across reconnects when an id isn't retained client-side. *(Medium)*
-- **#23 — Generate & validate frontend API/event contracts.** `res.json() as ...` casts, hand-duplicated DTOs, `Record<string, unknown>` widget config, stringly-typed SSE names. Generate types from OpenAPI, validate at network boundaries, model widgets/SSE as discriminated unions, fail CI on client drift. *(Medium-Large)*
 - **#24 — Consolidate server state on a lifecycle-aware query layer.** The custom scoped-query caches never evict until logout and lack stale/gc/cancel/retry/focus-refresh; window navigation accumulates map entries. Either migrate to TanStack Query or implement those lifecycle guarantees explicitly. Keep Zustand for UI state. *(Large)*
 
 ## Phase 5 — Infra / CI / ops
 
 - **#20◐ — Test against Alembic's deployed schema.** Done: shared fixture upgrades through the full chain, a test runs `alembic check` + heads check, `create_all` gone, notification FK reconciled. Remaining: an upgrade test from a supported prior data snapshot. *(Medium)*
-- **#32◐ — Expand CI gates.** Done: migrated-schema tests, deptry, actionlint, knip, run cancellation, prod frontend image build. Remaining: prior-version upgrade test, contract/coverage gates, browser/a11y (Playwright + axe), backend-prod-image/Compose validation, dependency/SAST/secret/image scanning, SBOMs, release signing. *(Medium-Large)*
+- **#32◐ — Expand CI gates.** Done: migrated-schema tests, deptry, actionlint, knip, run cancellation, prod frontend image build, contract-drift job, a frontend type check that actually type-checks (`tsc --build`; the old `--noEmit` invocation against the solution-style root config silently passed). Remaining: prior-version upgrade test, contract/coverage gates, browser/a11y (Playwright + axe), backend-prod-image/Compose validation, dependency/SAST/secret/image scanning, SBOMs, release signing. *(Medium-Large)*
 - **#33 — Move migrations out of application startup.** Every API container runs `alembic upgrade head` before serving. Run an explicit one-shot migration stage under an advisory lock with preflight + backup gate; adopt expand/migrate/contract. *(Medium)*
 - **#34 — Publish atomic, immutable releases.** Two images default to mutable `latest`; a partial push can deploy mismatched front/back. Build both in CI, tag by release/SHA + digest, deploy one pinned manifest after checks, add smoke checks + rollback. *(Medium)*
 - **#35 — Define & test backup/restore for self-hosters.** No backup/retention/restore-test/preflight despite irreversible, data-deleting migrations. Automate pre-migration backups, encrypted off-host retention, restore drills; gate destructive migrations on a verified backup. *(Medium)*
@@ -50,7 +49,7 @@ and effort are noted inline where known.
 
 ## Backlog (unscheduled)
 
-- **#14◐ — Boundary input validation.** Done: reorder DTOs, display-name bounds, dashboard name/mutation-id bounds, forbid-unknown on create/profile/preference. Remaining: typed layout/widget-config models, stronger field typing, request-body size bound. *(Medium)*
+- **#14◐ — Boundary input validation.** Done: reorder DTOs, display-name bounds, dashboard name/mutation-id bounds, forbid-unknown on create/profile/preference. Remaining: typed layout models (widget *response* config is typed per widget type as of [ADR-018](adr/ADR-018-generated-validated-contracts.md); `WidgetCreate.config`/`layout` are still `dict[str, Any]`, so the client hand-authors the layout item schema), stronger field typing, request-body size bound. *(Medium)*
 - **#18 — Commit to one visibility model, schema-enforce it.** A polymorphic share table + hundreds of lines still model direct list/event shares though runtime visibility is dashboard-owned. Either replace with `dashboard_shares(dashboard_id, user_id, role)` + cascading FKs and remove child-share code, or build a single typed policy engine. Depends on the sharing decision in [ADR-001](adr/ADR-001-per-resource-sharing.md). *(Large)*
 - **#19◐ — Validate share targets, atomic upserts.** Done: reject self / nonexistent / deleted / unverified targets; duplicate initial targets rejected at the schema. Remaining: replace read-before-insert with `INSERT … ON CONFLICT`, add user/dashboard FKs (via #18). *(Medium)*
 - **#21 — Durable, multi-process SSE delivery.** The manager singleton only reaches clients in the mutating process; a crash after commit loses delivery, workers split streams, reconnect ignores a persisted cursor. Transactional outbox + Redis/Postgres pub/sub, durable event ids, replay after `Last-Event-ID`. Overlaps #45. *(Large)*

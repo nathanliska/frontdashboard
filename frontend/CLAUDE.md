@@ -23,6 +23,24 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 - Any new resource cache needs a `resetXData()` wired into `stores/auth.ts` logout/failed-init,
   or stale data leaks across accounts.
 
+## API contract: generated, never hand-written
+- Request/response/SSE types come from `api/generated/contract.ts`, generated from the backend's
+  OpenAPI document by `make contracts` (repo root) and committed. **Never hand-write a DTO and
+  never edit the generated file** — change the Pydantic model, rerun `make contracts`. CI
+  regenerates and fails on any diff (ADR-018).
+- **Every success body is validated**: `return parseJson(res, Schema)`, not `res.json() as T`. A
+  shape that doesn't match raises `ApiError` and surfaces as a toast.
+- If the frontend must react to a shape, it has to be in OpenAPI — that includes SSE frames
+  (registered as models in `app/schemas/sse.py` purely so they appear in `components.schemas`)
+  and endpoints that would otherwise return a bare dict.
+- `EVENT_ROUTES` in `hooks/useSSE.ts` is a total `Record<EventType, …>` and `WidgetRenderer`'s
+  switch is exhaustive — a new backend event/widget type fails the type check there rather than
+  silently never reaching a cache. **`npm run typecheck` is `tsc --build`**; plain `tsc --noEmit`
+  checks nothing here (the root tsconfig is a solution file) and `vite build` is transpile-only.
+- Two generator seams, both documented at their definitions: the exporter widens `const` to a
+  one-member `enum` (else discriminators degrade to `z.string()`), and `SseEventSchema` re-opens
+  `payload` (the backend model is `extra="allow"`; validation would otherwise strip keys).
+
 ## Network and errors
 - `apiFetch` (`api/client.ts`) is the **only** network entry for `/api` — it sets the CSRF
   header, includes credentials, and does single-flight 401 refresh + retry (redirecting to
@@ -39,10 +57,13 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 - `loadDashboard`/`loadSummaries` carry hand-rolled in-flight/serial/debounce machinery to
   coalesce SSE-triggered refetches; background loads pass `{ background: true }` and only
   surface access loss on real 403/404. Tread carefully.
-- **Adding a widget type touches at least:** `WidgetType` in
-  `utils/dashboard/widgetCreationTypes.ts`, a `case` in
-  `components/dashboard/WidgetRenderer.tsx`, an entry in `widgets/AddWidgetTypeStep.tsx`
-  (+ a picker step if it binds a resource), plus resource fetching/SSE wiring.
+- **Adding a widget type starts in the backend**: a `XWidgetConfig`/`XWidgetResponse` pair in
+  `app/schemas/dashboards.py` joined to the `WidgetResponse` union, then `make contracts`. On the
+  client that lands as a new union member, and the type check then points at everything that must
+  handle it: the `switch` in `components/dashboard/WidgetRenderer.tsx` and `WIDGET_LABELS` in
+  `WidgetContainer.tsx`. Still manual: an entry in `widgets/AddWidgetTypeStep.tsx` (+ a picker step
+  if it binds a resource) and resource fetching/SSE wiring. `WidgetType` is derived from the
+  generated union — don't redeclare it.
 
 ## Tests (Vitest)
 - Default test environment is **`node`, not jsdom** — DOM/component tests must opt in per-file

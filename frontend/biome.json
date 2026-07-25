@@ -32,6 +32,17 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["src/api/generated/**"],
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
+        "enabled": false
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single",

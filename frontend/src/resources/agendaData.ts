@@ -3,7 +3,7 @@ import type { CalendarOccurrence } from '../api/calendar'
 import { apiListOccurrences } from '../api/calendar'
 import type { ListItem, ListSummary } from '../api/lists'
 import { useLocalDay } from '../hooks/useLocalDay'
-import type { SseEvent } from '../hooks/useSSE'
+import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { addDays, dateKey, startOfDay } from '../utils/calendar/calendarUtils'
 import { loadDashboardListDetails } from './listData'
 import { createScopedQuery, type ScopedQueryState } from './scopedQuery'
@@ -172,7 +172,7 @@ export function useAgendaItems(dashboardId: string | null) {
   )
 }
 
-export function handleAgendaResourceEvent(event: SseEvent): void {
+export function handleAgendaResourceEvent(event: ResourceEvent): void {
   if (event.event_type === 'resync') {
     agendaOccurrencesQuery.invalidateWhere(() => true)
     agendaRemindersQuery.invalidateWhere(() => true)

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarOccurrence } from '../../../api/calendar'
+import type { CalendarWidgetConfig } from '../../../api/dashboards'
 import { useLocalDay } from '../../../hooks/useLocalDay'
 import { useCalendarOccurrences } from '../../../resources/calendarData'
 import { useDashboardStore } from '../../../stores/dashboard'
@@ -24,14 +25,16 @@ export function CalendarWidget({
 }: {
   widgetId: string
   dashboardId: string
-  config: Record<string, unknown>
+  config: CalendarWidgetConfig
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(300)
   const [containerHeight, setContainerHeight] = useState(320)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
 
-  const requestedView = typeof config.view === 'string' ? config.view : 'month'
+  // `view` is a plain string in the contract, not a Literal union: it is read back from
+  // persisted config, so an unrecognized stored value must degrade to 'month', not 500/throw.
+  const requestedView = config.view
   const view: CalendarWidgetView =
     requestedView === 'day' || requestedView === 'week' ? requestedView : 'month'
   const dayKey = useLocalDay()

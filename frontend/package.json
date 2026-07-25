@@ -12,10 +12,11 @@
     "format": "biome format --write .",
     "audit": "npm audit",
     "audit:fix": "npm audit fix",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --build --force",
     "test": "vitest",
     "test:run": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate:contract": "typed-openapi ../backend/openapi.json -r zod --schemas-only -o ./src/api/generated/contract.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -27,6 +28,7 @@
     "react-grid-layout": "^2.2.3",
     "react-resizable": "^3.1.3",
     "react-router-dom": "^7.18.1",
+    "zod": "3.25.76",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
@@ -42,6 +44,7 @@
     "jsdom": "^29.0.2",
     "knip": "^6.27.0",
     "tailwindcss": "^4.2.2",
+    "typed-openapi": "2.2.7",
     "typescript": "~6.0.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.5"

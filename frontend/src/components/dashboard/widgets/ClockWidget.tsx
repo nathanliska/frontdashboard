@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ClockWidgetConfig } from '../../../api/dashboards'
 
 function now() {
   return new Date()
@@ -20,14 +21,13 @@ export function ClockWidget({
   config,
   isSharedDashboard,
 }: {
-  config: Record<string, unknown>
+  config: ClockWidgetConfig
   isSharedDashboard: boolean
 }) {
   const [date, setDate] = useState(now)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(300)
-  const configuredTimezone =
-    typeof config.timezone === 'string' && config.timezone ? config.timezone : undefined
+  const configuredTimezone = config.timezone || undefined
   const sharedTimezone = isSharedDashboard ? (configuredTimezone ?? 'UTC') : undefined
   const sharedLocale = isSharedDashboard ? 'en-US' : undefined
 

@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down logs test test-unit lint typecheck format audit audit-fix migrate seed hooks help
+.PHONY: dev-up dev-down logs test test-unit lint typecheck format audit audit-fix migrate seed hooks contracts help
 
 help:
 	@echo ""
@@ -15,6 +15,7 @@ help:
 	@echo "  make migrate   Run Alembic migrations"
 	@echo "  make seed      Seed development data"
 	@echo "  make hooks     Install pre-commit hooks (via uv)"
+	@echo "  make contracts Regenerate the frontend API contract from the backend schema"
 	@echo ""
 
 # Git hooks
@@ -35,11 +36,16 @@ logs:
 # Testing
 test:
 	cd backend && uv run pytest && uv run ty check
-	cd frontend && npm run test:run
+	cd frontend && npm run typecheck && npm run test:run
 
 test-unit:
 	cd backend && uv run pytest -m unit && uv run ty check
-	cd frontend && npm run test:run
+	cd frontend && npm run typecheck && npm run test:run
+
+# Type checking only
+typecheck:
+	cd backend && uv run ty check
+	cd frontend && npm run typecheck
 
 # Linting — check only, no modifications
 lint:
@@ -66,3 +72,8 @@ migrate:
 
 seed:
 	@echo "TODO: implement in step 8"
+
+# API contract — regenerate the frontend zod contract from the live backend schema
+contracts:
+	cd backend && uv run python -m app.openapi_export openapi.json
+	cd frontend && npm run generate:contract

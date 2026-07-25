@@ -1,4 +1,6 @@
-export type WidgetType = 'calendar' | 'agenda' | 'list' | 'clock'
+// The set of creatable types is the set of renderable ones — derived from the generated widget
+// response union so the two can't drift (the backend's WidgetCreate.widget_type is a bare str).
+import type { WidgetType } from '../../api/dashboards'
 
 export interface AddWidgetParams {
   widget_type: WidgetType

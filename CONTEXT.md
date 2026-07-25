@@ -127,9 +127,15 @@ _Last updated: 2026-07-19_
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
   are in-memory/per-process, correct for the current single worker (shared store tracked in #45).
+- **The backend schema is the API contract** ([ADR-018](docs/adr/ADR-018-generated-validated-contracts.md)):
+  `make contracts` exports FastAPI's OpenAPI document and generates the frontend's zod schemas into
+  `frontend/src/api/generated/contract.ts` (committed; CI fails on drift). Every response body is
+  validated at the network boundary, widgets are a discriminated union on `widget_type`, and SSE
+  frames validate against generated frame schemas — so a new backend event type or widget type is a
+  compile error in the client code that must handle it.
 - CI: lint (Ruff/Biome), dead-code and dependency gates (knip, deptry), workflow linting
-  (actionlint), tests (pytest, Vitest), `ty` type check, frontend build, and a production frontend
-  image build. Backend tests build their schema with `alembic upgrade head`, so **migrations run on
+  (actionlint), tests (pytest, Vitest), `ty` + `tsc` type checks, contract-drift check, frontend
+  build, and a production frontend image build. Backend tests build their schema with `alembic upgrade head`, so **migrations run on
   every CI job** and `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the
   Docker-free subset. Pre-commit hooks incl. Conventional Commit enforcement. Dependabot
   grouped/monthly.
@@ -150,6 +156,5 @@ _Last updated: 2026-07-19_
   not here.
 - `CalendarReminder` model + table exist with **no** router/service usage (vestigial; slated
   for a decision when calendar work resumes).
-- `EventType.membership_*` values are vestiges of the removed groups feature.
 - Share principal types other than `user`, and share roles beyond viewer/editor, are
   intentionally not built.

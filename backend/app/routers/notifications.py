@@ -12,7 +12,11 @@ from app.database import get_db
 from app.models.activity import ActivityEvent, EventType
 from app.models.notification import Notification
 from app.models.user import User
-from app.schemas.notifications import ActivityEventResponse, NotificationResponse
+from app.schemas.notifications import (
+    ActivityEventResponse,
+    NotificationResponse,
+    UnreadCountResponse,
+)
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -37,11 +41,11 @@ async def list_notifications(
     return [NotificationResponse.model_validate(n) for n in result.scalars().all()]
 
 
-@router.get("/unread-count")
+@router.get("/unread-count", response_model=UnreadCountResponse)
 async def unread_count(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> UnreadCountResponse:
     """Return the number of unread notifications for the caller."""
     from sqlalchemy import func
 
@@ -51,7 +55,7 @@ async def unread_count(
             Notification.read_at.is_(None),
         )
     )
-    return {"count": result.scalar_one()}
+    return UnreadCountResponse(count=result.scalar_one())
 
 
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)

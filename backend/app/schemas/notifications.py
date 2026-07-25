@@ -17,6 +17,12 @@ class NotificationResponse(BaseModel):
     created_at: datetime
 
 
+class UnreadCountResponse(BaseModel):
+    """Typed so the count endpoint appears in OpenAPI as a shape, not a bare object."""
+
+    count: int
+
+
 class ActivityEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

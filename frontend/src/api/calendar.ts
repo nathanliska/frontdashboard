@@ -1,8 +1,21 @@
+import { z } from 'zod'
 import { apiFetch } from './client'
+import {
+  CalendarEventResponse,
+  CalendarOccurrenceResponse,
+  ResourceAccessResponse,
+  ShareResponse,
+} from './generated/contract'
+import { parseJson } from './http'
 import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
 const occurrenceRequests = new Map<string, Promise<CalendarOccurrence[]>>()
 
+// The generated `RecurrenceRule.frequency` is a plain `string` (the backend models it as a
+// free-form field), looser than this hand `RecurrenceFrequency` literal union that
+// calendarEditorDraftUtils relies on for switch narrowing and draft typing. Kept hand-written
+// for now (deferred, same as the widget union in dashboards.ts) — responses are still validated
+// against the generated `CalendarEventResponse`/`CalendarOccurrenceResponse` schemas below.
 export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly'
 
 export interface RecurrenceRule {
@@ -74,6 +87,10 @@ async function readError(res: Response, fallback: string): Promise<Error> {
   return new Error(data.detail ?? fallback)
 }
 
+async function parseEvent(res: Response): Promise<CalendarEvent> {
+  return (await parseJson(res, CalendarEventResponse)) as unknown as CalendarEvent
+}
+
 export async function apiListOccurrences(params: {
   windowStart: string
   windowEnd: string
@@ -92,7 +109,7 @@ export async function apiListOccurrences(params: {
   const request = (async () => {
     const res = await apiFetch(`/api/calendar/events?${key}`)
     if (!res.ok) throw await readError(res, 'Failed to load calendar events')
-    return res.json() as Promise<CalendarOccurrence[]>
+    return parseJson(res, z.array(CalendarOccurrenceResponse))
   })().finally(() => {
     occurrenceRequests.delete(key)
   })
@@ -107,13 +124,13 @@ export async function apiCreateEvent(input: CreateCalendarEventInput): Promise<C
     body: JSON.stringify(input),
   })
   if (!res.ok) throw await readError(res, 'Failed to create event')
-  return res.json() as Promise<CalendarEvent>
+  return parseEvent(res)
 }
 
 export async function apiGetEvent(eventId: string): Promise<CalendarEvent> {
   const res = await apiFetch(`/api/calendar/events/${eventId}`)
   if (!res.ok) throw await readError(res, 'Failed to load event')
-  return res.json() as Promise<CalendarEvent>
+  return parseEvent(res)
 }
 
 export async function apiUpdateEvent(
@@ -125,7 +142,7 @@ export async function apiUpdateEvent(
     body: JSON.stringify(input),
   })
   if (!res.ok) throw await readError(res, 'Failed to update event')
-  return res.json() as Promise<CalendarEvent>
+  return parseEvent(res)
 }
 
 export async function apiDeleteEvent(eventId: string): Promise<void> {
@@ -141,7 +158,7 @@ export async function apiDeleteEvent(eventId: string): Promise<void> {
 export async function apiGetEventShares(eventId: string): Promise<ResourceAccessSummary> {
   const res = await apiFetch(`/api/calendar/events/${eventId}/shares`)
   if (!res.ok) throw await readError(res, 'Failed to load event shares')
-  return res.json() as Promise<ResourceAccessSummary>
+  return parseJson(res, ResourceAccessResponse)
 }
 
 /** @knipignore Unused scaffolding — see the note on apiGetEventShares above. */
@@ -151,7 +168,7 @@ export async function apiAddEventShare(eventId: string, body: ShareCreate): Prom
     body: JSON.stringify(body),
   })
   if (!res.ok) throw await readError(res, 'Failed to add event share')
-  return res.json() as Promise<ResourceShare>
+  return parseJson(res, ShareResponse)
 }
 
 /** @knipignore Unused scaffolding — see the note on apiGetEventShares above. */
@@ -165,7 +182,7 @@ export async function apiUpdateEventShare(
     body: JSON.stringify(body),
   })
   if (!res.ok) throw await readError(res, 'Failed to update event share')
-  return res.json() as Promise<ResourceShare>
+  return parseJson(res, ShareResponse)
 }
 
 /** @knipignore Unused scaffolding — see the note on apiGetEventShares above. */

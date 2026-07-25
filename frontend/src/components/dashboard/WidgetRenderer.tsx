@@ -30,12 +30,18 @@ export function WidgetRenderer({
       return <AgendaWidget dashboardId={dashboardId} />
 
     default:
-      return (
-        <div className="h-full flex items-center justify-center">
-          <p className="text-xs text-zinc-600">{widget.widget_type}</p>
-        </div>
-      )
+      // The widget union is generated from the backend contract, so a new widget type lands
+      // here as a type error until it gets a case above (see frontend/CLAUDE.md).
+      return <UnknownWidget widget={widget} />
   }
+}
+
+function UnknownWidget({ widget }: { widget: never }) {
+  return (
+    <div className="h-full flex items-center justify-center">
+      <p className="text-xs text-zinc-600">{(widget as DashboardWidget).widget_type}</p>
+    </div>
+  )
 }
 
 function BrokenWidget({ message }: { message: string }) {

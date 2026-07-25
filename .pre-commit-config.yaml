@@ -4,8 +4,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
+      # The generated API contract is compared byte-for-byte against `make contracts`
+      # output in CI — a hook that rewrites it would fail that gate on every change.
       - id: trailing-whitespace
+        exclude: ^frontend/src/api/generated/
       - id: end-of-file-fixer
+        exclude: ^frontend/src/api/generated/
       - id: check-yaml
       - id: check-added-large-files
 

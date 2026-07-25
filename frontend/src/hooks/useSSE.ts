@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { type ZodType, z } from 'zod'
 import { tryRefresh } from '../api/client'
-import type { Notification } from '../api/notifications'
+import {
+  ActivitySseEvent,
+  ActivitySsePayload,
+  type EventType,
+  NotificationSseEvent,
+} from '../api/generated/contract'
 import { handleAgendaResourceEvent } from '../resources/agendaData'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
 import { handleListResourceEvent } from '../resources/listData'
@@ -8,54 +14,89 @@ import { useAuthStore } from '../stores/auth'
 import { useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
 
-export interface SseEvent {
-  event_id: number
-  event_type: string
-  entity_type: string
-  entity_id: string
-  entity_version: number
-  actor_id: string
-  actor_display_name: string
-  payload: Record<string, unknown>
-  created_at: string
+/**
+ * A server activity frame. Generated from the backend's ActivitySseEvent contract, with one
+ * local widening: that model is `extra="allow"` on `payload` (payload shape varies per event
+ * type and only the cross-cutting keys are modelled), which the generator can't express — so
+ * unknown payload keys are kept here instead of being silently stripped by validation.
+ */
+export const SseEventSchema = ActivitySseEvent.extend({
+  payload: ActivitySsePayload.and(z.record(z.unknown())),
+})
+
+export type SseEvent = z.infer<typeof SseEventSchema>
+
+/**
+ * Not a server frame: the local "you may have missed events" signal, fanned out to the same
+ * resource handlers so a gap in the stream converges through one code path. It is a distinct
+ * member of the union rather than a fake SseEvent, so handlers must deal with it before they
+ * can touch `payload`/`entity_id` — TypeScript narrows the rest away on the `resync` check.
+ */
+export interface ResyncSignal {
+  event_type: 'resync'
 }
 
+export type ResourceEvent = SseEvent | ResyncSignal
+
+export const RESYNC_SIGNAL: ResyncSignal = { event_type: 'resync' }
+
 export const APP_RESYNC_EVENT = 'frontdashboard:resync'
-
-const LIST_EVENT_TYPES = [
-  'list.created',
-  'list.updated',
-  'list.archived',
-  'list.deleted',
-  'list.reordered',
-  'list.item.created',
-  'list.item.updated',
-  'list.item.checked',
-  'list.item.deleted',
-  'list.item.reordered',
-] as const
-
-const CALENDAR_EVENT_TYPES = [
-  'calendar.event.created',
-  'calendar.event.updated',
-  'calendar.event.deleted',
-  'calendar.event.occurrence.updated',
-  'calendar.event.occurrence.cancelled',
-] as const
 
 // Reconnect backoff: 1s, 2s, 4s … capped at 30s, retried indefinitely. No jitter — a
 // household-sized user base cannot thunder, and every tab backs off independently anyway.
 const SSE_RECONNECT_BASE_MS = 1000
 export const SSE_RECONNECT_MAX_MS = 30_000
 
-const DASHBOARD_EVENT_TYPES = [
-  'dashboard.created',
-  'dashboard.updated',
-  'dashboard.deleted',
-  'dashboard.share_added',
-  'dashboard.share_updated',
-  'dashboard.share_removed',
-] as const
+type EventRoute = 'list' | 'calendar' | 'dashboard'
+
+/**
+ * Which handler each server event type is delivered to. Typed as a total `Record<EventType, …>`
+ * over the generated enum on purpose: an event the backend can emit but nothing listens for
+ * never reaches a cache and the UI silently goes stale (frontend/CLAUDE.md), so a new backend
+ * EventType is a compile error here rather than a missing update at runtime.
+ */
+const EVENT_ROUTES: Record<EventType, EventRoute> = {
+  'list.created': 'list',
+  'list.updated': 'list',
+  'list.archived': 'list',
+  'list.deleted': 'list',
+  'list.reordered': 'list',
+  'list.item.created': 'list',
+  'list.item.updated': 'list',
+  'list.item.checked': 'list',
+  'list.item.deleted': 'list',
+  'list.item.reordered': 'list',
+  'calendar.event.created': 'calendar',
+  'calendar.event.updated': 'calendar',
+  'calendar.event.deleted': 'calendar',
+  'calendar.event.occurrence.updated': 'calendar',
+  'calendar.event.occurrence.cancelled': 'calendar',
+  'dashboard.created': 'dashboard',
+  'dashboard.updated': 'dashboard',
+  'dashboard.deleted': 'dashboard',
+  'dashboard.share_added': 'dashboard',
+  'dashboard.share_updated': 'dashboard',
+  'dashboard.share_removed': 'dashboard',
+}
+
+/**
+ * Parse and validate one SSE frame against its generated schema. A frame that is malformed or
+ * off-contract is dropped (and logged) rather than flowing into the caches as a wrong shape.
+ */
+function parseFrame<T>(raw: string, schema: ZodType<T>): T | null {
+  let body: unknown
+  try {
+    body = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  const result = schema.safeParse(body)
+  if (!result.success) {
+    console.error('Malformed SSE frame', result.error.issues)
+    return null
+  }
+  return result.data
+}
 
 /**
  * Opens a single SSE connection for the authenticated user and routes
@@ -134,58 +175,49 @@ export function useSSE(): void {
     es.addEventListener('connected', onConnected)
 
     function onListEvent(e: MessageEvent<string>) {
-      try {
-        const data = JSON.parse(e.data) as SseEvent
-        // Order is load-bearing, not convention. handleAgendaResourceEvent invalidates the
-        // agenda reminders, and (if an agenda is mounted — invalidateWhere skips fetching for
-        // unobserved scopes) that fetcher, loadDashboardListDetails, reads the list SUMMARIES
-        // cache synchronously, before its first await. So summaries must already carry this
-        // event's changes. Run the agenda first and a `list.deleted` leaves the deleted list in
-        // the summaries it reads, then fetches that dead id -> 404 -> the agenda widget errors.
-        // (Only summaries is read synchronously; the per-list detail fetches sit after an await
-        // and would see patched data either way.)
-        handleListResourceEvent(data)
-        handleAgendaResourceEvent(data)
-        handleDashboardContentEvent(data)
-      } catch {
-        // malformed event — ignore
-      }
+      const data = parseFrame(e.data, SseEventSchema)
+      if (!data) return
+      // Order is load-bearing, not convention. handleAgendaResourceEvent invalidates the
+      // agenda reminders, and (if an agenda is mounted — invalidateWhere skips fetching for
+      // unobserved scopes) that fetcher, loadDashboardListDetails, reads the list SUMMARIES
+      // cache synchronously, before its first await. So summaries must already carry this
+      // event's changes. Run the agenda first and a `list.deleted` leaves the deleted list in
+      // the summaries it reads, then fetches that dead id -> 404 -> the agenda widget errors.
+      // (Only summaries is read synchronously; the per-list detail fetches sit after an await
+      // and would see patched data either way.)
+      handleListResourceEvent(data)
+      handleAgendaResourceEvent(data)
+      handleDashboardContentEvent(data)
     }
 
     function onCalendarEvent(e: MessageEvent<string>) {
-      try {
-        const data = JSON.parse(e.data) as SseEvent
-        handleCalendarResourceEvent(data)
-        handleAgendaResourceEvent(data)
-      } catch {
-        // malformed event — ignore
-      }
+      const data = parseFrame(e.data, SseEventSchema)
+      if (!data) return
+      handleCalendarResourceEvent(data)
+      handleAgendaResourceEvent(data)
     }
 
     function onNotification(e: MessageEvent<string>) {
-      try {
-        const notif = JSON.parse(e.data) as Notification
-        addNotification(notif)
-      } catch {
+      const notif = parseFrame(e.data, NotificationSseEvent)
+      if (!notif) {
+        // Unusable frame — fall back to the authoritative count so the badge stays honest.
         void loadUnreadCount()
+        return
       }
+      addNotification(notif)
     }
 
     function onDashboardEvent(e: MessageEvent<string>) {
-      try {
-        const data = JSON.parse(e.data) as SseEvent
-        void handleDashboardEvent(data)
-      } catch {
-        // malformed event — ignore
-      }
+      const data = parseFrame(e.data, SseEventSchema)
+      if (!data) return
+      void handleDashboardEvent(data)
     }
 
     function onResync() {
-      const resyncEvent = { event_type: 'resync', payload: {} } as SseEvent
-      handleListResourceEvent(resyncEvent)
-      handleCalendarResourceEvent(resyncEvent)
-      handleAgendaResourceEvent(resyncEvent)
-      void handleDashboardEvent(resyncEvent)
+      handleListResourceEvent(RESYNC_SIGNAL)
+      handleCalendarResourceEvent(RESYNC_SIGNAL)
+      handleAgendaResourceEvent(RESYNC_SIGNAL)
+      void handleDashboardEvent(RESYNC_SIGNAL)
       void loadUnreadCount()
       const { panelOpen } = useNotificationsStore.getState()
       if (panelOpen || window.location.pathname === '/notifications') {
@@ -194,14 +226,13 @@ export function useSSE(): void {
       window.dispatchEvent(new Event(APP_RESYNC_EVENT))
     }
 
-    for (const type of LIST_EVENT_TYPES) {
-      es.addEventListener(type, onListEvent)
+    const handlersByRoute: Record<EventRoute, (e: MessageEvent<string>) => void> = {
+      list: onListEvent,
+      calendar: onCalendarEvent,
+      dashboard: onDashboardEvent,
     }
-    for (const type of CALENDAR_EVENT_TYPES) {
-      es.addEventListener(type, onCalendarEvent)
-    }
-    for (const type of DASHBOARD_EVENT_TYPES) {
-      es.addEventListener(type, onDashboardEvent)
+    for (const [eventType, route] of Object.entries(EVENT_ROUTES)) {
+      es.addEventListener(eventType, handlersByRoute[route])
     }
     es.addEventListener('notification.created', onNotification)
     es.addEventListener('resync', onResync)

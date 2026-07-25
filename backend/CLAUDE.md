@@ -28,6 +28,16 @@ Everything here is a convention an agent can't safely infer from one file.
 - JWT embeds `email`, so any route mutating identity fields must re-issue the access cookie
   (`_set_access_cookie`) — profile and password-change already do.
 
+## The schema is the frontend's contract
+- The frontend's types are **generated** from this app's OpenAPI document (ADR-018), so a shape
+  the client reads must be expressible there: give every route a real `response_model` (no bare
+  `dict`), and register non-response shapes (the SSE frames in `app/schemas/sse.py`) as models so
+  they land in `components.schemas`. After changing any of it, run `make contracts` from the repo
+  root and commit the regenerated `frontend/src/api/generated/contract.ts` — CI fails on drift.
+- `app/openapi_export.py` is the export step (`python -m app.openapi_export`), not app code. It
+  widens single-value `const` to a one-member `enum`, because the zod generator ignores `const`
+  and would degrade every `Literal` discriminator to a plain string.
+
 ## Migrations & models
 - Alembic revisions are hand-authored 12-char slugs with explicit `down_revision` chaining —
   match the style. Role/type enums are stored as plain `String` (StrEnum), not PG enums.

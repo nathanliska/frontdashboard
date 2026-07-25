@@ -30,6 +30,9 @@ frontend/dist/
 frontend/build/
 backend/dist/
 
+# Generated OpenAPI schema (transient — `make contracts` regenerates it)
+backend/openapi.json
+
 # Environment
 .env
 .env.prod

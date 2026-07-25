@@ -33,7 +33,7 @@ import {
   type LayoutItem,
 } from '../api/dashboards'
 import type { ShareCreate } from '../api/shares'
-import type { SseEvent } from '../hooks/useSSE'
+import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import {
   consumePendingDashboardMutation,
   createClientMutationId,
@@ -307,7 +307,7 @@ interface DashboardState {
   }) => Promise<boolean>
   removeWidget: (widgetId: string) => Promise<boolean>
   updateWidget: (widgetId: string, config: Record<string, unknown>) => Promise<boolean>
-  handleDashboardEvent: (event: SseEvent) => Promise<void>
+  handleDashboardEvent: (event: ResourceEvent) => Promise<void>
   handleContentEvent: (event: SseEvent) => void
   resolveConflict: () => void
 }
@@ -433,7 +433,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       const guard = sessionGuard()
       try {
         const authState = useAuthStore.getState()
-        const currentFavoriteIds = authState.user?.preferences.favorite_dashboard_ids ?? []
+        const currentFavoriteIds = authState.user?.preferences?.favorite_dashboard_ids ?? []
         const nextFavoriteIds = current
           ? currentFavoriteIds.filter((favoriteId) => favoriteId !== id)
           : [...currentFavoriteIds.filter((favoriteId) => favoriteId !== id), id]
@@ -716,14 +716,30 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     },
 
     async handleDashboardEvent(event) {
+      // A resync means "you may have missed anything": no entity to scope to, no echo to
+      // suppress, and access may have been revoked while we were disconnected — so reload
+      // both levels immediately (no debounce) and let access loss surface.
+      if (event.event_type === 'resync') {
+        const { summaries, summariesLoaded, summariesLoading, dashboard } = get()
+        const activeId = dashboard?.id ?? null
+        await Promise.all([
+          summariesLoaded || summariesLoading || summaries.length > 0
+            ? get().loadSummaries(true)
+            : null,
+          activeId
+            ? get().loadDashboard(activeId, { background: true, surfaceAccessLoss: true })
+            : null,
+        ])
+        return
+      }
+
       const activeDashboard = get().dashboard
       const activeDashboardId = activeDashboard?.id ?? null
       const eventDashboardId = getEventDashboardId(event)
       const isLayoutOnlyEvent = isLayoutOnlyDashboardEvent(event)
       const shouldSkipSummaryReload = canSkipDashboardSummaryReload(event)
-      const shouldSurfaceAccessLoss = isDashboardShareEvent(event) || event.event_type === 'resync'
-      const hasLocalMutationEcho =
-        event.event_type !== 'resync' && consumePendingDashboardMutationEcho(event)
+      const shouldSurfaceAccessLoss = isDashboardShareEvent(event)
+      const hasLocalMutationEcho = consumePendingDashboardMutationEcho(event)
       const shouldSuppressLocalMutationReload =
         hasLocalMutationEcho && canSuppressLocalDashboardEcho(event)
 
@@ -736,17 +752,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
             return nextSummaries === state.summaries ? state : { summaries: nextSummaries }
           })
         } else if (!shouldSuppressLocalMutationReload) {
-          summariesRefreshPromise =
-            event.event_type === 'resync'
-              ? get().loadSummaries(true)
-              : scheduleSummariesRefresh(() => get().loadSummaries(true))
+          summariesRefreshPromise = scheduleSummariesRefresh(() => get().loadSummaries(true))
         }
       }
 
-      if (
-        activeDashboardId &&
-        (event.event_type === 'resync' || eventDashboardId === activeDashboardId)
-      ) {
+      if (activeDashboardId && eventDashboardId === activeDashboardId) {
         if (event.event_type === 'dashboard.deleted' && eventDashboardId === activeDashboardId) {
           set({ dashboard: null, loadError: true, loading: false, conflict: false })
           return

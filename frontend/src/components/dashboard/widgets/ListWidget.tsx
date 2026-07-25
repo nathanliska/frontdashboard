@@ -1,5 +1,6 @@
 import { Check, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import type { ListWidgetConfig } from '../../../api/dashboards'
 import type { ListItem } from '../../../api/lists'
 import { addListItem, updateListItem, useListDetail } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
@@ -13,7 +14,7 @@ export function ListWidget({
 }: {
   listId: string
   widgetId: string
-  config: Record<string, unknown>
+  config: ListWidgetConfig
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -24,9 +25,7 @@ export function ListWidget({
   useEffect(() => {
     if (!detail) return
 
-    const currentName = typeof config.list_name === 'string' ? config.list_name : ''
-    const currentType = typeof config.list_type === 'string' ? config.list_type : ''
-    if (currentName === detail.name && currentType === detail.list_type) return
+    if (config.list_name === detail.name && config.list_type === detail.list_type) return
 
     void updateWidget(widgetId, {
       ...config,

@@ -1,31 +1,27 @@
 import { ExternalLink, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { DashboardWidget } from '../../api/dashboards'
+import type { DashboardWidget, WidgetType } from '../../api/dashboards'
 import { capitalize, cn } from '../../utils/shared/cn'
 import { WidgetRenderer } from './WidgetRenderer'
 
-const WIDGET_LABELS: Record<string, string> = {
+// The two types whose label comes from config are handled below; the rest are static. Keyed by
+// the generated widget union, so a new widget type is a type error here until it gets a label.
+const WIDGET_LABELS: Record<Exclude<WidgetType, 'list' | 'calendar'>, string> = {
   agenda: 'Agenda',
-  calendar: 'Calendar',
   clock: 'Clock',
 }
 
 function widgetLabel(widget: DashboardWidget): string {
   // List widgets store the bound list's name in config.list_name at creation time.
   if (widget.widget_type === 'list') {
-    const name = widget.config.list_name
+    const label = widget.config.list_name || 'List'
     const type = widget.config.list_type
-    const label = typeof name === 'string' && name ? name : 'List'
-    if (typeof type === 'string' && type) {
-      return `${label} · ${capitalize(type)}`
-    }
-    return label
+    return type ? `${label} · ${capitalize(type)}` : label
   }
   if (widget.widget_type === 'calendar') {
-    const view = typeof widget.config.view === 'string' ? widget.config.view : 'month'
-    return `Calendar · ${capitalize(view)}`
+    return `Calendar · ${capitalize(widget.config.view || 'month')}`
   }
-  return WIDGET_LABELS[widget.widget_type] ?? widget.widget_type
+  return WIDGET_LABELS[widget.widget_type]
 }
 
 export function WidgetContainer({

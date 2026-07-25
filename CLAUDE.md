@@ -14,6 +14,8 @@ for agents working in this repo.
 ## Build / test / lint (run before claiming done)
 ```bash
 make test        # all tests (backend pytest + frontend vitest + typecheck)
+make typecheck   # type checks only (backend ty + frontend tsc --build)
+make contracts   # regenerate the frontend API contract from the backend schema
 make lint        # backend Ruff + frontend Biome
 make format      # format both sides
 make dev-up      # start all services (Docker Compose)
@@ -43,6 +45,9 @@ make audit-fix   # apply npm audit fixes (frontend)
   SSE for incremental updates.
 - **Dashboards**: multiple per user, favorites + archiving, react-grid-layout with a version
   integer for conflict detection (stale layout save → 409).
+- **API contract**: the backend's OpenAPI document is authoritative — the frontend's types are
+  generated from it (`make contracts`, committed, CI fails on drift) and every response body is
+  validated at the network boundary. Never hand-write a client DTO.
 
 ## HARD RULES (standing user constraints — do not violate)
 - **Confirm before commit AND before push** — the user reviews the files first, every time.

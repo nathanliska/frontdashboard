@@ -42,15 +42,20 @@ class ActivitySseEvent(BaseModel):
 
 
 class NotificationSseEvent(BaseModel):
-    """Matches notification_to_sse_dict payload."""
+    """Matches notification_to_sse_dict payload.
+
+    Every key is always present in the frame (the serializer writes them unconditionally) and
+    `body` is NOT NULL on the model — so these are required, mirroring NotificationResponse.
+    The frontend feeds this frame straight into the same store as the REST response.
+    """
 
     id: str
     type: str
     title: str
-    body: str | None = None
-    reference_type: str | None = None
-    reference_id: str | None = None
-    read_at: str | None = None
+    body: str
+    reference_type: str | None
+    reference_id: str | None
+    read_at: str | None
     created_at: str
 
 

@@ -85,6 +85,21 @@ function TestHarness() {
   return null
 }
 
+/**
+ * A complete, contract-valid activity frame. Frames are validated against the generated
+ * ActivitySseEvent schema now, so a partial fixture would be dropped rather than routed.
+ */
+function frame(overrides: Record<string, unknown>): string {
+  return JSON.stringify({
+    event_id: 1,
+    entity_version: 1,
+    actor_id: 'user-2',
+    actor_display_name: 'Other User',
+    created_at: '2026-04-05T00:00:00Z',
+    ...overrides,
+  })
+}
+
 describe('useSSE', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -135,7 +150,7 @@ describe('useSSE', () => {
     act(() => {
       es.dispatch(
         'list.item.checked',
-        JSON.stringify({
+        frame({
           event_type: 'list.item.checked',
           entity_id: 'item-1',
           entity_type: 'list_item',
@@ -219,9 +234,10 @@ describe('useSSE', () => {
     act(() => {
       es.dispatch(
         'calendar.event.updated',
-        JSON.stringify({
+        frame({
           event_type: 'calendar.event.updated',
           entity_id: 'event-1',
+          entity_type: 'calendar_event',
           payload: { dashboard_id: 'dash-1' },
         }),
       )
@@ -247,6 +263,53 @@ describe('useSSE', () => {
     })
   })
 
+  it('drops a well-formed frame that is off-contract instead of routing a wrong shape', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<TestHarness />)
+
+    const es = MockEventSource.instances[0]
+    act(() => {
+      // Valid JSON, but `entity_id` is missing and `event_id` has the wrong type.
+      es.dispatch(
+        'calendar.event.updated',
+        JSON.stringify({ event_type: 'calendar.event.updated', event_id: 'not-a-number' }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(consoleError).toHaveBeenCalled()
+    })
+    expect(handleCalendarResourceEvent).not.toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('keeps payload keys the generated contract does not model', async () => {
+    render(<TestHarness />)
+
+    const es = MockEventSource.instances[0]
+    act(() => {
+      es.dispatch(
+        'list.item.updated',
+        frame({
+          event_type: 'list.item.updated',
+          entity_id: 'item-1',
+          entity_type: 'list_item',
+          // `title` is not in ActivitySsePayload — backend payloads are extra="allow", so
+          // validation must not strip it on the way through.
+          payload: { dashboard_id: 'dash-1', list_id: 'list-1', title: 'Milk' },
+        }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(handleListResourceEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({ title: 'Milk' }),
+        }),
+      )
+    })
+  })
+
   it('routes list SSE events to both the list resource layer and dashboard content handler', async () => {
     render(<TestHarness />)
 
@@ -254,7 +317,7 @@ describe('useSSE', () => {
     act(() => {
       es.dispatch(
         'list.item.updated',
-        JSON.stringify({
+        frame({
           event_type: 'list.item.updated',
           entity_id: 'item-1',
           entity_type: 'list_item',
@@ -280,7 +343,7 @@ describe('useSSE', () => {
     act(() => {
       es.dispatch(
         'dashboard.share_added',
-        JSON.stringify({
+        frame({
           event_type: 'dashboard.share_added',
           entity_id: 'dash-1',
           entity_type: 'dashboard',

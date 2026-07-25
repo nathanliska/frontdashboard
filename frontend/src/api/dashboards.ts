@@ -1,58 +1,65 @@
+import { z } from 'zod'
 import { apiFetch } from './client'
+import {
+  AgendaWidgetResponse,
+  CalendarWidgetResponse,
+  ClockWidgetResponse,
+  DashboardResponse,
+  DashboardSummary,
+  ListWidgetResponse,
+  ShareResponse,
+} from './generated/contract'
+import { parseJson } from './http'
 import type { ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
 const dashboardRequests = new Map<string, Promise<Dashboard>>()
 const dashboardShareRequests = new Map<string, Promise<ResourceShare[]>>()
 
-export interface LayoutItem {
-  i: string
-  x: number
-  y: number
-  w: number
-  h: number
-  [key: string]: unknown
-}
+export type { DashboardSummary } from './generated/contract'
 
-export interface DashboardWidget {
-  id: string
-  dashboard_id: string
-  widget_type: string
-  widget_version: number
-  config: Record<string, unknown>
-  resource_type: string | null
-  resource_id: string | null
-  created_at: string
-  updated_at: string
-}
+// The backend types `layout` as `list[dict[str, Any]]`, so the generated schema can only say
+// "array of objects". Layout entries are only ever written by react-grid-layout, whose item
+// shape we do know — so the boundary validates against that shape here rather than casting.
+// (#14's "typed layout models" would move this server-side and make it generated too.)
+export const LayoutItemSchema = z
+  .object({
+    i: z.string(),
+    x: z.number(),
+    y: z.number(),
+    w: z.number(),
+    h: z.number(),
+  })
+  // react-grid-layout round-trips extra per-item keys (static, minW, moved…) — keep them.
+  .passthrough()
 
-export interface DashboardSummary {
-  id: string
-  user_id: string
-  name: string
-  archived: boolean
-  access_description: string | null
-  is_shared: boolean
-  can_edit: boolean
-  can_manage_shares: boolean
-  is_favorite: boolean
-  version: number
-  created_at: string
-  updated_at: string
-}
+export type LayoutItem = z.infer<typeof LayoutItemSchema>
 
-export interface Dashboard {
-  id: string
-  user_id: string
-  name: string
-  archived: boolean
-  is_shared: boolean
-  can_edit: boolean
-  can_manage_shares: boolean
-  is_favorite: boolean
-  layout: LayoutItem[]
-  version: number
-  widgets: DashboardWidget[]
-}
+// No standalone `WidgetResponse` in the generated contract — FastAPI inlines the discriminated
+// union, so it is composed here from the generated variants. `widget_type` generates as a
+// literal per variant (see backend/app/openapi_export.py), so this narrows through `switch`.
+export const DashboardWidgetSchema = z.discriminatedUnion('widget_type', [
+  ClockWidgetResponse,
+  CalendarWidgetResponse,
+  ListWidgetResponse,
+  AgendaWidgetResponse,
+])
+
+export type DashboardWidget = z.infer<typeof DashboardWidgetSchema>
+export type WidgetType = DashboardWidget['widget_type']
+
+export type {
+  AgendaWidgetConfig,
+  CalendarWidgetConfig,
+  ClockWidgetConfig,
+  ListWidgetConfig,
+} from './generated/contract'
+
+const DashboardSchema = DashboardResponse.extend({
+  layout: z.array(LayoutItemSchema),
+  widgets: z.array(DashboardWidgetSchema),
+})
+
+export type Dashboard = z.infer<typeof DashboardSchema>
 
 export type UpdateLayoutResult =
   | { conflict: false; dashboard: Dashboard }
@@ -60,6 +67,10 @@ export type UpdateLayoutResult =
 
 export interface DashboardMutationOptions {
   clientMutationId?: string
+}
+
+async function parseDashboard(res: Response): Promise<Dashboard> {
+  return parseJson(res, DashboardSchema)
 }
 
 function buildDashboardMutationHeaders(
@@ -72,7 +83,7 @@ function buildDashboardMutationHeaders(
 export async function apiListDashboards(): Promise<DashboardSummary[]> {
   const res = await apiFetch('/api/dashboards')
   if (!res.ok) throw new Error('Failed to load dashboards')
-  return res.json() as Promise<DashboardSummary[]>
+  return parseJson(res, z.array(DashboardSummary))
 }
 
 export async function apiGetDashboard(id: string): Promise<Dashboard> {
@@ -89,7 +100,7 @@ export async function apiGetDashboard(id: string): Promise<Dashboard> {
       error.status = res.status
       throw error
     }
-    return res.json() as Promise<Dashboard>
+    return parseDashboard(res)
   })().finally(() => {
     dashboardRequests.delete(id)
   })
@@ -111,7 +122,7 @@ export async function apiCreateDashboard(
     body: JSON.stringify(data),
   })
   if (!res.ok) throw new Error('Failed to create dashboard')
-  return res.json() as Promise<DashboardSummary>
+  return parseJson(res, DashboardSummary)
 }
 
 export async function apiUpdateDashboardMeta(
@@ -125,7 +136,7 @@ export async function apiUpdateDashboardMeta(
     body: JSON.stringify(data),
   })
   if (!res.ok) throw new Error('Failed to update dashboard')
-  return res.json() as Promise<DashboardSummary>
+  return parseJson(res, DashboardSummary)
 }
 
 export async function apiDeleteDashboard(
@@ -158,7 +169,7 @@ export async function apiUpdateLayout(
     const data = (await res.json().catch(() => ({}))) as { detail?: string }
     throw new Error(data.detail ?? 'Failed to save layout')
   }
-  return { conflict: false, dashboard: (await res.json()) as Dashboard }
+  return { conflict: false, dashboard: await parseDashboard(res) }
 }
 
 export async function apiAddWidget(
@@ -180,7 +191,7 @@ export async function apiAddWidget(
     const data = (await res.json().catch(() => ({}))) as { detail?: string }
     throw new Error(data.detail ?? 'Failed to add widget')
   }
-  return res.json() as Promise<Dashboard>
+  return parseDashboard(res)
 }
 
 export async function apiUpdateWidget(
@@ -195,7 +206,7 @@ export async function apiUpdateWidget(
     body: JSON.stringify({ config }),
   })
   if (!res.ok) throw new Error('Failed to update widget')
-  return res.json() as Promise<DashboardWidget>
+  return parseJson(res, DashboardWidgetSchema)
 }
 
 export async function apiRemoveWidget(
@@ -217,7 +228,7 @@ export async function apiGetDashboardShares(dashboardId: string): Promise<Resour
   const request = (async () => {
     const res = await apiFetch(`/api/dashboards/${dashboardId}/shares`)
     if (!res.ok) throw new Error('Failed to load dashboard shares')
-    return res.json() as Promise<ResourceShare[]>
+    return parseJson(res, z.array(ShareResponse))
   })().finally(() => {
     dashboardShareRequests.delete(dashboardId)
   })
@@ -237,7 +248,7 @@ export async function apiAddDashboardShare(
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to add dashboard share')
-  return res.json() as Promise<ResourceShare>
+  return parseJson(res, ShareResponse)
 }
 
 export async function apiUpdateDashboardShare(
@@ -252,7 +263,7 @@ export async function apiUpdateDashboardShare(
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to update dashboard share')
-  return res.json() as Promise<ResourceShare>
+  return parseJson(res, ShareResponse)
 }
 
 export async function apiRemoveDashboardShare(

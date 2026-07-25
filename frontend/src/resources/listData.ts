@@ -17,7 +17,7 @@ import {
   type ListSummary,
   type ListType,
 } from '../api/lists'
-import type { SseEvent } from '../hooks/useSSE'
+import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { useAuthStore } from '../stores/auth'
 import { toast } from '../stores/toast'
 import {
@@ -399,7 +399,7 @@ function pickPatchableItemFields(values: Record<string, unknown>): Partial<ListI
   return patch as Partial<ListItem>
 }
 
-export function handleListResourceEvent(event: SseEvent): void {
+export function handleListResourceEvent(event: ResourceEvent): void {
   if (event.event_type === 'resync') {
     listSummariesQuery.invalidateWhere(() => true)
     listDetailQuery.invalidateWhere(() => true)

@@ -1,44 +1,26 @@
+import { z } from 'zod'
 import { apiFetch } from './client'
-import { requestVoid } from './http'
+import {
+  ListDetailResponse,
+  ListItemResponse,
+  ListResponse,
+  type ListType,
+  ResourceAccessResponse,
+  ShareResponse,
+} from './generated/contract'
+import { parseJson, requestVoid } from './http'
 import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
-const listDetailRequests = new Map<string, Promise<ListDetail>>()
-const listSummaryRequests = new Map<string, Promise<ListSummary[]>>()
+const listDetailRequests = new Map<string, Promise<ListDetailResponse>>()
+const listSummaryRequests = new Map<string, Promise<ListResponse[]>>()
 
-export type ListType = 'checklist' | 'grocery' | 'todo'
-export type ItemPriority = 'low' | 'medium' | 'high'
-
-export interface ListSummary {
-  id: string
-  dashboard_id: string
-  name: string
-  list_type: ListType
-  sort_order: number
-  archived: boolean
-  created_by: string
-  created_at: string
-  updated_at: string
-  item_count: number
-}
-
-export interface ListItem {
-  id: string
-  list_id: string
-  text: string
-  checked: boolean
-  sort_order: number
-  due_date: string | null
-  priority: ItemPriority | null
-  category: string | null
-  assigned_to: string | null
-  created_by: string
-  created_at: string
-  updated_at: string
-}
-
-export interface ListDetail extends ListSummary {
-  items: ListItem[]
-}
+export type {
+  ItemPriority,
+  ListDetailResponse as ListDetail,
+  ListItemResponse as ListItem,
+  ListResponse as ListSummary,
+  ListType,
+} from './generated/contract'
 
 export interface ListMutationOptions {
   clientMutationId?: string
@@ -51,7 +33,7 @@ function buildListMutationHeaders(
   return { 'X-Client-Mutation-Id': options.clientMutationId }
 }
 
-export async function apiGetLists(dashboardId?: string | null): Promise<ListSummary[]> {
+export async function apiGetLists(dashboardId?: string | null): Promise<ListResponse[]> {
   const query = new URLSearchParams()
   if (dashboardId) query.set('dashboard_id', dashboardId)
   const key = query.toString()
@@ -61,7 +43,7 @@ export async function apiGetLists(dashboardId?: string | null): Promise<ListSumm
   const request = (async () => {
     const res = await apiFetch(`/api/lists${query.size ? `?${query.toString()}` : ''}`)
     if (!res.ok) throw new Error('Failed to load lists')
-    return res.json() as Promise<ListSummary[]>
+    return parseJson(res, z.array(ListResponse))
   })().finally(() => {
     listSummaryRequests.delete(key)
   })
@@ -70,14 +52,14 @@ export async function apiGetLists(dashboardId?: string | null): Promise<ListSumm
   return request
 }
 
-export async function apiGetList(id: string): Promise<ListDetail> {
+export async function apiGetList(id: string): Promise<ListDetailResponse> {
   const existing = listDetailRequests.get(id)
   if (existing) return existing
 
   const request = (async () => {
     const res = await apiFetch(`/api/lists/${id}`)
     if (!res.ok) throw new Error('List not found')
-    return res.json() as Promise<ListDetail>
+    return parseJson(res, ListDetailResponse)
   })().finally(() => {
     listDetailRequests.delete(id)
   })
@@ -93,7 +75,7 @@ export async function apiCreateList(
     dashboard_id: string
   },
   options?: ListMutationOptions,
-): Promise<ListSummary> {
+): Promise<ListResponse> {
   const res = await apiFetch('/api/lists', {
     method: 'POST',
     headers: buildListMutationHeaders(options),
@@ -103,21 +85,21 @@ export async function apiCreateList(
     const data = (await res.json().catch(() => ({}))) as { detail?: string }
     throw new Error(data.detail ?? 'Failed to create list')
   }
-  return res.json() as Promise<ListSummary>
+  return parseJson(res, ListResponse)
 }
 
 export async function apiUpdateList(
   id: string,
   body: { name?: string; archived?: boolean },
   options?: ListMutationOptions,
-): Promise<ListSummary> {
+): Promise<ListResponse> {
   const res = await apiFetch(`/api/lists/${id}`, {
     method: 'PATCH',
     headers: buildListMutationHeaders(options),
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to update list')
-  return res.json() as Promise<ListSummary>
+  return parseJson(res, ListResponse)
 }
 
 export async function apiDeleteList(id: string, options?: ListMutationOptions): Promise<void> {
@@ -132,14 +114,14 @@ export async function apiCreateItem(
   listId: string,
   text: string,
   options?: ListMutationOptions,
-): Promise<ListItem> {
+): Promise<ListItemResponse> {
   const res = await apiFetch(`/api/lists/${listId}/items`, {
     method: 'POST',
     headers: buildListMutationHeaders(options),
     body: JSON.stringify({ text }),
   })
   if (!res.ok) throw new Error('Failed to add item')
-  return res.json() as Promise<ListItem>
+  return parseJson(res, ListItemResponse)
 }
 
 export async function apiUpdateItem(
@@ -147,14 +129,14 @@ export async function apiUpdateItem(
   itemId: string,
   body: { text?: string; checked?: boolean },
   options?: ListMutationOptions,
-): Promise<ListItem> {
+): Promise<ListItemResponse> {
   const res = await apiFetch(`/api/lists/${listId}/items/${itemId}`, {
     method: 'PATCH',
     headers: buildListMutationHeaders(options),
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to update item')
-  return res.json() as Promise<ListItem>
+  return parseJson(res, ListItemResponse)
 }
 
 export async function apiDeleteItem(
@@ -209,7 +191,7 @@ export async function apiReorderLists(
 export async function apiGetListShares(listId: string): Promise<ResourceAccessSummary> {
   const res = await apiFetch(`/api/lists/${listId}/shares`)
   if (!res.ok) throw new Error('Failed to load list shares')
-  return res.json() as Promise<ResourceAccessSummary>
+  return parseJson(res, ResourceAccessResponse)
 }
 
 /** @knipignore Unused scaffolding — see the note on apiGetListShares above. */
@@ -219,7 +201,7 @@ export async function apiAddListShare(listId: string, body: ShareCreate): Promis
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to add list share')
-  return res.json() as Promise<ResourceShare>
+  return parseJson(res, ShareResponse)
 }
 
 /** @knipignore Unused scaffolding — see the note on apiGetListShares above. */
@@ -233,7 +215,7 @@ export async function apiUpdateListShare(
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to update list share')
-  return res.json() as Promise<ResourceShare>
+  return parseJson(res, ShareResponse)
 }
 
 /** @knipignore Unused scaffolding — see the note on apiGetListShares above. */

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dashboard, DashboardSummary } from '../api/dashboards'
-import type { SseEvent } from '../hooks/useSSE'
+import { RESYNC_SIGNAL, type SseEvent } from '../hooks/useSSE'
 import {
   __resetPendingDashboardMutationsForTests,
   consumePendingDashboardMutation,
@@ -172,7 +172,7 @@ describe('useDashboardStore', () => {
 
     expect(apiUpdatePreferences).toHaveBeenCalledWith({ favorite_dashboard_ids: ['dash-1'] })
     expect(apiListDashboards).not.toHaveBeenCalled()
-    expect(useAuthStore.getState().user?.preferences.favorite_dashboard_ids).toEqual(['dash-1'])
+    expect(useAuthStore.getState().user?.preferences?.favorite_dashboard_ids).toEqual(['dash-1'])
     expect(useDashboardStore.getState().dashboard?.is_favorite).toBe(true)
     expect(useDashboardStore.getState().summaries).toEqual([makeSummary({ is_favorite: true })])
   })
@@ -629,7 +629,7 @@ describe('useDashboardStore', () => {
     const updatedWidget = {
       id: 'widget-1',
       dashboard_id: 'dash-1',
-      widget_type: 'calendar',
+      widget_type: 'calendar' as const,
       widget_version: 2,
       config: { view: 'week' },
       resource_type: null,
@@ -855,7 +855,7 @@ describe('useDashboardStore', () => {
     })
 
     await expect(
-      useDashboardStore.getState().handleDashboardEvent({ event_type: 'resync' } as SseEvent),
+      useDashboardStore.getState().handleDashboardEvent(RESYNC_SIGNAL),
     ).resolves.toBeUndefined()
 
     expect(useDashboardStore.getState().dashboard).toBeNull()
@@ -992,7 +992,7 @@ describe('useDashboardStore', () => {
     })
 
     await expect(
-      useDashboardStore.getState().handleDashboardEvent({ event_type: 'resync' } as SseEvent),
+      useDashboardStore.getState().handleDashboardEvent(RESYNC_SIGNAL),
     ).resolves.toBeUndefined()
 
     expect(apiGetDashboard).toHaveBeenCalledWith('dash-1')

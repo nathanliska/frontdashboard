@@ -68,6 +68,10 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run knip
+      # `tsc --build` (not `--noEmit`): the root tsconfig is a solution file with `files: []`,
+      # so a plain `tsc --noEmit` type-checks nothing and always passes. `vite build` is
+      # transpile-only, so this is the only step that actually checks types.
+      - run: npm run typecheck
       - run: npm run test:run
       - run: npm run build
       - name: Set up Docker Buildx
@@ -80,3 +84,35 @@ jobs:
           push: false
           cache-from: type=gha,scope=frontdashboard-frontend
           cache-to: type=gha,mode=max,scope=frontdashboard-frontend
+
+  contract:
+    name: Contract drift
+    runs-on: ubuntu-latest
+    env:
+      # app.openapi() is schema-only — no DB connection is opened, but Settings()
+      # still requires these to be set (no defaults) for app.main to import.
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+      SECRET_KEY: ci-secret-key
+      ENVIRONMENT: development
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+          working-directory: backend
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --frozen
+        working-directory: backend
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Contract is in sync with the backend schema
+        run: |
+          make contracts
+          git diff --exit-code frontend/src/api/generated/contract.ts
