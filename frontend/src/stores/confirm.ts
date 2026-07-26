@@ -1,10 +1,19 @@
 import { create } from 'zustand'
 
+export interface ConfirmOptions {
+  /** Label for the confirming button — say what it does ("Archive", "Remove"), never a generic "Delete" (#27). */
+  confirmLabel?: string
+  /** danger = red (destructive); default = neutral. */
+  tone?: 'danger' | 'default'
+}
+
 interface ConfirmState {
   open: boolean
   message: string
+  confirmLabel: string
+  tone: 'danger' | 'default'
   _resolve: ((ok: boolean) => void) | null
-  confirm: (message: string) => Promise<boolean>
+  confirm: (message: string, options?: ConfirmOptions) => Promise<boolean>
   _accept: () => void
   _cancel: () => void
   reset: () => void
@@ -13,14 +22,22 @@ interface ConfirmState {
 export const useConfirmStore = create<ConfirmState>()((set, get) => ({
   open: false,
   message: '',
+  confirmLabel: 'Delete',
+  tone: 'danger',
   _resolve: null,
 
-  confirm(message) {
+  confirm(message, options) {
     // A modal is already collecting an answer. Treat a concurrent request as
     // cancelled instead of orphaning the first caller's promise.
     if (get()._resolve) return Promise.resolve(false)
     return new Promise<boolean>((resolve) => {
-      set({ open: true, message, _resolve: resolve })
+      set({
+        open: true,
+        message,
+        confirmLabel: options?.confirmLabel ?? 'Delete',
+        tone: options?.tone ?? 'danger',
+        _resolve: resolve,
+      })
     })
   },
 
@@ -41,4 +58,5 @@ export const useConfirmStore = create<ConfirmState>()((set, get) => ({
 }))
 
 /** Convenience helper for direct imports */
-export const confirm = (message: string) => useConfirmStore.getState().confirm(message)
+export const confirm = (message: string, options?: ConfirmOptions) =>
+  useConfirmStore.getState().confirm(message, options)

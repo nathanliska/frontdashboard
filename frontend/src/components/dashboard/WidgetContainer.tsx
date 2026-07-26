@@ -68,7 +68,7 @@ export function WidgetContainer({
               }
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
-              className="text-zinc-600 hover:text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+              className="text-zinc-600 hover:text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
               aria-label={
                 widget.widget_type === 'calendar' || widget.widget_type === 'agenda'
                   ? 'Open calendar'
@@ -86,7 +86,7 @@ export function WidgetContainer({
                 e.stopPropagation()
                 onRemove()
               }}
-              className="text-zinc-600 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+              className="text-zinc-600 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
               aria-label="Remove widget"
             >
               <X size={12} />

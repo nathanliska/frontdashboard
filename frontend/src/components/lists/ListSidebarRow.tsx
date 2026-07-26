@@ -92,7 +92,7 @@ export function ListSidebarRow({
               event.stopPropagation()
             }}
             aria-label="Reorder list"
-            className="shrink-0 p-0.5 -ml-1 text-zinc-600 hover:text-zinc-300 cursor-grab touch-none sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+            className="shrink-0 p-0.5 -ml-1 text-zinc-600 hover:text-zinc-300 cursor-grab touch-none sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
           >
             <GripVertical size={13} />
           </button>
@@ -120,7 +120,7 @@ export function ListSidebarRow({
         ) : (
           <span className="text-sm font-medium truncate flex-1">{list.name}</span>
         )}
-        <div className="flex items-center gap-1 shrink-0 text-zinc-500 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 shrink-0 text-zinc-500 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
           {confirmingDelete ? (
             <>
               <button

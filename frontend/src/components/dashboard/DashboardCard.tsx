@@ -1,6 +1,7 @@
 import { Archive, Home, LayoutDashboard, Pencil, Star, Trash2, Undo2 } from 'lucide-react'
 import type { DashboardSummary } from '../../api/dashboards'
 import { cn } from '../../utils/shared/cn'
+import { OverflowMenu, type OverflowMenuItem } from '../ui/OverflowMenu'
 
 export function DashboardCard({
   dashboard,
@@ -27,6 +28,37 @@ export function DashboardCard({
   const subtitle = dashboard.access_description ?? (isOwned ? 'Owned by you' : 'Shared with you')
   const isArchived = dashboard.archived
 
+  // Actions live in a visible overflow menu (#27) — the old hover-revealed icon row didn't
+  // exist on touch. The favorite star stays inline as a state indicator + toggle.
+  const menuItems: OverflowMenuItem[] = [
+    {
+      label: isHome ? 'Home dashboard' : 'Set as home',
+      icon: Home,
+      onSelect: onSetHome,
+      disabled: isArchived || isHome,
+    },
+    ...(dashboard.can_edit
+      ? [{ label: 'Edit dashboard', icon: Pencil, onSelect: onRename, disabled: isArchived }]
+      : []),
+    {
+      label: dashboard.is_favorite ? 'Remove from favorites' : 'Add to favorites',
+      icon: Star,
+      onSelect: onToggleFavorite,
+      disabled: isArchived,
+    },
+    ...(isOwned
+      ? [
+          {
+            label: isArchived ? 'Unarchive' : 'Archive',
+            icon: isArchived ? Undo2 : Archive,
+            onSelect: onArchive,
+          },
+          // Trash is recoverable (#40), so it no longer hides behind archive-first.
+          { label: 'Move to trash', icon: Trash2, onSelect: onDelete, tone: 'danger' as const },
+        ]
+      : []),
+  ]
+
   return (
     // biome-ignore lint/a11y/useSemanticElements: the card contains real action buttons, so the outer click target cannot itself be a button
     <div
@@ -45,7 +77,7 @@ export function DashboardCard({
         }
       }}
       className={cn(
-        'group flex flex-col gap-3 p-4 bg-zinc-900 border border-zinc-800 rounded-lg transition-colors',
+        'group flex flex-col gap-2 p-4 bg-zinc-900 border border-zinc-800 rounded-lg transition-colors',
         isArchived ? 'opacity-75 cursor-default' : 'cursor-pointer hover:border-zinc-700',
       )}
     >
@@ -56,6 +88,9 @@ export function DashboardCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-medium text-zinc-200 truncate">{dashboard.name}</p>
+            {isHome && !isArchived && (
+              <Home size={12} className="shrink-0 text-blue-400" fill="currentColor" />
+            )}
             {isArchived && (
               <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
                 Archived
@@ -64,98 +99,27 @@ export function DashboardCard({
           </div>
           <p className="text-xs text-zinc-600 mt-0.5">{subtitle}</p>
         </div>
-      </div>
-
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            onSetHome()
-          }}
-          title={isHome ? 'Home dashboard' : 'Set as home'}
-          disabled={isArchived}
-          className={cn(
-            'p-1.5 rounded transition-colors',
-            'disabled:opacity-30 disabled:cursor-not-allowed',
-            isHome
-              ? 'text-blue-400'
-              : 'opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-400',
-          )}
-        >
-          <Home size={13} fill={isHome ? 'currentColor' : 'none'} />
-        </button>
-
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            onRename()
-          }}
-          title="Edit dashboard"
-          disabled={isArchived}
-          className={cn(
-            'p-1.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors',
-            'disabled:opacity-30 disabled:cursor-not-allowed',
-            dashboard.can_edit ? 'opacity-0 group-hover:opacity-100' : 'hidden',
-          )}
-        >
-          <Pencil size={13} />
-        </button>
-
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            onToggleFavorite()
-          }}
-          title={dashboard.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
-          disabled={isArchived}
-          className={cn(
-            'p-1.5 rounded transition-colors',
-            'disabled:opacity-30 disabled:cursor-not-allowed',
-            dashboard.is_favorite
-              ? 'text-amber-400 hover:text-amber-300'
-              : 'opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-400',
-          )}
-        >
-          <Star size={13} fill={dashboard.is_favorite ? 'currentColor' : 'none'} />
-        </button>
-
-        {isOwned && (
-          <>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onArchive()
-              }}
-              title={isArchived ? 'Unarchive dashboard' : 'Archive dashboard'}
-              className={cn(
-                'opacity-0 group-hover:opacity-100 p-1.5 rounded transition-colors',
-                isArchived
-                  ? 'text-amber-400 hover:text-amber-300'
-                  : 'text-zinc-600 hover:text-amber-300',
-              )}
-            >
-              {isArchived ? <Undo2 size={13} /> : <Archive size={13} />}
-            </button>
-
-            {isArchived && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onDelete()
-                }}
-                title="Move dashboard to trash"
-                className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-zinc-600 hover:text-red-400 transition-colors"
-              >
-                <Trash2 size={13} />
-              </button>
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleFavorite()
+            }}
+            title={dashboard.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+            disabled={isArchived}
+            className={cn(
+              'flex h-11 w-11 items-center justify-center rounded-md transition-colors sm:h-8 sm:w-8',
+              'disabled:opacity-30 disabled:cursor-not-allowed',
+              dashboard.is_favorite
+                ? 'text-amber-400 hover:text-amber-300'
+                : 'text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300',
             )}
-          </>
-        )}
+          >
+            <Star size={14} fill={dashboard.is_favorite ? 'currentColor' : 'none'} />
+          </button>
+          <OverflowMenu label={`Actions for ${dashboard.name}`} items={menuItems} />
+        </div>
       </div>
     </div>
   )

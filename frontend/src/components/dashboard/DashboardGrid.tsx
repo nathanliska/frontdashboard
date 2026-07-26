@@ -57,7 +57,7 @@ const DashboardGridContent = memo(function DashboardGridContent({
   removeWidget: (widgetId: string) => Promise<boolean>
 }) {
   const handleRemove = useCallback(async () => {
-    if (await confirm('Remove this widget from the dashboard?')) {
+    if (await confirm('Remove this widget from the dashboard?', { confirmLabel: 'Remove' })) {
       void removeWidget(widget.id)
     }
   }, [removeWidget, widget.id])

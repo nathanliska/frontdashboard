@@ -41,6 +41,21 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
   one-member `enum` (else discriminators degrade to `z.string()`), and `SseEventSchema` re-opens
   `payload` (the backend model is `extra="allow"`; validation would otherwise strip keys).
 
+## UI primitives (#27 — use these, don't hand-roll)
+- **Modals go through `ui/Dialog`** (Radix): it owns the focus trap, labelling, Escape, scroll
+  lock, and focus restoration. Render conditionally (`{open && <Dialog …>}`); `onEscape` is for
+  stepped modals that back out before closing (AddWidget). Never build a raw
+  `role="dialog"` overlay — the hand-rolled ones never trapped focus.
+- **`confirm(message, { confirmLabel, tone })`** — the button must say what it does ("Archive",
+  "Remove", "Move to trash"); defaults are `Delete`/`danger`. Cancel is first in the DOM on
+  purpose: Enter on open cancels, it never destroys.
+- **Row/card actions use `ui/OverflowMenu`** (Radix DropdownMenu, visible ≥44px trigger) or, for
+  inline icon rows, must reveal on `group-focus-within` as well as hover — hover-only doesn't
+  exist for touch or keyboard.
+- The toaster is a **persistent `role="status"` live region** — do not conditionally mount it;
+  a live region that mounts with its first message announces nothing.
+- In tests, Radix menus open on `fireEvent.pointerDown(trigger)`, not `click`.
+
 ## Network and errors
 - `apiFetch` (`api/client.ts`) is the **only** network entry for `/api` — it sets the CSRF
   header, includes credentials, and does single-flight 401 refresh + retry (redirecting to

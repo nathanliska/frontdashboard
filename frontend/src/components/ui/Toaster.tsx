@@ -18,10 +18,14 @@ export function Toaster() {
   const toasts = useToastStore((s) => s.toasts)
   const dismiss = useToastStore((s) => s.dismiss)
 
-  if (toasts.length === 0) return null
-
+  // The region stays mounted even when empty: screen readers only announce changes inside an
+  // aria-live region that already existed, so conditionally mounting it swallowed every first
+  // toast (#27). role="status" implies aria-live="polite" + aria-atomic.
   return (
-    <div className="fixed bottom-4 right-4 z-100 flex flex-col gap-2 pointer-events-none">
+    <div
+      role="status"
+      className="fixed bottom-4 right-4 z-100 flex flex-col gap-2 pointer-events-none"
+    >
       {toasts.map((t) => {
         const Icon = ICONS[t.type]
         return (

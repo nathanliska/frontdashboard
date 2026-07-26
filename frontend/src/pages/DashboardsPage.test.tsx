@@ -59,7 +59,9 @@ describe('DashboardsPage', () => {
       </MemoryRouter>,
     )
 
-    fireEvent.click(screen.getByTitle('Edit dashboard'))
+    // Actions moved into the visible overflow menu (#27). Radix opens on pointerdown.
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Actions for Primary Dashboard' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit dashboard' }))
 
     expect(screen.getByText('Editing Primary Dashboard')).toBeInTheDocument()
     expect(screen.getByText('Can manage shares: true')).toBeInTheDocument()

@@ -9,6 +9,7 @@ import type { ResourceShare, ShareRole } from '../../api/shares'
 import { toast } from '../../stores/toast'
 import { createClientMutationId } from '../../utils/dashboard/dashboardMutation'
 import { cn } from '../../utils/shared/cn'
+import { Dialog } from '../ui/Dialog'
 import { SharePanel, type SharePanelItem, type ShareRoleOption } from '../ui/SharePanel'
 
 const DASHBOARD_ROLE_OPTIONS: ShareRoleOption[] = [
@@ -141,82 +142,63 @@ export function DashboardSettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <button
-        type="button"
-        aria-label="Close dashboard settings dialog"
-        className="absolute inset-0 bg-black/50"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dashboard-settings-title"
-        className="relative bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-hidden"
+    <Dialog title="Dashboard settings" onClose={onClose}>
+      <form
+        onSubmit={(event) => void handleSubmit(event)}
+        className="flex flex-col max-h-[calc(85vh-57px)]"
       >
-        <div className="px-5 py-4 border-b border-zinc-800">
-          <h2 id="dashboard-settings-title" className="text-sm font-semibold text-zinc-100">
-            Dashboard settings
-          </h2>
+        <div className="p-5 space-y-5 overflow-y-auto">
+          <div className="space-y-1.5">
+            <label className="text-xs text-zinc-400" htmlFor="dashboard-name">
+              Name
+            </label>
+            <input
+              ref={nameInputRef}
+              key={`${dashboard.id}:${dashboard.name}`}
+              id="dashboard-name"
+              name="dashboard-name"
+              defaultValue={dashboard.name}
+              placeholder="Dashboard name"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+            />
+          </div>
+
+          {dashboard.can_manage_shares && (
+            <SharePanel
+              dashboardId={dashboard.id}
+              items={shareItems}
+              onUpdate={handleRoleChange}
+              onRemove={handleRemoveShare}
+              title="Permissions"
+              description="Choose who should be able to view or edit this dashboard."
+              emptyMessage="Only you can access this dashboard right now."
+              roleOptions={DASHBOARD_ROLE_OPTIONS}
+              loading={sharesLoading}
+              loadingMessage="Loading permissions…"
+            />
+          )}
         </div>
 
-        <form
-          onSubmit={(event) => void handleSubmit(event)}
-          className="flex flex-col max-h-[calc(85vh-57px)]"
-        >
-          <div className="p-5 space-y-5 overflow-y-auto">
-            <div className="space-y-1.5">
-              <label className="text-xs text-zinc-400" htmlFor="dashboard-name">
-                Name
-              </label>
-              <input
-                ref={nameInputRef}
-                key={`${dashboard.id}:${dashboard.name}`}
-                id="dashboard-name"
-                name="dashboard-name"
-                defaultValue={dashboard.name}
-                placeholder="Dashboard name"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
-              />
-            </div>
-
-            {dashboard.can_manage_shares && (
-              <SharePanel
-                dashboardId={dashboard.id}
-                items={shareItems}
-                onUpdate={handleRoleChange}
-                onRemove={handleRemoveShare}
-                title="Permissions"
-                description="Choose who should be able to view or edit this dashboard."
-                emptyMessage="Only you can access this dashboard right now."
-                roleOptions={DASHBOARD_ROLE_OPTIONS}
-                loading={sharesLoading}
-                loadingMessage="Loading permissions…"
-              />
+        <div className="flex gap-2 p-5 pt-4 border-t border-zinc-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+          >
+            Close
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className={cn(
+              'flex-1 py-2 rounded-md text-sm bg-zinc-100 hover:bg-white text-zinc-900 font-medium transition-colors',
+              'disabled:opacity-40 disabled:cursor-not-allowed',
             )}
-          </div>
-
-          <div className="flex gap-2 p-5 pt-4 border-t border-zinc-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
-            >
-              Close
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className={cn(
-                'flex-1 py-2 rounded-md text-sm bg-zinc-100 hover:bg-white text-zinc-900 font-medium transition-colors',
-                'disabled:opacity-40 disabled:cursor-not-allowed',
-              )}
-            >
-              {submitting ? 'Saving…' : 'Save name'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          >
+            {submitting ? 'Saving…' : 'Save name'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   )
 }

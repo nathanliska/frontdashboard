@@ -63,7 +63,7 @@ export function ListItemRow({
           {...sortable.attributes}
           {...sortable.listeners}
           aria-label="Reorder item"
-          className="shrink-0 p-0.5 text-zinc-600 hover:text-zinc-300 cursor-grab touch-none sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+          className="shrink-0 p-0.5 text-zinc-600 hover:text-zinc-300 cursor-grab touch-none sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
         >
           <GripVertical size={14} />
         </button>
@@ -150,7 +150,7 @@ export function ListItemRow({
           <button
             type="button"
             onClick={startEditing}
-            className="p-0.5 text-zinc-600 hover:text-zinc-300 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+            className="p-0.5 text-zinc-600 hover:text-zinc-300 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
             aria-label="Edit item"
           >
             <Pencil size={14} />
@@ -158,7 +158,7 @@ export function ListItemRow({
           <button
             type="button"
             onClick={() => setConfirmingDelete(true)}
-            className="p-0.5 text-zinc-600 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+            className="p-0.5 text-zinc-600 hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
             aria-label="Delete item"
           >
             <Trash2 size={14} />

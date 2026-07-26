@@ -97,7 +97,8 @@ export function DashboardsPage() {
     const message = dashboard.archived
       ? `Unarchive "${dashboard.name}"?`
       : `Archive "${dashboard.name}"? Its lists and calendar views will disappear until you restore it.`
-    if (await confirm(message)) {
+    const label = dashboard.archived ? 'Unarchive' : 'Archive'
+    if (await confirm(message, { confirmLabel: label, tone: 'default' })) {
       void archiveDashboard(dashboard.id, !dashboard.archived)
     }
   }
@@ -105,7 +106,7 @@ export function DashboardsPage() {
   async function handleDelete(dashboard: DashboardSummary) {
     // Honest copy (#40): it goes to the trash with everything on it, and it is recoverable.
     const message = `Move "${dashboard.name}" to the trash? Its lists and calendar events go with it. You can restore it from the trash for 30 days.`
-    if (await confirm(message)) {
+    if (await confirm(message, { confirmLabel: 'Move to trash' })) {
       if (await deleteDashboard(dashboard.id)) {
         void apiGetTrash()
           .then(setTrash)

@@ -1,5 +1,5 @@
+import * as Popover from '@radix-ui/react-popover'
 import { Bell, Check, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { ROUTES } from '../../routes'
 import { useNotificationsStore } from '../../stores/notifications'
@@ -23,19 +23,6 @@ export function NotificationPanel({
   const setPanelOpen = useNotificationsStore((s) => s.setPanelOpen)
   const markRead = useNotificationsStore((s) => s.markRead)
   const markAllRead = useNotificationsStore((s) => s.markAllRead)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!panelOpen) return
-    function handleMouseDown(event: MouseEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setPanelOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleMouseDown)
-    return () => document.removeEventListener('mousedown', handleMouseDown)
-  }, [panelOpen, setPanelOpen])
-
   function handleNotificationClick(notification: (typeof notifications)[number]) {
     if (notification.read_at === null) {
       void markRead(notification.id)
@@ -48,34 +35,41 @@ export function NotificationPanel({
   }
 
   return (
-    <div ref={containerRef} className="relative z-50">
-      {/* Bell trigger */}
-      <button
-        type="button"
-        onClick={() => {
-          if (!panelOpen) onOpen?.()
-          setPanelOpen(!panelOpen)
-        }}
-        title={collapsed ? 'Notifications' : undefined}
-        className="relative z-50 flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
-      >
-        <div className="relative shrink-0">
-          <Bell size={18} />
-          {unreadCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5 leading-none">
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          )}
-        </div>
-        {!collapsed && <span>Notifications</span>}
-      </button>
+    // Radix Popover (#27): the trigger gets aria-expanded/aria-controls, Escape and outside
+    // clicks close (the hand-rolled mousedown listener is gone), and focus returns to the bell.
+    // Controlled by the store's panelOpen so SSE/navigation can still close it.
+    <Popover.Root
+      open={panelOpen}
+      onOpenChange={(open) => {
+        if (open) onOpen?.()
+        setPanelOpen(open)
+      }}
+    >
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          title={collapsed ? 'Notifications' : undefined}
+          className="relative z-50 flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
+        >
+          <div className="relative shrink-0">
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5 leading-none">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </div>
+          {!collapsed && <span>Notifications</span>}
+        </button>
+      </Popover.Trigger>
 
-      {/* Slide-out panel */}
-      {panelOpen && (
-        <div
+      <Popover.Portal>
+        <Popover.Content
+          side={collapsed ? 'right' : 'top'}
+          align={collapsed ? 'end' : 'start'}
+          sideOffset={4}
           className={cn(
-            'absolute bottom-full mb-1 w-80 bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl z-50 flex flex-col max-h-120',
-            collapsed ? 'left-full ml-2' : 'left-2',
+            'w-80 bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl z-50 flex flex-col max-h-120',
           )}
         >
           {/* Header */}
@@ -136,8 +130,8 @@ export function NotificationPanel({
               View all notifications →
             </Link>
           </div>
-        </div>
-      )}
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }

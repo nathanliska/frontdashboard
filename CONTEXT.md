@@ -128,6 +128,13 @@ _Last updated: 2026-07-26_
   check is worker-agnostic and holds without it). Closes #8's authorization half: a revoked session
   stops streaming within 30s and stops being accepted on requests immediately.
 
+**UI primitives & accessibility** (#27)
+- All modals share one Radix-based `ui/Dialog` (focus trap, labelling, Escape, focus restore);
+  the confirm dialog is parameterized (`confirmLabel`/`tone`) so its button names the action.
+  The notification panel is a Radix Popover; dashboard-card actions live in a visible Radix
+  overflow menu (≥44px target); desktop hover-revealed row actions also reveal on keyboard
+  focus; toasts announce via a persistent `role="status"` live region.
+
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
 - **Both production images run unprivileged** (uid 10001), with base images pinned by digest and a
