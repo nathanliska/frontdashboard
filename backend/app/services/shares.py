@@ -108,12 +108,17 @@ async def load_resource_access(
         if exc.status_code != status.HTTP_404_NOT_FOUND:
             raise
 
-    inherited_role = await get_inherited_resource_role(
-        resource_type,
-        resource_id,
-        user.id,
-        db,
-    )
+    # Dashboards are the *source* of inheritance, never a target: no widget binds a dashboard as
+    # its resource, so inherited-role discovery for one is a structurally empty join — previously
+    # paid on every non-owner dashboard access (finding #25).
+    inherited_role = None
+    if resource_type is not ResourceType.dashboard:
+        inherited_role = await get_inherited_resource_role(
+            resource_type,
+            resource_id,
+            user.id,
+            db,
+        )
 
     role = _highest_role([role for role in (direct_role, inherited_role) if role is not None])
     if role is None:
@@ -128,10 +133,22 @@ async def cleanup_resource_shares(
     db: AsyncSession,
 ) -> None:
     """Remove all shares for a resource (call before soft-deleting)."""
+    await cleanup_resource_shares_for_many(resource_type, [resource_id], db)
+
+
+async def cleanup_resource_shares_for_many(
+    resource_type: ResourceType,
+    resource_ids: list[uuid.UUID],
+    db: AsyncSession,
+) -> None:
+    """One DELETE for a batch of same-type resources — dashboard deletion sweeps every child
+    list and event, and issuing that per child was a statement per row (finding #25)."""
+    if not resource_ids:
+        return
     await db.execute(
         delete(ResourceShare).where(
             ResourceShare.resource_type == resource_type,
-            ResourceShare.resource_id == resource_id,
+            ResourceShare.resource_id.in_(resource_ids),
         )
     )
 

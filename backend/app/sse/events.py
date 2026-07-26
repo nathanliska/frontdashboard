@@ -31,9 +31,16 @@ def activity_to_sse_dict(event: ActivityEvent) -> dict:
 
 
 async def build_activity_sse_dict(db: AsyncSession, event: ActivityEvent) -> dict:
-    """Flush and refresh a staged ActivityEvent before serialising it for SSE."""
+    """Flush a staged ActivityEvent, then serialise it for SSE.
+
+    `eager_defaults=True` brings `created_at` back in the INSERT's RETURNING, but the
+    sequence-assigned `event_id` is not eager-fetched (verified empirically — a plain flush
+    leaves it unloaded, and lazy-loading it during serialisation raises MissingGreenlet), so it
+    is refreshed by name. One targeted SELECT per *mutation* is constant cost; the N+1 this file
+    used to carry was the full per-recipient refresh in the notification batch below (#25).
+    """
     await db.flush()
-    await db.refresh(event)
+    await db.refresh(event, attribute_names=["event_id"])
     return activity_to_sse_dict(event)
 
 
@@ -72,20 +79,21 @@ def notification_to_sse_dict(notif: Notification) -> dict:
 
 
 async def build_notification_sse_dict(db: AsyncSession, notif: Notification) -> dict:
-    """Flush and refresh a staged Notification before serialising it for SSE."""
+    """Flush a staged Notification, then serialise it for SSE (see build_activity_sse_dict)."""
     await db.flush()
-    await db.refresh(notif)
     return notification_to_sse_dict(notif)
 
 
 async def build_notification_sse_dicts(db: AsyncSession, notifications: Sequence[Notification]) -> list[dict]:
-    """Materialise a batch of notifications for SSE with a single session flush."""
+    """Materialise a batch of notifications for SSE with a single session flush.
+
+    One flush covers the whole batch and nothing more is needed: every serialised Notification
+    field is assigned in Python at staging (id is a client-side uuid4, created_at is set by
+    stage_notification), so the per-notification `db.refresh` this used to do was one SELECT per
+    share member of the dashboard being broadcast to, fetching nothing new (finding #25).
+    """
     if not notifications:
         return []
 
     await db.flush()
-    messages: list[dict] = []
-    for notif in notifications:
-        await db.refresh(notif)
-        messages.append(notification_to_sse_dict(notif))
-    return messages
+    return [notification_to_sse_dict(notif) for notif in notifications]

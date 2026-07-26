@@ -37,6 +37,7 @@ from app.services.preferences import (
 )
 from app.services.shares import (
     cleanup_resource_shares,
+    cleanup_resource_shares_for_many,
     create_share,
     get_resource_share,
     get_resource_shares,
@@ -611,18 +612,16 @@ async def delete_dashboard(
     # dashboard's delete. Do not re-add a deleted_at filter here.
     list_result = await db.execute(select(List.id).where(List.dashboard_id == dashboard.id))
     list_ids = [row[0] for row in list_result.all()]
-    for list_id in list_ids:
-        await cleanup_resource_shares(ResourceType.list, list_id, db)
     if list_ids:
+        await cleanup_resource_shares_for_many(ResourceType.list, list_ids, db)
         await db.execute(delete(ListItem).where(ListItem.list_id.in_(list_ids)))
         await db.execute(delete(List).where(List.id.in_(list_ids)))
 
     # Same as lists above — sweep soft-deleted events too (no FK cascade).
     event_result = await db.execute(select(CalendarEvent.id).where(CalendarEvent.dashboard_id == dashboard.id))
     event_ids = [row[0] for row in event_result.all()]
-    for event_id in event_ids:
-        await cleanup_resource_shares(ResourceType.calendar_event, event_id, db)
     if event_ids:
+        await cleanup_resource_shares_for_many(ResourceType.calendar_event, event_ids, db)
         await db.execute(delete(CalendarEvent).where(CalendarEvent.id.in_(event_ids)))
 
     await _remove_dashboard_from_user_preferences(dashboard, shares, db)

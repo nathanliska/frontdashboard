@@ -5,7 +5,9 @@ event_type, actor, and entity metadata. Completeness check: after each
 mutation there should be exactly one more event than before.
 """
 
+import json
 import re
+import uuid
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent, EventType
-from tests.helpers import CSRF, create_dashboard, create_list, create_list_item, register_user, set_csrf
+from app.services.activity import log_event
+from app.services.notifications import stage_notification
+from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
+from tests.helpers import CSRF, create_dashboard, create_list, create_list_item, make_db_user, register_user, set_csrf
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -233,3 +238,34 @@ async def test_event_id_is_monotonically_increasing(db_client: AsyncClient, db_s
     ids = [e.event_id for e in events]
     assert ids == sorted(ids)
     assert len(ids) == len(set(ids))  # all unique
+
+
+async def test_sse_builders_serialise_staged_rows_without_per_row_refreshes(db_session: AsyncSession) -> None:
+    """Pins the flush contract behind #25's refresh removal.
+
+    Notifications are fully assigned in Python at staging, so build_notification_sse_dicts must
+    serialise a flushed batch with no per-row refresh; the activity builder needs exactly one
+    targeted fetch (the sequence-assigned event_id, which eager_defaults does not bring back).
+    If a server-generated column is ever added to Notification, this fails here instead of the
+    SSE path quietly serialising None at runtime.
+    """
+    user = await make_db_user(db_session, label="flush-pin")
+    event = log_event(
+        db_session,
+        event_type=EventType.list_created,
+        actor_id=user.id,
+        actor_display_name=user.display_name,
+        entity_type="list",
+        entity_id=uuid.uuid4(),
+    )
+    notifications = [stage_notification(db_session, user_id=user.id, type="list.created", title="t", body=str(n)) for n in range(3)]
+
+    activity_message = await build_activity_sse_dict(db_session, event)
+    activity_payload = json.loads(activity_message["data"])
+    assert isinstance(activity_payload["event_id"], int)
+    assert activity_payload["created_at"] is not None
+
+    messages = await build_notification_sse_dicts(db_session, notifications)
+    payloads = [json.loads(m["data"]) for m in messages]
+    assert [p["body"] for p in payloads] == ["0", "1", "2"]
+    assert all(p["id"] and p["created_at"] for p in payloads)
