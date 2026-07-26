@@ -12,7 +12,9 @@ import {
 import { parseJson } from './http'
 import type { ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
-const dashboardRequests = new Map<string, Promise<Dashboard>>()
+// Share reads are the one place a single-flight earns its keep: the settings modal fetches them
+// from an effect with no coalescing layer above it, and StrictMode double-invokes that effect in
+// development. Dashboard reads are coalesced by the store instead — see apiGetDashboard.
 const dashboardShareRequests = new Map<string, Promise<ResourceShare[]>>()
 
 export type { DashboardSummary } from './generated/contract'
@@ -86,27 +88,20 @@ export async function apiListDashboards(): Promise<DashboardSummary[]> {
   return parseJson(res, z.array(DashboardSummary))
 }
 
+// Not single-flighted: the only caller is the dashboard store's loadDashboard, which coalesces by
+// id above this layer *and* merges load options across a queued follow-up. A second dedupe here
+// would only ever swallow the request that store logic deliberately re-issues.
 export async function apiGetDashboard(id: string): Promise<Dashboard> {
-  const existing = dashboardRequests.get(id)
-  if (existing) return existing
-
-  const request = (async () => {
-    const res = await apiFetch(`/api/dashboards/${id}`)
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { detail?: string }
-      const error = new Error(data.detail ?? 'Failed to load dashboard') as Error & {
-        status?: number
-      }
-      error.status = res.status
-      throw error
+  const res = await apiFetch(`/api/dashboards/${id}`)
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    const error = new Error(data.detail ?? 'Failed to load dashboard') as Error & {
+      status?: number
     }
-    return parseDashboard(res)
-  })().finally(() => {
-    dashboardRequests.delete(id)
-  })
-
-  dashboardRequests.set(id, request)
-  return request
+    error.status = res.status
+    throw error
+  }
+  return parseDashboard(res)
 }
 
 export async function apiCreateDashboard(

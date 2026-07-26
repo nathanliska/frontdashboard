@@ -19,39 +19,9 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-describe('dashboard api request dedupe', () => {
+describe('dashboard share request dedupe', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-  })
-
-  it('dedupes in-flight dashboard detail reads', async () => {
-    const response = {
-      ok: true,
-      json: vi.fn().mockResolvedValue({
-        id: 'dash-1',
-        user_id: 'user-1',
-        name: 'Primary Dashboard',
-        archived: false,
-        can_edit: true,
-        can_manage_shares: true,
-        is_favorite: false,
-        is_shared: false,
-        layout: [],
-        version: 1,
-        widgets: [],
-      }),
-    }
-    const request = deferred<typeof response>()
-    apiFetch.mockReturnValue(request.promise)
-
-    const first = apiGetDashboard('dash-1')
-    const second = apiGetDashboard('dash-1')
-
-    expect(apiFetch).toHaveBeenCalledTimes(1)
-
-    request.resolve(response)
-    await expect(first).resolves.toMatchObject({ id: 'dash-1' })
-    await expect(second).resolves.toMatchObject({ id: 'dash-1' })
   })
 
   it('dedupes in-flight dashboard share reads', async () => {
