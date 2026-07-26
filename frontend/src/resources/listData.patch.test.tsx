@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import { useAuthStore } from '../stores/auth'
+import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
 import {
   __resetListDataForTests,
   __seedListDetailForTests,
@@ -48,54 +49,29 @@ vi.mock('../api/lists', () => ({
   apiReorderLists,
 }))
 
-vi.mock('../stores/toast', () => ({
-  toast: {
-    error: vi.fn(),
-    success: vi.fn(),
-    info: vi.fn(),
-  },
-}))
+vi.mock('../stores/toast', async () => (await import('../test/toast')).toastMock())
+
+const AT = '2026-04-05T00:00:00Z'
 
 function makeListSummary(overrides: Partial<ListSummary> = {}): ListSummary {
-  return {
-    id: 'list-1',
-    dashboard_id: 'dash-1',
+  return baseListSummary({
     name: 'Groceries',
     list_type: 'todo',
-    sort_order: 0,
-    archived: false,
-    created_by: 'user-1',
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
     item_count: 3,
+    created_at: AT,
+    updated_at: AT,
     ...overrides,
-  }
+  })
 }
 
+// Items here are identified by their text, which is also their id — the patch cases are about
+// which item moved, not what it says.
 function makeListItem(id: string, overrides: Partial<ListItem> = {}): ListItem {
-  return {
-    id,
-    list_id: 'list-1',
-    text: id,
-    checked: false,
-    sort_order: 0,
-    due_date: null,
-    priority: null,
-    category: null,
-    assigned_to: null,
-    created_by: 'user-1',
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
-    ...overrides,
-  }
+  return baseListItem({ id, text: id, created_at: AT, updated_at: AT, ...overrides })
 }
 
 function makeListDetail(itemIds: string[], overrides: Partial<ListDetail> = {}): ListDetail {
-  return {
-    ...makeListSummary(),
-    items: itemIds.map((id) => makeListItem(id)),
-    ...overrides,
-  }
+  return { ...makeListSummary(), items: itemIds.map((id) => makeListItem(id)), ...overrides }
 }
 
 function ItemsProbe({ listId }: { listId: string }) {

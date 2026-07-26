@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListItem } from '../../../api/lists'
 import { __resetListDataForTests, handleListResourceEvent } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
+import {
+  makeListDetail as baseListDetail,
+  makeListItem as baseListItem,
+} from '../../../test/fixtures'
 import { ListWidget } from './ListWidget'
 
 const apiMocks = vi.hoisted(() => ({
@@ -16,39 +20,23 @@ vi.mock('../../../api/lists', () => ({
   ...apiMocks,
 }))
 
+// "Groceries" and "Buy milk" are asserted against in the rendered widget, so they belong to this
+// file; the shared fixtures supply everything else.
+const AT = '2026-04-05T00:00:00Z'
+
 function makeListDetail(overrides: Partial<ListDetail> = {}): ListDetail {
-  return {
-    id: 'list-1',
-    dashboard_id: 'dash-1',
+  return baseListDetail({
     name: 'Groceries',
     list_type: 'todo',
-    sort_order: 0,
-    archived: false,
-    created_by: 'user-1',
-    item_count: 1,
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
+    created_at: AT,
+    updated_at: AT,
     items: [makeListItem()],
     ...overrides,
-  }
+  })
 }
 
 function makeListItem(overrides: Partial<ListItem> = {}): ListItem {
-  return {
-    id: 'item-1',
-    list_id: 'list-1',
-    text: 'Buy milk',
-    checked: false,
-    sort_order: 0,
-    due_date: null,
-    priority: null,
-    category: null,
-    assigned_to: null,
-    created_by: 'user-1',
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
-    ...overrides,
-  }
+  return baseListItem({ text: 'Buy milk', created_at: AT, updated_at: AT, ...overrides })
 }
 
 function deferred<T>() {

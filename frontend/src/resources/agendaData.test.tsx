@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CalendarOccurrence } from '../api/calendar'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
+import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
 import { handleAgendaResourceEvent, resetAgendaData, useAgendaItems } from './agendaData'
 import { __resetListDataForTests, handleListResourceEvent } from './listData'
 
@@ -46,11 +47,7 @@ vi.mock('../api/lists', () => ({
   apiUpdateList,
 }))
 
-vi.mock('../stores/toast', () => ({
-  toast: {
-    error: vi.fn(),
-  },
-}))
+vi.mock('../stores/toast', async () => (await import('../test/toast')).toastMock())
 
 function makeOccurrence(overrides: Partial<CalendarOccurrence> = {}): CalendarOccurrence {
   return {
@@ -70,46 +67,33 @@ function makeOccurrence(overrides: Partial<CalendarOccurrence> = {}): CalendarOc
   }
 }
 
-function makeListSummary(overrides: Partial<ListSummary> = {}): ListSummary {
-  return {
-    id: 'list-1',
-    dashboard_id: 'dash-1',
-    name: 'Groceries',
-    list_type: 'todo',
-    sort_order: 0,
-    archived: false,
-    created_by: 'user-1',
-    created_at: '2026-05-05T00:00:00Z',
-    updated_at: '2026-05-05T00:00:00Z',
-    item_count: 1,
-    ...overrides,
-  }
-}
+// due_date is the point of this file — an agenda entry only exists because an item is due — so
+// unlike the other list fixtures this default is load-bearing, not incidental.
+const AT = '2026-05-05T00:00:00Z'
+const DUE = '2026-05-05'
 
 function makeListItem(overrides: Partial<ListItem> = {}): ListItem {
-  return {
-    id: 'item-1',
-    list_id: 'list-1',
+  return baseListItem({
     text: 'Buy milk',
-    checked: false,
-    sort_order: 0,
-    due_date: '2026-05-05',
-    priority: null,
-    category: null,
-    assigned_to: null,
-    created_by: 'user-1',
-    created_at: '2026-05-05T00:00:00Z',
-    updated_at: '2026-05-05T00:00:00Z',
+    due_date: DUE,
+    created_at: AT,
+    updated_at: AT,
     ...overrides,
-  }
+  })
+}
+
+function makeListSummary(overrides: Partial<ListSummary> = {}): ListSummary {
+  return baseListSummary({
+    name: 'Groceries',
+    list_type: 'todo',
+    created_at: AT,
+    updated_at: AT,
+    ...overrides,
+  })
 }
 
 function makeListDetail(overrides: Partial<ListDetail> = {}): ListDetail {
-  return {
-    ...makeListSummary(),
-    items: [makeListItem()],
-    ...overrides,
-  }
+  return { ...makeListSummary(), items: [makeListItem()], ...overrides }
 }
 
 function AgendaProbe() {

@@ -65,11 +65,7 @@ vi.mock('../resources/listData', () => ({
   resetListData,
 }))
 
-vi.mock('./toast', () => ({
-  toast: {
-    error: toastError,
-  },
-}))
+vi.mock('./toast', async () => (await import('../test/toast')).toastMock({ error: toastError }))
 
 const user: User = {
   id: 'user-1',

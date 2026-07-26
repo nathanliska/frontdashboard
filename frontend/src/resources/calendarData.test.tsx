@@ -26,12 +26,7 @@ vi.mock('../api/calendar', () => ({
   apiUpdateEvent,
 }))
 
-vi.mock('../stores/toast', () => ({
-  toast: {
-    error: vi.fn(),
-    success: vi.fn(),
-  },
-}))
+vi.mock('../stores/toast', async () => (await import('../test/toast')).toastMock())
 
 function makeOccurrence(overrides: Partial<CalendarOccurrence> = {}): CalendarOccurrence {
   return {

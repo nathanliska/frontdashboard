@@ -35,11 +35,9 @@ vi.mock('../../api/invites', () => ({
   apiRevokeInvite,
 }))
 
-vi.mock('../../stores/toast', () => ({
-  toast: {
-    error: toastError,
-  },
-}))
+vi.mock('../../stores/toast', async () =>
+  (await import('../../test/toast')).toastMock({ error: toastError }),
+)
 
 function makeShare(overrides: Partial<ResourceShare> = {}): ResourceShare {
   return {

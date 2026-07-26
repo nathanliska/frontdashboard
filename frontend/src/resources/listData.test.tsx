@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import { useAuthStore } from '../stores/auth'
+import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
 import {
   __resetListDataForTests,
   addListItem,
@@ -44,52 +45,29 @@ vi.mock('../api/lists', () => ({
   apiUpdateList,
 }))
 
-vi.mock('../stores/toast', () => ({
-  toast: {
-    error: vi.fn(),
-  },
-}))
+vi.mock('../stores/toast', async () => (await import('../test/toast')).toastMock())
+
+// These names are not incidental — assertions below read "Groceries" and "Buy milk" back out of
+// the rendered output, so they belong to the tests. Only the surrounding field completeness comes
+// from the shared fixtures, which is what keeps a new required field a one-file change.
+const AT = '2026-04-05T00:00:00Z'
 
 function makeListSummary(overrides: Partial<ListSummary> = {}): ListSummary {
-  return {
-    id: 'list-1',
-    dashboard_id: 'dash-1',
+  return baseListSummary({
     name: 'Groceries',
     list_type: 'todo',
-    sort_order: 0,
-    archived: false,
-    created_by: 'user-1',
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
-    item_count: 1,
+    created_at: AT,
+    updated_at: AT,
     ...overrides,
-  }
+  })
 }
 
 function makeListItem(overrides: Partial<ListItem> = {}): ListItem {
-  return {
-    id: 'item-1',
-    list_id: 'list-1',
-    text: 'Buy milk',
-    checked: false,
-    sort_order: 0,
-    due_date: null,
-    priority: null,
-    category: null,
-    assigned_to: null,
-    created_by: 'user-1',
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
-    ...overrides,
-  }
+  return baseListItem({ text: 'Buy milk', created_at: AT, updated_at: AT, ...overrides })
 }
 
 function makeListDetail(overrides: Partial<ListDetail> = {}): ListDetail {
-  return {
-    ...makeListSummary(),
-    items: [makeListItem()],
-    ...overrides,
-  }
+  return { ...makeListSummary(), items: [makeListItem()], ...overrides }
 }
 
 function deferred<T>() {

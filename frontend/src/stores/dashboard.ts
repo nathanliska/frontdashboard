@@ -265,7 +265,7 @@ function isLatestDashboardRequest(id: string, serial: number): boolean {
   return latestDashboardRequest?.id === id && latestDashboardRequest.serial === serial
 }
 
-interface DashboardState {
+export interface DashboardState {
   // ── Listing ────────────────────────────────────────────────────────────────
   summaries: DashboardSummary[]
   summariesLoaded: boolean

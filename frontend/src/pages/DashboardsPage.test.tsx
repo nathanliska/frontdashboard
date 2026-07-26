@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../api/dashboards'
 import { useAuthStore } from '../stores/auth'
 import { useDashboardStore } from '../stores/dashboard'
+import { stubDashboardStore } from '../test/dashboard-store'
+import { makeDashboardSummary as makeSummary } from '../test/fixtures'
 import { DashboardsPage } from './DashboardsPage'
 
 vi.mock('../components/dashboard/DashboardSettingsModal', () => ({
@@ -24,24 +26,6 @@ vi.mock('../components/dashboard/DashboardSettingsModal', () => ({
     </div>
   ),
 }))
-
-function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummary {
-  return {
-    id: 'dash-1',
-    user_id: 'user-1',
-    name: 'Primary Dashboard',
-    archived: false,
-    access_description: 'Owned by you',
-    is_shared: false,
-    can_edit: true,
-    can_manage_shares: true,
-    is_favorite: false,
-    version: 1,
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
-    ...overrides,
-  }
-}
 
 describe('DashboardsPage', () => {
   beforeEach(() => {
@@ -65,29 +49,7 @@ describe('DashboardsPage', () => {
       changePassword: vi.fn(),
     })
 
-    useDashboardStore.setState({
-      summaries: [makeSummary()],
-      summariesLoaded: true,
-      summariesLoading: false,
-      dashboard: null,
-      loading: false,
-      loadError: false,
-      conflict: false,
-      loadSummaries: vi.fn(),
-      createDashboard: vi.fn(),
-      archiveDashboard: vi.fn(),
-      deleteDashboard: vi.fn(),
-      toggleFavorite: vi.fn(),
-      renameDashboard: vi.fn(),
-      loadDashboard: vi.fn(),
-      saveLayout: vi.fn(),
-      addWidget: vi.fn(),
-      removeWidget: vi.fn(),
-      updateWidget: vi.fn(),
-      handleDashboardEvent: vi.fn(),
-      handleContentEvent: vi.fn(),
-      resolveConflict: vi.fn(),
-    })
+    stubDashboardStore({ summaries: [makeSummary()] })
   })
 
   it('derives the editing dashboard from summaries and closes the modal on access loss', async () => {

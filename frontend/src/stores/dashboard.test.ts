@@ -59,11 +59,7 @@ vi.mock('../api/dashboards', () => ({
   apiUpdateWidget,
 }))
 
-vi.mock('./toast', () => ({
-  toast: {
-    error: toastError,
-  },
-}))
+vi.mock('./toast', async () => (await import('../test/toast')).toastMock({ error: toastError }))
 
 function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummary {
   return {

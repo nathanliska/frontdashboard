@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListSummary } from '../api/lists'
-import { useDashboardStore } from '../stores/dashboard'
+import { stubDashboardStore } from '../test/dashboard-store'
+import { makeDashboardSummary } from '../test/fixtures'
 import { ListDetailPage } from './ListDetailPage'
 import { ListsLayout } from './ListsLayout'
 
@@ -92,43 +93,8 @@ describe('ListsLayout / ListDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    useDashboardStore.setState({
-      summaries: [
-        {
-          id: 'dash-1',
-          user_id: 'user-1',
-          name: 'Home',
-          archived: false,
-          access_description: 'Owned by you',
-          is_shared: false,
-          can_edit: true,
-          can_manage_shares: true,
-          is_favorite: false,
-          version: 1,
-          created_at: '2026-04-21T00:00:00Z',
-          updated_at: '2026-04-21T00:00:00Z',
-        },
-      ],
-      summariesLoaded: true,
-      summariesLoading: false,
-      dashboard: null,
-      loading: false,
-      loadError: false,
-      conflict: false,
-      loadSummaries: vi.fn().mockResolvedValue(undefined),
-      createDashboard: vi.fn(),
-      archiveDashboard: vi.fn(),
-      deleteDashboard: vi.fn(),
-      toggleFavorite: vi.fn(),
-      renameDashboard: vi.fn(),
-      loadDashboard: vi.fn(),
-      saveLayout: vi.fn(),
-      addWidget: vi.fn(),
-      removeWidget: vi.fn(),
-      updateWidget: vi.fn(),
-      handleDashboardEvent: vi.fn(),
-      handleContentEvent: vi.fn(),
-      resolveConflict: vi.fn(),
+    stubDashboardStore({
+      summaries: [makeDashboardSummary({ id: 'dash-1', name: 'Home' })],
     })
   })
 
