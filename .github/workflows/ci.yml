@@ -24,6 +24,16 @@ jobs:
         with:
           version: "1.7.12"
           pyflakes: false
+      # The prod stack is never exercised by CI otherwise, so a typo in it surfaces at deploy.
+      # Values are dummies: this validates structure, not configuration.
+      - name: Validate the production Compose file
+        env:
+          DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+          SECRET_KEY: ci-secret-key
+          FRONTEND_BASE_URL: https://example.invalid
+          RESEND_API_KEY: ci
+          EMAIL_FROM: ci@example.invalid
+        run: docker compose -f docker-compose.prod.yml config --quiet
 
   backend:
     name: Backend
@@ -94,6 +104,28 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:run
       - run: npm run build
+      # Folded in from a separate job: this needs both toolchains, and the frontend job is the
+      # shorter of the two, so uv lands here rather than npm ci landing on the backend job.
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+          working-directory: backend
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --frozen
+        working-directory: backend
+      - name: Contract is in sync with the backend schema
+        # app.openapi() is schema-only — no DB connection is opened, but Settings() still
+        # requires these to be set (no defaults) for app.main to import.
+        env:
+          DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+          SECRET_KEY: ci-secret-key
+          ENVIRONMENT: development
+        working-directory: .
+        run: |
+          make contracts
+          git diff --exit-code frontend/src/api/generated/contract.ts
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Build production frontend image
@@ -104,35 +136,3 @@ jobs:
           push: false
           cache-from: type=gha,scope=frontdashboard-frontend
           cache-to: type=gha,mode=max,scope=frontdashboard-frontend
-
-  contract:
-    name: Contract drift
-    runs-on: ubuntu-latest
-    env:
-      # app.openapi() is schema-only — no DB connection is opened, but Settings()
-      # still requires these to be set (no defaults) for app.main to import.
-      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
-      SECRET_KEY: ci-secret-key
-      ENVIRONMENT: development
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
-        with:
-          enable-cache: true
-          working-directory: backend
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
-      - run: uv sync --frozen
-        working-directory: backend
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-        working-directory: frontend
-      - name: Contract is in sync with the backend schema
-        run: |
-          make contracts
-          git diff --exit-code frontend/src/api/generated/contract.ts

@@ -29,7 +29,7 @@ and effort are noted inline where known.
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 4 | Data layer, contracts & exposure | #17, #22◐, #24 |
-| 5 | Infra / CI / ops | #33, #35, #34, #20◐, #32◐, #36◐ |
+| 5 | Infra / CI / ops | #33, #35, #34, #20◐, #36◐ |
 | 6 | UX & cleanup | #27, #40, #42◐, #54 |
 | — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #39, #52, #56, #53, #21/#45 (deferred) |
 
@@ -47,7 +47,6 @@ and effort are noted inline where known.
 - **#35 — Define & test backup/restore.** No backup, no retention, no restore test — against irreversible, data-deleting migrations. Automate a pre-migration dump, keep copies off-host, and **actually restore one** to prove it works. The most valuable item in this file. *(Medium)*
 - **#34 — Deploy a matched pair of images.** Both images default to mutable `latest`, so a partial push can leave a new frontend talking to an old backend — the one runtime failure the contract gate can't catch ([ADR-018](adr/ADR-018-generated-validated-contracts.md)). Tag by release/SHA and deploy the pair together, with a documented rollback to the previous tag. *(Small-Medium)*
 - **#20◐ — Test against Alembic's deployed schema.** Done: shared fixture upgrades through the full chain, a test runs `alembic check` + heads check, `create_all` gone, notification FK reconciled. Remaining: an upgrade test from a prior data snapshot — pairs naturally with #35's dumps. *(Small)*
-- **#32◐ — CI gates.** Done: migrated-schema tests, deptry, actionlint, knip, run cancellation, prod frontend image build, contract-drift job, and a frontend type check that actually type-checks (`tsc --build`; the old `--noEmit` invocation against the solution-style root config silently checked nothing). Remaining: fold the `contract` job into the existing backend or frontend job — it currently starts a third runner and installs both toolchains to regenerate one file — and validate the prod Compose file. (The backend prod image now builds in the existing backend job.) *(Small)*
 - **#36◐ — Reproducible production containers.** Done: frontend build on Node 22 (matches CI), root `.dockerignore` allowlist, multi-stage backend image (uv and its wheel cache no longer ship), `uvicorn[standard]` replaced by explicit `uvloop`/`httptools` so PyYAML, websockets and watchfiles no longer ship (verified absent in the built image; uvloop and `HttpToolsProtocol` verified as the selected implementations, and watchfiles moved to the dev group because `--reload` needs it), all four base images pinned by digest, and the backend image runs as uid 10001 with a CI step asserting it. Pinning by digest freezes base-image security patches, so a `docker` Dependabot ecosystem was added in the same change — without it the pin is a liability, not a hardening. Remaining: **the frontend image still runs as root**, because Caddy binds `:80` there; moving it to an unprivileged port has to be coordinated with whatever fronts it (Cloudflare tunnel), so it needs a deployment decision rather than a code change. *(Small)*
 
 ## Phase 6 — UX & cleanup
