@@ -1,7 +1,7 @@
 # FDR-004: Sharing & Access
 
 **Status:** Active
-**Last reviewed:** 2026-07-25
+**Last reviewed:** 2026-07-26
 
 ## Overview
 
@@ -76,7 +76,20 @@ confirms nothing, because possession of the code *is* the authorization. Redeemi
 link scanners and message previews can't burn an invite by fetching it.
 **Tradeoff:** Anyone who obtains the link can redeem it — mitigated by single use, expiry, and
 revocation, not by identity. Minting is restricted to share managers so an editor can't widen who sees
-a dashboard. `POST /dashboards/{id}/shares` still exists and works, but no longer has a caller.
+a dashboard.
+
+### 6. Direct grant stays as an API capability, with no UI (decided 2026-07-26)
+
+**Decision:** `POST /dashboards/{id}/shares` and `DashboardCreate.shares` grant access by user id and
+remain, even though no client calls them. The product's only path to access is an invite link.
+**Why:** This is the direct per-resource grant [ADR-001](../adr/ADR-001-per-resource-sharing.md)
+preserves, and it is what the test suite uses to construct every shared-dashboard scenario — the
+alternative was rewriting that setup across five test modules to mint and redeem invites, which buys
+no coverage. Keeping it is also low-risk: calling it already requires managing shares on the target
+dashboard, and user ids are no longer discoverable, so it grants nothing an invite link wouldn't.
+**Tradeoff:** A live endpoint the UI can't reach, which will read as dead surface to anyone auditing
+the API — hence this entry. `GET`/`PATCH`/`DELETE` on shares *are* client-reachable: they are how the
+share panel lists, re-roles and revokes access after an invite is redeemed.
 
 ## Access
 
