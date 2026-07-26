@@ -1,7 +1,7 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import app.models.activity  # noqa: F401
@@ -51,7 +51,22 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Arbitrary but stable: identifies "FrontDashboard schema migration" across every process that
+# might run one. Session-scoped (not transaction-scoped) so it spans everything a migration run
+# does, and it releases on disconnect even if the process dies mid-wait.
+_MIGRATION_LOCK_KEY = 0x66D0_DA5B
+
+
 def do_run_migrations(connection) -> None:  # type: ignore[type-arg]
+    # Serialize concurrent upgrade runs (finding #33): every API container executes
+    # `alembic upgrade head` before serving, so a restart mid-deploy — or a second container
+    # coming up during one — used to race the same DDL against itself. With the lock, the loser
+    # waits, then finds the schema already at head and applies nothing.
+    connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": _MIGRATION_LOCK_KEY})
+    # The execute above autobegins a transaction; end it before alembic manages its own, or the
+    # migration work lands inside a transaction nothing ever commits. The lock is session-scoped,
+    # so it survives this commit.
+    connection.commit()
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
@@ -65,6 +80,9 @@ async def run_async_migrations() -> None:
     engine = create_async_engine(database_url(), poolclass=pool.NullPool)
     async with engine.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        # The lock is session-scoped; the connection close below releases it. Explicit unlock
+        # anyway, so a future refactor that pools this connection doesn't silently keep it.
+        await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": _MIGRATION_LOCK_KEY})
     await engine.dispose()
 
 
