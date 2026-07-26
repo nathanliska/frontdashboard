@@ -119,6 +119,7 @@ async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
     """Reset non-database global state after each test."""
     app.state.email_verification_tokens = {}
     app.state.password_reset_tokens = {}
+    app.state.existing_account_emails = []
 
     async def _capture_verification_email(email: str, verification_url: str) -> None:
         query = parse_qs(urlparse(verification_url).query)
@@ -128,8 +129,12 @@ async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
         query = parse_qs(urlparse(reset_url).query)
         app.state.password_reset_tokens[email] = query["token"][0]
 
+    async def _capture_existing_account_email(email: str) -> None:
+        app.state.existing_account_emails.append(email)
+
     monkeypatch.setattr("app.routers.auth.send_verification_email", _capture_verification_email)
     monkeypatch.setattr("app.routers.auth.send_password_reset_email", _capture_password_reset_email)
+    monkeypatch.setattr("app.routers.auth.send_existing_account_email", _capture_existing_account_email)
     yield
     limiter._storage.reset()
 

@@ -6,7 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.config import settings
-from app.services.email_templates import PASSWORD_RESET_HTML, VERIFICATION_HTML
+from app.services.email_templates import EXISTING_ACCOUNT_HTML, PASSWORD_RESET_HTML, VERIFICATION_HTML
 
 logger = logging.getLogger(__name__)
 _RESEND_EMAILS_URL = "https://api.resend.com/emails"
@@ -37,6 +37,22 @@ async def send_password_reset_email(email: str, reset_url: str) -> None:
         logger.exception("Failed to send password reset email to %s", email)
 
 
+async def send_existing_account_email(email: str) -> None:
+    """Tell the address owner that a signup was attempted, since the API deliberately won't.
+
+    Registration answers identically for known and unknown addresses (ADR-011), so this mail is
+    the only place the "you already have an account" fact is ever revealed — to the one party
+    entitled to it.
+    """
+    if not settings.resend_api_key:
+        logger.debug("Existing-account signup attempt for %s", email)
+        return
+    try:
+        await asyncio.to_thread(_send_existing_account_sync, email)
+    except RuntimeError:
+        logger.exception("Failed to send existing-account email to %s", email)
+
+
 def _send_verification_sync(email: str, verification_url: str) -> None:
     expiry = _expiry_text(settings.email_verification_expire_hours)
     _call_resend(
@@ -54,6 +70,23 @@ def _send_password_reset_sync(email: str, reset_url: str) -> None:
         subject="Reset your FrontDashboard password",
         html=Template(PASSWORD_RESET_HTML).substitute(reset_url=reset_url, expiry_text=expiry),
         text=f"Reset your FrontDashboard password here:\n{reset_url}\n\n{expiry}\n\nIf you did not request this, you can ignore this email.",
+    )
+
+
+def _send_existing_account_sync(email: str) -> None:
+    base = settings.frontend_base_url.rstrip("/")
+    login_url = f"{base}/login"
+    reset_url = f"{base}/forgot-password"
+    _call_resend(
+        to=email,
+        subject="You already have a FrontDashboard account",
+        html=Template(EXISTING_ACCOUNT_HTML).substitute(login_url=login_url, reset_url=reset_url),
+        text=(
+            "Someone just tried to sign up for FrontDashboard with this email address.\n\n"
+            f"You already have an account, so no new one was created. Sign in here:\n{login_url}\n\n"
+            f"Forgot your password? Reset it here:\n{reset_url}\n\n"
+            "If this wasn't you, no action is needed."
+        ),
     )
 
 

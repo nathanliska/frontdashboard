@@ -40,7 +40,7 @@ from app.schemas.auth import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services.email import send_password_reset_email, send_verification_email
+from app.services.email import send_existing_account_email, send_password_reset_email, send_verification_email
 from app.services.password_reset import consume_password_reset_token
 from app.services.sessions import (
     RefreshRejected,
@@ -222,22 +222,34 @@ async def register(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> RegistrationResponse:
-    """Create a new user and queue email verification."""
+    """Create a new user and queue email verification.
+
+    Answers identically whether or not the address already has an account (ADR-011): registration is
+    open to the internet, so a distinguishable response would be a free account-existence oracle for
+    anyone. The address owner still learns of the attempt — by email, which only they can read.
+    """
+    # Hash before the existence check so both branches pay the same dominant cost. Skipping the
+    # verify on the duplicate path would reopen through timing exactly what the response closes.
+    password_hash = await hash_password(body.password)
+
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+        background_tasks.add_task(send_existing_account_email, body.email)
+        return RegistrationResponse(email=body.email)
 
     user = User(
         email=body.email,
-        password_hash=await hash_password(body.password),
+        password_hash=password_hash,
         display_name=body.display_name,
     )
     db.add(user)
     try:
         await db.flush()
     except IntegrityError:
+        # A case-variant row the exact-match pre-check missed; the lower(email) index caught it.
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered") from None
+        background_tasks.add_task(send_existing_account_email, body.email)
+        return RegistrationResponse(email=body.email)
 
     # Pre-generate the dashboard UUID so we can store it in preferences immediately,
     # without needing an extra flush to retrieve the auto-generated ID.

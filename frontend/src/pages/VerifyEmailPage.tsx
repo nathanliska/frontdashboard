@@ -70,16 +70,21 @@ export function VerifyEmailPage() {
     <div className="flex h-screen items-center justify-center bg-zinc-950">
       <div className="w-full max-w-sm px-6">
         <h1 className="mb-3 text-center text-2xl font-semibold text-zinc-100">Verify your email</h1>
+        {/*
+          Deliberately vague about which email was sent: signing up with an address that already has
+          an account gets this same screen, and says "we sent a verification link" only when one was.
+          Naming the email here would put the account-existence oracle back (ADR-011).
+        */}
         <p className="mb-8 text-center text-sm text-zinc-500">
           {status === 'verifying' ? (
             'Checking your verification link...'
           ) : initialEmail ? (
             <>
-              We sent a verification link to <span className="text-zinc-300">{initialEmail}</span>.
-              Check your inbox before signing in.
+              We sent an email to <span className="text-zinc-300">{initialEmail}</span>. Follow the
+              instructions in it before signing in.
             </>
           ) : (
-            'Check your inbox for a verification link before signing in.'
+            'Check your inbox and follow the instructions in the email we sent.'
           )}
         </p>
 

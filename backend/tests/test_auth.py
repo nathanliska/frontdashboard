@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
 from app.models.session import UserSession
 from app.models.user import User
+from app.routers import auth as auth_router
 from tests.helpers import CSRF, create_dashboard, register_client, set_csrf
 
 _REGISTER_URL = "/api/auth/register"
@@ -55,14 +56,47 @@ async def test_register(db_client: AsyncClient) -> None:
     assert app.state.email_verification_tokens["new@example.com"]
 
 
-async def test_register_duplicate_email(db_client: AsyncClient) -> None:
+async def test_register_duplicate_email_is_indistinguishable_from_a_new_signup(db_client: AsyncClient, db_session: AsyncSession) -> None:
     payload = {"email": "dup@example.com", "password": "password123", "display_name": "Dup"}
-    await db_client.post(_REGISTER_URL, json=payload)
-    resp = await db_client.post(_REGISTER_URL, json=payload)
-    assert resp.status_code == 409
+    first = await db_client.post(_REGISTER_URL, json=payload)
+    assert first.status_code == 201
+
+    app.state.email_verification_tokens.clear()
+    second = await db_client.post(_REGISTER_URL, json=payload)
+
+    # Byte-identical to the first-time response: registration is open to the internet, so anything
+    # that distinguished these two would be a free account-existence oracle.
+    assert (second.status_code, second.json()) == (first.status_code, first.json())
+
+    # Nothing was created, and no verification link went out that a squatter could follow.
+    assert app.state.email_verification_tokens == {}
+    count = await db_session.scalar(select(func.count()).select_from(User).where(User.email == "dup@example.com"))
+    assert count == 1
+
+    # The address owner is the one party entitled to know, and is told out of band.
+    assert app.state.existing_account_emails == ["dup@example.com"]
 
 
-async def test_register_collision_returns_409_not_500(db_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_register_duplicate_still_pays_for_a_password_hash(db_client: AsyncClient, monkeypatch) -> None:
+    payload = {"email": "timing@example.com", "password": "password123", "display_name": "T"}
+    assert (await db_client.post(_REGISTER_URL, json=payload)).status_code == 201
+
+    calls = 0
+    real_hash = auth_router.hash_password
+
+    async def counting_hash(password: str) -> str:
+        nonlocal calls
+        calls += 1
+        return await real_hash(password)
+
+    monkeypatch.setattr("app.routers.auth.hash_password", counting_hash)
+    assert (await db_client.post(_REGISTER_URL, json=payload)).status_code == 201
+
+    # Returning early without hashing would reopen through timing what the identical response closes.
+    assert calls == 1
+
+
+async def test_register_case_variant_collision_does_not_leak(db_client: AsyncClient, db_session: AsyncSession) -> None:
     # A mixed-case row inserted directly (bypassing schema normalization) is missed by register's
     # exact-match pre-check but caught by the lower(email) unique index — the IntegrityError backstop.
     db_session.add(User(email="Edge@Example.com", password_hash="x", display_name="Edge"))
@@ -72,8 +106,10 @@ async def test_register_collision_returns_409_not_500(db_client: AsyncClient, db
         _REGISTER_URL,
         json={"email": "edge@example.com", "password": "password123", "display_name": "Edge2"},
     )
-    assert resp.status_code == 409
-    assert resp.json()["detail"] == "Email already registered"
+    # The backstop must absorb into the same success shape, not surface the collision as a 409.
+    assert resp.status_code == 201
+    assert resp.json() == {"email": "edge@example.com"}
+    assert app.state.existing_account_emails == ["edge@example.com"]
 
 
 async def test_register_rejects_blank_display_name(db_client: AsyncClient) -> None:
@@ -663,11 +699,15 @@ async def test_login_is_case_insensitive(db_client: AsyncClient) -> None:
     assert resp.status_code == 200
 
 
-async def test_register_rejects_case_variant_duplicate(db_client: AsyncClient) -> None:
+async def test_register_case_variant_duplicate_creates_nothing(db_client: AsyncClient, db_session: AsyncSession) -> None:
     payload = {"email": "dupe@example.com", "password": "password123", "display_name": "D"}
     assert (await db_client.post(_REGISTER_URL, json=payload)).status_code == 201
     variant = {"email": "Dupe@Example.com", "password": "password123", "display_name": "D2"}
-    assert (await db_client.post(_REGISTER_URL, json=variant)).status_code == 409
+    assert (await db_client.post(_REGISTER_URL, json=variant)).status_code == 201
+
+    # Normalization means the variant hits the same account — it must not become a second one.
+    count = await db_session.scalar(select(func.count()).select_from(User).where(User.email == "dupe@example.com"))
+    assert count == 1
 
 
 async def test_password_reset_request_is_case_insensitive(db_client: AsyncClient) -> None:

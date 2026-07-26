@@ -22,6 +22,10 @@ _Last updated: 2026-07-19_
   as reuse and revokes the session. `/auth/refresh` is CSRF-guarded and rate-limited.
 - Password reset via email; authenticated password change and profile rename (both re-issue the
   access cookie). Rate limits on all auth endpoints.
+- **No endpoint reveals whether an account exists.** Login, registration, password reset and
+  resend-verification all answer identically for known and unknown addresses, and registration pays
+  an Argon2 hash either way so timing doesn't leak what the response won't. Signing up with an
+  address that already has an account creates nothing and emails the owner instead. See ADR-011.
 - **Password hashing is Argon2, run off the event loop**: `hash_password`/`verify_password` execute
   in a worker thread via `anyio.to_thread.run_sync` under a shared, bounded capacity limiter
   (`argon2_max_concurrency`, default 4), so an auth burst can't stall the event loop or exhaust

@@ -27,7 +27,7 @@ and effort are noted inline where known.
 
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
-| 4 | Data layer, contracts & exposure | #55, #17, #22◐, #24 |
+| 4 | Data layer, contracts & exposure | #17, #22◐, #24 |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐, #32◐, #36◐, #37◐ |
 | 6 | UX & cleanup | #27, #40, #42◐, #54 |
 | — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #29, #30◐, #38◐, #39, #52, #56, #53, #21/#45 (deferred) |
@@ -36,7 +36,6 @@ and effort are noted inline where known.
 
 ## Phase 4 — Data layer, contracts & exposure
 
-- **#55 — Re-decide register enumeration under open registration.** [ADR-011](adr/ADR-011-enumeration-safe-login.md) accepts a `409 "Email already registered"` on duplicate signup *because* registration was near-closed, and closes with "revisit if registration ever opens to the public". It is open, so that acceptance has expired on its own terms — the 409 lets anyone test whether an address has an account. Mitigating factor: login requires a verified email, so probing costs the attacker a real mailbox per hit. Decide deliberately (accept with corrected reasoning, or move to a verify-by-email signup that reveals nothing) and supersede or amend the ADR either way. *(Small)*
 - **#17 — Replace the agenda's client-side 1+N request fan-out.** Agenda loads list summaries then one detail request per active list, so the request count grows with every list on the dashboard. Add a dashboard-scoped agenda endpoint (or batch list-detail), cached by dashboard + window. *(Medium)*
 - **#22◐ — Notification list growth.** Done: capped page no longer overwrites the authoritative unread total; duplicate SSE ids ignored; read-decrement fixed. Remaining: a cursor for notifications/activity so the list stays bounded as history accumulates. *(Small-Medium)*
 - **#24 — Collapse the four hand-rolled request caches into one.** In-flight coalescing is implemented four times in four styles: `resources/scopedQuery.ts` (234 lines), the dashboard store's serial counter plus a hand-rolled debounce that holds its own resolve/reject across five module-level mutables, the single-flight `Map`s in `api/dashboards.ts`, and the 401-refresh single-flight in `api/client.ts`. None evict before logout; none support stale/gc/cancel/retry. **This is a deletion**: one library (TanStack Query, ~13 kB gzip) or one internal primitive should remove ~330 lines of bespoke machinery and the class of bug it keeps producing. Keep Zustand for UI state. *(Large)*

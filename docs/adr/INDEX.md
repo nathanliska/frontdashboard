@@ -31,7 +31,7 @@ feature does*, [CONTEXT.md](../../CONTEXT.md) is the current-state snapshot, and
 | [ADR-008](ADR-008-layout-version-occ.md) | Layout version integer for optimistic concurrency control | 2026-07-20 |
 | [ADR-009](ADR-009-canonical-layout-mobile-projection.md) | Persisted layout is canonical, mobile view is a derived projection | 2026-07-20 |
 | [ADR-010](ADR-010-argon2-off-event-loop.md) | Argon2 password hashing off the event loop | 2026-07-20 |
-| [ADR-011](ADR-011-enumeration-safe-login.md) | Enumeration-safe, constant-work login | 2026-07-20 |
+| [ADR-011](ADR-011-enumeration-safe-login.md) | Enumeration-safe, constant-work authentication (login + registration) | 2026-07-25 |
 | [ADR-012](ADR-012-session-generation-guard.md) | Session-generation guard for auth-boundary state reset | 2026-07-20 |
 | [ADR-013](ADR-013-rate-limit-cf-connecting-ip.md) | Rate limiting keyed on `CF-Connecting-IP` | 2026-07-20 |
 | [ADR-014](ADR-014-fail-fast-prod-config.md) | Fail-fast production configuration validation | 2026-07-20 |
