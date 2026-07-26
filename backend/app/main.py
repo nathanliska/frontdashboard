@@ -4,10 +4,12 @@ import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy.exc import IntegrityError
 
 from app.api import api_router
 from app.config import Environment, settings
@@ -59,6 +61,23 @@ app = FastAPI(title="FrontDashboard", lifespan=lifespan)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty: ignore[invalid-argument-type]
+
+
+async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
+    """Constraint violations that escape route-level handling are concurrency conflicts, not bugs
+    the user caused — every write is schema-validated first, so what reaches the database and
+    fails is two requests disagreeing about current state (finding #26). A 409 tells the client
+    "refetch and retry"; the old generic 500 told it nothing. Logged with the traceback because a
+    site that hits this often enough deserves its own targeted handler (like add_widget's).
+    """
+    logging.getLogger("app").error("IntegrityError escaped route handling on %s %s", request.method, request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": "That change conflicts with one made concurrently. Refresh and try again."},
+    )
+
+
+app.add_exception_handler(IntegrityError, handle_integrity_error)  # ty: ignore[invalid-argument-type]
 
 app.add_middleware(
     CORSMiddleware,

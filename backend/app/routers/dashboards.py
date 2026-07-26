@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy import case, delete, func, literal, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -848,7 +849,16 @@ async def add_widget(
         resource_id=resource_id,
     )
     db.add(widget)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        # The friendly pre-check above covers the common case; this closes its race window —
+        # two concurrent adds of the same list both pass the check, and the loser lands on
+        # uq_dashboard_widgets_resource_binding. Same outcome, same message (finding #26).
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That item is already on this dashboard",
+        ) from exc
 
     current_layout: list[dict[str, Any]] = dashboard.layout if isinstance(dashboard.layout, list) else []
     default_w, default_h = _default_widget_size(body.widget_type)

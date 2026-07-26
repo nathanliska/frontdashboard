@@ -818,3 +818,25 @@ async def test_empty_dashboard_patch_is_rejected(auth_client: AsyncClient) -> No
     set_csrf(auth_client)
     resp = await auth_client.patch(f"/api/dashboards/{dashboard['id']}", json={})
     assert resp.status_code == 422
+
+
+async def test_binding_the_same_list_twice_is_a_conflict(auth_client: AsyncClient) -> None:
+    """One list maps to at most one widget per dashboard; the second add is a 409, not a 500.
+
+    This exercises the friendly pre-check. The race window behind it (two adds interleaving past
+    the check) lands on uq_dashboard_widgets_resource_binding and is translated to the same 409
+    by add_widget's IntegrityError handler; the constraint itself is pinned in
+    test_schema_invariants.py (finding #26).
+    """
+    dashboard = await create_dashboard(auth_client, name="Bind Twice")
+    lst = await create_list(auth_client, dashboard["id"], name="Bound")
+
+    payload = {"widget_type": "list", "resource_type": "list", "resource_id": lst["id"]}
+    set_csrf(auth_client)
+    first = await auth_client.post(f"/api/dashboards/{dashboard['id']}/widgets", json=payload)
+    assert first.status_code == 201
+
+    set_csrf(auth_client)
+    second = await auth_client.post(f"/api/dashboards/{dashboard['id']}/widgets", json=payload)
+    assert second.status_code == 409
+    assert "already on this dashboard" in second.json()["detail"]
