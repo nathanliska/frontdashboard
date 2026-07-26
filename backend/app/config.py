@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:5173"
     resend_api_key: str | None = None
     email_from: str = "FrontDashboard <noreply@frontdashboard.local>"
+    # Where development parks outgoing mail when there is no API key (finding #42). Relative to the
+    # backend working directory, which is bind-mounted in dev, so the files land on the host.
+    dev_mail_dir: str = ".dev-mail"
     # Background retention sweep of expired auth rows (finding #38).
     reaper_enabled: bool = True
     reaper_interval_hours: int = 6

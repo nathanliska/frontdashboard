@@ -24,7 +24,11 @@ from app.models import Base  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers` defaults to True, which would switch off every logger not named in
+    # alembic.ini — including the whole "app" tree. That is invisible when migrations run as their
+    # own process (the deployed CMD), but the test suite upgrades in-process, so the default left
+    # application logging dead for the rest of the run and quietly emptied any log assertion.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

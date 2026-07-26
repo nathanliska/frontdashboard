@@ -59,6 +59,13 @@ Everything here is a convention an agent can't safely infer from one file.
   means **any test touching Postgres must go through the `test_database` fixture**, or it gets
   mismarked as a unit test and runs without a database.
 - Tests monkeypatch email senders by the *router's* import path
-  (`app.routers.auth.send_verification_email`) — import/call them that way. With
-  `resend_api_key` unset the sender logs the link instead of sending (the only way to get a
-  token locally). Emails go through `BackgroundTasks`, always queued after `db.commit()`.
+  (`app.routers.auth.send_verification_email`) — import/call them that way. Emails go through
+  `BackgroundTasks`, always queued after `db.commit()`.
+- **Getting a token locally:** with `resend_api_key` unset *and* `ENVIRONMENT=development`, the
+  rendered message is written to `backend/.dev-mail/` (gitignored) — open the newest `.txt` for the
+  link. It is **not** logged: verification and reset URLs are bearer credentials, and the gate is
+  the environment rather than the missing key, because a missing key is the default (finding #42).
+  Any other environment without a key logs that the mail was dropped and sends nothing.
+- **Asserting on log output needs the `logs` fixture pattern** (`tests/test_email_delivery.py`):
+  `app.main` sets `propagate = False` on the "app" logger, and `caplog` listens at the root, so a
+  plain `caplog` captures nothing and every negative assertion passes vacuously.

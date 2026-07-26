@@ -32,8 +32,10 @@ _Last updated: 2026-07-19_
   memory. **Login is enumeration-safe**: it always pays exactly one Argon2 verify (against a fixed
   dummy hash when the email is unknown) and returns an identical 401 whether the account is missing
   or the password is wrong — no timing side-channel.
-- Emails send via Resend in background tasks; without an API key the sender logs the link
-  (how you get tokens locally). HTML templates exist for both flows.
+- Emails send via Resend in background tasks. Without an API key, **development** writes the
+  rendered message to a gitignored `backend/.dev-mail/` outbox (how you get tokens locally) and logs
+  only the file path — the links are bearer credentials, so they stay out of the log stream; any
+  other environment logs that the mail was dropped. HTML templates exist for all three flows.
 - Profile page: display name, password change, home-dashboard preference.
 - **Client state resets at every auth boundary** (login, logout, email verification, unauthenticated
   startup): notifications, resource caches, and the dashboard store (fields, in-flight request

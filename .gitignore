@@ -33,6 +33,9 @@ backend/dist/
 # Generated OpenAPI schema (transient — `make contracts` regenerates it)
 backend/openapi.json
 
+# Development mail outbox — holds live verification/reset links, so it must never be committed
+backend/.dev-mail/
+
 # Environment
 .env
 .env.prod
