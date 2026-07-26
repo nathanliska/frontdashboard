@@ -237,20 +237,6 @@ export async function apiGetDashboardShares(dashboardId: string): Promise<Resour
   return request
 }
 
-export async function apiAddDashboardShare(
-  dashboardId: string,
-  body: ShareCreate,
-  options?: DashboardMutationOptions,
-): Promise<ResourceShare> {
-  const res = await apiFetch(`/api/dashboards/${dashboardId}/shares`, {
-    method: 'POST',
-    headers: buildDashboardMutationHeaders(options),
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error('Failed to add dashboard share')
-  return parseJson(res, ShareResponse)
-}
-
 export async function apiUpdateDashboardShare(
   dashboardId: string,
   shareId: string,

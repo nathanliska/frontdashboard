@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     email_verification_expire_hours: int = 1
     password_reset_expire_hours: int = 1
+    # Invite links are handed out person-to-person, so they need a longer life than an
+    # emailed token — but they are bearer credentials, so not an unbounded one.
+    dashboard_invite_expire_hours: int = 168
     # Peak concurrent Argon2 hash/verify operations (each ~64 MiB). Bounds memory under an
     # auth burst; excess auth requests queue while the event loop stays responsive (finding #13).
     argon2_max_concurrency: int = 4

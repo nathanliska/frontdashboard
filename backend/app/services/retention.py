@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session_factory
+from app.models.dashboard_invite import DashboardInvite
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
@@ -38,6 +39,8 @@ _EXPIRING_TOKEN_TABLES = (
     ("refresh_tokens", RefreshToken),
     ("email_verification_tokens", EmailVerificationToken),
     ("password_reset_tokens", PasswordResetToken),
+    # Same shape and the same reasoning: an expired invite can never be redeemed again.
+    ("dashboard_invites", DashboardInvite),
 )
 
 # Arbitrary stable 64-bit key scoping the cross-process reaper lock. At most one

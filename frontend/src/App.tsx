@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate } from 'rea
 import { RequireAuth } from './components/auth/RequireAuth'
 import { AppShell } from './components/layout/AppShell'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
+import { InvitePage } from './pages/InvitePage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
@@ -81,6 +82,8 @@ export default function App() {
             <Route path={ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
             <Route path={ROUTES.resetPassword} element={<ResetPasswordPage />} />
             <Route path={ROUTES.verifyEmail} element={<VerifyEmailPage />} />
+            {/* Public: the code is the credential, and the preview must be readable signed out. */}
+            <Route path={ROUTES.invitePattern} element={<InvitePage />} />
 
             {/* Protected — RequireAuth shows spinner while loading, redirects if unauthed */}
             <Route element={<RequireAuth />}>

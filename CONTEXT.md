@@ -60,10 +60,14 @@ _Last updated: 2026-07-19_
   (today/overdue/upcoming). Add-widget wizard picks type → resource where applicable.
 
 **Sharing** (groups feature was removed — per-resource shares replaced it)
-- Dashboards are shared directly with users (search by name/email) as viewer/editor; owner =
-  creator. Lists and calendar events inherit access from the dashboard that binds them; their
-  `/shares` endpoints are deliberate 409 stubs. Share/unshare and archiving notify affected
-  users and clean up their preferences.
+- Dashboards are shared by **single-use invite link** carrying viewer/editor; owner = creator. There
+  is no user search — the owner mints a link and sends it themselves, so no one can discover who else
+  has an account. Codes are stored hashed, expire, are shown once, and can be revoked while unused;
+  the public `/invite/:code` page previews the dashboard and inviter, and accepting is a separate POST
+  so scanners can't burn a link.
+- Lists and calendar events inherit access from the dashboard that binds them; their `/shares`
+  endpoints are deliberate 409 stubs. Share/unshare and archiving notify affected users and clean up
+  their preferences.
 
 **Lists**
 - Master/detail lists UI with nested routes + mobile slide nav; items support check, due date,

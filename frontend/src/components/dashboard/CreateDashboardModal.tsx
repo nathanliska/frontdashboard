@@ -1,22 +1,5 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import type { DashboardSummary } from '../../api/dashboards'
-import type { ShareCreate, ShareRole } from '../../api/shares'
-import { SharePanel, type SharePanelItem, type ShareRoleOption } from '../ui/SharePanel'
-
-type DraftShare = ShareCreate & { principal_name: string }
-
-const DASHBOARD_ROLE_OPTIONS: ShareRoleOption[] = [
-  {
-    value: 'viewer',
-    label: 'View',
-    description: 'Can open this dashboard and see the widgets and content.',
-  },
-  {
-    value: 'editor',
-    label: 'Edit',
-    description: 'Can change layout, add or remove widgets.',
-  },
-] as const
 
 export function CreateDashboardModal({
   onCreated,
@@ -25,30 +8,14 @@ export function CreateDashboardModal({
 }: {
   onCreated: (summary: DashboardSummary) => void
   onClose: () => void
-  createDashboard: (data: {
-    name: string
-    shares?: ShareCreate[]
-  }) => Promise<DashboardSummary | null>
+  createDashboard: (data: { name: string }) => Promise<DashboardSummary | null>
 }) {
-  const [draftShares, setDraftShares] = useState<DraftShare[]>([])
   const [submitting, setSubmitting] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     nameInputRef.current?.focus()
   }, [])
-
-  const shareItems = useMemo<SharePanelItem[]>(
-    () =>
-      draftShares.map((share) => ({
-        key: `${share.principal_type}:${share.principal_id}`,
-        principal_type: share.principal_type,
-        principal_id: share.principal_id,
-        principal_name: share.principal_name,
-        role: share.role,
-      })),
-    [draftShares],
-  )
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -58,40 +25,12 @@ export function CreateDashboardModal({
 
     setSubmitting(true)
     try {
-      const summary = await createDashboard({
-        name,
-        shares: draftShares.map((share) => ({
-          principal_id: share.principal_id,
-          principal_type: share.principal_type,
-          role: share.role,
-        })),
-      })
+      const summary = await createDashboard({ name })
       // Keep the modal open on failure (the store already toasted). No throw to leak.
       if (summary) onCreated(summary)
     } finally {
       setSubmitting(false)
     }
-  }
-
-  function updateDraftRole(item: SharePanelItem, role: ShareRole) {
-    setDraftShares((current) =>
-      current.map((share) =>
-        share.principal_type === item.principal_type && share.principal_id === item.principal_id
-          ? { ...share, role }
-          : share,
-      ),
-    )
-  }
-
-  function removeDraft(item: SharePanelItem) {
-    setDraftShares((current) =>
-      current.filter(
-        (share) =>
-          !(
-            share.principal_type === item.principal_type && share.principal_id === item.principal_id
-          ),
-      ),
-    )
   }
 
   return (
@@ -133,34 +72,10 @@ export function CreateDashboardModal({
               />
             </div>
 
-            <SharePanel
-              items={shareItems}
-              title="Initial access"
-              description="Choose who should be able to view, use widgets on, or edit this dashboard."
-              emptyMessage="This dashboard will start private to you."
-              roleOptions={DASHBOARD_ROLE_OPTIONS}
-              onAdd={({ principal_id, principal_name, principal_type, role }) => {
-                setDraftShares((current) => [
-                  ...current,
-                  { principal_id, principal_name, principal_type, role },
-                ])
-                return true // local draft add — cannot fail
-              }}
-              onUpdate={async (item, role) => {
-                updateDraftRole(item, role)
-              }}
-              onRemove={async (item) => {
-                removeDraft(item)
-              }}
-            />
-            {draftShares.length > 0 && (
-              <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2">
-                <p className="text-xs text-zinc-500">
-                  People you add here will be able to open this dashboard as soon as it is created.
-                  Any shared widgets you place on it later will follow this dashboard audience.
-                </p>
-              </div>
-            )}
+            <p className="text-xs text-zinc-500">
+              This dashboard starts private to you. Once it exists, open its settings to create an
+              invite link for anyone you want to share it with.
+            </p>
           </div>
 
           <div className="flex gap-2 p-5 pt-4 border-t border-zinc-800">

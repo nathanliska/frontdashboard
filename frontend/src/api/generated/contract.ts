@@ -346,6 +346,42 @@ export const InheritedDashboardAccessResponse = z.object({
   dashboard_name: z.string()
 })
 
+export type InviteAcceptResponse = z.infer<typeof InviteAcceptResponse>
+export const InviteAcceptResponse = z.object({
+  dashboard_id: z.string(),
+  dashboard_name: z.string(),
+  role: ShareRole
+})
+
+export type InviteCreate = z.infer<typeof InviteCreate>
+export const InviteCreate = z.object({
+  role: ShareRole
+})
+
+export type InviteCreatedResponse = z.infer<typeof InviteCreatedResponse>
+export const InviteCreatedResponse = z.object({
+  code: z.string(),
+  created_at: z.string(),
+  expires_at: z.string(),
+  id: z.string(),
+  role: ShareRole
+})
+
+export type InvitePreviewResponse = z.infer<typeof InvitePreviewResponse>
+export const InvitePreviewResponse = z.object({
+  dashboard_name: z.string(),
+  invited_by: z.string(),
+  role: ShareRole
+})
+
+export type InviteResponse = z.infer<typeof InviteResponse>
+export const InviteResponse = z.object({
+  created_at: z.string(),
+  expires_at: z.string(),
+  id: z.string(),
+  role: ShareRole
+})
+
 export type ItemPriority = z.infer<typeof ItemPriority>
 export const ItemPriority = z.union([
   z.literal('low'),
@@ -592,13 +628,6 @@ export const UserResponse = z.object({
     .optional(),
   id: z.string(),
   preferences: z.union([UserPreferences, z.undefined()]).optional()
-})
-
-export type UserSearchResult = z.infer<typeof UserSearchResult>
-export const UserSearchResult = z.object({
-  display_name: z.string(),
-  email: z.string(),
-  id: z.string()
 })
 
 export type VerifyEmailRequest = z.infer<typeof VerifyEmailRequest>

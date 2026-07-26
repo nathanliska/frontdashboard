@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 import app.models.activity  # noqa: F401
 import app.models.calendar  # noqa: F401
 import app.models.dashboard  # noqa: F401
+import app.models.dashboard_invite  # noqa: F401
 import app.models.email_verification_token  # noqa: F401
 import app.models.list  # noqa: F401
 import app.models.notification  # noqa: F401

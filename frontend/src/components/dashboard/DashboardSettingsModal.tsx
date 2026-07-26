@@ -1,6 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  apiAddDashboardShare,
   apiGetDashboardShares,
   apiRemoveDashboardShare,
   apiUpdateDashboardShare,
@@ -141,31 +140,6 @@ export function DashboardSettingsModal({
     }
   }
 
-  async function handleAddShare(share: {
-    principal_type: SharePanelItem['principal_type']
-    principal_id: string
-    principal_name: string
-    role: ShareRole
-  }): Promise<boolean> {
-    const clientMutationId = createClientMutationId()
-    try {
-      const created = await apiAddDashboardShare(
-        dashboard.id,
-        {
-          principal_type: share.principal_type,
-          principal_id: share.principal_id,
-          role: share.role,
-        },
-        { clientMutationId },
-      )
-      setShares((current) => [...current, created])
-      return true
-    } catch {
-      toast.error('Failed to add permission.')
-      return false
-    }
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <button
@@ -208,8 +182,8 @@ export function DashboardSettingsModal({
 
             {dashboard.can_manage_shares && (
               <SharePanel
+                dashboardId={dashboard.id}
                 items={shareItems}
-                onAdd={handleAddShare}
                 onUpdate={handleRoleChange}
                 onRemove={handleRemoveShare}
                 title="Permissions"

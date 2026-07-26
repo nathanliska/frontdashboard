@@ -14,4 +14,6 @@ export const ROUTES = {
   listDetailPattern: '/lists/:listId',
   notifications: '/notifications',
   profile: '/profile',
+  invite: (code: string) => `/invite/${code}`,
+  invitePattern: '/invite/:code',
 } as const

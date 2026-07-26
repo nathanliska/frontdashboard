@@ -1,20 +1,12 @@
 import { Users } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import type { ShareRole } from '../../api/shares'
-import type {
-  SharePanelAddPayload,
-  SharePanelItem,
-  ShareRoleOption,
-} from '../../utils/share/sharePanelTypes'
+import type { SharePanelItem, ShareRoleOption } from '../../utils/share/sharePanelTypes'
 import { capitalize } from '../../utils/shared/cn'
 import { ShareAccessList } from './share-panel/ShareAccessList'
-import { SharePanelAddAccess } from './share-panel/SharePanelAddAccess'
+import { SharePanelInvite } from './share-panel/SharePanelInvite'
 
-export type {
-  SharePanelAddPayload,
-  SharePanelItem,
-  ShareRoleOption,
-} from '../../utils/share/sharePanelTypes'
+export type { SharePanelItem, ShareRoleOption } from '../../utils/share/sharePanelTypes'
 export { DashboardManagedAccessList } from './share-panel/DashboardManagedAccessList'
 
 const DEFAULT_SHARE_ROLE_OPTIONS: ShareRoleOption[] = (
@@ -25,8 +17,8 @@ const DEFAULT_SHARE_ROLE_OPTIONS: ShareRoleOption[] = (
 }))
 
 export function SharePanel({
+  dashboardId,
   items,
-  onAdd,
   onUpdate,
   onRemove,
   title = 'Permissions',
@@ -34,13 +26,12 @@ export function SharePanel({
   emptyMessage = 'Only you can access this right now.',
   roleOptions,
   currentAccessLabel = 'Current access',
-  searchPlaceholder = 'Search people',
-  searchHint = 'Type at least 2 characters to search.',
   loading = false,
   loadingMessage = 'Loading permissions…',
 }: {
+  /** Access is granted by handing out an invite link, so the panel needs the dashboard it manages. */
+  dashboardId: string
   items: SharePanelItem[]
-  onAdd: (share: SharePanelAddPayload) => boolean | Promise<boolean>
   onUpdate: (item: SharePanelItem, role: ShareRole) => void | Promise<void>
   onRemove: (item: SharePanelItem) => void | Promise<void>
   title?: string
@@ -48,8 +39,6 @@ export function SharePanel({
   emptyMessage?: string
   roleOptions?: ShareRoleOption[]
   currentAccessLabel?: string
-  searchPlaceholder?: string
-  searchHint?: string
   loading?: boolean
   loadingMessage?: string
 }) {
@@ -92,13 +81,7 @@ export function SharePanel({
       </div>
 
       <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 space-y-3">
-        <SharePanelAddAccess
-          items={items}
-          onAdd={onAdd}
-          roleOptions={effectiveRoleOptions}
-          searchPlaceholder={searchPlaceholder}
-          searchHint={searchHint}
-        />
+        <SharePanelInvite dashboardId={dashboardId} roleOptions={effectiveRoleOptions} />
 
         <ShareAccessList
           items={items}

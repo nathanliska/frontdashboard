@@ -1,7 +1,7 @@
 # FDR-004: Sharing & Access
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-25
 
 ## Overview
 
@@ -11,16 +11,21 @@ bound to that dashboard inherit the same access. This replaced an earlier groups
 
 ## Behavior
 
-- **Share a dashboard with a person.** Search a user by name or email and grant them **viewer** or
-  **editor**. The creator is the **owner**.
+- **Share a dashboard by invite link.** The owner mints a single-use link carrying a role — **viewer**
+  or **editor** — and sends it to the person themselves. The creator is the **owner**. There is no way
+  to look up a user, so nobody can be added without being handed a link.
+- **Redeeming.** Opening the link shows the dashboard name, who invited you, and the role, signed in
+  or not; accepting is a separate POST that consumes the code and grants the share. Codes expire, can
+  be revoked while unused, and are shown to the minter exactly once.
 - **Children inherit.** Lists and calendar events are visible to exactly the people who can see the
   dashboard whose widget binds them. They have no independent sharing UI.
 - **Unshare and role change.** Access can be revoked or changed; affected users are notified and their
   preferences (e.g. home dashboard) are cleaned up.
 - **Archiving affects visibility.** Archived dashboards are filtered out when resolving child-resource
   access.
-- **Search is exact/direct.** You find the specific person to share with by name/email, not a
-  directory browse.
+- **Only the invite carries identity outward.** The preview names the inviter and the dashboard,
+  because the recipient has to know what they are joining. Nothing else in the product will tell one
+  user that another exists.
 
 ## Design Decisions
 
@@ -58,6 +63,20 @@ but broader principals and richer roles are not built.
 **Why:** Household scale doesn't need group/role richness yet; keeping the surface small avoids
 speculative complexity. See CONTEXT.md "Deliberately deferred".
 **Tradeoff:** No org/group principals and no finer-grained roles until a real need appears.
+
+### 5. Access is granted by handing out a link, not by looking someone up
+
+**Decision:** Shares are created by minting a single-use `DashboardInvite` and sending the link to the
+recipient out of band. The user-search endpoint was deleted rather than hardened; the code is stored
+only as a SHA-256 hash, alongside `expires_at`/`used_at`, and is swept by the same retention reaper as
+the other token tables.
+**Why:** Registration is open to the internet, so any lookup that answers "does this person exist"
+answers it for strangers too. An exact-email invite still confirms an address on a hit; a link
+confirms nothing, because possession of the code *is* the authorization. Redeeming is a POST so that
+link scanners and message previews can't burn an invite by fetching it.
+**Tradeoff:** Anyone who obtains the link can redeem it — mitigated by single use, expiry, and
+revocation, not by identity. Minting is restricted to share managers so an editor can't widen who sees
+a dashboard. `POST /dashboards/{id}/shares` still exists and works, but no longer has a caller.
 
 ## Access
 

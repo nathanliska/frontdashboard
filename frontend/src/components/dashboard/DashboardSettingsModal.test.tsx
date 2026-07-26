@@ -1,41 +1,38 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../../api/dashboards'
 import type { ResourceShare } from '../../api/shares'
 import { __resetPendingDashboardMutationsForTests } from '../../utils/dashboard/dashboardMutation'
 import { DashboardSettingsModal } from './DashboardSettingsModal'
 
-const {
-  apiAddDashboardShare,
-  apiGetDashboard,
-  apiGetDashboardShares,
-  apiRemoveDashboardShare,
-  apiUpdateDashboardShare,
-} = vi.hoisted(() => ({
-  apiAddDashboardShare: vi.fn(),
-  apiGetDashboard: vi.fn(),
-  apiGetDashboardShares: vi.fn(),
-  apiRemoveDashboardShare: vi.fn(),
-  apiUpdateDashboardShare: vi.fn(),
-}))
+const { apiGetDashboard, apiGetDashboardShares, apiRemoveDashboardShare, apiUpdateDashboardShare } =
+  vi.hoisted(() => ({
+    apiGetDashboard: vi.fn(),
+    apiGetDashboardShares: vi.fn(),
+    apiRemoveDashboardShare: vi.fn(),
+    apiUpdateDashboardShare: vi.fn(),
+  }))
 
-const { apiSearchUsers } = vi.hoisted(() => ({
-  apiSearchUsers: vi.fn(),
+const { apiCreateInvite, apiGetInvites, apiRevokeInvite } = vi.hoisted(() => ({
+  apiCreateInvite: vi.fn(),
+  apiGetInvites: vi.fn(),
+  apiRevokeInvite: vi.fn(),
 }))
 
 const toastError = vi.hoisted(() => vi.fn())
 
 vi.mock('../../api/dashboards', () => ({
-  apiAddDashboardShare,
   apiGetDashboard,
   apiGetDashboardShares,
   apiRemoveDashboardShare,
   apiUpdateDashboardShare,
 }))
 
-vi.mock('../../api/users', () => ({
-  apiSearchUsers,
+vi.mock('../../api/invites', () => ({
+  apiCreateInvite,
+  apiGetInvites,
+  apiRevokeInvite,
 }))
 
 vi.mock('../../stores/toast', () => ({
@@ -72,26 +69,21 @@ function makeSummary(
 }
 
 describe('DashboardSettingsModal', () => {
+  beforeEach(() => {
+    // The share panel lists invite links on mount; every test renders it.
+    apiGetInvites.mockResolvedValue([])
+  })
+
   afterEach(() => {
     vi.clearAllMocks()
     vi.useRealTimers()
     __resetPendingDashboardMutationsForTests()
   })
 
-  it('passes client mutation ids for share updates, removals, and additions', async () => {
+  it('passes client mutation ids for share updates and removals', async () => {
     apiGetDashboardShares.mockResolvedValue([makeShare()])
     apiUpdateDashboardShare.mockResolvedValue(makeShare({ role: 'editor' }))
     apiRemoveDashboardShare.mockResolvedValue(undefined)
-    apiSearchUsers.mockResolvedValue([
-      { id: 'user-3', display_name: 'Teammate', email: 'teammate@example.com' },
-    ])
-    apiAddDashboardShare.mockResolvedValue(
-      makeShare({
-        id: 'share-2',
-        principal_id: 'user-3',
-        principal_name: 'Teammate',
-      }),
-    )
 
     render(
       <DashboardSettingsModal dashboard={makeSummary()} onClose={vi.fn()} onRename={vi.fn()} />,
@@ -117,32 +109,6 @@ describe('DashboardSettingsModal', () => {
       expect(apiRemoveDashboardShare).toHaveBeenCalledWith(
         'dash-1',
         'share-1',
-        expect.objectContaining({ clientMutationId: expect.any(String) }),
-      )
-    })
-
-    vi.useFakeTimers()
-    fireEvent.change(screen.getByPlaceholderText('Search people'), {
-      target: { value: 'Teammate' },
-    })
-
-    await act(async () => {
-      await vi.runAllTimersAsync()
-    })
-
-    expect(screen.getByText('Teammate')).toBeInTheDocument()
-    vi.useRealTimers()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
-
-    await waitFor(() => {
-      expect(apiAddDashboardShare).toHaveBeenCalledWith(
-        'dash-1',
-        {
-          principal_type: 'user',
-          principal_id: 'user-3',
-          role: 'viewer',
-        },
         expect.objectContaining({ clientMutationId: expect.any(String) }),
       )
     })
@@ -185,34 +151,28 @@ describe('DashboardSettingsModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 
-  it('keeps the search query when adding a share fails (#10)', async () => {
+  it('shows a freshly minted invite link once and never refetches it', async () => {
     apiGetDashboardShares.mockResolvedValue([])
-    apiSearchUsers.mockResolvedValue([
-      { id: 'user-3', display_name: 'Teammate', email: 'teammate@example.com' },
-    ])
-    apiAddDashboardShare.mockRejectedValue(new Error('boom'))
+    apiGetInvites.mockResolvedValue([])
+    apiCreateInvite.mockResolvedValue({
+      id: 'invite-1',
+      role: 'viewer',
+      expires_at: '2026-08-01T00:00:00Z',
+      created_at: '2026-07-25T00:00:00Z',
+      code: 'secret-code',
+    })
 
     render(
       <DashboardSettingsModal dashboard={makeSummary()} onClose={vi.fn()} onRename={vi.fn()} />,
     )
     await screen.findByText('Only you can access this dashboard right now.')
 
-    vi.useFakeTimers()
-    fireEvent.change(screen.getByPlaceholderText('Search people'), {
-      target: { value: 'Teammate' },
-    })
-    await act(async () => {
-      await vi.runAllTimersAsync()
-    })
-    expect(screen.getByText('Teammate')).toBeInTheDocument()
-    vi.useRealTimers()
+    fireEvent.click(screen.getByRole('button', { name: /create invite link/i }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
-
-    await waitFor(() => expect(apiAddDashboardShare).toHaveBeenCalled())
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Failed to add permission.'))
-    // The failed add must not clear the search.
-    expect(screen.getByPlaceholderText('Search people')).toHaveValue('Teammate')
+    // The server only stores the hash, so the code has to stay on screen until dismissed.
+    const link = await screen.findByLabelText<HTMLInputElement>('Invite link')
+    expect(link.value).toContain('/invite/secret-code')
+    expect(apiCreateInvite).toHaveBeenCalledWith('dash-1', 'viewer')
   })
 
   it('loads dashboard shares without fetching the full dashboard', async () => {
