@@ -98,12 +98,7 @@ async def load_resource_access(
 
     direct_role: ShareRole | None = None
     try:
-        direct_role = permissions.effective_role(
-            resource_created_by,
-            resource_type,
-            user.id,
-            shares,
-        )
+        direct_role = permissions.effective_role(resource_created_by, user.id, shares)
     except HTTPException as exc:
         if exc.status_code != status.HTTP_404_NOT_FOUND:
             raise
@@ -181,24 +176,6 @@ def _dashboard_resource_role(dashboard_role: ShareRole | None) -> ShareRole:
     return ShareRole.viewer
 
 
-def _dashboard_access_role_for_user(
-    dashboard: Dashboard,
-    shares: list[ResourceShare],
-    user_id: uuid.UUID,
-) -> ShareRole | None:
-    try:
-        return permissions.effective_role(
-            dashboard.user_id,
-            ResourceType.dashboard,
-            user_id,
-            shares,
-        )
-    except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
-            return None
-        raise
-
-
 async def get_shared_dashboards_for_resource(
     resource_type: ResourceType,
     resource_id: uuid.UUID,
@@ -267,13 +244,13 @@ async def get_inherited_resource_role(
         resource_id,
         db,
     ):
-        dashboard_role = _dashboard_access_role_for_user(
-            dashboard,
-            dashboard_shares,
-            user_id,
-        )
-        if dashboard_role is None and dashboard.user_id != user_id:
-            continue
+        # Explicit no-access handling. This used to go through a wrapper that returned None for
+        # BOTH "owner" and "no access" and then disambiguated by re-checking ownership — the
+        # ambiguity #18 exists to remove.
+        try:
+            dashboard_role = permissions.effective_role(dashboard.user_id, user_id, dashboard_shares)
+        except HTTPException:
+            continue  # this binding dashboard grants the user nothing
         inherited_roles.append(_dashboard_resource_role(dashboard_role))
 
     return _highest_role(inherited_roles)

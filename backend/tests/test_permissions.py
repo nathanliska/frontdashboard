@@ -26,12 +26,7 @@ def _share(
 
 def test_effective_role_returns_none_for_owner() -> None:
     user_id = uuid.uuid4()
-    role = permissions.effective_role(
-        user_id,
-        ResourceType.list,
-        user_id,
-        [],
-    )
+    role = permissions.effective_role(user_id, user_id, [])
     assert role is None
 
 
@@ -39,7 +34,6 @@ def test_effective_role_uses_direct_user_share() -> None:
     user_id = uuid.uuid4()
     role = permissions.effective_role(
         uuid.uuid4(),
-        ResourceType.list,
         user_id,
         [
             _share(
@@ -57,7 +51,6 @@ def test_effective_role_uses_highest_matching_role() -> None:
     user_id = uuid.uuid4()
     role = permissions.effective_role(
         uuid.uuid4(),
-        ResourceType.list,
         user_id,
         [
             _share(
@@ -79,12 +72,7 @@ def test_effective_role_uses_highest_matching_role() -> None:
 
 def test_effective_role_raises_404_without_access() -> None:
     with pytest.raises(HTTPException) as exc:
-        permissions.effective_role(
-            uuid.uuid4(),
-            ResourceType.calendar_event,
-            uuid.uuid4(),
-            [],
-        )
+        permissions.effective_role(uuid.uuid4(), uuid.uuid4(), [])
     assert exc.value.status_code == 404
 
 

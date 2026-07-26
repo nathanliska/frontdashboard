@@ -43,7 +43,7 @@ from app.services.shares import (
     get_resource_share,
     get_resource_shares,
     insert_shares,
-    load_resource_access,
+    load_dashboard_access,
     resolve_share_responses,
 )
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
@@ -142,53 +142,6 @@ async def _resource_shares_by_dashboard(
     return shares_by_dashboard
 
 
-def _dashboard_role_for_user(
-    dashboard: Dashboard,
-    shares: list[ResourceShare],
-    user_id: uuid.UUID,
-) -> ShareRole | None:
-    if dashboard.user_id == user_id:
-        return None
-
-    try:
-        return permissions.effective_role(
-            dashboard.user_id,
-            ResourceType.dashboard,
-            user_id,
-            shares,
-        )
-    except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
-            return None
-        raise
-
-
-async def _get_dashboard_access(
-    dashboard_id: uuid.UUID,
-    user: User,
-    db: AsyncSession,
-    *,
-    lock_for_update: bool = False,
-) -> tuple[Dashboard, list[ResourceShare], ShareRole | None]:
-    dashboard_query = select(Dashboard).where(Dashboard.id == dashboard_id)
-    if lock_for_update:
-        dashboard_query = dashboard_query.with_for_update()
-
-    result = await db.execute(dashboard_query)
-    dashboard = result.scalar_one_or_none()
-    if dashboard is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
-
-    shares, role = await load_resource_access(
-        ResourceType.dashboard,
-        dashboard.id,
-        dashboard.user_id,
-        user,
-        db,
-    )
-    return dashboard, shares, role
-
-
 def _assert_dashboard_not_archived(dashboard: Dashboard) -> None:
     if dashboard.archived:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dashboard is archived")
@@ -253,7 +206,9 @@ async def _list_accessible_dashboard_summaries(
     )
     summaries: list[DashboardSummary] = []
     for dashboard, access_description, is_shared, is_favorite in rows:
-        role = _dashboard_role_for_user(dashboard, shares_by_dashboard.get(dashboard.id, []), user.id)
+        # The WHERE above admits only owned or directly-shared rows, so this cannot 404;
+        # if filter and computation ever disagree, that is a bug worth a loud failure (#18).
+        role = permissions.effective_role(dashboard.user_id, user.id, shares_by_dashboard.get(dashboard.id, []))
         summaries.append(
             _to_summary(
                 dashboard,
@@ -549,7 +504,7 @@ async def update_dashboard_meta(
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
     """Update dashboard metadata such as name or archived state."""
-    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     if body.name is not None:
         permissions.assert_can_edit(role)
         dashboard.name = body.name
@@ -594,7 +549,7 @@ async def delete_dashboard(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Permanently delete a dashboard and its dashboard-owned resources."""
-    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     permissions.assert_can_delete(role)
     event_message = await _build_dashboard_event_message(
         db,
@@ -676,7 +631,7 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
     """Return a dashboard with its widgets and access metadata."""
-    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     widgets = await _load_widgets(dashboard.id, db)
     return _to_response(
         dashboard,
@@ -699,10 +654,11 @@ async def update_layout(
 ) -> DashboardResponse:
     """Replace dashboard layout coordinates with optimistic version checks."""
     # Serialize layout/version mutations so optimistic conflict checks stay race-safe.
-    dashboard, shares, role = await _get_dashboard_access(
+    dashboard, shares, role = await load_dashboard_access(
         dashboard_id,
         current_user,
         db,
+        allow_archived=True,
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
@@ -750,10 +706,11 @@ async def add_widget(
 ) -> DashboardResponse:
     """Add a widget to a dashboard, creating bound resources when needed."""
     # Lock the dashboard row so concurrent widget/layout mutations can't lose version/layout updates.
-    dashboard, shares, role = await _get_dashboard_access(
+    dashboard, shares, role = await load_dashboard_access(
         dashboard_id,
         current_user,
         db,
+        allow_archived=True,
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
@@ -911,7 +868,7 @@ async def update_widget(
     db: AsyncSession = Depends(get_db),
 ) -> WidgetResponse:
     """Update widget configuration on a dashboard."""
-    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     permissions.assert_can_edit(role)
     _assert_dashboard_not_archived(dashboard)
     result = await db.execute(
@@ -972,10 +929,11 @@ async def delete_widget(
 ) -> None:
     """Delete a widget and remove its layout entry from the dashboard."""
     # Lock the dashboard row so concurrent widget/layout mutations can't lose version/layout updates.
-    dashboard, shares, role = await _get_dashboard_access(
+    dashboard, shares, role = await load_dashboard_access(
         dashboard_id,
         current_user,
         db,
+        allow_archived=True,
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
@@ -1017,7 +975,7 @@ async def list_dashboard_shares(
     db: AsyncSession = Depends(get_db),
 ) -> list[ShareResponse]:
     """List direct shares configured for a dashboard."""
-    dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, _shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     permissions.assert_can_manage_shares(role)
     shares = await get_resource_shares(ResourceType.dashboard, dashboard_id, db)
     return await resolve_share_responses(shares, db)
@@ -1033,7 +991,7 @@ async def add_dashboard_share(
     db: AsyncSession = Depends(get_db),
 ) -> ShareResponse:
     """Create or upsert a direct share on a dashboard."""
-    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     permissions.assert_can_manage_shares(role)
     await _validate_share_targets([body], dashboard.user_id, db)
     existing_share = next(
@@ -1085,7 +1043,7 @@ async def update_dashboard_share(
     db: AsyncSession = Depends(get_db),
 ) -> ShareResponse:
     """Change the role for an existing dashboard share."""
-    dashboard, _shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, _shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     permissions.assert_can_manage_shares(role)
     share = await get_resource_share(ResourceType.dashboard, dashboard_id, share_id, db)
     if share is None:
@@ -1129,7 +1087,7 @@ async def delete_dashboard_share(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Remove a direct share from a dashboard."""
-    dashboard, shares, role = await _get_dashboard_access(dashboard_id, current_user, db)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     permissions.assert_can_manage_shares(role)
     share = await get_resource_share(ResourceType.dashboard, dashboard_id, share_id, db)
     if share is None:

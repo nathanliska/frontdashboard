@@ -4,16 +4,18 @@ import uuid
 
 from fastapi import HTTPException, status
 
-from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
+from app.models.share import PrincipalType, ResourceShare, ShareRole
 
 
 def effective_role(
     resource_created_by: uuid.UUID,
-    resource_type: ResourceType,  # noqa: ARG001
     user_id: uuid.UUID,
     shares: list[ResourceShare],
 ) -> ShareRole | None:
-    """Compute the caller's role for a resource."""
+    """The one role computation (#18): owner -> None, else the highest direct user share,
+    else 404. Everything that resolves owner/viewer/editor goes through here — inheritance
+    (get_inherited_resource_role) maps a *dashboard* role through _dashboard_resource_role
+    after calling this."""
     if resource_created_by == user_id:
         return None
 
