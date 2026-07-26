@@ -18,12 +18,17 @@ export function NotificationsPage() {
   const unreadCount = useNotificationsStore((s) => s.unreadCount)
   const load = useNotificationsStore((s) => s.load)
   const loadFailed = useNotificationsStore((s) => s.loadFailed)
+  const hasMore = useNotificationsStore((s) => s.hasMore)
+  const loadingMore = useNotificationsStore((s) => s.loadingMore)
+  const loadMore = useNotificationsStore((s) => s.loadMore)
   const markRead = useNotificationsStore((s) => s.markRead)
   const markAllRead = useNotificationsStore((s) => s.markAllRead)
 
   const [activity, setActivity] = useState<Awaited<ReturnType<typeof apiGetActivity>>>([])
   const [activityLoading, setActivityLoading] = useState(false)
   const [activityFailed, setActivityFailed] = useState(false)
+  const [activityHasMore, setActivityHasMore] = useState(false)
+  const [activityLoadingMore, setActivityLoadingMore] = useState(false)
 
   useEffect(() => {
     void load()
@@ -38,6 +43,8 @@ export function NotificationsPage() {
       if (!isCancelled?.()) {
         setActivity(nextActivity)
         setActivityFailed(false)
+        // The endpoint pages at 50; a full page means older history may exist (#22).
+        setActivityHasMore(nextActivity.length === 50)
       }
     } catch {
       // An outage must render as a failure with a retry, not an empty timeline (#26).
@@ -64,6 +71,24 @@ export function NotificationsPage() {
       window.removeEventListener(APP_RESYNC_EVENT, onResync)
     }
   }, [tab, loadActivity])
+
+  async function loadMoreActivity() {
+    const last = activity[activity.length - 1]
+    if (!last || activityLoadingMore) return
+    setActivityLoadingMore(true)
+    try {
+      const older = await apiGetActivity({ before_event_id: last.event_id })
+      setActivity((current) => {
+        const known = new Set(current.map((e) => e.event_id))
+        return [...current, ...older.filter((e) => !known.has(e.event_id))]
+      })
+      setActivityHasMore(older.length === 50)
+    } catch {
+      // Keep the button so the user can retry (#26).
+    } finally {
+      setActivityLoadingMore(false)
+    }
+  }
 
   function handleNotificationClick(notification: Notification) {
     if (notification.read_at === null) {
@@ -123,11 +148,14 @@ export function NotificationsPage() {
           loadFailed && notifications.length === 0 ? (
             <RetryState message="Couldn't load notifications." onRetry={() => void load()} />
           ) : (
-            <NotificationFeed
-              notifications={notifications}
-              emptyMessage="No notifications yet."
-              onOpen={handleNotificationClick}
-            />
+            <>
+              <NotificationFeed
+                notifications={notifications}
+                emptyMessage="No notifications yet."
+                onOpen={handleNotificationClick}
+              />
+              {hasMore && <LoadMoreButton loading={loadingMore} onClick={() => void loadMore()} />}
+            </>
           )
         ) : (
           <div className="flex flex-col gap-3">
@@ -137,7 +165,15 @@ export function NotificationsPage() {
             {activityFailed && !activityLoading ? (
               <RetryState message="Couldn't load activity." onRetry={() => void loadActivity()} />
             ) : (
-              <ActivityFeed activity={activity} loading={activityLoading} />
+              <>
+                <ActivityFeed activity={activity} loading={activityLoading} />
+                {activityHasMore && !activityLoading && (
+                  <LoadMoreButton
+                    loading={activityLoadingMore}
+                    onClick={() => void loadMoreActivity()}
+                  />
+                )}
+              </>
             )}
           </div>
         )}
@@ -156,6 +192,21 @@ function RetryState({ message, onRetry }: { message: string; onRetry: () => void
         className="rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
       >
         Try again
+      </button>
+    </div>
+  )
+}
+
+function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+  return (
+    <div className="flex justify-center py-3">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={loading}
+        className="rounded border border-zinc-800 px-3 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
+      >
+        {loading ? 'Loading…' : 'Load more'}
       </button>
     </div>
   )

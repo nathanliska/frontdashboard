@@ -570,6 +570,12 @@ export const NotificationResponse = z.object({
   type: z.string()
 })
 
+export type NotificationPageResponse = z.infer<typeof NotificationPageResponse>
+export const NotificationPageResponse = z.object({
+  items: z.array(NotificationResponse),
+  next_cursor: z.union([z.string(), z.null()])
+})
+
 export type NotificationSseEvent = z.infer<typeof NotificationSseEvent>
 export const NotificationSseEvent = z.object({
   body: z.string(),

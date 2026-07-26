@@ -30,16 +30,16 @@ beforeEach(() => {
 
 describe('notifications store session-boundary guard', () => {
   it('drops a load whose response lands after a session boundary', async () => {
-    let resolveLoad!: (n: Notification[]) => void
+    let resolveLoad!: (page: { items: Notification[]; next_cursor: string | null }) => void
     apiGetNotifications.mockReturnValue(
-      new Promise<Notification[]>((r) => {
+      new Promise<{ items: Notification[]; next_cursor: string | null }>((r) => {
         resolveLoad = r
       }),
     )
 
     const pending = useNotificationsStore.getState().load()
     bumpSessionGeneration() // account boundary while the fetch is in flight
-    resolveLoad([NOTIF_A])
+    resolveLoad({ items: [NOTIF_A], next_cursor: null })
     await pending
 
     expect(useNotificationsStore.getState().notifications).toEqual([]) // A's list was dropped
@@ -100,7 +100,7 @@ describe('notifications store session-boundary guard', () => {
 
 describe('notifications store unread accounting', () => {
   it('does not replace the authoritative unread total with the capped notification page', async () => {
-    apiGetNotifications.mockResolvedValue([NOTIF_A])
+    apiGetNotifications.mockResolvedValue({ items: [NOTIF_A], next_cursor: null })
     useNotificationsStore.setState({ unreadCount: 75 })
 
     await useNotificationsStore.getState().load()
@@ -141,7 +141,7 @@ describe('notification load failures (#26)', () => {
     expect(useNotificationsStore.getState().loadFailed).toBe(true)
     expect(useNotificationsStore.getState().loaded).toBe(false)
 
-    apiGetNotifications.mockResolvedValueOnce([NOTIF_A])
+    apiGetNotifications.mockResolvedValueOnce({ items: [NOTIF_A], next_cursor: null })
     await useNotificationsStore.getState().load()
 
     expect(useNotificationsStore.getState().loadFailed).toBe(false)
@@ -149,7 +149,7 @@ describe('notification load failures (#26)', () => {
   })
 
   it('keeps serving a cached list when a background refresh fails', async () => {
-    apiGetNotifications.mockResolvedValueOnce([NOTIF_A])
+    apiGetNotifications.mockResolvedValueOnce({ items: [NOTIF_A], next_cursor: null })
     await useNotificationsStore.getState().load()
 
     apiGetNotifications.mockRejectedValueOnce(new Error('offline'))
@@ -158,5 +158,40 @@ describe('notification load failures (#26)', () => {
     // The stale list stays visible and no error state kicks it out.
     expect(useNotificationsStore.getState().notifications).toEqual([NOTIF_A])
     expect(useNotificationsStore.getState().loadFailed).toBe(false)
+  })
+})
+
+describe('notification pagination (#22)', () => {
+  it('appends older pages with id-dedupe and stops when the cursor runs out', async () => {
+    const NOTIF_B = { id: 'b', read_at: null } as Notification
+    apiGetNotifications.mockResolvedValueOnce({ items: [NOTIF_A], next_cursor: 'cursor-1' })
+    await useNotificationsStore.getState().load()
+    expect(useNotificationsStore.getState().hasMore).toBe(true)
+
+    // The next page repeats A (a row that moved sections mid-scroll) — dedupe absorbs it.
+    apiGetNotifications.mockResolvedValueOnce({ items: [NOTIF_A, NOTIF_B], next_cursor: null })
+    await useNotificationsStore.getState().loadMore()
+
+    const state = useNotificationsStore.getState()
+    expect(apiGetNotifications).toHaveBeenLastCalledWith('cursor-1')
+    expect(state.notifications.map((n) => n.id)).toEqual(['a', 'b'])
+    expect(state.hasMore).toBe(false)
+
+    // Cursor exhausted: another loadMore is a no-op, not a request.
+    await useNotificationsStore.getState().loadMore()
+    expect(apiGetNotifications).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the load-more affordance when the page fetch fails', async () => {
+    apiGetNotifications.mockResolvedValueOnce({ items: [NOTIF_A], next_cursor: 'cursor-1' })
+    await useNotificationsStore.getState().load()
+
+    apiGetNotifications.mockRejectedValueOnce(new Error('offline'))
+    await useNotificationsStore.getState().loadMore()
+
+    const state = useNotificationsStore.getState()
+    expect(state.hasMore).toBe(true) // retryable, not a dead end (#26)
+    expect(state.loadingMore).toBe(false)
+    expect(state.notifications).toEqual([NOTIF_A])
   })
 })

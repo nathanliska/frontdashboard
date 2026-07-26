@@ -158,7 +158,7 @@ async def test_accepting_notifies_the_owner(auth_client: AsyncClient) -> None:
 
     notifications = await auth_client.get("/api/notifications")
     assert notifications.status_code == 200, notifications.text
-    bodies = [n["body"] for n in notifications.json()]
+    bodies = [n["body"] for n in notifications.json()["items"]]
     assert any("Joiner" in body and dashboard["name"] in body for body in bodies), bodies
     await invitee.aclose()
 

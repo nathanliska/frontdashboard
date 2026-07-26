@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -14,6 +14,7 @@ from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.notifications import (
     ActivityEventResponse,
+    NotificationPageResponse,
     NotificationResponse,
     UnreadCountResponse,
 )
@@ -26,19 +27,60 @@ _PAGE_LIMIT = 50
 # ---------------------------------------------------------------------------
 
 
-@router.get("", response_model=list[NotificationResponse])
+def _encode_cursor(notification: Notification) -> str:
+    unread = "u" if notification.read_at is None else "r"
+    # "|" because the ISO timestamp itself contains ":".
+    return f"{unread}|{notification.created_at.isoformat()}|{notification.id}"
+
+
+def _decode_cursor(cursor: str) -> tuple[bool, datetime, uuid.UUID]:
+    try:
+        section, created_at_raw, id_raw = cursor.split("|")
+        if section not in ("u", "r"):
+            raise ValueError(cursor)
+        return section == "u", datetime.fromisoformat(created_at_raw), uuid.UUID(id_raw)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid cursor",
+        ) from exc
+
+
+@router.get("", response_model=NotificationPageResponse)
 async def list_notifications(
+    cursor: str | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list[NotificationResponse]:
-    """Return the caller's most recent notifications (unread first, then read)."""
-    result = await db.execute(
-        select(Notification)
-        .where(Notification.user_id == current_user.id)
-        .order_by(Notification.read_at.is_(None).desc(), Notification.created_at.desc())
-        .limit(_PAGE_LIMIT)
+) -> NotificationPageResponse:
+    """One page of the caller's notifications (unread first, then read), keyset-paginated.
+
+    The sort key is compound — unread section, then created_at, then id as the total-order
+    tiebreaker (created_at ties across a batch insert). A row can move sections between pages
+    (read on another device mid-scroll); keyset pagination over a mutable key can then repeat
+    it, and the client's existing dedupe-by-id absorbs that rather than this endpoint trying
+    to prevent it.
+    """
+    unread = Notification.read_at.is_(None)
+    position = tuple_(Notification.created_at, Notification.id)
+    q = select(Notification).where(Notification.user_id == current_user.id)
+
+    if cursor is not None:
+        in_unread_section, cursor_created_at, cursor_id = _decode_cursor(cursor)
+        if in_unread_section:
+            # Still walking the unread section: older unread rows, or anything already read.
+            q = q.where(or_(and_(unread, position < (cursor_created_at, cursor_id)), ~unread))
+        else:
+            q = q.where(and_(~unread, position < (cursor_created_at, cursor_id)))
+
+    # limit+1: fetch one row beyond the page so has-more is a fact, not a guess.
+    result = await db.execute(q.order_by(unread.desc(), Notification.created_at.desc(), Notification.id.desc()).limit(_PAGE_LIMIT + 1))
+    rows = list(result.scalars().all())
+    page = rows[:_PAGE_LIMIT]
+    next_cursor = _encode_cursor(page[-1]) if len(rows) > _PAGE_LIMIT else None
+    return NotificationPageResponse(
+        items=[NotificationResponse.model_validate(n) for n in page],
+        next_cursor=next_cursor,
     )
-    return [NotificationResponse.model_validate(n) for n in result.scalars().all()]
 
 
 @router.get("/unread-count", response_model=UnreadCountResponse)

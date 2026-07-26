@@ -28,7 +28,7 @@ and effort are noted inline where known.
 
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
-| 4 | Data layer, contracts & exposure | #22◐, #24◐ |
+| 4 | Data layer, contracts & exposure | #24◐ |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐ |
 | 6 | UX & cleanup | #27, #40 |
 | — | Backlog (unscheduled) | #16, #19◐, #39, #52, #21/#45 (deferred) |
@@ -37,7 +37,6 @@ and effort are noted inline where known.
 
 ## Phase 4 — Data layer, contracts & exposure
 
-- **#22◐ — Notification list growth.** Done: capped page no longer overwrites the authoritative unread total; duplicate SSE ids ignored; read-decrement fixed. Remaining: a cursor for notifications/activity so the list stays bounded as history accumulates. *(Small-Medium)*
 - **#24◐ — Request-cache consolidation (premise corrected 2026-07-25).** The original finding read four in-flight implementations as one thing implemented four ways. Reading them, that isn't true, and the "adopt TanStack Query, delete ~330 lines" plan would have deleted the working code and kept the messy code. What each actually is: `api/client.ts`'s `refreshPromise` is a **token-refresh mutex, not a cache** — no query library replaces it, it stays. `resources/scopedQuery.ts` (234 lines, tested, serving five queries) is a competent keyed cache with in-flight dedup, staleness and subscriptions — it is the thing a library would replace, i.e. the wrong target. The dashboard store's coalescing **is not duplication either**: `loadDashboard` merges `background`/`surfaceAccessLoss` across a queued follow-up so a real navigation upgrades an in-flight background refetch and still evicts on 403 — `scopedQuery.fetch` discards new options when a request is already running, so moving it there would either lose that or push supersession into the primitive the other five queries use cleanly. Done: deleted the genuinely redundant single-flight `Map` for dashboard detail (its only caller coalesces above it); the share-read `Map` stays, documented — the settings modal fetches from an effect with no coalescing above it and StrictMode double-invokes it. Remaining, and the only real gap: **`scopedQuery` entries are never evicted**, so a long-lived tab scrolling the calendar accumulates one entry per window until logout. Bounded and small — fix it with a TTL sweep when it justifies the timer, not before. Revisit the library question only if #22's cursor becomes real pagination, which is the shape that would earn it. *(Small)*
 
 ## Phase 5 — Infra / CI / ops

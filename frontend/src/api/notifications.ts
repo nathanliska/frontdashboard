@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { apiFetch } from './client'
 import {
   ActivityEventResponse,
+  NotificationPageResponse,
   NotificationResponse,
   UnreadCountResponse,
 } from './generated/contract'
@@ -9,13 +10,18 @@ import { parseJson } from './http'
 
 export type {
   ActivityEventResponse as ActivityEvent,
+  NotificationPageResponse as NotificationPage,
   NotificationResponse as Notification,
 } from './generated/contract'
 
-export async function apiGetNotifications(): Promise<NotificationResponse[]> {
-  const res = await apiFetch('/api/notifications')
+export async function apiGetNotifications(
+  cursor?: string | null,
+): Promise<NotificationPageResponse> {
+  // Keyset-paginated (#22): pass the previous page's next_cursor to walk older history.
+  const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  const res = await apiFetch(`/api/notifications${q}`)
   if (!res.ok) throw new Error('Failed to load notifications')
-  return parseJson(res, z.array(NotificationResponse))
+  return parseJson(res, NotificationPageResponse)
 }
 
 export async function apiGetUnreadCount(): Promise<number> {

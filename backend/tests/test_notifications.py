@@ -62,7 +62,8 @@ async def test_notification_endpoints(auth_client: AsyncClient, db_session: Asyn
 
     list_resp = await auth_client.get("/api/notifications")
     assert list_resp.status_code == 200
-    ids = [item["id"] for item in list_resp.json()]
+    assert list_resp.json()["next_cursor"] is None
+    ids = [item["id"] for item in list_resp.json()["items"]]
     assert ids == [
         str(unread_newest.id),
         str(unread_older.id),
@@ -90,7 +91,7 @@ async def test_notification_endpoints(auth_client: AsyncClient, db_session: Asyn
 
     list_resp = await auth_client.get("/api/notifications")
     assert list_resp.status_code == 200
-    assert all(item["read_at"] is not None for item in list_resp.json())
+    assert all(item["read_at"] is not None for item in list_resp.json()["items"])
 
 
 async def test_mark_read_returns_404_for_missing_notification(auth_client: AsyncClient) -> None:
@@ -159,7 +160,7 @@ async def test_dashboard_share_notifications_and_activity_filtering(
 
         notification_resp = await viewer.get("/api/notifications")
         assert notification_resp.status_code == 200
-        notifications = notification_resp.json()
+        notifications = notification_resp.json()["items"]
         assert [notification["type"] for notification in notifications] == [
             "dashboard.share_removed",
             "dashboard.share_updated",
@@ -176,7 +177,7 @@ async def test_dashboard_share_notifications_and_activity_filtering(
 
         owner_notifications = await auth_client.get("/api/notifications")
         assert owner_notifications.status_code == 200
-        assert owner_notifications.json() == []
+        assert owner_notifications.json() == {"items": [], "next_cursor": None}
 
         lst = await create_list(auth_client, dashboard["id"], name="Chores")
         item = await create_list_item(auth_client, lst["id"], text="Vacuum")
@@ -221,3 +222,58 @@ async def test_dashboard_share_notifications_and_activity_filtering(
         assert len(notification_rows) == 3
     finally:
         await viewer.__aexit__(None, None, None)
+
+
+async def test_notification_pages_walk_the_full_history_without_loss(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """The cursor walks unread-first ordering across pages, exactly once per row (#22).
+
+    The page limit is 50, so 120 rows (60 unread, 60 read, interleaved timestamps) force the
+    cursor across the unread/read section boundary mid-page and across created_at ties.
+    """
+    me = await current_user(auth_client)
+    now = datetime.now(UTC)
+    rows = []
+    for index in range(120):
+        rows.append(
+            Notification(
+                user_id=uuid.UUID(me["id"]),
+                type="list.item.created",
+                title=f"n{index}",
+                body="b",
+                # Pairs share a timestamp so the id tiebreaker actually gets exercised.
+                created_at=now - timedelta(minutes=index // 2),
+                read_at=None if index % 2 == 0 else now,
+            )
+        )
+    db_session.add_all(rows)
+    await db_session.commit()
+
+    seen: list[str] = []
+    cursor: str | None = None
+    pages = 0
+    while True:
+        params = {"cursor": cursor} if cursor else {}
+        resp = await auth_client.get("/api/notifications", params=params)
+        assert resp.status_code == 200
+        body = resp.json()
+        seen.extend(item["id"] for item in body["items"])
+        pages += 1
+        if body["next_cursor"] is None:
+            break
+        cursor = body["next_cursor"]
+        assert pages < 10, "cursor did not terminate"
+
+    assert len(seen) == 120
+    assert len(set(seen)) == 120, "a row was repeated across pages"
+    assert pages == 3  # 50 + 50 + 20
+
+    # Section order holds across the whole walk: every unread row precedes every read row.
+    read_flags = [next(r for r in rows if str(r.id) == seen_id).read_at is not None for seen_id in seen]
+    first_read = read_flags.index(True)
+    assert all(read_flags[first_read:]), "an unread row appeared after the read section began"
+
+
+async def test_notification_cursor_rejects_garbage(auth_client: AsyncClient) -> None:
+    resp = await auth_client.get("/api/notifications", params={"cursor": "not-a-cursor"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Invalid cursor"

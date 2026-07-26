@@ -17,6 +17,18 @@ class NotificationResponse(BaseModel):
     created_at: datetime
 
 
+class NotificationPageResponse(BaseModel):
+    """One page of the notification list (finding #22).
+
+    `next_cursor` is opaque to the client — it encodes the compound sort position (unread
+    section, created_at, id) server-side, so the client never re-derives the ordering rules.
+    Null means the history is exhausted.
+    """
+
+    items: list[NotificationResponse]
+    next_cursor: str | None
+
+
 class UnreadCountResponse(BaseModel):
     """Typed so the count endpoint appears in OpenAPI as a shape, not a bare object."""
 
