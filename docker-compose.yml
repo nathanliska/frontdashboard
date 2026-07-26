@@ -31,6 +31,9 @@ services:
         condition: service_healthy
 
   db:
+    # Deliberately not in .env.example: a value copied into a developer's .env would override this
+    # default and silently keep that machine on an old major version after everyone else moved.
+    # The default here and tests/conftest.py's are asserted equal by tests/test_config.py.
     image: ${POSTGRES_IMAGE:-postgres:17-alpine}
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-frontdash}
