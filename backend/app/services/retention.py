@@ -1,4 +1,4 @@
-"""Retention sweep — removes auth rows that can no longer affect any decision.
+"""Retention sweep — removes rows that can no longer affect any decision.
 
 See review finding #38. The industry norm is a scheduled reaper, not cleanup on the
 write path: it sweeps dormant users too, keeps deletion off the latency-sensitive
@@ -15,6 +15,14 @@ A consumed-but-unexpired refresh token is NOT deleted: that row is reuse detecti
 evidence (a replay is caught by finding it and reading `revoked_at`). Only rows past
 `expires_at` go, and a session is kept while ANY unexpired token pins it, so the
 sweep can never cascade-delete that evidence.
+
+It also enforces the history horizon. Activity events and notifications are the only
+tables that grow with *usage* rather than with the number of users, so they are the
+only ones that grow without bound. Pruning them is safe for SSE resume: a reconnect
+carrying any `Last-Event-ID` triggers a full resync rather than a replay from this
+table (`_should_resync_on_connect`), so an event_id that no longer exists costs a
+refetch, not a missed update. Notifications reference their originating event without
+a foreign key precisely so the event can be pruned out from under them.
 """
 
 import asyncio
@@ -27,8 +35,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session_factory
+from app.models.activity import ActivityEvent
 from app.models.dashboard_invite import DashboardInvite
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
@@ -78,6 +88,26 @@ async def reap_expired_auth_rows(db: AsyncSession, *, now: datetime | None = Non
     return counts
 
 
+async def reap_expired_history(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
+    """Delete activity and notification rows past the retention horizon. Caller owns the commit."""
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(days=settings.history_retention_days)
+    counts: dict[str, int] = {}
+
+    # Neither table has an index on created_at alone, so these are sequential scans. That is the
+    # right trade at this size: the scan runs four times a day on tables this sweep is itself
+    # keeping bounded, while the index would cost a write on every event and notification.
+    #
+    # Notifications first: they are the readable surface, and deleting them before the events
+    # they point at means a sweep interrupted midway leaves dangling references rather than
+    # notifications whose event has silently vanished.
+    for name, model in (("notifications", Notification), ("activity_events", ActivityEvent)):
+        result = cast("CursorResult[Any]", await db.execute(delete(model).where(model.created_at < cutoff)))
+        counts[name] = result.rowcount
+
+    return counts
+
+
 async def run_reaper_once() -> dict[str, int] | None:
     """Acquire the cross-process lock and reap once, or no-op if another worker holds it.
 
@@ -91,6 +121,7 @@ async def run_reaper_once() -> dict[str, int] | None:
             logger.debug("reaper: another worker holds the lock; skipping this tick")
             return None
         counts = await reap_expired_auth_rows(db)
+        counts |= await reap_expired_history(db)
     if any(counts.values()):
         logger.info("reaper: deleted %s", counts)
     return counts

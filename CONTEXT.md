@@ -130,6 +130,12 @@ _Last updated: 2026-07-19_
   nothing, so a dependency outage can never look like a crashed process. `GET /api/health/ready` runs
   a bounded `SELECT 1` and returns 503 when the database is unreachable, hung, or the pool is
   exhausted — the container healthcheck uses this one, so a database outage shows as unhealthy.
+- **A scheduled reaper bounds every table that grows on its own.** Expired tokens, invites and idle
+  sessions go once they can no longer affect an auth decision; activity events and notifications —
+  the only tables that grow with usage rather than user count — are pruned past a 90-day horizon.
+  It runs under a Postgres advisory lock, so extra workers can each schedule it and exactly one
+  sweeps. Pruning history is safe for SSE because a reconnect carrying any `Last-Event-ID` triggers
+  a resync rather than a replay.
 - **The connection pool is bounded** (10 connections: `db_pool_size` + `db_max_overflow`), with a
   pool-acquire timeout, connection recycling, and a server-side `statement_timeout`. A request burst
   fails fast instead of queueing without limit or opening connections until Postgres runs out of

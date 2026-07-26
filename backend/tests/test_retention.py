@@ -11,12 +11,14 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from app.config import settings
+from app.models.activity import ActivityEvent
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
 from app.models.user import User
-from app.services.retention import reap_expired_auth_rows
+from app.services.retention import reap_expired_auth_rows, reap_expired_history
 
 
 async def _make_user(db) -> User:
@@ -122,3 +124,77 @@ async def test_idle_session_with_an_unexpired_token_is_kept(db_session):
 
     assert counts["sessions"] == 0
     assert await db_session.get(UserSession, pinned.id) is not None
+
+
+async def test_history_older_than_the_horizon_is_pruned(db_session):
+    now = datetime.now(UTC)
+    user = await _make_user(db_session)
+    horizon = timedelta(days=settings.history_retention_days)
+
+    def activity(created_at: datetime) -> ActivityEvent:
+        return ActivityEvent(
+            event_type="list.created",
+            actor_id=user.id,
+            actor_display_name="Reap",
+            entity_type="list",
+            entity_id=uuid.uuid4(),
+            created_at=created_at,
+        )
+
+    def notification(created_at: datetime, *, read: bool) -> Notification:
+        return Notification(
+            user_id=user.id,
+            type="list.created",
+            title="t",
+            body="b",
+            read_at=created_at if read else None,
+            created_at=created_at,
+        )
+
+    stale = now - horizon - timedelta(days=1)
+    fresh = now - horizon + timedelta(days=1)
+    db_session.add_all(
+        [
+            activity(stale),
+            activity(fresh),
+            notification(stale, read=False),
+            notification(fresh, read=True),
+        ]
+    )
+    await db_session.flush()
+
+    counts = await reap_expired_history(db_session, now=now)
+
+    assert counts["activity_events"] == 1
+    assert counts["notifications"] == 1
+
+    # The horizon is the only criterion — an unread notification past it is still stale, and a
+    # read one inside it is still someone's recent history.
+    surviving_activity = (await db_session.execute(select(ActivityEvent.created_at).where(ActivityEvent.actor_id == user.id))).scalars().all()
+    assert surviving_activity == [fresh]
+
+    surviving_notifications = (await db_session.execute(select(Notification.created_at).where(Notification.user_id == user.id))).scalars().all()
+    assert surviving_notifications == [fresh]
+
+
+async def test_history_sweep_leaves_auth_rows_alone(db_session):
+    now = datetime.now(UTC)
+    user = await _make_user(db_session)
+    session = UserSession(user_id=user.id, last_used_at=now - timedelta(days=365))
+    db_session.add(session)
+    await db_session.flush()
+    token = RefreshToken(
+        session_id=session.id,
+        user_id=user.id,
+        token_hash=f"keep-{uuid.uuid4()}",
+        expires_at=now + timedelta(days=3),
+    )
+    db_session.add(token)
+    await db_session.flush()
+
+    # An old session with a live token is not history — the two sweeps answer different questions
+    # and must not bleed into each other.
+    await reap_expired_history(db_session, now=now)
+
+    assert await db_session.get(UserSession, session.id) is not None
+    assert await db_session.get(RefreshToken, token.id) is not None

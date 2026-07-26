@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Background retention sweep of expired auth rows (finding #38).
     reaper_enabled: bool = True
     reaper_interval_hours: int = 6
+    # How long activity and notification history is kept (finding #38). These are the only two
+    # tables that grow with usage rather than with the number of users, so without a horizon they
+    # grow forever. 90 days is well past the point anyone scrolls back to.
+    history_retention_days: int = 90
     # Connection pool bounds (finding #37). Postgres costs roughly 5-10 MiB per backend
     # connection, so an unbounded pool turns a request burst into database memory pressure.
     # size + overflow is the ceiling on concurrent connections from one worker.
