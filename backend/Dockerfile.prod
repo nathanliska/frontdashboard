@@ -32,7 +32,11 @@ USER appuser
 
 EXPOSE 8000
 
+# Readiness, not liveness: this drives `depends_on: service_healthy`, so it should mean "can serve
+# requests", and a database outage genuinely should show as unhealthy. Safe to gate on a dependency
+# here because plain Docker reports unhealthy without restarting — no restart loop to cause. A 503
+# raises HTTPError, which exits non-zero.
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready')"]
 
 CMD alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info}

@@ -126,6 +126,14 @@ _Last updated: 2026-07-19_
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
+- **Liveness and readiness are separate.** `GET /api/health` answers "the process is up" and touches
+  nothing, so a dependency outage can never look like a crashed process. `GET /api/health/ready` runs
+  a bounded `SELECT 1` and returns 503 when the database is unreachable, hung, or the pool is
+  exhausted — the container healthcheck uses this one, so a database outage shows as unhealthy.
+- **The connection pool is bounded** (10 connections: `db_pool_size` + `db_max_overflow`), with a
+  pool-acquire timeout, connection recycling, and a server-side `statement_timeout`. A request burst
+  fails fast instead of queueing without limit or opening connections until Postgres runs out of
+  memory. All of it is config.
 - **Production config fails fast**: `ENVIRONMENT` is a **required** validated enum (a prod deploy that
   forgets it won't boot rather than silently running insecure), and production startup aborts on a
   weak/placeholder `secret_key` (< 32 chars), a missing `resend_api_key`, or an undeliverable

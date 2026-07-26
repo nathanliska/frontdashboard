@@ -12,7 +12,8 @@ decisions they established are captured in the [ADRs](adr/INDEX.md) / [FDRs](fdr
 that only pays off at fleet scale stays deferred — prefer the fix that deletes lines over the one that
 adds a subsystem. (One worker is not a limitation to route around: SSE fan-out is process-local, so
 adding workers *breaks* delivery until #45 lands. The ceilings that actually bind first are the DB
-pool and the Argon2 limiter, both config — see #37.)
+pool (`db_pool_size` + `db_max_overflow`, 10 connections) and the Argon2 limiter
+(`argon2_max_concurrency`, 4) — both config, both raisable without new machinery.)
 
 **Exposure:** public internet, registration open to anyone with a verifiable email. Abuse,
 enumeration and data-privacy findings therefore do **not** get the small-deployment discount — any
@@ -28,7 +29,7 @@ and effort are noted inline where known.
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 4 | Data layer, contracts & exposure | #17, #22◐, #24 |
-| 5 | Infra / CI / ops | #33, #35, #34, #20◐, #32◐, #36◐, #37◐ |
+| 5 | Infra / CI / ops | #33, #35, #34, #20◐, #32◐, #36◐ |
 | 6 | UX & cleanup | #27, #40, #42◐, #54 |
 | — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #38◐, #39, #52, #56, #53, #21/#45 (deferred) |
 
@@ -48,7 +49,6 @@ and effort are noted inline where known.
 - **#20◐ — Test against Alembic's deployed schema.** Done: shared fixture upgrades through the full chain, a test runs `alembic check` + heads check, `create_all` gone, notification FK reconciled. Remaining: an upgrade test from a prior data snapshot — pairs naturally with #35's dumps. *(Small)*
 - **#32◐ — CI gates.** Done: migrated-schema tests, deptry, actionlint, knip, run cancellation, prod frontend image build, contract-drift job, and a frontend type check that actually type-checks (`tsc --build`; the old `--noEmit` invocation against the solution-style root config silently checked nothing). Remaining: fold the `contract` job into the existing backend or frontend job — it currently starts a third runner and installs both toolchains to regenerate one file — and validate the prod Compose file. (The backend prod image now builds in the existing backend job.) *(Small)*
 - **#36◐ — Reproducible production containers.** Done: frontend build on Node 22 (matches CI), root `.dockerignore` allowlist, multi-stage backend image (uv and its wheel cache no longer ship), `uvicorn[standard]` replaced by explicit `uvloop`/`httptools` so PyYAML, websockets and watchfiles no longer ship (verified absent in the built image; uvloop and `HttpToolsProtocol` verified as the selected implementations, and watchfiles moved to the dev group because `--reload` needs it), all four base images pinned by digest, and the backend image runs as uid 10001 with a CI step asserting it. Pinning by digest freezes base-image security patches, so a `docker` Dependabot ecosystem was added in the same change — without it the pin is a liability, not a hardening. Remaining: **the frontend image still runs as root**, because Caddy binds `:80` there; moving it to an unprivileged port has to be coordinated with whatever fronts it (Cloudflare tunnel), so it needs a deployment decision rather than a code change. *(Small)*
-- **#37◐ — Readiness & DB lifecycle.** Done: pooled-connection pre-ping + engine disposal on shutdown. Remaining: split `/health/live` from a bounded `/health/ready` so a DB outage stops reporting healthy, and bound the pool + statement timeouts. *(Small-Medium)*
 
 ## Phase 6 — UX & cleanup
 
@@ -94,7 +94,7 @@ weight, so the reasoning survives and nothing here has to be re-derived later.
   ever outweighs the guarantee — generating types without a runtime is a one-flag change
   ([ADR-018](adr/ADR-018-generated-validated-contracts.md)).
 - **Multi-worker / horizontal scale** — see #21/#45. Needs an SSE backplane first; the DB pool and
-  Argon2 limiter (#37) are the ceilings that bind before process count does.
+  Argon2 limiter are the ceilings that bind before process count does, and both are settings.
 
 ## Accepted risks / won't-do
 

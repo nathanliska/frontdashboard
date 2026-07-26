@@ -338,6 +338,11 @@ export const HTTPValidationError = z.object({
   detail: z.array(ValidationError).optional()
 })
 
+export type HealthResponse = z.infer<typeof HealthResponse>
+export const HealthResponse = z.object({
+  status: z.string()
+})
+
 export type InheritedDashboardAccessResponse = z.infer<
   typeof InheritedDashboardAccessResponse
 >
@@ -556,6 +561,12 @@ export const PreferencesUpdate = z.object({
 export type ProfileUpdate = z.infer<typeof ProfileUpdate>
 export const ProfileUpdate = z.object({
   display_name: z.union([z.string(), z.null()]).optional()
+})
+
+export type ReadinessResponse = z.infer<typeof ReadinessResponse>
+export const ReadinessResponse = z.object({
+  database: z.boolean(),
+  status: z.string()
 })
 
 export type RegisterRequest = z.infer<typeof RegisterRequest>

@@ -37,6 +37,21 @@ class Settings(BaseSettings):
     # Background retention sweep of expired auth rows (finding #38).
     reaper_enabled: bool = True
     reaper_interval_hours: int = 6
+    # Connection pool bounds (finding #37). Postgres costs roughly 5-10 MiB per backend
+    # connection, so an unbounded pool turns a request burst into database memory pressure.
+    # size + overflow is the ceiling on concurrent connections from one worker.
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    # How long a request waits for a free connection before failing instead of piling up.
+    db_pool_timeout_seconds: int = 10
+    # Recycle below any upstream idle-connection reaper so the pool never hands out a
+    # server-side-closed socket.
+    db_pool_recycle_seconds: int = 1800
+    # Server-side ceiling on a single statement. A runaway query otherwise holds its connection
+    # until the client gives up, which at this pool size is most of the pool.
+    db_statement_timeout_seconds: int = 15
+    # Bounded readiness probe — a hung database must fail the check, not hang it.
+    health_ready_timeout_seconds: float = 3.0
 
     @field_validator("frontend_base_url", mode="before")
     @classmethod
