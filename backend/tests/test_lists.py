@@ -284,3 +284,56 @@ async def test_item_update_event_values_are_json_safe(
     }
     # Only the submitted fields are echoed.
     assert set(event.payload["values"]) == set(event.payload["fields"])
+
+
+async def test_list_details_returns_every_list_with_items_in_one_request(auth_client: AsyncClient) -> None:
+    """The agenda's batch endpoint (#17): all lists on the dashboard, items included."""
+    dashboard = await create_dashboard(auth_client)
+    groceries = await create_list(auth_client, dashboard["id"], name="Groceries")
+    chores = await create_list(auth_client, dashboard["id"], name="Chores")
+    await create_list_item(auth_client, groceries["id"], text="Milk")
+    await create_list_item(auth_client, groceries["id"], text="Bread")
+    kept = await create_list_item(auth_client, chores["id"], text="Vacuum")
+
+    # Soft-deleted rows must vanish from the batch exactly as they do from the per-list route.
+    doomed_item = await create_list_item(auth_client, chores["id"], text="Doomed")
+    set_csrf(auth_client)
+    assert (await auth_client.delete(f"/api/lists/{chores['id']}/items/{doomed_item['id']}")).status_code == 204
+    doomed_list = await create_list(auth_client, dashboard["id"], name="Doomed List")
+    set_csrf(auth_client)
+    assert (await auth_client.patch(f"/api/lists/{doomed_list['id']}", json={"archived": True})).status_code == 200
+    set_csrf(auth_client)
+    assert (await auth_client.delete(f"/api/lists/{doomed_list['id']}")).status_code == 204
+
+    resp = await auth_client.get("/api/lists/details", params={"dashboard_id": dashboard["id"]})
+    assert resp.status_code == 200
+    details = resp.json()
+
+    by_name = {d["name"]: d for d in details}
+    assert set(by_name) == {"Groceries", "Chores"}
+    assert [i["text"] for i in by_name["Groceries"]["items"]] == ["Milk", "Bread"]
+    assert [i["text"] for i in by_name["Chores"]["items"]] == ["Vacuum"]
+    assert by_name["Chores"]["item_count"] == 1
+    assert kept["id"] in {i["id"] for i in by_name["Chores"]["items"]}
+
+
+async def test_list_details_requires_dashboard_access(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client)
+    await create_list(auth_client, dashboard["id"])
+    stranger = await register_client("details-stranger@example.com")
+    try:
+        resp = await stranger.get("/api/lists/details", params={"dashboard_id": dashboard["id"]})
+        assert resp.status_code == 404
+    finally:
+        await stranger.aclose()
+
+
+async def test_list_details_hides_archived_dashboard_content(auth_client: AsyncClient) -> None:
+    """An archived dashboard hides its children here exactly as on the per-list routes."""
+    dashboard = await create_dashboard(auth_client)
+    await create_list(auth_client, dashboard["id"])
+    set_csrf(auth_client)
+    assert (await auth_client.patch(f"/api/dashboards/{dashboard['id']}", json={"archived": True})).status_code == 200
+
+    resp = await auth_client.get("/api/lists/details", params={"dashboard_id": dashboard["id"]})
+    assert resp.status_code == 404

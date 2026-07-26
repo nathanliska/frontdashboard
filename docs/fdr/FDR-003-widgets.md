@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-26
 
 ## Overview
 
@@ -20,6 +20,9 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
 - **Calendar widget.** Shows a calendar view of events. Re-derives "today" at local midnight so an
   always-on display doesn't stick on yesterday.
 - **Agenda widget.** Shows today / overdue / upcoming items; background-refetches on a day rollover.
+  Its reminders come from `GET /lists/details` — one dashboard-scoped batch of every list with its
+  items — rather than composing summaries plus one detail request per list client-side (#17, closed
+  2026-07-26). The batch fetcher reads no client cache, so SSE handler order is not load-bearing.
 - Widgets update live: a change to the underlying list or calendar patches the widget in place via
   SSE rather than requiring a manual refresh.
 

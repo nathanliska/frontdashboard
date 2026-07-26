@@ -287,6 +287,58 @@ async def reorder_lists(
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
 
 
+# Declared before /{list_id} so the static segment wins (same pattern as PUT /order).
+@router.get("/details", response_model=list[ListDetailResponse])
+async def list_list_details(
+    dashboard_id: uuid.UUID = Query(),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ListDetailResponse]:
+    """Every non-deleted list on one dashboard, each with its active items, in one request.
+
+    Exists for the agenda (finding #17): it needs the due-dated items of every list on the
+    dashboard, and composing that client-side out of GET /lists plus one GET /lists/{id} per
+    list made the request count grow with the dashboard. Three queries total, regardless of
+    how many lists there are.
+    """
+    # The canonical parent door (#18): read access suffices, and an archived dashboard hides
+    # its child content (404) exactly as the per-list routes do.
+    await load_dashboard_access(dashboard_id, current_user, db)
+
+    lists_result = await db.execute(
+        select(List).where(List.deleted_at.is_(None), List.dashboard_id == dashboard_id).order_by(List.sort_order, List.created_at)
+    )
+    lists = list(lists_result.scalars().all())
+    if not lists:
+        return []
+
+    items_result = await db.execute(
+        select(ListItem)
+        .where(ListItem.list_id.in_([lst.id for lst in lists]), ListItem.deleted_at.is_(None))
+        .order_by(ListItem.sort_order, ListItem.created_at)
+    )
+    items_by_list: dict[uuid.UUID, list[ListItemResponse]] = {lst.id: [] for lst in lists}
+    for item in items_result.scalars().all():
+        items_by_list[item.list_id].append(ListItemResponse.model_validate(item))
+
+    return [
+        ListDetailResponse(
+            id=lst.id,
+            dashboard_id=lst.dashboard_id,
+            name=lst.name,
+            list_type=lst.list_type,
+            sort_order=lst.sort_order,
+            archived=lst.archived,
+            created_by=lst.created_by,
+            created_at=lst.created_at,
+            updated_at=lst.updated_at,
+            item_count=len(items_by_list[lst.id]),
+            items=items_by_list[lst.id],
+        )
+        for lst in lists
+    ]
+
+
 @router.get("/{list_id}", response_model=ListDetailResponse)
 async def get_list(
     list_id: uuid.UUID,

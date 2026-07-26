@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { CalendarOccurrence } from '../api/calendar'
 import { apiListOccurrences } from '../api/calendar'
-import type { ListItem, ListSummary } from '../api/lists'
+import { apiGetListDetails, type ListItem, type ListSummary } from '../api/lists'
 import { useLocalDay } from '../hooks/useLocalDay'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { addDays, dateKey, startOfDay } from '../utils/calendar/calendarUtils'
-import { loadDashboardListDetails } from './listData'
+
 import { createScopedQuery, type ScopedQueryState } from './scopedQuery'
 
 export type AgendaItem =
@@ -110,7 +110,10 @@ async function fetchAgendaOccurrences(scope: AgendaScope): Promise<CalendarOccur
 
 async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
   const todayKey = dateKey(startOfDay(new Date()))
-  const details = await loadDashboardListDetails(scope.dashboardId)
+  // One batch request (#17) — this used to compose summaries + one detail request per list,
+  // growing with the dashboard, and its synchronous read of the summaries cache made handler
+  // order in useSSE load-bearing. The server is authoritative now; no client cache is read.
+  const details = (await apiGetListDetails(scope.dashboardId)).filter((detail) => !detail.archived)
 
   return details.flatMap((detail) =>
     detail.items

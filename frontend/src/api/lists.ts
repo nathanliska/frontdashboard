@@ -52,6 +52,14 @@ export async function apiGetLists(dashboardId?: string | null): Promise<ListResp
   return request
 }
 
+export async function apiGetListDetails(dashboardId: string): Promise<ListDetailResponse[]> {
+  // The agenda's batch fetch (#17): every list on the dashboard with its items, one request.
+  // No single-flight map: its only caller is a scopedQuery fetcher, which already dedupes.
+  const res = await apiFetch(`/api/lists/details?dashboard_id=${dashboardId}`)
+  if (!res.ok) throw new Error('Failed to load lists')
+  return parseJson(res, z.array(ListDetailResponse))
+}
+
 export async function apiGetList(id: string): Promise<ListDetailResponse> {
   const existing = listDetailRequests.get(id)
   if (existing) return existing

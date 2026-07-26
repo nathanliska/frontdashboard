@@ -14,6 +14,7 @@ const { apiListOccurrences } = vi.hoisted(() => ({
 
 const {
   apiGetList,
+  apiGetListDetails,
   apiGetLists,
   apiCreateItem,
   apiCreateList,
@@ -23,6 +24,7 @@ const {
   apiUpdateList,
 } = vi.hoisted(() => ({
   apiGetList: vi.fn(),
+  apiGetListDetails: vi.fn(),
   apiGetLists: vi.fn(),
   apiCreateItem: vi.fn(),
   apiCreateList: vi.fn(),
@@ -38,6 +40,7 @@ vi.mock('../api/calendar', () => ({
 
 vi.mock('../api/lists', () => ({
   apiGetList,
+  apiGetListDetails,
   apiGetLists,
   apiCreateItem,
   apiCreateList,
@@ -155,8 +158,7 @@ describe('agendaData', () => {
     apiListOccurrences
       .mockResolvedValueOnce([makeOccurrence()])
       .mockResolvedValueOnce([makeOccurrence({ title: 'Updated review' })])
-    apiGetLists.mockResolvedValue([makeListSummary()])
-    apiGetList.mockResolvedValueOnce(makeListDetail())
+    apiGetListDetails.mockResolvedValueOnce([makeListDetail()])
 
     render(<AgendaProbe />)
 
@@ -164,8 +166,7 @@ describe('agendaData', () => {
     await screen.findByText('Buy milk')
 
     expect(apiListOccurrences).toHaveBeenCalledTimes(1)
-    expect(apiGetLists).toHaveBeenCalledTimes(1)
-    expect(apiGetList).toHaveBeenCalledTimes(1)
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
 
     act(() => {
       handleAgendaResourceEvent(makeCalendarUpdatedEvent())
@@ -173,8 +174,7 @@ describe('agendaData', () => {
 
     await screen.findByText('Updated review')
     expect(apiListOccurrences).toHaveBeenCalledTimes(2)
-    expect(apiGetLists).toHaveBeenCalledTimes(1)
-    expect(apiGetList).toHaveBeenCalledTimes(1)
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Buy milk')).toBeInTheDocument()
   })
 
@@ -183,8 +183,7 @@ describe('agendaData', () => {
     try {
       vi.setSystemTime(new Date(2026, 6, 19, 23, 59, 0)) // Jul 19, 23:59 local
       apiListOccurrences.mockResolvedValue([makeOccurrence()])
-      apiGetLists.mockResolvedValue([makeListSummary()])
-      apiGetList.mockResolvedValue(makeListDetail())
+      apiGetListDetails.mockResolvedValue([makeListDetail()])
 
       render(<AgendaProbe />)
       await act(async () => {
@@ -205,17 +204,15 @@ describe('agendaData', () => {
 
   it('refreshes list reminders without reloading calendar occurrences on list events', async () => {
     apiListOccurrences.mockResolvedValue([makeOccurrence()])
-    apiGetLists.mockResolvedValue([makeListSummary()])
-    apiGetList
-      .mockResolvedValueOnce(makeListDetail())
-      .mockResolvedValueOnce(makeListDetail({ items: [makeListItem({ checked: true })] }))
+    apiGetListDetails
+      .mockResolvedValueOnce([makeListDetail()])
+      .mockResolvedValueOnce([makeListDetail({ items: [makeListItem({ checked: true })] })])
 
     render(<AgendaProbe />)
 
     await screen.findByText('Buy milk')
     expect(apiListOccurrences).toHaveBeenCalledTimes(1)
-    expect(apiGetLists).toHaveBeenCalledTimes(1)
-    expect(apiGetList).toHaveBeenCalledTimes(1)
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
 
     const event = makeListItemCheckedEvent()
     act(() => {
@@ -226,6 +223,6 @@ describe('agendaData', () => {
     await screen.findByText('Launch review')
     expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
     expect(apiListOccurrences).toHaveBeenCalledTimes(1)
-    expect(apiGetLists).toHaveBeenCalledTimes(1)
+    expect(apiGetListDetails).toHaveBeenCalledTimes(2)
   })
 })

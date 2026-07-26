@@ -134,36 +134,6 @@ describe('useSSE', () => {
     window.history.pushState({}, '', '/')
   })
 
-  it('routes list events to the list handler before the agenda handler', async () => {
-    // Order is load-bearing: agendaRemindersQuery.invalidateWhere invokes its fetcher
-    // SYNCHRONOUSLY, so fetchAgendaReminders -> loadDashboardListDetails reads the list
-    // SUMMARIES cache in the same tick, before its first await. Swapping the two calls in
-    // onListEvent must fail this test — if it doesn't, the test pins nothing.
-    //
-    // Caveat: this pins the literal call order, not the consequence. `list.item.checked` is
-    // order-insensitive in practice; the event that actually breaks is `list.deleted`, where
-    // an agenda-first read sees the deleted list still in summaries and GETs a dead id (404).
-    // Testing that needs the real resource modules, which this file mocks.
-    render(<TestHarness />)
-
-    const es = MockEventSource.instances[0]
-    act(() => {
-      es.dispatch(
-        'list.item.checked',
-        frame({
-          event_type: 'list.item.checked',
-          entity_id: 'item-1',
-          entity_type: 'list_item',
-          payload: { dashboard_id: 'dash-1', list_id: 'list-1' },
-        }),
-      )
-    })
-
-    await waitFor(() => {
-      expect(handlerCallOrder).toEqual(['list', 'agenda'])
-    })
-  })
-
   it('refreshes unread count on resync without fetching the full notification list by default', async () => {
     render(<TestHarness />)
 

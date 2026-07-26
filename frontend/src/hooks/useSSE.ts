@@ -177,14 +177,9 @@ export function useSSE(): void {
     function onListEvent(e: MessageEvent<string>) {
       const data = parseFrame(e.data, SseEventSchema)
       if (!data) return
-      // Order is load-bearing, not convention. handleAgendaResourceEvent invalidates the
-      // agenda reminders, and (if an agenda is mounted — invalidateWhere skips fetching for
-      // unobserved scopes) that fetcher, loadDashboardListDetails, reads the list SUMMARIES
-      // cache synchronously, before its first await. So summaries must already carry this
-      // event's changes. Run the agenda first and a `list.deleted` leaves the deleted list in
-      // the summaries it reads, then fetches that dead id -> 404 -> the agenda widget errors.
-      // (Only summaries is read synchronously; the per-list detail fetches sit after an await
-      // and would see patched data either way.)
+      // Order is convention now, not correctness: the agenda's reminder fetcher asks the
+      // server for the whole batch (#17) and reads no client cache, so these handlers no
+      // longer depend on each other's writes landing first.
       handleListResourceEvent(data)
       handleAgendaResourceEvent(data)
       handleDashboardContentEvent(data)
