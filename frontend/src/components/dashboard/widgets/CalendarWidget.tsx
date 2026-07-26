@@ -13,6 +13,7 @@ import {
   startOfDay,
   startOfWeek,
 } from '../../../utils/calendar/calendarUtils'
+import { WidgetErrorState } from '../WidgetErrorState'
 import { DayCalendarWidget, MonthCalendarWidget, WeekCalendarWidget } from './CalendarWidgetViews'
 import { type CalendarWidgetView, WidgetViewTabs } from './CalendarWidgetViewTabs'
 
@@ -86,10 +87,11 @@ export function CalendarWidget({
 
   if (error) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-1">
-        <p className="text-xs text-zinc-600">Calendar unavailable</p>
-        <p className="text-[10px] text-zinc-700">Could not load scheduled events.</p>
-      </div>
+      <WidgetErrorState
+        title="Calendar unavailable"
+        detail="Could not load scheduled events."
+        onRetry={occurrencesQuery.refetch}
+      />
     )
   }
 

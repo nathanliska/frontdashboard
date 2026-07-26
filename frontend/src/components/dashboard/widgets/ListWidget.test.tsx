@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../../api/http'
 import type { ListDetail, ListItem } from '../../../api/lists'
 import { __resetListDataForTests, handleListResourceEvent } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
@@ -154,8 +155,36 @@ describe('ListWidget', () => {
     expect(screen.queryByText('+1 more')).not.toBeInTheDocument()
   })
 
+  it('offers a retry for outages, and the retry recovers', async () => {
+    // A network failure is not access loss: the copy must not claim deletion, and the state
+    // must offer a way out (#26).
+    apiMocks.apiGetList
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(makeListDetail())
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    await screen.findByText("Couldn't load this list")
+    expect(screen.queryByText('List unavailable')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await screen.findByText('Buy milk')
+    expect(apiMocks.apiGetList).toHaveBeenCalledTimes(2)
+  })
+
   it('shows the unavailable state after a forced revalidation loses access', async () => {
-    apiMocks.apiGetList.mockResolvedValueOnce(makeListDetail()).mockRejectedValueOnce(new Error())
+    // Access loss is an ApiError 404 at the boundary — a plain Error would be an outage,
+    // which now renders the retryable state instead (#26).
+    apiMocks.apiGetList
+      .mockResolvedValueOnce(makeListDetail())
+      .mockRejectedValueOnce(new ApiError('Not found', 404))
 
     render(
       <ListWidget

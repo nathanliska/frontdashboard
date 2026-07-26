@@ -1,9 +1,14 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 
 export interface ScopedQueryState<Data> {
   data: Data | null
   loading: boolean
   error: Error | null
+}
+
+export interface ScopedQueryResult<Data> extends ScopedQueryState<Data> {
+  /** Re-run the fetch for this scope. The affordance behind every "Try again" button (#26). */
+  refetch: () => void
 }
 
 type ScopedQueryFetchOptions = {
@@ -179,7 +184,7 @@ export function createScopedQuery<Scope, Data>({
     entries.clear()
   }
 
-  function useQuery(scope: Scope | null | undefined): ScopedQueryState<Data> {
+  function useQuery(scope: Scope | null | undefined): ScopedQueryResult<Data> {
     if (scope) ensureEntry(scope)
 
     const state = useSyncExternalStore(
@@ -219,7 +224,12 @@ export function createScopedQuery<Scope, Data>({
       }
     }, [scope])
 
-    return state
+    const refetch = useCallback(() => {
+      if (!scope) return
+      void fetch(scope).catch(() => undefined)
+    }, [scope])
+
+    return useMemo(() => ({ ...state, refetch }), [state, refetch])
   }
 
   return {

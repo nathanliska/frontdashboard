@@ -90,7 +90,7 @@ export function CalendarPage() {
     effectiveActiveDashboardId,
   )
   const occurrences = occurrencesQuery.data ?? EMPTY_OCCURRENCES
-  const { loading } = occurrencesQuery
+  const { loading, error: occurrencesError, refetch: refetchOccurrences } = occurrencesQuery
   const monthDays = useMemo(() => monthWeeksInView(monthCursor), [monthCursor])
   const selectedOccurrences = useMemo(
     () => occurrencesForDate(occurrences, selectedDate),
@@ -308,6 +308,18 @@ export function CalendarPage() {
           {loading ? (
             <div className="flex flex-1 min-h-0 items-center justify-center">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
+            </div>
+          ) : occurrencesError ? (
+            // A failed window fetch must not render as an eventless month (#26).
+            <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-2">
+              <p className="text-sm text-zinc-500">Couldn&apos;t load events for this window.</p>
+              <button
+                type="button"
+                onClick={refetchOccurrences}
+                className="rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+              >
+                Try again
+              </button>
             </div>
           ) : (
             <div className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">

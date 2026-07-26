@@ -3,6 +3,7 @@ import type { AgendaItem } from '../../../resources/agendaData'
 import { useAgendaItems } from '../../../resources/agendaData'
 import { dateKey, formatOccurrenceTime } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
+import { WidgetErrorState } from '../WidgetErrorState'
 
 const MAX_ITEMS = 10
 
@@ -13,17 +14,18 @@ function isToday(item: AgendaItem): boolean {
 }
 
 export function AgendaWidget({ dashboardId }: { dashboardId: string }) {
-  const { data, error } = useAgendaItems(dashboardId)
+  const { data, error, refetch } = useAgendaItems(dashboardId)
   const all = data ?? []
   const todayItems = all.filter(isToday)
   const upcomingItems = all.filter((i) => !isToday(i)).slice(0, MAX_ITEMS - todayItems.length)
 
   if (error) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-1">
-        <p className="text-xs text-zinc-600">Agenda unavailable</p>
-        <p className="text-[10px] text-zinc-700">Could not load today&apos;s priorities.</p>
-      </div>
+      <WidgetErrorState
+        title="Agenda unavailable"
+        detail="Could not load today's priorities."
+        onRetry={refetch}
+      />
     )
   }
 

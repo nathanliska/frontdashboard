@@ -1,11 +1,13 @@
 import { Check, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ListWidgetConfig } from '../../../api/dashboards'
+import { ApiError } from '../../../api/http'
 import type { ListItem } from '../../../api/lists'
 import { addListItem, updateListItem, useListDetail } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
 import { cn } from '../../../utils/shared/cn'
 import { scrollToNewestItem } from '../../../utils/shared/scrollToNewestItem'
+import { WidgetErrorState } from '../WidgetErrorState'
 
 export function ListWidget({
   listId,
@@ -20,7 +22,7 @@ export function ListWidget({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(300)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
-  const { data: detail, error } = useListDetail(listId)
+  const { data: detail, error, refetch } = useListDetail(listId)
 
   useEffect(() => {
     if (!detail) return
@@ -63,13 +65,20 @@ export function ListWidget({
   }
 
   if (error) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-1">
-        <p className="text-xs text-zinc-600">List unavailable</p>
-        <p className="text-[10px] text-zinc-700">
-          It may have been deleted or removed from this dashboard.
-        </p>
-      </div>
+    // A 404/403 means the list itself is gone or no longer shared — retrying can't change that,
+    // and saying "try again" would mislead. Anything else is an outage the user can retry (#26).
+    const gone = error instanceof ApiError && (error.status === 404 || error.status === 403)
+    return gone ? (
+      <WidgetErrorState
+        title="List unavailable"
+        detail="It may have been deleted or removed from this dashboard."
+      />
+    ) : (
+      <WidgetErrorState
+        title="Couldn't load this list"
+        detail="Check your connection."
+        onRetry={refetch}
+      />
     )
   }
 

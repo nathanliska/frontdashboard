@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { apiGetActivity, type Notification } from '../api/notifications'
 import { ActivityFeed } from '../components/notifications/ActivityFeed'
@@ -17,44 +17,53 @@ export function NotificationsPage() {
   const notifications = useNotificationsStore((s) => s.notifications)
   const unreadCount = useNotificationsStore((s) => s.unreadCount)
   const load = useNotificationsStore((s) => s.load)
+  const loadFailed = useNotificationsStore((s) => s.loadFailed)
   const markRead = useNotificationsStore((s) => s.markRead)
   const markAllRead = useNotificationsStore((s) => s.markAllRead)
 
   const [activity, setActivity] = useState<Awaited<ReturnType<typeof apiGetActivity>>>([])
   const [activityLoading, setActivityLoading] = useState(false)
+  const [activityFailed, setActivityFailed] = useState(false)
 
   useEffect(() => {
     void load()
   }, [load])
 
+  // Stable loader shared by the tab effect, the resync listener, and the retry button — a retry
+  // is just another call, not a state-counter poke that re-runs an effect.
+  const loadActivity = useCallback(async (isCancelled?: () => boolean) => {
+    setActivityLoading(true)
+    try {
+      const nextActivity = await apiGetActivity()
+      if (!isCancelled?.()) {
+        setActivity(nextActivity)
+        setActivityFailed(false)
+      }
+    } catch {
+      // An outage must render as a failure with a retry, not an empty timeline (#26).
+      if (!isCancelled?.()) setActivityFailed(true)
+    } finally {
+      if (!isCancelled?.()) {
+        setActivityLoading(false)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     if (tab !== 'activity') return
     let cancelled = false
+    const isCancelled = () => cancelled
 
-    async function loadActivity() {
-      setActivityLoading(true)
-      try {
-        const nextActivity = await apiGetActivity()
-        if (!cancelled) {
-          setActivity(nextActivity)
-        }
-      } finally {
-        if (!cancelled) {
-          setActivityLoading(false)
-        }
-      }
-    }
-
-    void loadActivity()
+    void loadActivity(isCancelled)
     function onResync() {
-      void loadActivity()
+      void loadActivity(isCancelled)
     }
     window.addEventListener(APP_RESYNC_EVENT, onResync)
     return () => {
       cancelled = true
       window.removeEventListener(APP_RESYNC_EVENT, onResync)
     }
-  }, [tab])
+  }, [tab, loadActivity])
 
   function handleNotificationClick(notification: Notification) {
     if (notification.read_at === null) {
@@ -111,20 +120,43 @@ export function NotificationsPage() {
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === 'notifications' ? (
-          <NotificationFeed
-            notifications={notifications}
-            emptyMessage="No notifications yet."
-            onOpen={handleNotificationClick}
-          />
+          loadFailed && notifications.length === 0 ? (
+            <RetryState message="Couldn't load notifications." onRetry={() => void load()} />
+          ) : (
+            <NotificationFeed
+              notifications={notifications}
+              emptyMessage="No notifications yet."
+              onOpen={handleNotificationClick}
+            />
+          )
         ) : (
           <div className="flex flex-col gap-3">
             <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2">
               <p className="text-xs text-zinc-500">Activity now shows your own timeline.</p>
             </div>
-            <ActivityFeed activity={activity} loading={activityLoading} />
+            {activityFailed && !activityLoading ? (
+              <RetryState message="Couldn't load activity." onRetry={() => void loadActivity()} />
+            ) : (
+              <ActivityFeed activity={activity} loading={activityLoading} />
+            )}
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function RetryState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-8">
+      <p className="text-sm text-zinc-500">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+      >
+        Try again
+      </button>
     </div>
   )
 }

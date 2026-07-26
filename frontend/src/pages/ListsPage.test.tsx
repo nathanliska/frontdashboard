@@ -126,11 +126,13 @@ describe('ListsLayout / ListDetailPage', () => {
       data: [makeSummary(), groceriesSummary],
       loading: false,
       error: null,
+      refetch: () => {},
     })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-2' ? groceriesDetail : null,
       loading: false,
       error: null,
+      refetch: () => {},
     }))
 
     renderLists('/lists/list-2?dashboard_id=dash-1')
@@ -166,11 +168,13 @@ describe('ListsLayout / ListDetailPage', () => {
       data: [makeSummary(), groceriesSummary],
       loading: false,
       error: null,
+      refetch: () => {},
     })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-2' ? groceriesDetail : null,
       loading: false,
       error: null,
+      refetch: () => {},
     }))
 
     renderLists('/lists?dashboard_id=dash-1')
@@ -190,11 +194,13 @@ describe('ListsLayout / ListDetailPage', () => {
       data: [makeSummary({ archived: true })],
       loading: false,
       error: null,
+      refetch: () => {},
     })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-1' ? makeDetail() : null,
       loading: false,
       error: null,
+      refetch: () => {},
     }))
 
     renderLists('/lists/list-1?dashboard_id=dash-1')
@@ -222,11 +228,13 @@ describe('ListsLayout / ListDetailPage', () => {
       data: [makeSummary({ archived: true })],
       loading: false,
       error: null,
+      refetch: () => {},
     })
     mockedUseListDetail.mockImplementation((listId) => ({
       data: listId === 'list-1' ? makeDetail() : null,
       loading: false,
       error: null,
+      refetch: () => {},
     }))
 
     renderLists('/lists/list-1?dashboard_id=dash-1')

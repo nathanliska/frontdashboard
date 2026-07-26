@@ -162,7 +162,14 @@ export function useAgendaItems(dashboardId: string | null) {
   const remindersState = agendaRemindersQuery.useQuery(scope)
 
   return useMemo(
-    () => mergeAgendaState(occurrencesState, remindersState),
+    () => ({
+      ...mergeAgendaState(occurrencesState, remindersState),
+      // Retry both halves: either one failing surfaces as the merged error.
+      refetch: () => {
+        occurrencesState.refetch()
+        remindersState.refetch()
+      },
+    }),
     [occurrencesState, remindersState],
   )
 }

@@ -16,6 +16,8 @@ export function NotificationPanel({
 }) {
   const navigate = useNavigate()
   const notifications = useNotificationsStore((s) => s.notifications)
+  const loadFailed = useNotificationsStore((s) => s.loadFailed)
+  const load = useNotificationsStore((s) => s.load)
   const unreadCount = useNotificationsStore((s) => s.unreadCount)
   const panelOpen = useNotificationsStore((s) => s.panelOpen)
   const setPanelOpen = useNotificationsStore((s) => s.setPanelOpen)
@@ -102,12 +104,26 @@ export function NotificationPanel({
 
           {/* List */}
           <div className="overflow-y-auto flex-1">
-            <NotificationFeed
-              notifications={notifications}
-              emptyMessage="No notifications"
-              onOpen={handleNotificationClick}
-              variant="panel"
-            />
+            {loadFailed && notifications.length === 0 ? (
+              // An outage with nothing cached must not render as an empty inbox (#26).
+              <div className="flex flex-col items-center gap-2 px-4 py-8">
+                <p className="text-xs text-zinc-500">Couldn&apos;t load notifications.</p>
+                <button
+                  type="button"
+                  onClick={() => void load()}
+                  className="rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : (
+              <NotificationFeed
+                notifications={notifications}
+                emptyMessage="No notifications"
+                onOpen={handleNotificationClick}
+                variant="panel"
+              />
+            )}
           </div>
 
           {/* Footer */}

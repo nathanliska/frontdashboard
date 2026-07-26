@@ -84,7 +84,7 @@ export function ListsLayout() {
 
   const listSummariesQuery = useListSummaries(effectiveDashboardId)
   const lists = listSummariesQuery.data ?? EMPTY_LISTS
-  const { loading, error: listsError } = listSummariesQuery
+  const { loading, error: listsError, refetch: refetchLists } = listSummariesQuery
 
   // The sidebar has two views — Active (default) and Archived — rather than one flat list
   // with an "archived" badge mixed in. Archived lists stay reachable (archive/unarchive/delete
@@ -241,7 +241,16 @@ export function ListsLayout() {
           {loading ? (
             <p className="text-sm text-zinc-600 px-1">Loading…</p>
           ) : listsError ? (
-            <p className="text-sm text-zinc-600 px-1">Could not load lists.</p>
+            <div className="flex flex-col items-start gap-2 px-1">
+              <p className="text-sm text-zinc-600">Could not load lists.</p>
+              <button
+                type="button"
+                onClick={refetchLists}
+                className="rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+              >
+                Try again
+              </button>
+            </div>
           ) : filteredLists.length === 0 ? (
             <p className="text-sm text-zinc-600 px-1">
               {!effectiveDashboardId

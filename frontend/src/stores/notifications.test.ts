@@ -132,3 +132,31 @@ describe('notifications store unread accounting', () => {
     expect(useNotificationsStore.getState().unreadCount).toBe(3)
   })
 })
+
+describe('notification load failures (#26)', () => {
+  it('records a failure when nothing is cached, and a retry clears it', async () => {
+    apiGetNotifications.mockRejectedValueOnce(new Error('offline'))
+    await useNotificationsStore.getState().load()
+
+    expect(useNotificationsStore.getState().loadFailed).toBe(true)
+    expect(useNotificationsStore.getState().loaded).toBe(false)
+
+    apiGetNotifications.mockResolvedValueOnce([NOTIF_A])
+    await useNotificationsStore.getState().load()
+
+    expect(useNotificationsStore.getState().loadFailed).toBe(false)
+    expect(useNotificationsStore.getState().notifications).toEqual([NOTIF_A])
+  })
+
+  it('keeps serving a cached list when a background refresh fails', async () => {
+    apiGetNotifications.mockResolvedValueOnce([NOTIF_A])
+    await useNotificationsStore.getState().load()
+
+    apiGetNotifications.mockRejectedValueOnce(new Error('offline'))
+    await useNotificationsStore.getState().load()
+
+    // The stale list stays visible and no error state kicks it out.
+    expect(useNotificationsStore.getState().notifications).toEqual([NOTIF_A])
+    expect(useNotificationsStore.getState().loadFailed).toBe(false)
+  })
+})

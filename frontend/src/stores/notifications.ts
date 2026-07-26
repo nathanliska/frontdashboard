@@ -16,6 +16,8 @@ interface NotificationsState {
   unreadCount: number
   panelOpen: boolean
   loaded: boolean
+  /** Last load attempt failed and nothing is cached — render a retry state, not "no notifications" (#26). */
+  loadFailed: boolean
   load: () => Promise<void>
   loadUnreadCount: () => Promise<void>
   markRead: (id: string) => Promise<void>
@@ -40,6 +42,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
     unreadCount: 0,
     panelOpen: false,
     loaded: false,
+    loadFailed: false,
 
     async load() {
       if (notificationsPromise) return notificationsPromise
@@ -50,9 +53,12 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
           const notifications = await apiGetNotifications()
           // The list endpoint is capped, so it cannot authoritatively replace the
           // separately loaded unread total.
-          guard.set({ notifications, loaded: true })
+          guard.set({ notifications, loaded: true, loadFailed: false })
         } catch {
-          // ignore — stale state is acceptable
+          // Keep any stale list (better than blanking it), but record the failure: with nothing
+          // cached, an outage otherwise renders as "No notifications" — indistinguishable from
+          // an empty inbox and with no way to retry (#26).
+          guard.set({ loadFailed: !get().loaded })
         }
       })().finally(() => {
         notificationsPromise = null
@@ -138,6 +144,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
         unreadCount: 0,
         panelOpen: false,
         loaded: false,
+        loadFailed: false,
       })
     },
   }
