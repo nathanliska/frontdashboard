@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { apiGetActivity, type Notification } from '../api/notifications'
 import { ActivityFeed } from '../components/notifications/ActivityFeed'
 import { NotificationFeed } from '../components/notifications/NotificationFeed'

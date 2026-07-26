@@ -1,6 +1,6 @@
 import { LayoutDashboard, Plus } from 'lucide-react'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import type { DashboardSummary } from '../api/dashboards'
 import { CreateDashboardModal } from '../components/dashboard/CreateDashboardModal'
 import { DashboardCardGrid } from '../components/dashboard/DashboardCardGrid'

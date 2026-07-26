@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { ApiError, apiResendVerification } from '../api/auth'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'

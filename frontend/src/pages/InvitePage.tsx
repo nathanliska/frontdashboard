@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router'
 import { apiAcceptInvite, apiPreviewInvite, type InvitePreviewResponse } from '../api/invites'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'

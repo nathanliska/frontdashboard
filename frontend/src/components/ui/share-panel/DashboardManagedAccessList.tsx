@@ -1,5 +1,5 @@
 import { ExternalLink, Users } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import type { InheritedDashboardAccess } from '../../../api/shares'
 import { ROUTES } from '../../../routes'
 

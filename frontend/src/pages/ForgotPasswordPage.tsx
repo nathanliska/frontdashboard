@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { apiRequestPasswordReset } from '../api/auth'
 import { ROUTES } from '../routes'
 

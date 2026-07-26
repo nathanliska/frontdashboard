@@ -1,5 +1,5 @@
 import { ExternalLink, X } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import type { DashboardWidget, WidgetType } from '../../api/dashboards'
 import { capitalize, cn } from '../../utils/shared/cn'
 import { WidgetRenderer } from './WidgetRenderer'

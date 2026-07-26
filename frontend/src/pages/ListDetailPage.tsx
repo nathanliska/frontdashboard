@@ -1,7 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { useEffect, useRef } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import type { ListItem } from '../api/lists'
 import { AddItemForm } from '../components/lists/AddItemForm'
 import { EditableListName } from '../components/lists/EditableListName'

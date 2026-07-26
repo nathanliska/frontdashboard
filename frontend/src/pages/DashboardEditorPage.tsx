@@ -1,6 +1,6 @@
 import { ArrowLeft, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { useEffect, useEffectEvent, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router'
 import { AddWidgetModal, type AddWidgetParams } from '../components/dashboard/AddWidgetModal'
 import { DashboardGrid } from '../components/dashboard/DashboardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'

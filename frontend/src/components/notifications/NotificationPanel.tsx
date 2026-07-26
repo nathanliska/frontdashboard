@@ -1,6 +1,6 @@
 import { Bell, Check, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router'
 import { ROUTES } from '../../routes'
 import { useNotificationsStore } from '../../stores/notifications'
 import { getNotificationDestination } from '../../utils/notifications/notificationFeedUtils'

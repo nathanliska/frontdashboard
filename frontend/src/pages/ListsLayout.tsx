@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { Outlet, useMatch, useNavigate, useSearchParams } from 'react-router-dom'
+import { Outlet, useMatch, useNavigate, useSearchParams } from 'react-router'
 import type { ListSummary, ListType } from '../api/lists'
 import { CreateListModal } from '../components/lists/CreateListModal'
 import { ListSidebarRow } from '../components/lists/ListSidebarRow'
