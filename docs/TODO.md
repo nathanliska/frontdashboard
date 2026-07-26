@@ -30,7 +30,7 @@ and effort are noted inline where known.
 | 4 | Data layer, contracts & exposure | #17, #22◐, #24 |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐, #32◐, #36◐, #37◐ |
 | 6 | UX & cleanup | #27, #40, #42◐, #54 |
-| — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #29, #30◐, #38◐, #39, #52, #56, #53, #21/#45 (deferred) |
+| — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #38◐, #39, #52, #56, #53, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
 
@@ -65,8 +65,6 @@ and effort are noted inline where known.
 - **#19◐ — Validate share targets, atomic upserts.** Done: reject self / nonexistent / deleted / unverified targets; duplicate initial targets rejected at the schema. Remaining: replace read-before-insert with `INSERT … ON CONFLICT`, add user/dashboard FKs (via #18). *(Small)*
 - **#25 — Remove avoidable access/query N+1s.** Dashboard access invokes irrelevant inherited-resource discovery; per-notification refresh; per-child share-cleanup loop. Add an owner-or-share `EXISTS` access query, one flush/RETURNING path, set-based cleanup. *(Medium)*
 - **#26 — Standardize API errors + visible recovery states.** Integrity/FK races surface as generic 500s, and outages render as "No events" / zero unread instead of something the user can retry. Translate the narrow `IntegrityError`s and render explicit retryable states. *(Small-Medium)*
-- **#29 — Indexes for real dashboard/widget paths.** `dashboards.user_id` is unindexed since the one-per-user index was dropped; widget reverse lookups aren't indexed; resource-widget uniqueness relies on read-before-insert. Add `(user_id, archived, updated_at)`, `(resource_type, resource_id, dashboard_id)`, and a partial unique constraint — cheap, do it with the next migration. *(Small)*
-- **#30◐ — Remaining domain invariants in Postgres.** Done: nonnegative `sort_order` CHECKs. Remaining: widget-resource paired-field constraints and calendar-override occurrence-membership. (The `minutes_before` constraint lands with the reminders feature itself — see FDR-006.) *(Small-Medium)*
 - **#38◐ — Bound retained rows.** Done: scheduled advisory-locked reaper prunes expired tokens + idle sessions. Remaining: the decided ~90-day `activity_events`/notification retention horizon — that table grows forever. Collection pagination is #22's cursor. *(Small)*
 - **#39 — Extract use cases from the dashboard router.** 1,139 lines coupling validation, authz, persistence, activity, notification and SSE, repeating the same transaction/broadcast dance in every handler. Worth doing as the deletion it implies — one unit of work + staged outbox, routers as thin adapters — not as a speculative layer. *(Large)*
 - **#52 — SSE overflow eviction is attacker-inducible (Low).** A co-member driving >256 rapid mutations can pin a victim in a reconnect/resync/refetch loop. Stays low even under open registration: it isn't a silent deafen, and reaching a victim requires holding an invite link to a dashboard they share, so a stranger who merely signs up cannot trigger it. Coalesce evictions into a single resync and cap resyncs per connection if it ever shows up in practice. *(Medium)*

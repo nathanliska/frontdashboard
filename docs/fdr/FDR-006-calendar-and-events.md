@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-07-25
+**Last reviewed:** 2026-07-26
 
 ## Overview
 
@@ -35,7 +35,12 @@ requests.
 **Decision:** A single occurrence can be overridden or cancelled independently of its series
 (`calendar_event_overrides`; `calendar.event.occurrence.updated` / `...cancelled` events).
 **Why:** Real household events need "move just this week's occurrence" without detaching the series.
-**Tradeoff:** Read/expansion must reconcile the base series with its overrides.
+**Tradeoff:** Read/expansion must reconcile the base series with its overrides. The database enforces
+what it can — one override per `(event, occurrence_start)`, and `ends_at > starts_at` when an
+override retimes an occurrence — but **that `occurrence_start` names a real instance of the parent's
+recurrence rule cannot be a CHECK**, since deciding it requires expanding the RRULE. That invariant
+is application-level by nature, not by omission, so an override written directly to the database
+can point at an occurrence that does not exist.
 
 ### 3. Day-dependent views refresh at local midnight via `useLocalDay()`
 

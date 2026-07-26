@@ -46,6 +46,16 @@ class CalendarEventOverride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("calendar_event_id", "occurrence_start", name="uq_calendar_event_override_occurrence"),
         Index("ix_calendar_event_overrides_event", "calendar_event_id"),
+        # Mirrors the parent event's time-range check. Both columns are nullable here because an
+        # override may retime an occurrence or leave its timing alone, so the constraint only binds
+        # when both are supplied.
+        # Occurrence *membership* — that occurrence_start is a real instance of the parent's
+        # recurrence rule — deliberately stays in the application: expressing it needs RRULE
+        # expansion, which is not something a CHECK can do.
+        CheckConstraint(
+            "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
+            name="ck_calendar_event_overrides_time_range",
+        ),
     )
 
     calendar_event_id: Mapped[uuid.UUID] = mapped_column(
