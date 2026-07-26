@@ -23,6 +23,13 @@ from app.models.user import User
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
+# Dev, CI and production must run the same PostgreSQL major version. pg_dump refuses to read a
+# server newer than itself and a newer dump won't restore into an older server, so a mismatch stays
+# invisible until the night a restore matters. docker-compose.yml reads the same variable, and
+# test_config.py fails the build if the two defaults drift apart.
+POSTGRES_IMAGE_DEFAULT = "postgres:17-alpine"
+POSTGRES_IMAGE = os.getenv("POSTGRES_IMAGE", POSTGRES_IMAGE_DEFAULT)
+
 
 @dataclass(frozen=True)
 class _TestDatabase:
@@ -83,7 +90,7 @@ def test_database() -> Generator[_TestDatabase, None, None]:
         _assert_disposable_test_database(configured_url)
         async_url = _asyncpg_url(configured_url)
     else:
-        container = PostgresContainer("postgres:16-alpine")
+        container = PostgresContainer(POSTGRES_IMAGE)
         try:
             container.start()
         except Exception as exc:

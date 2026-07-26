@@ -20,8 +20,8 @@ A self-hosted dashboard app that acts as a private household operating system. S
 
 | Layer | Choice |
 |---|---|
-| Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 16 |
-| Frontend | React 18+, TypeScript, Vite, Tailwind CSS, Zustand, react-grid-layout |
+| Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 17 |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Zustand, react-grid-layout |
 | Infra | Docker Compose, Caddy (production reverse proxy) |
 
 ---
@@ -88,8 +88,9 @@ cd backend
 TEST_DATABASE_URL=postgresql+asyncpg://user:password@localhost/frontdashboard_test uv run pytest
 ```
 
-When `TEST_DATABASE_URL` is unset, the database-backed tests fall back to a temporary PostgreSQL 16
-Testcontainer. In both modes, Alembic builds the test schema and `tests/test_migrations.py` checks
+When `TEST_DATABASE_URL` is unset, the database-backed tests fall back to a temporary Testcontainer
+running `POSTGRES_IMAGE` (default `postgres:17-alpine`, the same variable `docker-compose.yml`
+reads — dumps don't cross major versions, so the two are asserted equal in `test_config.py`). In both modes, Alembic builds the test schema and `tests/test_migrations.py` checks
 it with `alembic check`, which catches missing/extra tables, columns, indexes, foreign keys, and
 changed column types. It does **not** compare `server_default`s or CHECK constraints — those still
 need asserting by hand.

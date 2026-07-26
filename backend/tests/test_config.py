@@ -1,9 +1,12 @@
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
+from tests.conftest import POSTGRES_IMAGE_DEFAULT
 
 _BASE: dict[str, Any] = {
     "_env_file": None,
@@ -71,3 +74,15 @@ def test_environment_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
             database_url="postgresql+asyncpg://u:p@localhost/db",
             secret_key="x" * 40,
         )
+
+
+def test_dev_compose_and_test_container_pin_the_same_postgres() -> None:
+    """Drift here is invisible until a restore fails, so fail the build instead.
+
+    A dump taken from one major version will not load into another, which makes an unnoticed
+    dev/test/prod version split a backup you cannot actually restore.
+    """
+    compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text()
+    match = re.search(r"image:\s*\$\{POSTGRES_IMAGE:-([^}]+)\}", compose)
+    assert match, "docker-compose.yml no longer parameterizes the db image via POSTGRES_IMAGE"
+    assert match.group(1) == POSTGRES_IMAGE_DEFAULT

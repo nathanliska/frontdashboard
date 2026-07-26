@@ -14,7 +14,7 @@ reach it" is not a mitigation when anyone can sign up. See the Scale/Exposure no
 [docs/TODO.md](docs/TODO.md).
 
 ## Architecture (3 layers)
-- `backend/` — Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 16.
+- `backend/` — Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 17.
 - `frontend/` — React 19 + TypeScript, Vite, Tailwind CSS, Zustand stores, react-grid-layout v2.
 - Infra — Docker Compose (dev + prod variants), Caddy reverse proxy (prod), `uv` (Python),
   `npm` (Node).

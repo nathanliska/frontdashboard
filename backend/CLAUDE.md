@@ -48,7 +48,9 @@ Everything here is a convention an agent can't safely infer from one file.
 
 ## Tests & email
 - Integration tests build the schema with **`alembic upgrade head`** (not `create_all`), against a
-  `postgres:16-alpine` Testcontainer or an existing database via `TEST_DATABASE_URL`. **Migrations
+  `POSTGRES_IMAGE` Testcontainer (default `postgres:17-alpine`, shared with `docker-compose.yml`
+  and asserted equal in `test_config.py` — dumps don't cross major versions) or an existing
+  database via `TEST_DATABASE_URL`. **Migrations
   are exercised on every run**, and `tests/test_migrations.py` fails the build on ORM↔migration
   drift via `alembic check` — but note that check is blind to `server_default`s and CHECK
   constraints, so those still need asserting by hand. Each test runs in a rolled-back savepoint.
