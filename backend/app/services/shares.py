@@ -4,6 +4,7 @@ import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, delete, false, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dashboard import Dashboard, DashboardWidget
@@ -327,8 +328,6 @@ async def insert_shares(
     """Bulk-insert share rows. Silently ignores duplicates via ON CONFLICT DO NOTHING."""
     from datetime import UTC, datetime
 
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-
     if not share_inputs:
         return
 
@@ -356,32 +355,37 @@ async def create_share(
     granted_by: uuid.UUID,
     db: AsyncSession,
 ) -> ResourceShare:
-    existing_result = await db.execute(
-        select(ResourceShare).where(
-            ResourceShare.resource_type == resource_type,
-            ResourceShare.resource_id == resource_id,
-            ResourceShare.principal_type == share_input.principal_type,
-            ResourceShare.principal_id == share_input.principal_id,
-        )
-    )
-    existing = existing_result.scalar_one_or_none()
-    if existing is not None:
-        existing.role = share_input.role
-        await db.flush()
-        return existing
+    """Grant, or re-grant at a new role, in one statement.
 
-    share = ResourceShare(
-        resource_type=resource_type,
-        resource_id=resource_id,
-        principal_type=share_input.principal_type,
-        principal_id=share_input.principal_id,
-        role=share_input.role,
-        granted_by=granted_by,
+    This was a read-then-insert, which is a race with itself: two grants of the same target
+    interleaving between the SELECT and the INSERT both decide the row is absent, and the loser
+    surfaces as a bare `IntegrityError` — a 500 for what is a supported operation (finding #19).
+    A single upsert on `uq_resource_shares_target` makes "already shared" the database's problem
+    rather than a window in ours, and keeps the same semantics: an existing grant has its role
+    replaced, an absent one is created.
+    """
+    stmt = (
+        pg_insert(ResourceShare)
+        .values(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            principal_type=share_input.principal_type,
+            principal_id=share_input.principal_id,
+            role=share_input.role,
+            granted_by=granted_by,
+        )
+        .on_conflict_do_update(
+            constraint="uq_resource_shares_target",
+            # Role only: `granted_by` and `created_at` stay with the original grant, which is what
+            # the read-then-write path did and what the activity trail reads back.
+            set_={"role": share_input.role},
+        )
+        .returning(ResourceShare)
     )
-    db.add(share)
-    await db.flush()
-    await db.refresh(share)
-    return share
+    # populate_existing: the conflicting row may already be in the identity map holding the old
+    # role, and the returned row is the authoritative one.
+    result = await db.execute(stmt, execution_options={"populate_existing": True})
+    return result.scalars().one()
 
 
 async def resource_is_visible_to_principal(
