@@ -31,3 +31,11 @@ The **persisted layout is canonical**; the **mobile view is a read-only derived 
 - **"Canonical vs. projection" is a general framing**: it names the invariant clearly so future
   responsive work (a tablet breakpoint, say) knows it must either project read-only or introduce its
   own persisted layout — never write back into the canonical one.
+- **A third option is a trap, and it had already been taken (#53, fixed 2026-07-26).** The 640-959px
+  band rendered the canonical layout at `cols={6}`. That is neither a read-only projection nor its
+  own persisted layout — it is a *remap*, and react-grid-layout resolves a remap by clamping every
+  item whose `x + w` exceeds the column count, then reporting those corrections through
+  `onLayoutChange` indistinguishably from a drag. One touch on a tablet persisted a 6-column
+  arrangement over the canonical 12. The column count is therefore fixed at 12 above the mobile
+  breakpoint: **only density (row height, margins) may vary with width, never the grid the layout is
+  expressed in.**

@@ -7,6 +7,7 @@ import { DashboardGrid } from './DashboardGrid'
 
 const gridSpy = vi.hoisted(() => ({
   lastLayout: [] as LayoutItem[],
+  lastCols: null as null | number,
   onLayoutChange: null as null | ((layout: unknown) => void),
 }))
 
@@ -18,13 +19,16 @@ vi.mock('react-grid-layout', () => {
   function MockGridLayout({
     children,
     layout,
+    gridConfig,
     onLayoutChange,
   }: {
     children: React.ReactNode
     layout: LayoutItem[]
+    gridConfig?: { cols?: number }
     onLayoutChange?: (layout: unknown) => void
   }) {
     gridSpy.lastLayout = layout
+    gridSpy.lastCols = gridConfig?.cols ?? null
     gridSpy.onLayoutChange = onLayoutChange ?? null
 
     const childTypes = React.Children.toArray(children).map((child) => {
@@ -128,6 +132,34 @@ describe('DashboardGrid', () => {
     const byId = new Map(gridSpy.lastLayout.map((item) => [item.i, item]))
     expect(byId.get('widget-1')).toMatchObject({ x: 0, w: 4 })
     expect(byId.get('widget-2')).toMatchObject({ x: 4, w: 4 })
+  })
+
+  it('keeps the canonical 12-column grid across the tablet band (#53)', () => {
+    render(
+      <DashboardGrid
+        dashboard={{
+          ...makeDashboard(),
+          can_edit: true,
+          layout: CANONICAL_LAYOUT,
+          widgets: TWO_WIDGETS,
+        }}
+        canEdit
+      />,
+    )
+
+    // 640-959px is editable, so whatever grid it renders in is a grid drags get saved against.
+    // Rendering it at 6 columns made react-grid-layout clamp every item with x + w > 6 and feed
+    // those corrections back as if the user had made them.
+    for (const width of [640, 800, 959, 1200]) {
+      setWidth(width)
+      expect(gridSpy.lastCols).toBe(12)
+      const byId = new Map(gridSpy.lastLayout.map((item) => [item.i, item]))
+      expect(byId.get('widget-2')).toMatchObject({ x: 4, w: 4 })
+    }
+
+    // Below the breakpoint it is a read-only one-column projection, which is a different rule.
+    setWidth(400)
+    expect(gridSpy.lastCols).toBe(1)
   })
 
   it('still accepts desktop layout edits, so the guard does not over-block (#9)', () => {

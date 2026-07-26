@@ -31,7 +31,7 @@ and effort are noted inline where known.
 | 4 | Data layer, contracts & exposure | #17, #22◐, #24 |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐, #36◐ |
 | 6 | UX & cleanup | #27, #40, #42◐, #54 |
-| — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #39, #52, #53, #21/#45 (deferred) |
+| — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #39, #52, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
 
@@ -66,7 +66,6 @@ and effort are noted inline where known.
 - **#26 — Standardize API errors + visible recovery states.** Integrity/FK races surface as generic 500s, and outages render as "No events" / zero unread instead of something the user can retry. Translate the narrow `IntegrityError`s and render explicit retryable states. *(Small-Medium)*
 - **#39 — Extract use cases from the dashboard router.** 1,139 lines coupling validation, authz, persistence, activity, notification and SSE, repeating the same transaction/broadcast dance in every handler. Worth doing as the deletion it implies — one unit of work + staged outbox, routers as thin adapters — not as a speculative layer. *(Large)*
 - **#52 — SSE overflow eviction is attacker-inducible (Low).** A co-member driving >256 rapid mutations can pin a victim in a reconnect/resync/refetch loop. Stays low even under open registration: it isn't a silent deafen, and reaching a victim requires holding an invite link to a dashboard they share, so a stranger who merely signs up cannot trigger it. Coalesce evictions into a single resync and cap resyncs per connection if it ever shows up in practice. *(Medium)*
-- **#53 — Tablet-band (640–959px) drag can persist a 6-col layout over the canonical 12-col.** Logged 2026-07-20; pre-existing, not a slice regression. See [ADR-009](adr/ADR-009-canonical-layout-mobile-projection.md). *(Small)*
 - **#21 / #45 — Multi-process readiness (deferred).** Auth authority is already cluster-safe (sessions in Postgres, worker-agnostic revocation). Process-local SSE fan-out (needs a pub/sub backplane — the real blocker), per-process rate-limit buckets, startup-migration races (#33) and pool multiplication are not. No scaling need at household scale; recorded so the pieces are known, not queued. *(Large)*
 
 ## Deferred — revisit when
