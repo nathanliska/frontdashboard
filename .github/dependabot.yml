@@ -59,3 +59,19 @@ updates:
         applies-to: "security-updates"
         patterns:
           - "*"
+
+  # Base images are pinned by digest for reproducibility, which also freezes their security
+  # patches — these entries are what keep a pinned digest from quietly going stale.
+  - package-ecosystem: "docker"
+    directories:
+      - "/backend"
+      - "/frontend"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "docker"
+    groups:
+      docker:
+        patterns:
+          - "*"

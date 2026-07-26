@@ -1,4 +1,5 @@
-FROM node:22-alpine AS build
+# Pinned by digest for reproducibility; Dependabot's docker ecosystem keeps them current.
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS build
 
 WORKDIR /app
 
@@ -8,7 +9,9 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-FROM caddy:alpine
+# Still runs as root: Caddy binds :80 here, and moving to an unprivileged port would have to
+# be coordinated with whatever fronts it. Tracked in #36.
+FROM caddy:alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
 
 
 COPY --from=build /app/dist /srv

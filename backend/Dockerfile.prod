@@ -1,10 +1,11 @@
-# Build stage: uv resolves and installs into /app/.venv, then is thrown away. Nothing here
-# reaches the runtime image — not the 54 MB uv binary, not its wheel cache, not the lockfile.
-FROM python:3.12-slim AS build
+# Base images are pinned by digest so a rebuild of an old commit produces the same image. Tags
+# move; digests don't. Dependabot's docker ecosystem bumps these weekly — without that, pinning
+# would just freeze the base's security patches in place.
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS build
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+COPY --from=ghcr.io/astral-sh/uv:latest@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c /uv /bin/
 
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev --no-cache
@@ -12,7 +13,7 @@ RUN uv sync --frozen --no-dev --no-cache
 # Runtime stage: same base as the builder, so the venv's interpreter symlink and the compiled
 # wheels' ABI still match. The venv is copied to the same absolute path it was created at
 # (/app/.venv) — console scripts embed that path in their shebangs and would break if moved.
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 
 WORKDIR /app
 
@@ -21,6 +22,13 @@ COPY app/ app/
 COPY alembic/ alembic/
 COPY alembic.ini .
 ENV PATH="/app/.venv/bin:$PATH"
+
+# Runs unprivileged: the process writes nothing to disk, so root buys nothing and costs a
+# container escape being a root escape. Files stay root-owned and world-readable, which is what
+# we want — the app can read them and cannot modify its own code. Port 8000 is unprivileged, so
+# no capability is needed to bind it.
+RUN useradd --system --uid 10001 --no-create-home appuser
+USER appuser
 
 EXPOSE 8000
 

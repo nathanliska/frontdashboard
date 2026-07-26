@@ -61,8 +61,16 @@ jobs:
           context: backend
           file: backend/Dockerfile.prod
           push: false
+          load: true
+          tags: frontdashboard-backend:ci
           cache-from: type=gha,scope=frontdashboard-backend
           cache-to: type=gha,mode=max,scope=frontdashboard-backend
+      # A USER line is easy to drop in a refactor and nothing else would notice, so assert it.
+      - name: Assert the production image does not run as root
+        run: |
+          uid=$(docker run --rm frontdashboard-backend:ci id -u)
+          echo "production image runs as uid $uid"
+          test "$uid" != "0"
 
   frontend:
     name: Frontend
