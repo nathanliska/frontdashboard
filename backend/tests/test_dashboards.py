@@ -167,6 +167,33 @@ async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> Non
     assert "Version conflict" in conflict_resp.json()["detail"]
 
 
+async def test_widget_config_updates_are_validated_against_the_widget_type(auth_client: AsyncClient) -> None:
+    """The write is where a bad config must die (#14): the body can't discriminate itself, so the
+    route validates against the stored widget's type. Before this, `{"timezone": 123}` was stored
+    as-is and every later read of the dashboard 500ed on response validation."""
+    dashboard = await create_dashboard(auth_client, name="Config Guard")
+
+    set_csrf(auth_client)
+    add_resp = await auth_client.post(
+        f"/api/dashboards/{dashboard['id']}/widgets",
+        json={"widget_type": "clock", "config": {"timezone": "UTC"}},
+    )
+    assert add_resp.status_code == 201
+    widget_id = add_resp.json()["widgets"][0]["id"]
+
+    set_csrf(auth_client)
+    poison_resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
+        json={"config": {"timezone": 123}},
+    )
+    assert poison_resp.status_code == 422
+
+    # The write was rejected, so the read path still works and serves the original config.
+    detail_resp = await auth_client.get(f"/api/dashboards/{dashboard['id']}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["widgets"][0]["config"]["timezone"] == "UTC"
+
+
 async def test_dashboard_names_are_trimmed_and_bounded(auth_client: AsyncClient) -> None:
     set_csrf(auth_client)
     created = await auth_client.post("/api/dashboards", json={"name": "  Planning  "})

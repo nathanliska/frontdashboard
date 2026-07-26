@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AddWidgetParams } from '../../../utils/dashboard/widgetCreationTypes'
+import type { WidgetCreate } from '../../../api/dashboards'
 import { type CalendarWidgetView, ViewTabButtons } from './CalendarWidgetViewTabs'
 
 export function AddWidgetCalendarStep({
@@ -9,7 +9,7 @@ export function AddWidgetCalendarStep({
 }: {
   isSharedDashboard: boolean
   dashboardName?: string
-  onAdd: (params: AddWidgetParams) => Promise<void>
+  onAdd: (params: WidgetCreate) => Promise<void>
 }) {
   const [view, setView] = useState<CalendarWidgetView>('month')
 

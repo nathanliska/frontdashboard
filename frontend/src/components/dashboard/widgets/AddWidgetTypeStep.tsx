@@ -1,5 +1,5 @@
+import type { WidgetCreate } from '../../../api/dashboards'
 import { DEFAULT_TIMEZONE } from '../../../utils/calendar/calendarUtils'
-import type { AddWidgetParams } from '../../../utils/dashboard/widgetCreationTypes'
 
 const WIDGET_TYPES = [
   {
@@ -35,7 +35,7 @@ export function AddWidgetTypeStep({
   dashboardName?: string
   onPickList: () => void
   onPickCalendar: () => void
-  onAdd: (params: AddWidgetParams) => Promise<void>
+  onAdd: (params: WidgetCreate) => Promise<void>
 }) {
   return (
     <div className="p-3 space-y-1">

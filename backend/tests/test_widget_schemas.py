@@ -14,7 +14,10 @@ from app.schemas.dashboards import (
     AgendaWidgetResponse,
     CalendarWidgetResponse,
     ClockWidgetResponse,
+    LayoutUpdate,
+    ListWidgetCreate,
     ListWidgetResponse,
+    WidgetCreate,
     WidgetResponse,
 )
 
@@ -106,3 +109,55 @@ def test_unknown_widget_type_raises_validation_error() -> None:
     }
     with pytest.raises(ValidationError):
         adapter.validate_python(payload)
+
+
+# ── Create / layout write-side schema facts (finding #14) ────────────────────────────────────────
+
+create_adapter: TypeAdapter[WidgetCreate] = TypeAdapter(WidgetCreate)
+
+
+def test_widget_create_rejects_unknown_type_at_the_schema() -> None:
+    with pytest.raises(ValidationError):
+        create_adapter.validate_python({"widget_type": "unknown"})
+
+
+def test_only_the_list_variant_can_carry_resource_fields() -> None:
+    """ "Clock widgets cannot bind a resource" is a schema fact now, not a router check."""
+    with pytest.raises(ValidationError):
+        create_adapter.validate_python({"widget_type": "clock", "resource_id": str(uuid.uuid4())})
+    bound = create_adapter.validate_python({"widget_type": "list", "resource_type": "list", "resource_id": str(uuid.uuid4())})
+    assert isinstance(bound, ListWidgetCreate)
+
+
+def test_widget_create_config_is_typed_per_variant() -> None:
+    """A mistyped known key 422s at the boundary instead of poisoning reads after storage."""
+    with pytest.raises(ValidationError):
+        create_adapter.validate_python({"widget_type": "clock", "config": {"timezone": 123}})
+    created = create_adapter.validate_python({"widget_type": "clock", "config": {"timezone": "UTC", "title": "x"}})
+    # Extras still round-trip: config models stay extra="allow".
+    assert created.config.model_dump(exclude_unset=True) == {"timezone": "UTC", "title": "x"}
+
+
+def test_layout_update_bounds_the_canonical_grid() -> None:
+    """Write-side bounds only — LayoutItem itself stays types-only so reads can't 500 (#53/ADR-009)."""
+    fits = {"i": "a", "x": 8, "y": 0, "w": 4, "h": 3}
+    assert LayoutUpdate(layout=[fits], version=0).layout[0].w == 4
+
+    for bad in (
+        {**fits, "x": 9},  # x + w exceeds the 12-column grid
+        {**fits, "x": -1},
+        {**fits, "w": 0},
+        {**fits, "h": 0},
+    ):
+        with pytest.raises(ValidationError):
+            LayoutUpdate(layout=[bad], version=0)
+
+    with pytest.raises(ValidationError):
+        LayoutUpdate(layout=[fits, dict(fits)], version=0)  # duplicate item id
+
+
+def test_layout_items_drop_transient_grid_bookkeeping() -> None:
+    """{i, x, y, w, h} IS the layout state; react-grid-layout re-derives the rest every render."""
+    item = {"i": "a", "x": 0, "y": 0, "w": 4, "h": 3, "moved": False, "static": False, "minW": 2}
+    parsed = LayoutUpdate(layout=[item], version=0).layout[0]
+    assert parsed.model_dump() == {"i": "a", "x": 0, "y": 0, "w": 4, "h": 3}

@@ -13,6 +13,31 @@ DashboardName = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=DASHBOARD_NAME_MAX_LENGTH),
 ]
 
+# The canonical grid every persisted layout is expressed in (ADR-009). The client renders other
+# widths as projections or density changes, never as a different column count (#53).
+GRID_COLUMNS = 12
+
+
+class LayoutItem(BaseModel):
+    """One react-grid-layout entry. These five keys ARE the layout state.
+
+    react-grid-layout round-trips transient bookkeeping (`moved`, `static`, `minW`, …) through
+    its change events; none of it is ours to persist — the library re-derives it every render —
+    so unknown keys are dropped (default `extra="ignore"`) on write and on read-back of rows that
+    stored them historically.
+
+    Deliberately types-only: range bounds live on `LayoutUpdate`, the write path, so a
+    historically persisted out-of-range value degrades to an odd-looking grid instead of failing
+    response validation and turning every read of that dashboard into a 500 (same reasoning as
+    `CalendarWidgetConfig.view`).
+    """
+
+    i: str
+    x: int
+    y: int
+    w: int
+    h: int
+
 
 class _WidgetResponseBase(BaseModel):
     id: uuid.UUID
@@ -110,7 +135,7 @@ class DashboardResponse(BaseModel):
     can_edit: bool
     can_manage_shares: bool
     is_favorite: bool
-    layout: list[dict[str, Any]]
+    layout: list[LayoutItem]
     version: int
     widgets: list[WidgetResponse]
 
@@ -147,15 +172,86 @@ class DashboardUpdate(PatchModel):
 
 
 class LayoutUpdate(BaseModel):
-    layout: list[dict[str, Any]]
+    layout: list[LayoutItem]
     version: int
 
+    @field_validator("layout")
+    @classmethod
+    def _reject_impossible_grids(cls, layout: list[LayoutItem]) -> list[LayoutItem]:
+        """Bounds live here, on the write path, so reads of legacy rows can't 500 (see LayoutItem).
 
-class WidgetCreate(BaseModel):
-    widget_type: str
-    config: dict[str, Any] = {}
-    resource_type: str | None = None
+        `x + w <= GRID_COLUMNS` is the invariant behind #53: an item wider than the canonical grid
+        is definitionally not a 12-column layout, and react-grid-layout would resolve it by
+        clamping — the exact remap-then-persist trap the client guards against.
+        """
+        seen: set[str] = set()
+        for item in layout:
+            if item.x < 0 or item.y < 0 or item.w < 1 or item.h < 1:
+                raise ValueError(f"Layout item {item.i!r} has out-of-range coordinates")
+            if item.x + item.w > GRID_COLUMNS:
+                raise ValueError(f"Layout item {item.i!r} does not fit a {GRID_COLUMNS}-column grid")
+            if item.i in seen:
+                raise ValueError(f"Duplicate layout item {item.i!r}")
+            seen.add(item.i)
+        return layout
+
+
+class _WidgetCreateBase(BaseModel):
+    # Forbid, unlike the configs: an unknown top-level field is a caller error (the misspelled
+    # `resource_id` on a clock widget should 422, not silently create an unbound widget).
+    model_config = ConfigDict(extra="forbid")
+
+
+class ClockWidgetCreate(_WidgetCreateBase):
+    widget_type: Literal["clock"]
+    config: ClockWidgetConfig = Field(default_factory=ClockWidgetConfig)
+
+
+class CalendarWidgetCreate(_WidgetCreateBase):
+    widget_type: Literal["calendar"]
+    config: CalendarWidgetConfig = Field(default_factory=CalendarWidgetConfig)
+
+
+class AgendaWidgetCreate(_WidgetCreateBase):
+    widget_type: Literal["agenda"]
+    config: AgendaWidgetConfig = Field(default_factory=AgendaWidgetConfig)
+
+
+class ListWidgetCreateConfig(BaseModel):
+    """Create-time list widget config: `name` seeds a new list, `list_name` caches a bound one."""
+
+    name: str | None = None
+    list_name: str | None = None
+    list_type: str | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ListWidgetCreate(_WidgetCreateBase):
+    widget_type: Literal["list"]
+    config: ListWidgetCreateConfig = Field(default_factory=ListWidgetCreateConfig)
+    resource_type: Literal["list"] | None = None
     resource_id: uuid.UUID | None = None
+
+
+# Mirrors the response union: `widget_type` discriminates, and each variant carries its own typed
+# config — so "clock widgets cannot bind a resource" and "unknown widget type" are schema facts
+# (422 at the boundary) rather than router checks (finding #14).
+WidgetCreate = Annotated[
+    ClockWidgetCreate | CalendarWidgetCreate | ListWidgetCreate | AgendaWidgetCreate,
+    Field(discriminator="widget_type"),
+]
+
+# What PATCH /widgets/{id} must validate a new config against, per widget type. The request body
+# can't discriminate itself (the widget's type lives on the row, not in the payload), so the
+# router looks the model up here. Without this, a stored `{"timezone": 123}` passes the write and
+# then fails response validation — turning every later read of the dashboard into a 500.
+WIDGET_CONFIG_MODELS: dict[str, type[BaseModel]] = {
+    "clock": ClockWidgetConfig,
+    "calendar": CalendarWidgetConfig,
+    "list": ListWidgetConfig,
+    "agenda": AgendaWidgetConfig,
+}
 
 
 class WidgetConfigUpdate(BaseModel):

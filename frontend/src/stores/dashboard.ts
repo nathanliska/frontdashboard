@@ -31,6 +31,7 @@ import {
   type DashboardSummary,
   type DashboardWidget,
   type LayoutItem,
+  type WidgetCreate,
 } from '../api/dashboards'
 import type { ShareCreate } from '../api/shares'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
@@ -291,12 +292,7 @@ export interface DashboardState {
   // ── Editor actions ─────────────────────────────────────────────────────────
   loadDashboard: (id: string, options?: LoadDashboardOptions) => Promise<void>
   saveLayout: (layout: LayoutItem[]) => Promise<void>
-  addWidget: (widget: {
-    widget_type: string
-    config?: Record<string, unknown>
-    resource_type?: string | null
-    resource_id?: string | null
-  }) => Promise<boolean>
+  addWidget: (widget: WidgetCreate) => Promise<boolean>
   removeWidget: (widgetId: string) => Promise<boolean>
   updateWidget: (widgetId: string, config: Record<string, unknown>) => Promise<boolean>
   handleDashboardEvent: (event: ResourceEvent) => Promise<void>

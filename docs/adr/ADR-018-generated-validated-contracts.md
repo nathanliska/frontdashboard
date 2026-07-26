@@ -56,9 +56,10 @@ Two deliberate seams remain, each local and documented at its definition:
 - **Boundary validation is strict by default.** A response missing a required field now errors
   visibly rather than rendering half-broken. Where the backend is genuinely permissive
   (open-ended SSE payloads), that has to be re-stated explicitly on the client schema.
-- **Untyped server-side shapes stay hand-written.** `layout` is `list[dict[str, Any]]` on the
-  backend, so its item schema is still hand-authored on the client; typing it server-side (#14)
-  would let it be generated too.
+- **An untyped server-side shape forces a hand-written client one.** `layout` was
+  `list[dict[str, Any]]` on the backend, which forced a hand-authored item schema on the client;
+  typing it server-side (#14, 2026-07-26) deleted that. The rule generalizes: when a client
+  schema is hand-written, the fix is to type the shape in the backend, not to maintain the copy.
 
 Related: [ADR-004](ADR-004-sse-over-websocket.md) (SSE transport),
 [ADR-006](ADR-006-rest-fetch-sse-patch.md) (REST fetch + SSE patch — the flows this contract types).

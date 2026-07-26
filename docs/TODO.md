@@ -30,8 +30,8 @@ and effort are noted inline where known.
 |------:|-------|---------------|
 | 4 | Data layer, contracts & exposure | #17, #22◐, #24 |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐ |
-| 6 | UX & cleanup | #27, #40, #42◐, #54 |
-| — | Backlog (unscheduled) | #14◐, #16, #18, #19◐, #25, #26, #39, #52, #21/#45 (deferred) |
+| 6 | UX & cleanup | #27, #40, #54◐ |
+| — | Backlog (unscheduled) | #16, #18, #19◐, #25, #26, #39, #52, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
 
@@ -52,15 +52,13 @@ and effort are noted inline where known.
 
 - **#27 — Accessible dialog / popover / feedback / action primitives.** Dialogs duplicate incomplete focus trapping/labelling; popovers lack `aria-expanded`/Escape; Confirm always says "Delete"; toasts/errors aren't announced; card actions are hover-only. Adopt Radix UI for Dialog/Popover (decided 2026-07-11), parameterize label/tone, add live regions + field-linked errors, replace hover-only actions with a visible overflow menu (≥44px targets). *(Medium)*
 - **#40 — Simplify archive/delete into a recoverable lifecycle.** Lists need two-step archive-then-delete; dashboards expose archive + immediate permanent delete; row/card actions are hidden. Move to one "Move to trash" action with a trash view, restore, and the decided 30-day retention purge; align dashboard/list behavior; explain dependent widgets first. *(Medium)*
-- **#42◐ — Small correctness traps.** Done: docs rewritten, persistence writes only `sidebarCollapsed`, concurrent-confirm + unmount/boundary resolution, dead audience plumbing removed. Remaining: replace raw bearer-URL dev logging while keeping a usable local token flow. *(Small)*
 - **#54◐ — Consolidate the test suite (frontend done).** `src/test/` now holds shared entity fixtures (`makeDashboard`, `makeDashboardSummary`, `makeListSummary`, `makeListItem`, `makeListDetail`), `stubDashboardStore()` for the 23-line inert-store block that was duplicated in five files, `sortableListMock` for the dnd-kit stand-in two reorder tests carried verbatim, and `toastMock()` for the surface eight files each re-declared. The three reorder files are table-driven where the cases genuinely mirror (`ListsLayout` 206→116, `ListDetailPage` 160→71, `listData.reorder` 572→400). Frontend test lines 6,594→6,016 with the test count unchanged, so nothing stopped being covered. **Two things worth keeping in mind before "finishing" this:** not every local fixture was duplication — `agendaData`'s item default carries `due_date` because an agenda entry only exists when an item is due, and `listData`/`ListWidget` assert `"Groceries"`/`"Buy milk"` back out of rendered output. Those keep file-local defaults layered over the shared base, which is the pattern to follow rather than flatten. Likewise the reorder halves were only ~5/16 genuinely mirrored; self-echo, duplicate-id and in-flight-fetch cases are items-only and archived-subset handling is lists-only. Remaining: backend fixtures (`tests/helpers.py` is already shared, so this is smaller than the frontend was). *(Small)*
 
 ## Backlog (unscheduled)
 
-- **#14◐ — Boundary input validation.** Done: reorder DTOs, display-name bounds, dashboard name/mutation-id bounds, forbid-unknown on create/profile/preference. Remaining: type `layout` and `WidgetCreate.config` server-side — both are still `dict[str, Any]`, which is why the client hand-authors a layout item schema instead of generating one ([ADR-018](adr/ADR-018-generated-validated-contracts.md)). *(Small-Medium)*
 - **#16 — Make calendar work proportional to the requested window.** A window request loads every active event for every accessible dashboard, expands recurrence in Python, and sorts globally; monthly/yearly rules iterate from series start. The cheap half — split recurring/non-recurring SQL, index it, persist recurrence bounds, window-filter overrides — is worth doing when the calendar is actually slow. *(Medium)*
 - **#18 — One typed path for access resolution.** Access is resolved through ~35 `resource_type` branches spread across `services/shares.py`, which is where the N+1s (#25) and the race fixes (#19) keep landing. **The polymorphic share table stays** — per-resource sharing is a kept capability ([ADR-001](adr/ADR-001-per-resource-sharing.md), decided 2026-07-11), so this is consolidation, not removal: one typed policy entry point that owner/viewer/editor and dashboard/child resolution all go through, leaving the schema alone. *(Medium)*
-- **#19◐ — Validate share targets, atomic upserts.** Done: reject self / nonexistent / deleted / unverified targets; duplicate initial targets rejected at the schema. Remaining: replace read-before-insert with `INSERT … ON CONFLICT`, add user/dashboard FKs (via #18). *(Small)*
+- **#19◐ — Validate share targets, atomic upserts.** Done: reject self / nonexistent / deleted / unverified targets; duplicate initial targets rejected at the schema; `create_share` is one `INSERT … ON CONFLICT DO UPDATE` on `uq_resource_shares_target` instead of a read-then-insert that raced itself into a 500 (only the role is upserted — `granted_by`/`created_at` stay with the original grant). Remaining: user/dashboard FKs on `resource_shares`, which wants #18's typed access path first — the `resource_id` column is polymorphic today, so a real FK needs the per-type split that #18 defines. *(Small)*
 - **#25 — Remove avoidable access/query N+1s.** Dashboard access invokes irrelevant inherited-resource discovery; per-notification refresh; per-child share-cleanup loop. Add an owner-or-share `EXISTS` access query, one flush/RETURNING path, set-based cleanup. *(Medium)*
 - **#26 — Standardize API errors + visible recovery states.** Integrity/FK races surface as generic 500s, and outages render as "No events" / zero unread instead of something the user can retry. Translate the narrow `IntegrityError`s and render explicit retryable states. *(Small-Medium)*
 - **#39 — Extract use cases from the dashboard router.** 1,139 lines coupling validation, authz, persistence, activity, notification and SSE, repeating the same transaction/broadcast dance in every handler. Worth doing as the deletion it implies — one unit of work + staged outbox, routers as thin adapters — not as a speculative layer. *(Large)*
@@ -93,4 +91,6 @@ weight, so the reasoning survives and nothing here has to be re-derived later.
 
 ## Accepted risks / won't-do
 
-- **Register enumeration — acceptance lapsed, pending re-decision under #55.** `POST /register` returns `409 "Email already registered"` for a known email. This was accepted on the premise of near-closed registration; registration is open, so the premise no longer holds and the entry stays here only to record that the behavior is unchanged while #55 decides. See [ADR-011](adr/ADR-011-enumeration-safe-login.md).
+- *(none open — register enumeration was closed by #55 rather than accepted; registration now
+  answers identically for known and unknown addresses. See
+  [ADR-011](adr/ADR-011-enumeration-safe-login.md).)*

@@ -2,6 +2,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy import case, delete, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,11 +15,13 @@ from app.models.notification import Notification
 from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
 from app.models.user import User
 from app.schemas.dashboards import (
+    WIDGET_CONFIG_MODELS,
     DashboardCreate,
     DashboardResponse,
     DashboardSummary,
     DashboardUpdate,
     LayoutUpdate,
+    ListWidgetCreate,
     WidgetConfigUpdate,
     WidgetCreate,
     WidgetResponse,
@@ -40,10 +43,6 @@ from app.services.shares import (
     insert_shares,
     load_resource_access,
     resolve_share_responses,
-)
-from app.services.widget_policy import (
-    WidgetContentMode,
-    get_widget_policy,
 )
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
 from app.sse.manager import manager
@@ -713,7 +712,9 @@ async def update_layout(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Version conflict: expected {dashboard.version}, got {body.version}",
         )
-    dashboard.layout = body.layout
+    # Dump to plain dicts for the JSON column; model_dump also drops the transient
+    # react-grid-layout bookkeeping keys the client round-trips (see LayoutItem).
+    dashboard.layout = [item.model_dump() for item in body.layout]
     dashboard.version += 1
     event_message = await _build_dashboard_event_message(
         db,
@@ -758,20 +759,18 @@ async def add_widget(
     permissions.assert_can_edit(role)
     _assert_dashboard_not_archived(dashboard)
     is_shared_dashboard = bool(shares)
-    widget_policy = get_widget_policy(body.widget_type)
-    widget_config = dict(body.config)
-    resource_type = body.resource_type
-    resource_id = body.resource_id
+    # exclude_unset so the stored config holds exactly the keys the caller sent (typed fields the
+    # caller omitted stay absent rather than landing as explicit nulls); extras survive the dump
+    # because every config model is extra="allow".
+    widget_config = body.config.model_dump(exclude_unset=True)
+    resource_type: str | None = None
+    resource_id: uuid.UUID | None = None
 
-    if widget_policy.content_mode == WidgetContentMode.resource:
-        expected_resource_type = widget_policy.resource_type.value if widget_policy.resource_type else None
-        if widget_policy.resource_type != ResourceType.list:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"Unsupported widget resource type: {body.widget_type}",
-            )
-
-        resource_type = expected_resource_type
+    # Which types bind a resource is a schema fact now: only ListWidgetCreate carries resource
+    # fields, and a resource field on any other variant is a 422 at the boundary (extra="forbid").
+    if isinstance(body, ListWidgetCreate):
+        resource_type = ResourceType.list.value
+        resource_id = body.resource_id
         if resource_id is None:
             list_name = str(widget_config.get("name") or "").strip() or "Untitled List"
             raw_list_type = str(widget_config.get("list_type") or "checklist")
@@ -825,13 +824,10 @@ async def add_widget(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="List not found on this dashboard",
                 )
-    elif body.resource_type is not None or body.resource_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"{body.widget_type.title()} widgets cannot bind to a resource",
-        )
 
-    if widget_policy.content_mode == WidgetContentMode.resource and resource_type and resource_id:
+        # By here resource_id is set on both paths (created or bound), and one list maps to at
+        # most one widget per dashboard (uq_dashboard_widgets_resource_binding backs this in the
+        # schema; the explicit check keeps the friendly 409).
         existing_widget_result = await db.execute(
             select(DashboardWidget).where(
                 DashboardWidget.dashboard_id == dashboard.id,
@@ -918,7 +914,26 @@ async def update_widget(
     widget = result.scalar_one_or_none()
     if widget is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Widget not found")
-    widget.config = body.config
+    # The body can't discriminate itself (the widget's type is on the row), so validate against
+    # that type's config model here. Without this, a stored `{"timezone": 123}` would pass the
+    # write and then fail response validation — a 500 on every later read of the dashboard.
+    config_model = WIDGET_CONFIG_MODELS.get(widget.widget_type)
+    if config_model is None:
+        # A row this code no longer understands; reads of it already fail. Don't 500 the write too.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown widget type: {widget.widget_type}",
+        )
+    try:
+        validated_config = config_model.model_validate(body.config)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Invalid {widget.widget_type} widget config",
+        ) from exc
+    # exclude_unset: store exactly the keys the caller sent (extras included — the client spreads
+    # {...config} back on update, so dropping them would silently lose data).
+    widget.config = validated_config.model_dump(exclude_unset=True)
     event_message = await _build_dashboard_event_message(
         db,
         event_type=EventType.dashboard_updated,

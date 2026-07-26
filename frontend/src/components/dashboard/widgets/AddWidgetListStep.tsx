@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react'
+import type { WidgetCreate } from '../../../api/dashboards'
 import { apiGetLists, type ListSummary, type ListType } from '../../../api/lists'
-import type { AddWidgetParams } from '../../../utils/dashboard/widgetCreationTypes'
 
 export function AddWidgetListStep({
   dashboardId,
@@ -13,7 +13,7 @@ export function AddWidgetListStep({
   existingListIds: string[]
   isSharedDashboard: boolean
   dashboardName?: string
-  onAdd: (params: AddWidgetParams) => Promise<void>
+  onAdd: (params: WidgetCreate) => Promise<void>
 }) {
   const [availableLists, setAvailableLists] = useState<ListSummary[]>([])
   const [loadingLists, setLoadingLists] = useState(true)

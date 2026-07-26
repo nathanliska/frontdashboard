@@ -57,8 +57,9 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 - `loadDashboard`/`loadSummaries` carry hand-rolled in-flight/serial/debounce machinery to
   coalesce SSE-triggered refetches; background loads pass `{ background: true }` and only
   surface access loss on real 403/404. Tread carefully.
-- **Adding a widget type starts in the backend**: a `XWidgetConfig`/`XWidgetResponse` pair in
-  `app/schemas/dashboards.py` joined to the `WidgetResponse` union, then `make contracts`. On the
+- **Adding a widget type starts in the backend**: a `XWidgetConfig`/`XWidgetResponse`/`XWidgetCreate`
+  trio in `app/schemas/dashboards.py` joined to the `WidgetResponse` and `WidgetCreate` unions plus
+  a `WIDGET_CONFIG_MODELS` entry, then `make contracts`. On the
   client that lands as a new union member, and the type check then points at everything that must
   handle it: the `switch` in `components/dashboard/WidgetRenderer.tsx` and `WIDGET_LABELS` in
   `WidgetContainer.tsx`. Still manual: an entry in `widgets/AddWidgetTypeStep.tsx` (+ a picker step

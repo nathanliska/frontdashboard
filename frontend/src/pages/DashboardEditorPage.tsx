@@ -1,7 +1,7 @@
 import { ArrowLeft, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { useEffect, useEffectEvent, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { AddWidgetModal, type AddWidgetParams } from '../components/dashboard/AddWidgetModal'
+import { AddWidgetModal } from '../components/dashboard/AddWidgetModal'
 import { DashboardGrid } from '../components/dashboard/DashboardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
 import { ROUTES } from '../routes'
@@ -167,7 +167,7 @@ export function DashboardEditorPage() {
             .map((widget) => widget.resource_id as string)}
           isSharedDashboard={dashboard.is_shared}
           dashboardName={dashboard.name}
-          onAdd={async (params: AddWidgetParams) => {
+          onAdd={async (params) => {
             // Close the wizard only on a confirmed add — a failure keeps selections.
             if (await addWidget(params)) setShowAddWidget(false)
           }}

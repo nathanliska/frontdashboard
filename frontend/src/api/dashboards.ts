@@ -1,11 +1,16 @@
 import { z } from 'zod'
 import { apiFetch } from './client'
 import {
+  type AgendaWidgetCreate,
   AgendaWidgetResponse,
+  type CalendarWidgetCreate,
   CalendarWidgetResponse,
+  type ClockWidgetCreate,
   ClockWidgetResponse,
   DashboardResponse,
   DashboardSummary,
+  type LayoutItem,
+  type ListWidgetCreate,
   ListWidgetResponse,
   ShareResponse,
 } from './generated/contract'
@@ -17,24 +22,20 @@ import type { ResourceShare, ShareCreate, ShareUpdate } from './shares'
 // development. Dashboard reads are coalesced by the store instead — see apiGetDashboard.
 const dashboardShareRequests = new Map<string, Promise<ResourceShare[]>>()
 
-export type { DashboardSummary } from './generated/contract'
+export type { DashboardSummary, LayoutItem } from './generated/contract'
 
-// The backend types `layout` as `list[dict[str, Any]]`, so the generated schema can only say
-// "array of objects". Layout entries are only ever written by react-grid-layout, whose item
-// shape we do know — so the boundary validates against that shape here rather than casting.
-// (#14's "typed layout models" would move this server-side and make it generated too.)
-export const LayoutItemSchema = z
-  .object({
-    i: z.string(),
-    x: z.number(),
-    y: z.number(),
-    w: z.number(),
-    h: z.number(),
-  })
-  // react-grid-layout round-trips extra per-item keys (static, minW, moved…) — keep them.
-  .passthrough()
+// Layout items are generated now (#14): the backend types `layout` as `list[LayoutItem]` and owns
+// the write-side bounds. `{i, x, y, w, h}` IS the layout state — react-grid-layout's transient
+// per-item bookkeeping (static, minW, moved…) is dropped by the backend on save and re-derived by
+// the library every render, so nothing here needs to preserve it.
 
-export type LayoutItem = z.infer<typeof LayoutItemSchema>
+// A create is the response union's mirror: `widget_type` discriminates, each variant carries its
+// own typed config, and only the list variant can bind a resource.
+export type WidgetCreate =
+  | ClockWidgetCreate
+  | CalendarWidgetCreate
+  | ListWidgetCreate
+  | AgendaWidgetCreate
 
 // No standalone `WidgetResponse` in the generated contract — FastAPI inlines the discriminated
 // union, so it is composed here from the generated variants. `widget_type` generates as a
@@ -57,7 +58,6 @@ export type {
 } from './generated/contract'
 
 const DashboardSchema = DashboardResponse.extend({
-  layout: z.array(LayoutItemSchema),
   widgets: z.array(DashboardWidgetSchema),
 })
 
@@ -169,12 +169,7 @@ export async function apiUpdateLayout(
 
 export async function apiAddWidget(
   dashboardId: string,
-  widget: {
-    widget_type: string
-    config?: Record<string, unknown>
-    resource_type?: string | null
-    resource_id?: string | null
-  },
+  widget: WidgetCreate,
   options?: DashboardMutationOptions,
 ): Promise<Dashboard> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/widgets`, {

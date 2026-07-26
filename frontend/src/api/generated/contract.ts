@@ -68,6 +68,12 @@ export const ActivitySseEvent = z.object({
 export type AgendaWidgetConfig = z.infer<typeof AgendaWidgetConfig>
 export const AgendaWidgetConfig = z.intersection(z.object({}), z.object({}))
 
+export type AgendaWidgetCreate = z.infer<typeof AgendaWidgetCreate>
+export const AgendaWidgetCreate = z.object({
+  config: z.union([AgendaWidgetConfig, z.undefined()]).optional(),
+  widget_type: z.literal('agenda')
+})
+
 export type AgendaWidgetResponse = z.infer<typeof AgendaWidgetResponse>
 export const AgendaWidgetResponse = z.object({
   config: AgendaWidgetConfig,
@@ -200,6 +206,12 @@ export const CalendarWidgetConfig = z.intersection(
   z.object({})
 )
 
+export type CalendarWidgetCreate = z.infer<typeof CalendarWidgetCreate>
+export const CalendarWidgetCreate = z.object({
+  config: z.union([CalendarWidgetConfig, z.undefined()]).optional(),
+  widget_type: z.literal('calendar')
+})
+
 export type CalendarWidgetResponse = z.infer<typeof CalendarWidgetResponse>
 export const CalendarWidgetResponse = z.object({
   config: CalendarWidgetConfig,
@@ -220,6 +232,12 @@ export const ClockWidgetConfig = z.intersection(
   }),
   z.object({})
 )
+
+export type ClockWidgetCreate = z.infer<typeof ClockWidgetCreate>
+export const ClockWidgetCreate = z.object({
+  config: z.union([ClockWidgetConfig, z.undefined()]).optional(),
+  widget_type: z.literal('clock')
+})
 
 export type ClockWidgetResponse = z.infer<typeof ClockWidgetResponse>
 export const ClockWidgetResponse = z.object({
@@ -256,6 +274,15 @@ export const DashboardCreate = z.object({
   shares: z.union([z.array(ShareCreate), z.undefined()]).optional()
 })
 
+export type LayoutItem = z.infer<typeof LayoutItem>
+export const LayoutItem = z.object({
+  h: z.number(),
+  i: z.string(),
+  w: z.number(),
+  x: z.number(),
+  y: z.number()
+})
+
 export type ListWidgetConfig = z.infer<typeof ListWidgetConfig>
 export const ListWidgetConfig = z.intersection(
   z.object({
@@ -286,7 +313,7 @@ export const DashboardResponse = z.object({
   id: z.string(),
   is_favorite: z.boolean(),
   is_shared: z.boolean(),
-  layout: z.array(z.record(z.unknown())),
+  layout: z.array(LayoutItem),
   name: z.string(),
   user_id: z.string(),
   version: z.number(),
@@ -401,7 +428,7 @@ export const ItemReorder = z.object({
 
 export type LayoutUpdate = z.infer<typeof LayoutUpdate>
 export const LayoutUpdate = z.object({
-  layout: z.array(z.record(z.unknown())),
+  layout: z.array(LayoutItem),
   version: z.number()
 })
 
@@ -501,6 +528,28 @@ export type ListUpdate = z.infer<typeof ListUpdate>
 export const ListUpdate = z.object({
   archived: z.union([z.boolean(), z.null()]).optional(),
   name: z.union([z.string(), z.null()]).optional()
+})
+
+export type ListWidgetCreateConfig = z.infer<typeof ListWidgetCreateConfig>
+export const ListWidgetCreateConfig = z.intersection(
+  z.object({
+    list_name: z.union([z.string(), z.null()]).optional(),
+    list_type: z.union([z.string(), z.null()]).optional(),
+    name: z.union([z.string(), z.null()]).optional()
+  }),
+  z.object({})
+)
+
+export type ListWidgetCreate = z.infer<typeof ListWidgetCreate>
+export const ListWidgetCreate = z.object({
+  config: z.union([ListWidgetCreateConfig, z.undefined()]).optional(),
+  resource_id: z
+    .union([z.union([z.string(), z.null()]), z.undefined()])
+    .optional(),
+  resource_type: z
+    .union([z.union([z.literal('list'), z.null()]), z.undefined()])
+    .optional(),
+  widget_type: z.literal('list')
 })
 
 export type LoginRequest = z.infer<typeof LoginRequest>
@@ -649,18 +698,6 @@ export const VerifyEmailRequest = z.object({
 export type WidgetConfigUpdate = z.infer<typeof WidgetConfigUpdate>
 export const WidgetConfigUpdate = z.object({
   config: z.record(z.unknown())
-})
-
-export type WidgetCreate = z.infer<typeof WidgetCreate>
-export const WidgetCreate = z.object({
-  config: z.union([z.record(z.unknown()), z.undefined()]).optional(),
-  resource_id: z
-    .union([z.union([z.string(), z.null()]), z.undefined()])
-    .optional(),
-  resource_type: z
-    .union([z.union([z.string(), z.null()]), z.undefined()])
-    .optional(),
-  widget_type: z.string()
 })
 
   

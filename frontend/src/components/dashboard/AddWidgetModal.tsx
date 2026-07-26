@@ -1,11 +1,9 @@
 import { ArrowLeft, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { AddWidgetParams } from '../../utils/dashboard/widgetCreationTypes'
+import type { WidgetCreate } from '../../api/dashboards'
 import { AddWidgetCalendarStep } from './widgets/AddWidgetCalendarStep'
 import { AddWidgetListStep } from './widgets/AddWidgetListStep'
 import { AddWidgetTypeStep } from './widgets/AddWidgetTypeStep'
-
-export type { AddWidgetParams } from '../../utils/dashboard/widgetCreationTypes'
 
 export function AddWidgetModal({
   onAdd,
@@ -15,7 +13,7 @@ export function AddWidgetModal({
   isSharedDashboard,
   dashboardName,
 }: {
-  onAdd: (params: AddWidgetParams) => Promise<void>
+  onAdd: (params: WidgetCreate) => Promise<void>
   onClose: () => void
   dashboardId: string
   existingListIds: string[]
