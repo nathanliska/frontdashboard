@@ -126,6 +126,10 @@ _Last updated: 2026-07-19_
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
+- **Both production images run unprivileged** (uid 10001), with base images pinned by digest and a
+  `docker` Dependabot ecosystem keeping those pins current. Caddy still binds `:80` — it holds
+  `CAP_NET_BIND_SERVICE` on the binary rather than running as root, so the port the tunnel points at
+  never had to move. CI asserts both images are non-root.
 - **Liveness and readiness are separate.** `GET /api/health` answers "the process is up" and touches
   nothing, so a dependency outage can never look like a crashed process. `GET /api/health/ready` runs
   a bounded `SELECT 1` and returns 503 when the database is unreachable, hung, or the pool is

@@ -134,5 +134,14 @@ jobs:
           context: .
           file: frontend/Dockerfile.prod
           push: false
+          load: true
+          tags: frontdashboard-frontend:ci
           cache-from: type=gha,scope=frontdashboard-frontend
           cache-to: type=gha,mode=max,scope=frontdashboard-frontend
+      # Mirrors the backend assertion. This image is the more fragile of the two: it binds :80 via
+      # a file capability, so losing either the USER line or the setcap silently returns it to root.
+      - name: Assert the production image does not run as root
+        run: |
+          uid=$(docker run --rm frontdashboard-frontend:ci id -u)
+          echo "production image runs as uid $uid"
+          test "$uid" != "0"
