@@ -16,22 +16,11 @@ from app.services.sessions import (
     rotate_refresh_token,
     start_session,
 )
-
-
-async def _make_user(db: AsyncSession) -> User:
-    user = User(
-        email=f"session-{uuid.uuid4()}@example.com",
-        password_hash="x",
-        display_name="Session Test",
-        email_verified_at=datetime.now(UTC),
-    )
-    db.add(user)
-    await db.flush()
-    return user
+from tests.helpers import make_db_user
 
 
 async def test_session_row_holds_a_refresh_token(db_session: AsyncSession) -> None:
-    user = await _make_user(db_session)
+    user = await make_db_user(db_session)
     session = UserSession(user_id=user.id)
     db_session.add(session)
     await db_session.flush()
@@ -53,7 +42,7 @@ async def test_session_row_holds_a_refresh_token(db_session: AsyncSession) -> No
 
 
 async def test_deleting_a_session_cascades_to_its_tokens(db_session: AsyncSession) -> None:
-    user = await _make_user(db_session)
+    user = await make_db_user(db_session)
     session = UserSession(user_id=user.id)
     db_session.add(session)
     await db_session.flush()

@@ -6,7 +6,6 @@ itself; these tests pin the behavior the single-statement upsert has to preserve
 """
 
 import uuid
-from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import func, select
@@ -16,24 +15,13 @@ from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRo
 from app.models.user import User
 from app.schemas.shares import ShareCreate
 from app.services.shares import create_share
-
-
-async def _make_user(db: AsyncSession, label: str) -> User:
-    user = User(
-        email=f"{label}-{uuid.uuid4()}@example.com",
-        password_hash="x",
-        display_name=label,
-        email_verified_at=datetime.now(UTC),
-    )
-    db.add(user)
-    await db.flush()
-    return user
+from tests.helpers import make_db_user
 
 
 @pytest.fixture
 async def target(db_session: AsyncSession) -> tuple[uuid.UUID, User, User]:
-    owner = await _make_user(db_session, "owner")
-    recipient = await _make_user(db_session, "recipient")
+    owner = await make_db_user(db_session, label="owner")
+    recipient = await make_db_user(db_session, label="recipient")
     return uuid.uuid4(), owner, recipient
 
 
@@ -86,7 +74,7 @@ async def test_re_granting_updates_the_role_in_place(db_session: AsyncSession, t
 async def test_re_granting_preserves_the_original_grant_provenance(db_session: AsyncSession, target: tuple[uuid.UUID, User, User]) -> None:
     """Only the role is upserted — who granted it first, and when, is history."""
     resource_id, owner, recipient = target
-    other_editor = await _make_user(db_session, "other-editor")
+    other_editor = await make_db_user(db_session, label="other-editor")
     first = await _grant(db_session, resource_id, recipient, owner, ShareRole.viewer)
     granted_at = first.created_at
 
@@ -98,7 +86,7 @@ async def test_re_granting_preserves_the_original_grant_provenance(db_session: A
 
 async def test_grants_to_different_principals_stay_separate(db_session: AsyncSession, target: tuple[uuid.UUID, User, User]) -> None:
     resource_id, owner, recipient = target
-    second_recipient = await _make_user(db_session, "second-recipient")
+    second_recipient = await make_db_user(db_session, label="second-recipient")
 
     first = await _grant(db_session, resource_id, recipient, owner, ShareRole.viewer)
     second = await _grant(db_session, resource_id, second_recipient, owner, ShareRole.editor)

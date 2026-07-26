@@ -1,6 +1,11 @@
+import uuid
+from datetime import UTC, datetime
+
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
+from app.models.user import User
 
 CSRF = "test-csrf-token"
 
@@ -8,6 +13,38 @@ CSRF = "test-csrf-token"
 def set_csrf(client: AsyncClient) -> None:
     client.cookies.set("csrf_token", CSRF)
     client.headers.update({"x-csrf-token": CSRF})
+
+
+async def register_user(
+    client: AsyncClient,
+    email: str,
+    *,
+    display_name: str = "Member",
+    password: str = "password123",
+) -> dict:
+    """Register + verify on an *existing* client (register_client below spins up a new one)."""
+    resp = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password, "display_name": display_name},
+    )
+    assert resp.status_code == 201, resp.text
+    token = app.state.email_verification_tokens[email]
+    verify_resp = await client.post("/api/auth/verify-email", json={"token": token})
+    assert verify_resp.status_code == 200, verify_resp.text
+    return verify_resp.json()
+
+
+async def make_db_user(db: AsyncSession, *, label: str = "user") -> User:
+    """ORM-level verified user for service tests that skip the HTTP flow entirely."""
+    user = User(
+        email=f"{label}-{uuid.uuid4()}@example.com",
+        password_hash="x",
+        display_name=label,
+        email_verified_at=datetime.now(UTC),
+    )
+    db.add(user)
+    await db.flush()
+    return user
 
 
 async def current_user(client: AsyncClient) -> dict:
@@ -24,14 +61,7 @@ async def register_client(
 ) -> AsyncClient:
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
     await client.__aenter__()
-    resp = await client.post(
-        "/api/auth/register",
-        json={"email": email, "password": password, "display_name": display_name},
-    )
-    assert resp.status_code == 201, resp.text
-    token = app.state.email_verification_tokens[email]
-    verify_resp = await client.post("/api/auth/verify-email", json={"token": token})
-    assert verify_resp.status_code == 200, verify_resp.text
+    await register_user(client, email, display_name=display_name, password=password)
     return client
 
 

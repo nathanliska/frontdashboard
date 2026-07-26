@@ -13,16 +13,14 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
 from app.routers.sse import _should_resync_on_connect
 from app.sse.events import connected_dict
 from app.sse.manager import _QUEUE_MAX, CLOSED_SENTINEL, REVOKED_SENTINEL, SseManager
+from tests.helpers import register_user, set_csrf
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-CSRF = "test-csrf-token"
 
 
 async def _always_live(_session_id: uuid.UUID) -> bool:
@@ -31,23 +29,6 @@ async def _always_live(_session_id: uuid.UUID) -> bool:
 
 async def _never_live(_session_id: uuid.UUID) -> bool:
     return False
-
-
-def _csrf(client: AsyncClient) -> None:
-    client.cookies.set("csrf_token", CSRF)
-    client.headers.update({"x-csrf-token": CSRF})
-
-
-async def _register(client: AsyncClient, email: str = "alice@example.com", display_name: str = "Alice") -> dict:
-    resp = await client.post(
-        "/api/auth/register",
-        json={"email": email, "password": "password123", "display_name": display_name},
-    )
-    assert resp.status_code == 201
-    token = app.state.email_verification_tokens[email]
-    verify_resp = await client.post("/api/auth/verify-email", json={"token": token})
-    assert verify_resp.status_code == 200
-    return verify_resp.json()
 
 
 # ---------------------------------------------------------------------------
@@ -187,14 +168,14 @@ async def test_activity_events_build_correct_sse_payloads(
     from app.models.activity import ActivityEvent
     from app.sse.events import activity_to_sse_dict
 
-    await _register(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
 
-    _csrf(db_client)
+    set_csrf(db_client)
     dash_resp = await db_client.post("/api/dashboards", json={"name": "SSE Test"})
     assert dash_resp.status_code == 201
     dashboard_id = dash_resp.json()["id"]
 
-    _csrf(db_client)
+    set_csrf(db_client)
     create_resp = await db_client.post("/api/lists", json={"name": "SSE Test List", "list_type": "checklist", "dashboard_id": dashboard_id})
     assert create_resp.status_code == 201
 

@@ -17,25 +17,13 @@ from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
-from app.models.user import User
 from app.services.retention import reap_expired_auth_rows, reap_expired_history
-
-
-async def _make_user(db) -> User:
-    user = User(
-        email=f"reap-{uuid.uuid4()}@example.com",
-        password_hash="x",
-        display_name="Reap",
-        email_verified_at=datetime.now(UTC),
-    )
-    db.add(user)
-    await db.flush()
-    return user
+from tests.helpers import make_db_user
 
 
 async def test_expired_tokens_deleted_live_and_consumed_ones_kept(db_session):
     now = datetime.now(UTC)
-    user = await _make_user(db_session)
+    user = await make_db_user(db_session, label="reap")
     session = UserSession(user_id=user.id, last_used_at=now)
     db_session.add(session)
     await db_session.flush()
@@ -71,7 +59,7 @@ async def test_expired_tokens_deleted_live_and_consumed_ones_kept(db_session):
 
 async def test_idle_session_with_only_expired_tokens_is_deleted(db_session):
     now = datetime.now(UTC)
-    user = await _make_user(db_session)
+    user = await make_db_user(db_session, label="reap")
     idle = now - timedelta(minutes=settings.access_token_expire_minutes + 5)
     dead = UserSession(user_id=user.id, last_used_at=idle)
     db_session.add(dead)
@@ -88,7 +76,7 @@ async def test_idle_session_with_only_expired_tokens_is_deleted(db_session):
 async def test_recently_used_session_is_kept_even_with_no_unexpired_token(db_session):
     # Guards the early-logout failure: a still-valid 15-minute access token names it.
     now = datetime.now(UTC)
-    user = await _make_user(db_session)
+    user = await make_db_user(db_session, label="reap")
     recent = UserSession(user_id=user.id, last_used_at=now - timedelta(minutes=1))
     db_session.add(recent)
     await db_session.flush()
@@ -104,7 +92,7 @@ async def test_recently_used_session_is_kept_even_with_no_unexpired_token(db_ses
 async def test_idle_session_with_an_unexpired_token_is_kept(db_session):
     # Preserves reuse evidence: any unexpired token (even consumed) pins the session.
     now = datetime.now(UTC)
-    user = await _make_user(db_session)
+    user = await make_db_user(db_session, label="reap")
     idle = now - timedelta(days=10)
     pinned = UserSession(user_id=user.id, last_used_at=idle)
     db_session.add(pinned)
@@ -128,7 +116,7 @@ async def test_idle_session_with_an_unexpired_token_is_kept(db_session):
 
 async def test_history_older_than_the_horizon_is_pruned(db_session):
     now = datetime.now(UTC)
-    user = await _make_user(db_session)
+    user = await make_db_user(db_session, label="reap")
     horizon = timedelta(days=settings.history_retention_days)
 
     def activity(created_at: datetime) -> ActivityEvent:
@@ -179,7 +167,7 @@ async def test_history_older_than_the_horizon_is_pruned(db_session):
 
 async def test_history_sweep_leaves_auth_rows_alone(db_session):
     now = datetime.now(UTC)
-    user = await _make_user(db_session)
+    user = await make_db_user(db_session, label="reap")
     session = UserSession(user_id=user.id, last_used_at=now - timedelta(days=365))
     db_session.add(session)
     await db_session.flush()

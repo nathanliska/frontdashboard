@@ -13,14 +13,12 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
 from app.models.activity import ActivityEvent, EventType
+from tests.helpers import CSRF, create_dashboard, create_list, create_list_item, register_user, set_csrf
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-CSRF = "test-csrf-token"
 
 
 def test_all_activity_event_types_have_frontend_presentations() -> None:
@@ -32,43 +30,9 @@ def test_all_activity_event_types_have_frontend_presentations() -> None:
     assert mapped_event_types == {event_type.value for event_type in EventType}
 
 
-def _csrf(client: AsyncClient) -> None:
-    client.cookies.set("csrf_token", CSRF)
-    client.headers.update({"x-csrf-token": CSRF})
-
-
-async def _register(client: AsyncClient, email: str, display_name: str = "User") -> dict:
-    resp = await client.post(
-        "/api/auth/register",
-        json={"email": email, "password": "password123", "display_name": display_name},
-    )
-    assert resp.status_code == 201
-    token = app.state.email_verification_tokens[email]
-    verify_resp = await client.post("/api/auth/verify-email", json={"token": token})
-    assert verify_resp.status_code == 200
-    return verify_resp.json()
-
-
-async def _make_dashboard(client: AsyncClient) -> dict:
-    _csrf(client)
-    resp = await client.post("/api/dashboards", json={"name": "Test Dashboard"})
-    assert resp.status_code == 201
-    return resp.json()
-
-
 async def _make_list(client: AsyncClient, dashboard_id: str, **kwargs) -> dict:
-    _csrf(client)
-    payload = {"name": "My List", "list_type": "checklist", "dashboard_id": dashboard_id} | kwargs
-    resp = await client.post("/api/lists", json=payload)
-    assert resp.status_code == 201
-    return resp.json()
-
-
-async def _make_item(client: AsyncClient, list_id: str, text: str = "Milk") -> dict:
-    _csrf(client)
-    resp = await client.post(f"/api/lists/{list_id}/items", json={"text": text})
-    assert resp.status_code == 201
-    return resp.json()
+    # File-local default: "My List" is asserted back out of event payloads below.
+    return await create_list(client, dashboard_id, **({"name": "My List"} | kwargs))
 
 
 async def _latest_event(db_session: AsyncSession) -> ActivityEvent:
@@ -85,8 +49,8 @@ async def _latest_event(db_session: AsyncSession) -> ActivityEvent:
 
 @pytest.mark.asyncio
 async def test_list_created_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
     event = await _latest_event(db_session)
@@ -98,11 +62,11 @@ async def test_list_created_event(db_client: AsyncClient, db_session: AsyncSessi
 
 @pytest.mark.asyncio
 async def test_list_updated_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
-    _csrf(db_client)
+    set_csrf(db_client)
     resp = await db_client.patch(f"/api/lists/{lst['id']}", json={"name": "Renamed"})
     assert resp.status_code == 200
 
@@ -113,11 +77,11 @@ async def test_list_updated_event(db_client: AsyncClient, db_session: AsyncSessi
 
 @pytest.mark.asyncio
 async def test_list_events_include_client_mutation_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice-client-mutation@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice-client-mutation@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
-    _csrf(db_client)
+    set_csrf(db_client)
     resp = await db_client.patch(
         f"/api/lists/{lst['id']}",
         json={"name": "Renamed"},
@@ -131,12 +95,12 @@ async def test_list_events_include_client_mutation_id_in_payload(db_client: Asyn
 
 @pytest.mark.asyncio
 async def test_list_item_events_include_client_mutation_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice-item-client-mutation@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice-item-client-mutation@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
-    item = await _make_item(db_client, lst["id"])
+    item = await create_list_item(db_client, lst["id"])
 
-    _csrf(db_client)
+    set_csrf(db_client)
     resp = await db_client.patch(
         f"/api/lists/{lst['id']}/items/{item['id']}",
         json={"checked": True},
@@ -150,11 +114,11 @@ async def test_list_item_events_include_client_mutation_id_in_payload(db_client:
 
 @pytest.mark.asyncio
 async def test_list_archived_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
-    _csrf(db_client)
+    set_csrf(db_client)
     resp = await db_client.patch(f"/api/lists/{lst['id']}", json={"archived": True})
     assert resp.status_code == 200
 
@@ -165,11 +129,11 @@ async def test_list_archived_event(db_client: AsyncClient, db_session: AsyncSess
 
 @pytest.mark.asyncio
 async def test_list_deleted_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
-    _csrf(db_client)
+    set_csrf(db_client)
     await db_client.patch(f"/api/lists/{lst['id']}", json={"archived": True})
     resp = await db_client.delete(f"/api/lists/{lst['id']}")
     assert resp.status_code == 204
@@ -186,10 +150,10 @@ async def test_list_deleted_event(db_client: AsyncClient, db_session: AsyncSessi
 
 @pytest.mark.asyncio
 async def test_list_item_created_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
-    item = await _make_item(db_client, lst["id"], "Eggs")
+    item = await create_list_item(db_client, lst["id"], text="Eggs")
 
     event = await _latest_event(db_session)
     assert event.event_type == EventType.list_item_created
@@ -202,12 +166,12 @@ async def test_list_item_created_event(db_client: AsyncClient, db_session: Async
 
 @pytest.mark.asyncio
 async def test_list_item_checked_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
-    item = await _make_item(db_client, lst["id"])
+    item = await create_list_item(db_client, lst["id"])
 
-    _csrf(db_client)
+    set_csrf(db_client)
     resp = await db_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"checked": True})
     assert resp.status_code == 200
 
@@ -220,12 +184,12 @@ async def test_list_item_checked_event(db_client: AsyncClient, db_session: Async
 
 @pytest.mark.asyncio
 async def test_list_item_updated_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
-    item = await _make_item(db_client, lst["id"])
+    item = await create_list_item(db_client, lst["id"])
 
-    _csrf(db_client)
+    set_csrf(db_client)
     resp = await db_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"text": "New text"})
     assert resp.status_code == 200
 
@@ -238,12 +202,12 @@ async def test_list_item_updated_event(db_client: AsyncClient, db_session: Async
 
 @pytest.mark.asyncio
 async def test_list_item_deleted_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
-    item = await _make_item(db_client, lst["id"])
+    item = await create_list_item(db_client, lst["id"])
 
-    _csrf(db_client)
+    set_csrf(db_client)
     resp = await db_client.delete(f"/api/lists/{lst['id']}/items/{item['id']}")
     assert resp.status_code == 204
 
@@ -257,11 +221,11 @@ async def test_list_item_deleted_event(db_client: AsyncClient, db_session: Async
 @pytest.mark.asyncio
 async def test_event_id_is_monotonically_increasing(db_client: AsyncClient, db_session: AsyncSession) -> None:
     """event_id values must be strictly increasing across consecutive inserts."""
-    await _register(db_client, "alice@example.com", "Alice")
-    dashboard = await _make_dashboard(db_client)
+    await register_user(db_client, "alice@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
-    await _make_item(db_client, lst["id"], "A")
-    await _make_item(db_client, lst["id"], "B")
+    await create_list_item(db_client, lst["id"], text="A")
+    await create_list_item(db_client, lst["id"], text="B")
 
     result = await db_session.execute(select(ActivityEvent).order_by(ActivityEvent.event_id))
     events = result.scalars().all()

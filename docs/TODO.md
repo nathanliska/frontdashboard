@@ -30,7 +30,7 @@ and effort are noted inline where known.
 |------:|-------|---------------|
 | 4 | Data layer, contracts & exposure | #17, #22◐, #24 |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐ |
-| 6 | UX & cleanup | #27, #40, #54◐ |
+| 6 | UX & cleanup | #27, #40 |
 | — | Backlog (unscheduled) | #16, #18, #19◐, #25, #26, #39, #52, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
@@ -52,7 +52,6 @@ and effort are noted inline where known.
 
 - **#27 — Accessible dialog / popover / feedback / action primitives.** Dialogs duplicate incomplete focus trapping/labelling; popovers lack `aria-expanded`/Escape; Confirm always says "Delete"; toasts/errors aren't announced; card actions are hover-only. Adopt Radix UI for Dialog/Popover (decided 2026-07-11), parameterize label/tone, add live regions + field-linked errors, replace hover-only actions with a visible overflow menu (≥44px targets). *(Medium)*
 - **#40 — Simplify archive/delete into a recoverable lifecycle.** Lists need two-step archive-then-delete; dashboards expose archive + immediate permanent delete; row/card actions are hidden. Move to one "Move to trash" action with a trash view, restore, and the decided 30-day retention purge; align dashboard/list behavior; explain dependent widgets first. *(Medium)*
-- **#54◐ — Consolidate the test suite (frontend done).** `src/test/` now holds shared entity fixtures (`makeDashboard`, `makeDashboardSummary`, `makeListSummary`, `makeListItem`, `makeListDetail`), `stubDashboardStore()` for the 23-line inert-store block that was duplicated in five files, `sortableListMock` for the dnd-kit stand-in two reorder tests carried verbatim, and `toastMock()` for the surface eight files each re-declared. The three reorder files are table-driven where the cases genuinely mirror (`ListsLayout` 206→116, `ListDetailPage` 160→71, `listData.reorder` 572→400). Frontend test lines 6,594→6,016 with the test count unchanged, so nothing stopped being covered. **Two things worth keeping in mind before "finishing" this:** not every local fixture was duplication — `agendaData`'s item default carries `due_date` because an agenda entry only exists when an item is due, and `listData`/`ListWidget` assert `"Groceries"`/`"Buy milk"` back out of rendered output. Those keep file-local defaults layered over the shared base, which is the pattern to follow rather than flatten. Likewise the reorder halves were only ~5/16 genuinely mirrored; self-echo, duplicate-id and in-flight-fetch cases are items-only and archived-subset handling is lists-only. Remaining: backend fixtures (`tests/helpers.py` is already shared, so this is smaller than the frontend was). *(Small)*
 
 ## Backlog (unscheduled)
 
