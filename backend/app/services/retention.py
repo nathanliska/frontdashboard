@@ -30,18 +30,22 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, delete, func, select
+from sqlalchemy import CursorResult, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session_factory
 from app.models.activity import ActivityEvent
+from app.models.calendar import CalendarEvent
+from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.dashboard_invite import DashboardInvite
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.list import List, ListItem
 from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
+from app.models.share import ResourceShare, ResourceType
 
 logger = logging.getLogger("app.retention")
 
@@ -108,6 +112,73 @@ async def reap_expired_history(db: AsyncSession, *, now: datetime | None = None)
     return counts
 
 
+async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
+    """Purge trash past `trash_retention_days` (finding #40). Caller owns the commit.
+
+    This is the cascade that DELETE /dashboards used to run inline: a trashed dashboard takes
+    its widgets, lists (items included), events, and share rows with it. It also sweeps
+    soft-deleted lists, items, and events that were individually trashed and never restored —
+    before #40 those lingered forever, purged only if their dashboard happened to be deleted.
+
+    Order matters twice over: children before dashboards (their dashboard_id FKs have no
+    ON DELETE cascade), and share rows before their resources so an interrupted sweep leaves
+    orphaned share rows (inert — access resolution starts from the resource) rather than
+    resources whose shares vanished.
+    """
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(days=settings.trash_retention_days)
+    counts: dict[str, int] = {}
+
+    expired_dashboard_ids = select(Dashboard.id).where(Dashboard.deleted_at < cutoff).scalar_subquery()
+
+    # Lists die if individually trashed past the horizon OR owned by a purging dashboard.
+    doomed_lists = or_(List.deleted_at < cutoff, List.dashboard_id.in_(expired_dashboard_ids))
+    doomed_list_ids = select(List.id).where(doomed_lists).scalar_subquery()
+    await db.execute(
+        delete(ResourceShare).where(
+            ResourceShare.resource_type == ResourceType.list.value,
+            ResourceShare.resource_id.in_(doomed_list_ids),
+        )
+    )
+    await db.execute(delete(ListItem).where(ListItem.list_id.in_(doomed_list_ids)))
+    # Items individually soft-deleted inside lists that live on.
+    item_result = cast(
+        "CursorResult[Any]",
+        await db.execute(delete(ListItem).where(ListItem.deleted_at < cutoff)),
+    )
+    list_result = cast("CursorResult[Any]", await db.execute(delete(List).where(doomed_lists)))
+    counts["lists"] = list_result.rowcount
+    counts["list_items"] = item_result.rowcount
+
+    doomed_events = or_(
+        CalendarEvent.deleted_at < cutoff,
+        CalendarEvent.dashboard_id.in_(expired_dashboard_ids),
+    )
+    doomed_event_ids = select(CalendarEvent.id).where(doomed_events).scalar_subquery()
+    await db.execute(
+        delete(ResourceShare).where(
+            ResourceShare.resource_type == ResourceType.calendar_event.value,
+            ResourceShare.resource_id.in_(doomed_event_ids),
+        )
+    )
+    event_result = cast("CursorResult[Any]", await db.execute(delete(CalendarEvent).where(doomed_events)))
+    counts["calendar_events"] = event_result.rowcount
+
+    await db.execute(delete(DashboardWidget).where(DashboardWidget.dashboard_id.in_(expired_dashboard_ids)))
+    await db.execute(
+        delete(ResourceShare).where(
+            ResourceShare.resource_type == ResourceType.dashboard.value,
+            ResourceShare.resource_id.in_(expired_dashboard_ids),
+        )
+    )
+    dashboard_result = cast(
+        "CursorResult[Any]",
+        await db.execute(delete(Dashboard).where(Dashboard.deleted_at < cutoff)),
+    )
+    counts["dashboards"] = dashboard_result.rowcount
+    return counts
+
+
 async def run_reaper_once() -> dict[str, int] | None:
     """Acquire the cross-process lock and reap once, or no-op if another worker holds it.
 
@@ -122,6 +193,7 @@ async def run_reaper_once() -> dict[str, int] | None:
             return None
         counts = await reap_expired_auth_rows(db)
         counts |= await reap_expired_history(db)
+        counts |= await reap_expired_trash(db)
     if any(counts.values()):
         logger.info("reaper: deleted %s", counts)
     return counts

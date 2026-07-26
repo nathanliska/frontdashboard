@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +21,10 @@ class Dashboard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # vestigial when dashboards became multiple and explicitly created.
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Trash (finding #40): set = "moved to trash", invisible everywhere but the owner's trash
+    # view, restorable until the reaper purges it past `trash_retention_days`. Dashboards used to
+    # hard-delete on DELETE — one misclick permanently took every child list and event with it.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     layout: Mapped[Any] = mapped_column(JSONB, nullable=False, server_default="[]")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 

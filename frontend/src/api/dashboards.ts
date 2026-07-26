@@ -13,6 +13,7 @@ import {
   type ListWidgetCreate,
   ListWidgetResponse,
   ShareResponse,
+  TrashedDashboardSummary,
 } from './generated/contract'
 import { parseJson } from './http'
 import type { ResourceShare, ShareCreate, ShareUpdate } from './shares'
@@ -22,7 +23,13 @@ import type { ResourceShare, ShareCreate, ShareUpdate } from './shares'
 // development. Dashboard reads are coalesced by the store instead — see apiGetDashboard.
 const dashboardShareRequests = new Map<string, Promise<ResourceShare[]>>()
 
-export type { DashboardSummary, LayoutItem } from './generated/contract'
+export type {
+  DashboardSummary,
+  LayoutItem,
+  TrashedDashboardSummary as TrashedDashboard,
+} from './generated/contract'
+
+import type { DashboardSummary as DashboardSummaryType } from './generated/contract'
 
 // Layout items are generated now (#14): the backend types `layout` as `list[LayoutItem]` and owns
 // the write-side bounds. `{i, x, y, w, h}` IS the layout state — react-grid-layout's transient
@@ -143,6 +150,21 @@ export async function apiDeleteDashboard(
     headers: buildDashboardMutationHeaders(options),
   })
   if (!res.ok) throw new Error('Failed to delete dashboard')
+}
+
+export async function apiGetTrash(): Promise<TrashedDashboardSummary[]> {
+  const res = await apiFetch('/api/dashboards/trash')
+  if (!res.ok) throw new Error('Failed to load trash')
+  return parseJson(res, z.array(TrashedDashboardSummary))
+}
+
+export async function apiRestoreDashboard(id: string): Promise<DashboardSummaryType> {
+  const res = await apiFetch(`/api/dashboards/${id}/restore`, { method: 'POST' })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(data.detail ?? 'Failed to restore dashboard')
+  }
+  return parseJson(res, DashboardSummary)
 }
 
 export async function apiUpdateLayout(

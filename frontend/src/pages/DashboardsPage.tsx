@@ -1,7 +1,12 @@
 import { LayoutDashboard, Plus } from 'lucide-react'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import type { DashboardSummary } from '../api/dashboards'
+import {
+  apiGetTrash,
+  apiRestoreDashboard,
+  type DashboardSummary,
+  type TrashedDashboard,
+} from '../api/dashboards'
 import { CreateDashboardModal } from '../components/dashboard/CreateDashboardModal'
 import { DashboardCardGrid } from '../components/dashboard/DashboardCardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
@@ -9,6 +14,7 @@ import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 import { confirm } from '../stores/confirm'
 import { useDashboardStore } from '../stores/dashboard'
+import { toast } from '../stores/toast'
 
 export function DashboardsPage() {
   const summaries = useDashboardStore((s) => s.summaries)
@@ -24,6 +30,8 @@ export function DashboardsPage() {
   const homeDashboardId = user?.preferences?.home_dashboard_id ?? null
   const currentUserId = user?.id ?? null
   const [showCreate, setShowCreate] = useState(false)
+  const [trash, setTrash] = useState<TrashedDashboard[]>([])
+  const [restoringId, setRestoringId] = useState<string | null>(null)
   const [editingDashboardId, setEditingDashboardId] = useState<string | null>(null)
   const navigate = useNavigate()
   const closeEditingDashboard = useEffectEvent(() => {
@@ -33,6 +41,14 @@ export function DashboardsPage() {
   useEffect(() => {
     void loadSummaries()
   }, [loadSummaries])
+
+  useEffect(() => {
+    // Best-effort: the trash section simply doesn't render if this fails — the primary listing
+    // must not couple to it.
+    void apiGetTrash()
+      .then(setTrash)
+      .catch(() => setTrash([]))
+  }, [])
 
   const editingDashboard = useMemo(
     () =>
@@ -87,9 +103,33 @@ export function DashboardsPage() {
   }
 
   async function handleDelete(dashboard: DashboardSummary) {
-    if (await confirm(`Delete "${dashboard.name}" permanently? This cannot be undone.`)) {
-      void deleteDashboard(dashboard.id)
+    // Honest copy (#40): it goes to the trash with everything on it, and it is recoverable.
+    const message = `Move "${dashboard.name}" to the trash? Its lists and calendar events go with it. You can restore it from the trash for 30 days.`
+    if (await confirm(message)) {
+      if (await deleteDashboard(dashboard.id)) {
+        void apiGetTrash()
+          .then(setTrash)
+          .catch(() => undefined)
+      }
     }
+  }
+
+  async function handleRestore(trashed: TrashedDashboard) {
+    setRestoringId(trashed.id)
+    try {
+      await apiRestoreDashboard(trashed.id)
+      setTrash((current) => current.filter((t) => t.id !== trashed.id))
+      await loadSummaries()
+      toast.success(`Restored "${trashed.name}".`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to restore dashboard.')
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
+  function daysUntilPurge(trashed: TrashedDashboard): number {
+    return Math.max(0, Math.ceil((new Date(trashed.purge_at).getTime() - Date.now()) / 86_400_000))
   }
 
   if (summariesLoading && summaries.length === 0) {
@@ -152,6 +192,42 @@ export function DashboardsPage() {
               onArchive={handleArchive}
               onDelete={handleDelete}
             />
+          </section>
+        )}
+
+        {trash.length > 0 && (
+          <section>
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+              Trash
+            </h2>
+            <div className="space-y-1">
+              {trash.map((trashed) => {
+                const days = daysUntilPurge(trashed)
+                return (
+                  <div
+                    key={trashed.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-zinc-300 truncate">{trashed.name}</p>
+                      <p className="text-xs text-zinc-600">
+                        {days === 0
+                          ? 'Will be permanently deleted soon'
+                          : `Permanently deleted in ${days} day${days === 1 ? '' : 's'}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleRestore(trashed)}
+                      disabled={restoringId === trashed.id}
+                      className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
+                    >
+                      {restoringId === trashed.id ? 'Restoring…' : 'Restore'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
           </section>
         )}
 

@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -317,21 +317,66 @@ async def test_delete_archived_dashboard_removes_dashboard_owned_lists_and_event
     assert event_resp.status_code == 404
 
 
-async def test_delete_dashboard_sweeps_soft_deleted_children(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """A dashboard with soft-deleted lists/events must still delete cleanly.
+async def test_delete_moves_to_trash_and_restore_brings_everything_back(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """DELETE is a trash move now (#40): children and shares survive, and restore reverses it."""
+    viewer = await register_client("trash-viewer@example.com", display_name="Viewer")
+    try:
+        viewer_me = await current_user(viewer)
+        dashboard = await create_dashboard(auth_client, name="Trashable")
+        lst = await create_list(auth_client, dashboard["id"], name="Kept List")
+        await create_list_item(auth_client, lst["id"], text="kept")
+        set_csrf(auth_client)
+        share_resp = await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/shares",
+            json={"principal_type": "user", "principal_id": viewer_me["id"], "role": "viewer"},
+        )
+        assert share_resp.status_code == 201
 
-    The child FKs to dashboards.id have no ON DELETE cascade, so a soft-deleted
-    list or event left behind makes the final DELETE FROM dashboards raise a
-    ForeignKeyViolation (500). Deletion must sweep children regardless of
-    soft-delete state — including items under a soft-deleted list.
-    """
-    dashboard = await create_dashboard(auth_client, name="Has Deleted Children")
+        set_csrf(auth_client)
+        assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
+
+        # Invisible to everyone through every normal door — owner and shared viewer alike.
+        assert (await auth_client.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
+        assert (await viewer.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
+        assert dashboard["id"] not in [d["id"] for d in (await auth_client.get("/api/dashboards")).json()]
+        assert (await auth_client.get(f"/api/lists/{lst['id']}")).status_code == 404
+
+        # But present in the owner's trash, with a purge deadline — and only the owner's.
+        trash = (await auth_client.get("/api/dashboards/trash")).json()
+        assert [t["id"] for t in trash] == [dashboard["id"]]
+        assert trash[0]["purge_at"] > trash[0]["deleted_at"]
+        assert (await viewer.get("/api/dashboards/trash")).json() == []
+
+        # The viewer cannot restore it; the owner can.
+        set_csrf(viewer)
+        assert (await viewer.post(f"/api/dashboards/{dashboard['id']}/restore")).status_code == 404
+        set_csrf(auth_client)
+        restored = await auth_client.post(f"/api/dashboards/{dashboard['id']}/restore")
+        assert restored.status_code == 200
+        assert restored.json()["name"] == "Trashable"
+
+        # Back for both parties, share intact, children intact.
+        assert (await viewer.get(f"/api/dashboards/{dashboard['id']}")).status_code == 200
+        detail = (await auth_client.get(f"/api/lists/{lst['id']}")).json()
+        assert [i["text"] for i in detail["items"]] == ["kept"]
+        assert (await auth_client.get("/api/dashboards/trash")).json() == []
+    finally:
+        await viewer.aclose()
+
+
+async def test_reaper_purges_expired_trash_and_lingering_soft_deletes(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """Past the retention window the purge runs the old cascade — including children that were
+    soft-deleted individually and items under them (the FKs have no ON DELETE cascade, so a
+    missed child would make the dashboard delete itself raise)."""
+    from app.services.retention import reap_expired_trash
+
+    dashboard = await create_dashboard(auth_client, name="Doomed")
     lst = await create_list(auth_client, dashboard["id"], name="Old List")
     item = await create_list_item(auth_client, lst["id"], text="stale")
     event = await create_calendar_event(auth_client, dashboard["id"], title="Old Event")
 
-    # Soft-delete the list and event directly. This leaves the item in place under
-    # the soft-deleted list — the exact orphan hazard the fix must sweep.
+    # Soft-delete the list and event directly; the item stays under the soft-deleted list —
+    # the exact orphan hazard the purge must sweep.
     now = datetime.now(UTC)
     db_list = (await db_session.execute(select(List).where(List.id == uuid.UUID(lst["id"])))).scalar_one()
     db_list.deleted_at = now
@@ -340,14 +385,18 @@ async def test_delete_dashboard_sweeps_soft_deleted_children(auth_client: AsyncC
     await db_session.flush()
 
     set_csrf(auth_client)
-    delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
-    assert delete_resp.status_code == 204
+    assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
 
-    # No rows remain for the dashboard — parent, both children, and the item.
-    assert (await db_session.execute(select(Dashboard).where(Dashboard.id == uuid.UUID(dashboard["id"])))).scalar_one_or_none() is None
-    assert (await db_session.execute(select(List).where(List.id == uuid.UUID(lst["id"])))).scalar_one_or_none() is None
-    assert (await db_session.execute(select(ListItem).where(ListItem.id == uuid.UUID(item["id"])))).scalar_one_or_none() is None
-    assert (await db_session.execute(select(CalendarEvent).where(CalendarEvent.id == uuid.UUID(event["id"])))).scalar_one_or_none() is None
+    # Inside the window nothing is purged.
+    counts = await reap_expired_trash(db_session, now=now)
+    assert counts["dashboards"] == 0
+    assert (await db_session.execute(select(Dashboard).where(Dashboard.id == uuid.UUID(dashboard["id"])))).scalar_one_or_none() is not None
+
+    # Past it, everything goes — parent, both children, and the item.
+    counts = await reap_expired_trash(db_session, now=now + timedelta(days=31))
+    assert counts["dashboards"] == 1
+    for model, row_id in ((Dashboard, dashboard["id"]), (List, lst["id"]), (ListItem, item["id"]), (CalendarEvent, event["id"])):
+        assert (await db_session.execute(select(model).where(model.id == uuid.UUID(row_id)))).scalar_one_or_none() is None
 
 
 async def test_update_dashboard_meta_rejects_legacy_favorite_field(auth_client: AsyncClient) -> None:

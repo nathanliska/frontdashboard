@@ -1,7 +1,7 @@
 # FDR-002: Dashboards & Layout Editor
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-26
 
 ## Overview
 
@@ -54,13 +54,16 @@ ADR-009.
 **Tradeoff:** No independently editable mobile layout; that would need a per-breakpoint persisted
 layout, deliberately not built.
 
-### 4. Dashboards are hard-deleted, with cascade
+### 4. Deleting a dashboard moves it to the trash (#40, 2026-07-26)
 
-**Decision:** Dashboards and widgets are hard-deleted (no `deleted_at`); delete cascades to owned
-lists/items/events/shares.
-**Why:** A dashboard is disposable scaffolding, cheap to recreate; its durable *content* is
-soft-deleted separately. See ADR-007.
-**Tradeoff:** No dashboard undo; the cascade must be maintained explicitly.
+**Decision:** DELETE stamps `deleted_at`: the dashboard vanishes from every listing and access
+path (children included), sits in the owner's trash with a visible purge deadline, and is
+restorable — shares and children intact — until the reaper purges it after 30 days
+(`trash_retention_days`). Widgets alone remain hard-deleted.
+**Why:** A dashboard is the access root for everything on it; the old immediate cascade meant one
+misclick permanently destroyed content several people used. See ADR-007 (amended).
+**Tradeoff:** Trashed rows must be filtered at every access/listing/inheritance site (same footgun
+class as `archived`), and the purge cascade now runs in the reaper rather than the request path.
 
 ### 5. All dashboard mutations share one success/failure contract
 

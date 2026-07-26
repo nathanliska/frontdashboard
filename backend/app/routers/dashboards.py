@@ -1,17 +1,18 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import ValidationError
-from sqlalchemy import case, delete, func, literal, or_, select
+from sqlalchemy import case, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
+from app.config import settings
 from app.database import get_db
-from app.models.calendar import CalendarEvent
 from app.models.dashboard import Dashboard, DashboardWidget
-from app.models.list import List, ListItem, ListType
+from app.models.list import List, ListType
 from app.models.notification import Notification
 from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
 from app.models.user import User
@@ -23,6 +24,7 @@ from app.schemas.dashboards import (
     DashboardUpdate,
     LayoutUpdate,
     ListWidgetCreate,
+    TrashedDashboardSummary,
     WidgetConfigUpdate,
     WidgetCreate,
     WidgetResponse,
@@ -37,8 +39,6 @@ from app.services.preferences import (
     remove_dashboard_from_preferences,
 )
 from app.services.shares import (
-    cleanup_resource_shares,
-    cleanup_resource_shares_for_many,
     create_share,
     get_resource_share,
     get_resource_shares,
@@ -192,10 +192,11 @@ async def _list_accessible_dashboard_summaries(
             favorite_for_user,
         )
         .where(
+            Dashboard.deleted_at.is_(None),
             or_(
                 Dashboard.user_id == user.id,
                 direct_share_exists,
-            )
+            ),
         )
         .order_by(Dashboard.archived.asc(), favorite_for_user.desc(), Dashboard.updated_at.desc())
     )
@@ -548,9 +549,19 @@ async def delete_dashboard(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Permanently delete a dashboard and its dashboard-owned resources."""
+    """Move a dashboard to the trash (finding #40).
+
+    This used to be the permanent cascade — one misclick took every child list and event with
+    it. Now it stamps `deleted_at`: the dashboard vanishes from every listing and access path
+    (children included, since they resolve access through it), stays restorable from the
+    owner's trash for `trash_retention_days`, and the reaper runs the real purge after that
+    (`services/retention.reap_expired_trash`). Shares are kept so a restore brings the
+    dashboard back exactly as shared; favorites are dropped like archiving does.
+    """
     dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
     permissions.assert_can_delete(role)
+    dashboard.deleted_at = datetime.now(UTC)
+    await _remove_dashboard_from_user_preferences(dashboard, shares, db)
     event_message = await _build_dashboard_event_message(
         db,
         event_type=EventType.dashboard_deleted,
@@ -559,33 +570,81 @@ async def delete_dashboard(
         payload={"name": dashboard.name},
         client_mutation_id=client_mutation_id,
     )
-
-    # Permanent dashboard deletion owns cleanup for every dashboard-scoped child
-    # resource. Future dashboard-owned resource tables should be cleaned up here
-    # by dashboard_id as well.
-    # Sweep ALL child lists, including soft-deleted ones: their dashboard_id FK
-    # has no ON DELETE cascade, so a leftover soft-deleted row would block this
-    # dashboard's delete. Do not re-add a deleted_at filter here.
-    list_result = await db.execute(select(List.id).where(List.dashboard_id == dashboard.id))
-    list_ids = [row[0] for row in list_result.all()]
-    if list_ids:
-        await cleanup_resource_shares_for_many(ResourceType.list, list_ids, db)
-        await db.execute(delete(ListItem).where(ListItem.list_id.in_(list_ids)))
-        await db.execute(delete(List).where(List.id.in_(list_ids)))
-
-    # Same as lists above — sweep soft-deleted events too (no FK cascade).
-    event_result = await db.execute(select(CalendarEvent.id).where(CalendarEvent.dashboard_id == dashboard.id))
-    event_ids = [row[0] for row in event_result.all()]
-    if event_ids:
-        await cleanup_resource_shares_for_many(ResourceType.calendar_event, event_ids, db)
-        await db.execute(delete(CalendarEvent).where(CalendarEvent.id.in_(event_ids)))
-
-    await _remove_dashboard_from_user_preferences(dashboard, shares, db)
-    await db.execute(delete(DashboardWidget).where(DashboardWidget.dashboard_id == dashboard.id))
-    await cleanup_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    await db.execute(delete(Dashboard).where(Dashboard.id == dashboard.id))
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+
+
+# Declared before GET /{dashboard_id} so the static segment wins (same pattern as /default).
+@router.get("/trash", response_model=list[TrashedDashboardSummary])
+async def list_trash(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[TrashedDashboardSummary]:
+    """The caller's own trashed dashboards, newest first, with their purge deadline."""
+    result = await db.execute(
+        select(Dashboard).where(Dashboard.user_id == current_user.id, Dashboard.deleted_at.is_not(None)).order_by(Dashboard.deleted_at.desc())
+    )
+    retention = timedelta(days=settings.trash_retention_days)
+    summaries: list[TrashedDashboardSummary] = []
+    for dashboard in result.scalars().all():
+        # The WHERE guarantees deleted_at; the assert narrows the Optional for the type checker.
+        assert dashboard.deleted_at is not None
+        summaries.append(
+            TrashedDashboardSummary(
+                id=dashboard.id,
+                name=dashboard.name,
+                deleted_at=dashboard.deleted_at,
+                purge_at=dashboard.deleted_at + retention,
+            )
+        )
+    return summaries
+
+
+@router.post("/{dashboard_id}/restore", response_model=DashboardSummary)
+async def restore_dashboard(
+    dashboard_id: uuid.UUID,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    client_mutation_id: ClientMutationIdHeader = None,
+    db: AsyncSession = Depends(get_db),
+) -> DashboardSummary:
+    """Bring a trashed dashboard back, shares and children intact.
+
+    Owner-only by construction: the trash is the owner's space, so this loads by ownership
+    rather than through the access door (which deliberately cannot see trashed rows).
+    """
+    result = await db.execute(
+        select(Dashboard).where(
+            Dashboard.id == dashboard_id,
+            Dashboard.user_id == current_user.id,
+            Dashboard.deleted_at.is_not(None),
+        )
+    )
+    dashboard = result.scalar_one_or_none()
+    if dashboard is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
+
+    dashboard.deleted_at = None
+    shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_updated,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={"changed_fields": ["restored"]},
+        client_mutation_id=client_mutation_id,
+    )
+    await db.commit()
+    await db.refresh(dashboard)
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    return _to_summary(
+        dashboard,
+        "Owned by you",
+        bool(shares),
+        can_edit=True,
+        can_manage_shares=True,
+        is_favorite=False,
+    )
 
 
 @router.get("/default", response_model=DashboardResponse)
@@ -605,7 +664,7 @@ async def get_default_dashboard(
     )
     result = await db.execute(
         select(Dashboard)
-        .where(Dashboard.user_id == current_user.id, Dashboard.archived.is_(False))
+        .where(Dashboard.user_id == current_user.id, Dashboard.archived.is_(False), Dashboard.deleted_at.is_(None))
         .order_by(favorite_for_user.desc(), Dashboard.created_at.asc())
         .limit(1)
     )

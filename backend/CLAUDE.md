@@ -17,7 +17,9 @@ Everything here is a convention an agent can't safely infer from one file.
 
 ## Mutation choreography (every mutating route)
 - Soft-delete is per-table and manual: `User`/`List`/`ListItem`/`CalendarEvent` have
-  `deleted_at` (filter it in every query); `Dashboard`/`DashboardWidget` are **hard-deleted**.
+  `deleted_at` (filter it in every query). `Dashboard.deleted_at` means **in the trash** (#40) —
+  filter it in every access/listing/inheritance query, like `archived`. Only `DashboardWidget`
+  is hard-deleted. The purge cascade lives in `services/retention.reap_expired_trash`.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single
   commit so events land in the same transaction as the mutation.
 - **SSE ordering is load-bearing:** build the event dict (`app/sse/events.py` — flush/refresh)

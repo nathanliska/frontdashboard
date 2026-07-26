@@ -148,7 +148,7 @@ export function DashboardCard({
                   event.stopPropagation()
                   onDelete()
                 }}
-                title="Delete dashboard permanently"
+                title="Move dashboard to trash"
                 className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-zinc-600 hover:text-red-400 transition-colors"
               >
                 <Trash2 size={13} />

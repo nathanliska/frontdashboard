@@ -30,7 +30,9 @@ async def load_dashboard_access(
     # Dashboard-scoped resources should load parent access through this helper so
     # archived dashboards automatically hide their child content unless a route
     # explicitly opts into archived access (for example, the dashboard archive UI).
-    dashboard_filters = [Dashboard.id == dashboard_id]
+    # Trashed dashboards are invisible through this door unconditionally — allow_archived
+    # opts into the archive UI, not the trash (#40). Restore has its own owner-only loader.
+    dashboard_filters = [Dashboard.id == dashboard_id, Dashboard.deleted_at.is_(None)]
     if not allow_archived:
         dashboard_filters.append(Dashboard.archived.is_(False))
 
@@ -68,6 +70,7 @@ async def list_accessible_dashboard_ids(user: User, db: AsyncSession) -> list[uu
     result = await db.execute(
         select(Dashboard.id).where(
             Dashboard.archived.is_(False),
+            Dashboard.deleted_at.is_(None),
             or_(
                 Dashboard.user_id == user.id,
                 Dashboard.id.in_(shared_ids) if shared_ids else false(),
@@ -186,6 +189,7 @@ async def get_shared_dashboards_for_resource(
         .join(DashboardWidget, DashboardWidget.dashboard_id == Dashboard.id)
         .where(
             Dashboard.archived.is_(False),
+            Dashboard.deleted_at.is_(None),
             DashboardWidget.resource_type == resource_type,
             DashboardWidget.resource_id == resource_id,
         )
@@ -273,6 +277,7 @@ async def list_dashboard_managed_resource_ids_for_user(
     accessible_dashboard_result = await db.execute(
         select(Dashboard.id).where(
             Dashboard.archived.is_(False),
+            Dashboard.deleted_at.is_(None),
             or_(
                 Dashboard.id.in_(matching_dashboard_ids),
                 and_(

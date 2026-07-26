@@ -43,8 +43,8 @@ make audit-fix   # apply npm audit fixes (frontend)
 - **Sharing model** (groups were removed): per-resource `ResourceShare` rows — dashboards are
   shared directly with users (viewer/editor, owner = creator); lists and calendar events
   **inherit** access from the dashboard whose widget binds them (their `/shares` endpoints are
-  deliberate 409 stubs). Soft delete via `deleted_at` on lists/items/events; dashboards are
-  hard-deleted.
+  deliberate 409 stubs). Soft delete via `deleted_at` on lists/items/events; dashboards go to a
+  **trash** on DELETE (restorable 30 days, then the reaper purges the full cascade — #40).
 - **Auth**: JWT in HttpOnly cookies + CSRF double-submit pattern. No localStorage tokens.
   Email verification (required for login) + password reset flows; emails send in
   background tasks.

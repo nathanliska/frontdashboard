@@ -67,7 +67,7 @@ in the abstract) are not defined here.
 
 ## Backend
 
-**Soft delete** — Marking a row deleted via `deleted_at` (on `User`/`List`/`ListItem`/`CalendarEvent`) and filtering it in every query, rather than removing it. Dashboards/widgets are hard-deleted instead. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
+**Soft delete** — Marking a row deleted via `deleted_at` (on `User`/`List`/`ListItem`/`CalendarEvent`, and since #40 on `Dashboard`, where it means "in the trash") and filtering it in every query, rather than removing it. Widgets are hard-deleted; the retention reaper purges trashed dashboards and lingering soft-deleted content after 30 days. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
 
 **Layout version** — The `dashboard.version` integer used for optimistic concurrency on layout saves; a client/server mismatch is a 409. See [ADR-008](adr/ADR-008-layout-version-occ.md).
 

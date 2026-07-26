@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-07-19_
+_Last updated: 2026-07-26_
 
 ## What's built
 
@@ -47,8 +47,10 @@ _Last updated: 2026-07-19_
 
 **Dashboards & widgets**
 - Multiple dashboards per user; default "My Dashboard" created on registration. Listing page
-  with favorites, create modal, archive (badge + section + editor banner), hard delete (also
-  removes owned lists/items/events/widgets/shares).
+  with favorites, create modal, archive (badge + section + editor banner), and a **trash** (#40):
+  delete moves the dashboard (with its lists/events) to the owner's trash, restorable for 30 days
+  with the deadline shown; the retention reaper then purges the full cascade. Restore brings
+  shares and children back intact.
 - Editor: react-grid-layout drag/resize, saves with optimistic version → 409 conflict banner +
   reload resolution; settings modal (rename/archive/share).
 - **The persisted layout is canonical; the mobile view is a derived projection.** Below 640px the

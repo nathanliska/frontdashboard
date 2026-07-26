@@ -185,6 +185,7 @@ async def _normalize_accessible_dashboard_ids(
         select(Dashboard.id, Dashboard.user_id).where(
             Dashboard.id.in_(dashboard_uuids),
             Dashboard.archived.is_(False),
+            Dashboard.deleted_at.is_(None),
         )
     )
     dashboard_rows = dashboard_result.all()

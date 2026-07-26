@@ -674,6 +674,14 @@ export const ShareUpdate = z.object({
   role: ShareRole
 })
 
+export type TrashedDashboardSummary = z.infer<typeof TrashedDashboardSummary>
+export const TrashedDashboardSummary = z.object({
+  deleted_at: z.string(),
+  id: z.string(),
+  name: z.string(),
+  purge_at: z.string()
+})
+
 export type UnreadCountResponse = z.infer<typeof UnreadCountResponse>
 export const UnreadCountResponse = z.object({
   count: z.number()

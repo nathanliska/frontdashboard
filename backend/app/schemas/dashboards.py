@@ -126,6 +126,17 @@ class DashboardSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TrashedDashboardSummary(BaseModel):
+    """A dashboard in the owner's trash (finding #40): enough to recognise it and restore it."""
+
+    id: uuid.UUID
+    name: str
+    deleted_at: datetime
+    purge_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class DashboardResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID

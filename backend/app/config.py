@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Background retention sweep of expired auth rows (finding #38).
     reaper_enabled: bool = True
     reaper_interval_hours: int = 6
+    # How long trashed dashboards (and lingering soft-deleted lists/items/events) stay
+    # restorable before the reaper purges them for real (finding #40).
+    trash_retention_days: int = 30
     # How long activity and notification history is kept (finding #38). These are the only two
     # tables that grow with usage rather than with the number of users, so without a horizon they
     # grow forever. 90 days is well past the point anyone scrolls back to.
