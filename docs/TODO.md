@@ -30,7 +30,6 @@ and effort are noted inline where known.
 |------:|-------|---------------|
 | 4 | Data layer, contracts & exposure | #24◐ |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐ |
-| 6 | UX & cleanup | #27 |
 | — | Backlog (unscheduled) | #16, #19◐, #39, #52, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
@@ -45,10 +44,6 @@ and effort are noted inline where known.
 - **#35 — Define & test backup/restore.** Still the most valuable item in this file: **nothing backs the database up today**, confirmed 2026-07-26 — no dumps, and the Unraid appdata backup neither covers Postgres nor stops the container (a file copy of a running Postgres data directory is not a restorable backup). If that box dies, every user's dashboards, lists and events are gone. Deploys run `alembic upgrade head` at container start ([#33](#)) against a migration history that has executed `DELETE`/`DROP TABLE`/`DROP COLUMN`, so the exposure is not only hardware. **Decided 2026-07-26 — the scheduled dump is a backup sidecar container in the Unraid stack, not a script in this repo**: this repo is never deployed to that box (only images are), so a script here would have to be hand-copied and hand-synced — automation in appearance only — and `pg_dump` of a database is not application-specific work. What *does* belong here when it lands: a **restore rehearsal** (restore into a scratch Postgres, assert `alembic_version` matches the repo head and the schema is one the app can run against) and the runbook, including that a restore resets `sessions` so everyone is logged out. Facts already established: prod runs **PostgreSQL 17** (matches dev/test/CI), dumps should be taken with the server's own `pg_dump` inside the container so client and server versions can never disagree, and a flat ~180-day retention is nearly free at this data size — tiering buys nothing. Still unknown: **an off-host destination**. A copy on the machine that died is not a backup, and Unraid parity is not one either. *(Medium)*
 - **#34 — Deploy a matched pair of images (deferred by decision, 2026-07-26).** Both images deploy as mutable `latest`, so a partial push can leave a new frontend talking to an old backend — the one runtime failure the contract gate can't catch ([ADR-018](adr/ADR-018-generated-validated-contracts.md)). **Keeping `latest` was chosen deliberately**; the deploy flow stays as it is. The consequence to be aware of rather than surprised by: pushing moves the tag, which leaves the previous build unnamed and eligible for garbage collection, so **there is currently nothing to roll back *to*** — recovering a bad deploy means rebuilding from an older commit. The cheap half of this finding, if that ever bites, is emitting an immutable `:<sha>` tag alongside `latest` in `deploy.sh` (deploy commands unchanged, one extra push per image); pinning the pair together is the larger half. *(Small-Medium)*
 - **#20◐ — Test against Alembic's deployed schema.** Done: shared fixture upgrades through the full chain, a test runs `alembic check` + heads check, `create_all` gone, notification FK reconciled. Remaining: an upgrade test from a prior data snapshot — pairs naturally with #35's dumps. *(Small)*
-
-## Phase 6 — UX & cleanup
-
-- **#27◐ — Accessible primitives (core done 2026-07-26).** Done on Radix UI: one shared `ui/Dialog` (focus trap, labelling, Escape, focus restore — every modal + confirm migrated; none of the hand-rolled shells trapped focus), `confirm(message, {confirmLabel, tone})` so the button says what it does instead of always "Delete", the toaster is a persistent `role="status"` live region (a conditionally-mounted one announces nothing), NotificationPanel is a Radix Popover (aria-expanded, Escape, focus return), dashboard-card actions live in a visible ≥44px `ui/OverflowMenu` (Radix DropdownMenu), and desktop hover-revealed row actions also reveal on keyboard focus. Remaining: field-linked form errors (validation surfaces as toasts, not `aria-describedby` on the field). *(Small remaining)*
 
 ## Backlog (unscheduled)
 
@@ -70,8 +65,12 @@ weight, so the reasoning survives and nothing here has to be re-derived later.
 - **Dependency/SAST/secret/image scanning in CI** — when the app stores anything beyond calendars,
   lists and dashboards, or when contributors outnumber one. Dependabot + `npm audit` cover the
   realistic case now.
-- **Browser/a11y regression tests (Playwright + axe)** — when #27's accessible primitives land and
-  there is a component library worth pinning against regressions.
+- **Browser/a11y regression tests (Playwright + axe)** — #27 landed, so the primitives now exist
+  (`ui/Dialog`, `ui/OverflowMenu`, `ui/FormField`, the confirm dialog and the live-region toaster)
+  and each is unit-tested for its accessible wiring. What's still missing is *cross-component*
+  coverage in a real browser — focus order across a page, a full keyboard traversal, contrast. Worth
+  it when a regression actually slips through the unit tests, or when the component set grows past
+  what a person can re-check by hand.
 - **Container hardening beyond non-root + digest pinning** (read-only fs, tmpfs, dropped caps,
   `no-new-privileges`, resource/PID limits) — when the origin is reachable outside the Cloudflare
   Tunnel, or when it runs untrusted workloads.

@@ -136,6 +136,13 @@ _Last updated: 2026-07-26_
   The notification panel is a Radix Popover; dashboard-card actions live in a visible Radix
   overflow menu (≥44px target); desktop hover-revealed row actions also reveal on keyboard
   focus; toasts announce via a persistent `role="status"` live region.
+- **Validation is attached to the field that failed**, not toasted: `ui/FormField` wires
+  `htmlFor` + `aria-invalid` + `aria-describedby` and renders the message in a `role="alert"` the
+  input points at, so it is announced on submit *and* again when focus reaches the offending
+  control, and it persists until fixed rather than expiring on a toast timer. Inline editors
+  (list name in the sidebar and on the detail page) validate in the editor for the same reason —
+  the page-level handlers no longer own an empty-name check they couldn't attach to anything.
+  Multi-field forms mark every failing field at once, so the form is fixed in one pass.
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.

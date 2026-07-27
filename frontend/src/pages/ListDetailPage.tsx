@@ -69,11 +69,8 @@ export function ListDetailPage() {
   async function submitListNameEdit(name: string) {
     if (!detail) return
     const trimmedName = name.trim()
-    if (!trimmedName) {
-      toast.error('List name cannot be empty.')
-      return
-    }
-    if (trimmedName === detail.name) return
+    // Empty names are rejected by the inline editor, which attaches the message to the input.
+    if (!trimmedName || trimmedName === detail.name) return
     await updateListName(listId, trimmedName)
   }
 

@@ -1,5 +1,6 @@
 import { Check, Pencil, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { cn } from '../../utils/shared/cn'
 
 export function EditableListName({
   name,
@@ -12,6 +13,7 @@ export function EditableListName({
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(name)
+  const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -22,15 +24,25 @@ export function EditableListName({
 
   function startEditing() {
     setDraft(name)
+    setError(null)
     setEditing(true)
   }
 
   function cancelEditing() {
     setDraft(name)
+    setError(null)
     setEditing(false)
   }
 
   async function submitEdit() {
+    // Validated here rather than by the caller, so the message can be attached to this input
+    // instead of floating away in a toast (#27).
+    if (!draft.trim()) {
+      setError('List name cannot be empty.')
+      inputRef.current?.focus()
+      return
+    }
+    setError(null)
     try {
       await onRename(draft)
       setEditing(false)
@@ -45,7 +57,13 @@ export function EditableListName({
         <input
           ref={inputRef}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          aria-label="List name"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? 'list-name-error' : undefined}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            if (error) setError(null)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()
@@ -56,11 +74,26 @@ export function EditableListName({
               cancelEditing()
             }
           }}
-          className="min-w-0 flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm font-medium text-zinc-100 focus:outline-none focus:border-zinc-500"
+          className={cn(
+            'min-w-0 flex-1 bg-zinc-800 border rounded px-2 py-1 text-sm font-medium text-zinc-100 focus:outline-none',
+            error
+              ? 'border-red-500/60 focus:border-red-500'
+              : 'border-zinc-700 focus:border-zinc-500',
+          )}
         />
-        <p className="order-last basis-full sm:order-0 sm:basis-auto text-xs text-zinc-500">
-          Managed by {activeDashboardName ?? 'this dashboard'}.
+        <p
+          id="list-name-error"
+          role="alert"
+          className="order-last basis-full sm:order-0 sm:basis-auto text-xs text-red-400"
+          hidden={!error}
+        >
+          {error}
         </p>
+        {!error && (
+          <p className="order-last basis-full sm:order-0 sm:basis-auto text-xs text-zinc-500">
+            Managed by {activeDashboardName ?? 'this dashboard'}.
+          </p>
+        )}
         <button
           type="button"
           onClick={() => void submitEdit()}

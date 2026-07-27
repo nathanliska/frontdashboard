@@ -47,3 +47,34 @@ describe('ListSidebarRow drag handle keyboard wiring', () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 })
+
+describe('ListSidebarRow rename validation', () => {
+  it('marks the input invalid and describes it, instead of leaving the page to toast', async () => {
+    const onRename = vi.fn()
+    render(
+      <ListSidebarRow
+        list={makeList({ name: 'Groceries' })}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onRename={onRename}
+        onDelete={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle('Edit name'))
+    const input = screen.getByLabelText('Rename Groceries')
+    fireEvent.change(input, { target: { value: '  ' } })
+    fireEvent.click(screen.getByTitle('Save list name'))
+
+    // The rename never leaves the client, and the message is attached to the field.
+    expect(onRename).not.toHaveBeenCalled()
+    const message = screen.getByRole('alert')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(input).toHaveAttribute('aria-describedby', message.id)
+    expect(message).toHaveTextContent('List name cannot be empty.')
+
+    // Typing clears it rather than making the user submit again to find out.
+    fireEvent.change(input, { target: { value: 'Errands' } })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})

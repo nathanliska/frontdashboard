@@ -62,6 +62,11 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 - **Row/card actions use `ui/OverflowMenu`** (Radix DropdownMenu, visible ≥44px trigger) or, for
   inline icon rows, must reveal on `group-focus-within` as well as hover — hover-only doesn't
   exist for touch or keyboard.
+- **Form validation goes through `ui/FormField`** (or, in an inline editor, the same
+  `aria-invalid` + `aria-describedby` + `role="alert"` wiring done locally) — never a toast. A
+  toast is announced without saying which field it belongs to and disappears on a timer; validate
+  where the input is so the message can point at it. Validate *in* the editor component, not in
+  the page handler above it, or there is nothing to attach the message to.
 - The toaster is a **persistent `role="status"` live region** — do not conditionally mount it;
   a live region that mounts with its first message announces nothing.
 - In tests, Radix menus open on `fireEvent.pointerDown(trigger)`, not `click`.

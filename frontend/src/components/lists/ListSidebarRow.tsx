@@ -23,6 +23,7 @@ export function ListSidebarRow({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(list.name)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -34,15 +35,24 @@ export function ListSidebarRow({
   function startEditing() {
     setConfirmingDelete(false)
     setDraft(list.name)
+    setError(null)
     setEditing(true)
   }
 
   function cancelEditing() {
     setDraft(list.name)
+    setError(null)
     setEditing(false)
   }
 
   async function submitEdit() {
+    // Validated here so the message can be attached to this input rather than toasted (#27).
+    if (!draft.trim()) {
+      setError('List name cannot be empty.')
+      inputRef.current?.focus()
+      return
+    }
+    setError(null)
     try {
       await onRename(list.id, draft)
       setEditing(false)
@@ -99,7 +109,13 @@ export function ListSidebarRow({
           <input
             ref={inputRef}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            aria-label={`Rename ${list.name}`}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${list.id}-name-error` : undefined}
+            onChange={(event) => {
+              setDraft(event.target.value)
+              if (error) setError(null)
+            }}
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
@@ -113,7 +129,12 @@ export function ListSidebarRow({
                 cancelEditing()
               }
             }}
-            className="min-w-0 flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm font-medium text-zinc-100 focus:outline-none focus:border-zinc-500"
+            className={cn(
+              'min-w-0 flex-1 bg-zinc-800 border rounded px-2 py-1 text-sm font-medium text-zinc-100 focus:outline-none',
+              error
+                ? 'border-red-500/60 focus:border-red-500'
+                : 'border-zinc-700 focus:border-zinc-500',
+            )}
           />
         ) : (
           <span className="text-sm font-medium truncate flex-1">{list.name}</span>
@@ -198,6 +219,11 @@ export function ListSidebarRow({
           )}
         </div>
       </div>
+      {error && (
+        <p id={`${list.id}-name-error`} role="alert" className="mt-1 text-xs text-red-400">
+          {error}
+        </p>
+      )}
       <div className="flex items-center gap-2 mt-1">
         <TypeBadge type={list.list_type} />
         <span className="text-xs text-zinc-600">

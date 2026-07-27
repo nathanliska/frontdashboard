@@ -144,11 +144,8 @@ export function ListsLayout() {
   async function handleRenameList(renameListId: string, name: string) {
     const trimmedName = name.trim()
     const currentName = lists.find((l) => l.id === renameListId)?.name
-    if (!trimmedName) {
-      toast.error('List name cannot be empty.')
-      return
-    }
-    if (!currentName || trimmedName === currentName) return
+    // Empty names are rejected by the row editor, which can attach the message to the input.
+    if (!trimmedName || !currentName || trimmedName === currentName) return
     await updateListName(renameListId, trimmedName)
   }
 

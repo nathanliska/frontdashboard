@@ -1,6 +1,7 @@
 import { Home, LockKeyhole, Pencil, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
+import { FormField } from '../components/ui/FormField'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 import { useDashboardStore } from '../stores/dashboard'
@@ -19,6 +20,13 @@ export function ProfilePage() {
   const [editingPassword, setEditingPassword] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
+  // Errors live per field so they can be attached to the input that caused them (#27).
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [passwordErrors, setPasswordErrors] = useState<{
+    current?: string
+    next?: string
+    confirm?: string
+  }>({})
   const homeDashboardId = user?.preferences?.home_dashboard_id ?? null
   const homeDashboard = useMemo(
     () =>
@@ -43,10 +51,12 @@ export function ProfilePage() {
   const currentUser = user
 
   function cancelProfileEdit() {
+    setProfileError(null)
     setEditingProfile(false)
   }
 
   function cancelPasswordEdit() {
+    setPasswordErrors({})
     setEditingPassword(false)
   }
 
@@ -55,15 +65,16 @@ export function ProfilePage() {
     const formData = new FormData(event.currentTarget)
     const trimmedName = String(formData.get('display-name') ?? '').trim()
     if (!trimmedName) {
-      toast.error('Display name is required.')
+      setProfileError('Display name is required.')
       return
     }
 
     if (trimmedName === currentUser.display_name) {
-      toast.error('No profile changes to save.')
+      setProfileError('This is already your display name.')
       return
     }
 
+    setProfileError(null)
     setSavingProfile(true)
     try {
       await updateProfile({ display_name: trimmedName })
@@ -80,18 +91,19 @@ export function ProfilePage() {
     const currentPassword = String(formData.get('current-password') ?? '')
     const newPassword = String(formData.get('new-password') ?? '')
     const confirmPassword = String(formData.get('confirm-password') ?? '')
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      toast.error('Fill out all password fields.')
-      return
+
+    // Every failing field is marked at once, so the user fixes the form in one pass instead of
+    // rediscovering the next problem on each submit.
+    const errors: { current?: string; next?: string; confirm?: string } = {}
+    if (!currentPassword) errors.current = 'Enter your current password.'
+    if (!newPassword) errors.next = 'Enter a new password.'
+    else if (newPassword.length < 8) errors.next = 'Use at least 8 characters.'
+    if (!confirmPassword) errors.confirm = 'Re-enter the new password.'
+    else if (newPassword && newPassword !== confirmPassword) {
+      errors.confirm = 'This does not match the new password.'
     }
-    if (newPassword !== confirmPassword) {
-      toast.error('New password and confirmation do not match.')
-      return
-    }
-    if (newPassword.length < 8) {
-      toast.error('New password must be at least 8 characters.')
-      return
-    }
+    setPasswordErrors(errors)
+    if (Object.keys(errors).length > 0) return
 
     setSavingPassword(true)
     try {
@@ -143,21 +155,18 @@ export function ProfilePage() {
             className="grid gap-4 border-t border-zinc-800/80 px-5 py-4 sm:grid-cols-2"
           >
             <div className="space-y-1.5">
-              <label
-                htmlFor="display-name"
-                className="flex items-center gap-2 text-xs text-zinc-500"
-              >
-                Display name
-              </label>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                <FormField
                   id="display-name"
                   name="display-name"
+                  label="Display name"
                   defaultValue={currentUser.display_name}
+                  error={profileError}
+                  onChange={() => setProfileError(null)}
                   required
-                  className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-zinc-700 focus:outline-none"
+                  className="min-w-0 w-full text-sm"
                 />
-                <div className="flex shrink-0 items-center justify-end gap-2">
+                <div className="flex shrink-0 items-center justify-end gap-2 sm:mt-7">
                   <button
                     type="button"
                     onClick={cancelProfileEdit}
@@ -211,39 +220,37 @@ export function ProfilePage() {
             onSubmit={(event) => void handlePasswordSubmit(event)}
             className="space-y-4 border-t border-zinc-800/80 px-5 py-4"
           >
-            <label className="grid gap-1.5 text-sm">
-              <span className="text-zinc-400">Current password</span>
-              <input
-                name="current-password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:border-zinc-700 focus:outline-none"
-              />
-            </label>
+            <FormField
+              id="current-password"
+              name="current-password"
+              label="Current password"
+              type="password"
+              autoComplete="current-password"
+              error={passwordErrors.current}
+              required
+            />
 
-            <label className="grid gap-1.5 text-sm">
-              <span className="text-zinc-400">New password</span>
-              <input
-                name="new-password"
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={8}
-                className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:border-zinc-700 focus:outline-none"
-              />
-            </label>
+            <FormField
+              id="new-password"
+              name="new-password"
+              label="New password"
+              type="password"
+              autoComplete="new-password"
+              hint="At least 8 characters."
+              error={passwordErrors.next}
+              required
+              minLength={8}
+            />
 
-            <label className="grid gap-1.5 text-sm">
-              <span className="text-zinc-400">Confirm new password</span>
-              <input
-                name="confirm-password"
-                type="password"
-                autoComplete="new-password"
-                required
-                className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-100 focus:border-zinc-700 focus:outline-none"
-              />
-            </label>
+            <FormField
+              id="confirm-password"
+              name="confirm-password"
+              label="Confirm new password"
+              type="password"
+              autoComplete="new-password"
+              error={passwordErrors.confirm}
+              required
+            />
 
             <div className="flex items-center justify-end gap-2">
               <button
