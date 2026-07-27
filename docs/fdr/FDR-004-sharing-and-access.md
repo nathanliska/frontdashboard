@@ -35,7 +35,8 @@ bound to that dashboard inherit the same access. This replaced an earlier groups
 `principal_id`, `role`, `granted_by`). The groups feature was removed.
 **Why:** Direct per-resource sharing matches how a household actually shares ("share this list with my
 partner") without the indirection of group membership. See ADR-001.
-**Tradeoff:** Vestigial `membership.*` event types remain from the removed groups feature.
+**Tradeoff:** None outstanding — the `membership.*` event types this once listed as a leftover have
+since been removed.
 
 ### 2. Owner is the absence of a share row, not a role value
 

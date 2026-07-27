@@ -38,6 +38,14 @@ make audit-fix   # apply npm audit fixes (frontend)
 - Frontend: `npm run lint` / `npm run lint:fix` / `npm run format` (Biome), `npm test` (Vitest).
 - CI (GitHub Actions) runs backend + frontend lint, tests, `ty` type checking, and the
   frontend build on every push and PR. Keep it green.
+- **If a change alters *how* a result is produced rather than *what* it is, asserting on the
+  result proves nothing.** This has bitten three times: scoped-query eviction (the cache drops an
+  entry without notifying, so the rendered output never moves) and the calendar window predicate
+  (the expander already discarded those rows in Python, so the JSON was byte-identical before and
+  after). Both tests passed against the unfixed code. Assert on the mechanism instead — `getState`
+  rather than the DOM, a counter on what reached the expander rather than the response body — and
+  **prove it by breaking the thing back**: stash the change, watch the test fail, restore. A
+  performance or caching test that has never been seen to fail is not evidence.
 
 ## Key architecture decisions
 - **Sharing model** (groups were removed): per-resource `ResourceShare` rows — dashboards are

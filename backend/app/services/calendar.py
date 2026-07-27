@@ -31,6 +31,15 @@ def expand_event_occurrences(
     duration = event.ends_at - event.starts_at
     starts = [event.starts_at] if not event.recurrence else list(_iter_recurrence_starts(event, window_start, window_end))
 
+    # An override can retime an occurrence *into* this window from an original start outside it —
+    # "move next Tuesday's meeting to next month". The iterator above walks the window, not the
+    # series, so that original start is never generated, and overrides are keyed by original
+    # start: without this the moved occurrence vanished from every window that did not also
+    # contain the date it came from. The router's `has_override` clause loads these rows already;
+    # until now the expander threw them away again.
+    generated = set(starts)
+    starts = [*starts, *(start for start in overrides_by_start if start not in generated)]
+
     occurrences: list[ExpandedOccurrence] = []
     for start in starts:
         occurrence = _build_occurrence(event, overrides_by_start.get(start), start, duration)

@@ -361,6 +361,47 @@ async def test_dashboard_favorites_are_per_user_preferences(auth_client: AsyncCl
         await shared_user.__aexit__(None, None, None)
 
 
+async def test_deleting_a_list_strips_its_widget_from_every_layout(auth_client: AsyncClient) -> None:
+    """Deleting the resource has to take the widget bound to it (`remove_resource_widgets`).
+
+    A widget left behind pointing at a deleted list renders as a permanent error tile, and a
+    layout entry left behind reserves grid space for a widget that no longer exists. Only the
+    "nothing bound" early return of this service was exercised before — the part that actually
+    edits the layout and bumps `version` had no test at all, on a path every list deletion runs.
+    """
+    dashboard = await create_dashboard(auth_client, name="Chores")
+
+    set_csrf(auth_client)
+    list_widget = (
+        await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/widgets",
+            json={"widget_type": "list", "config": {"name": "Errands", "list_type": "todo"}},
+        )
+    ).json()["widgets"][0]
+
+    set_csrf(auth_client)
+    after_clock = (
+        await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/widgets",
+            json={"widget_type": "clock", "config": {"timezone": "UTC"}},
+        )
+    ).json()
+    clock_widget_id = next(w["id"] for w in after_clock["widgets"] if w["widget_type"] == "clock")
+    version_before = after_clock["version"]
+    assert {item["i"] for item in after_clock["layout"]} == {list_widget["id"], clock_widget_id}
+
+    set_csrf(auth_client)
+    delete_resp = await auth_client.delete(f"/api/lists/{list_widget['resource_id']}")
+    assert delete_resp.status_code == 204, delete_resp.text
+
+    detail = (await auth_client.get(f"/api/dashboards/{dashboard['id']}")).json()
+    assert [w["id"] for w in detail["widgets"]] == [clock_widget_id], "the bound widget outlived its list"
+    assert [item["i"] for item in detail["layout"]] == [clock_widget_id], "its layout slot was left reserved"
+    # The bump is what tells another open tab its copy of the layout is stale; without it a
+    # concurrent save would overwrite this edit and silently restore the dead widget's slot.
+    assert detail["version"] > version_before
+
+
 async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Widgets")
 

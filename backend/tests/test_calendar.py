@@ -1,7 +1,9 @@
 import uuid
 
+import pytest
 from httpx import AsyncClient
 
+from app.routers import calendar as calendar_router
 from tests.helpers import create_calendar_event, create_dashboard, register_client, set_csrf
 
 
@@ -239,6 +241,137 @@ async def test_recurring_series_starting_before_the_window_still_expands(auth_cl
     assert resp.status_code == 200
     starts = [item["occurrence_start"] for item in resp.json()]
     assert starts == ["2026-04-10T14:00:00Z", "2026-04-11T14:00:00Z"]
+
+
+async def test_finished_and_unstarted_series_are_not_loaded(
+    auth_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recurring events are bounded by the two facts already in the row (#16).
+
+    A series cannot produce an occurrence before its own `starts_at`, and one carrying `until`
+    cannot produce one after it. Both are read from the row and the JSONB rule, so unlike a
+    persisted last-occurrence column there is nothing that can drift out of date.
+
+    Counted at the expander rather than asserted on the response, because the response cannot
+    see this: the expander already discarded these series in Python, so the JSON was identical
+    before the SQL predicate existed. What changed is how much work produced it, and the only
+    way to observe that is to count what reached the expander.
+    """
+    expanded: list[str] = []
+    real_expand = calendar_router.expand_event_occurrences
+
+    def counting_expand(event, *args, **kwargs):
+        expanded.append(event.title)
+        return real_expand(event, *args, **kwargs)
+
+    monkeypatch.setattr(calendar_router, "expand_event_occurrences", counting_expand)
+
+    dashboard = await create_dashboard(auth_client)
+    await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Live series",
+        starts_at="2026-01-05T14:00:00+00:00",
+        ends_at="2026-01-05T14:30:00+00:00",
+        recurrence={"frequency": "daily", "interval": 1},
+    )
+    await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Finished series",
+        starts_at="2019-01-02T14:00:00+00:00",
+        ends_at="2019-01-02T14:30:00+00:00",
+        recurrence={"frequency": "daily", "interval": 1, "until": "2019-06-01T14:00:00+00:00"},
+    )
+    await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Unstarted series",
+        starts_at="2031-01-02T14:00:00+00:00",
+        ends_at="2031-01-02T14:30:00+00:00",
+        recurrence={"frequency": "daily", "interval": 1},
+    )
+
+    resp = await auth_client.get(
+        "/api/calendar/events",
+        params={
+            "window_start": "2026-04-10T00:00:00+00:00",
+            "window_end": "2026-04-11T00:00:00+00:00",
+            "dashboard_id": dashboard["id"],
+        },
+    )
+    assert resp.status_code == 200
+    assert [item["title"] for item in resp.json()] == ["Live series"]
+    # The two dead series never reach Python at all.
+    assert expanded == ["Live series"]
+
+
+async def test_a_series_ending_at_the_window_edge_is_kept(auth_client: AsyncClient) -> None:
+    """`until` bounds the last *start*; the occurrence it names still has a duration.
+
+    A naive `until > window_start` would drop this series, because its final occurrence starts
+    the evening before the window and runs into it — the same straddling case the one-off filter
+    handles by comparing against `ends_at`.
+    """
+    dashboard = await create_dashboard(auth_client)
+    await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Overnight shift",
+        starts_at="2026-01-05T22:00:00+00:00",
+        ends_at="2026-01-06T06:00:00+00:00",
+        recurrence={"frequency": "daily", "interval": 1, "until": "2026-04-09T22:00:00+00:00"},
+    )
+
+    resp = await auth_client.get(
+        "/api/calendar/events",
+        params={
+            "window_start": "2026-04-10T00:00:00+00:00",
+            "window_end": "2026-04-11T00:00:00+00:00",
+            "dashboard_id": dashboard["id"],
+        },
+    )
+    assert resp.status_code == 200
+    assert [item["title"] for item in resp.json()] == ["Overnight shift"]
+
+
+async def test_an_override_rescues_a_series_the_window_bounds_would_drop(auth_client: AsyncClient) -> None:
+    """The unbounded override EXISTS is what makes the two bounds above safe (#16).
+
+    An override can retime an occurrence anywhere — including out of a finished series and into
+    a window months later. Bound the override clause too and this event disappears.
+    """
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Moved from a finished series",
+        starts_at="2019-01-02T14:00:00+00:00",
+        ends_at="2019-01-02T15:00:00+00:00",
+        recurrence={"frequency": "daily", "interval": 1, "until": "2019-01-05T14:00:00+00:00"},
+    )
+    set_csrf(auth_client)
+    moved = await auth_client.patch(
+        f"/api/calendar/events/{event['id']}/occurrences",
+        json={
+            "occurrence_start": "2019-01-03T14:00:00+00:00",
+            "starts_at": "2026-04-10T09:00:00+00:00",
+            "ends_at": "2026-04-10T10:00:00+00:00",
+        },
+    )
+    assert moved.status_code == 200, moved.text
+
+    resp = await auth_client.get(
+        "/api/calendar/events",
+        params={
+            "window_start": "2026-04-10T00:00:00+00:00",
+            "window_end": "2026-04-11T00:00:00+00:00",
+            "dashboard_id": dashboard["id"],
+        },
+    )
+    assert resp.status_code == 200
+    assert [item["title"] for item in resp.json()] == ["Moved from a finished series"]
 
 
 async def test_clearing_recurrence_removes_its_occurrence_overrides(auth_client: AsyncClient) -> None:

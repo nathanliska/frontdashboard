@@ -65,5 +65,5 @@ therefore a migration that drops one CHECK and one FK, not a redesign.
   as was the inheritance-discovery half of `services/shares.py` — a widget-join that looked for
   *every* dashboard binding a resource, which stopped having a second row to find once lists and
   events became dashboard-owned.
-- **Vestiges remain**: `EventType.membership_*` values persist as dead enum members from the removed
-  groups feature (CONTEXT.md), a small cleanup debt.
+- **No vestiges left**: the `EventType.membership_*` members this ADR once recorded as cleanup debt
+  are gone — every one of the 20 remaining members is emitted by live code (verified 2026-07-27).

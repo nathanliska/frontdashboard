@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import DateTime, and_, cast, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -197,22 +197,42 @@ async def list_occurrences(
     # cost of viewing next week grew with the calendar's whole history.
     #
     # A one-off event is bounded by its own times, so the overlap test is the same one
-    # `_overlaps` applies after expansion. A recurring one is not: bounding it in SQL needs its
-    # last occurrence persisted, which the rule (count/until/interval) does not give us — those
-    # still load and are bounded by the expander's skip-ahead instead.
+    # `_overlaps` applies after expansion.
+    #
+    # A recurring one is bounded by two facts already in the row, so no denormalized "last
+    # occurrence" column is needed to use them. Its first occurrence is `starts_at`, so a series
+    # beginning after the window cannot reach back into it. And a rule carrying `until` stops
+    # there, so its last occurrence ends by `until + duration` — read straight out of the JSONB
+    # rule, which cannot go stale the way a copy of it could.
+    #
+    # What still loads unbounded: series with no `until`. A `count`-limited one has an end, but
+    # finding it means expanding the rule, which is exactly the work this predicate exists to
+    # avoid; an unlimited one genuinely runs forever and must be considered for every window.
+    series_duration = CalendarEvent.ends_at - CalendarEvent.starts_at
+    series_until = cast(CalendarEvent.recurrence["until"].astext, DateTime(timezone=True))
+    recurring_in_window = and_(
+        CalendarEvent.recurrence.is_not(None),
+        CalendarEvent.starts_at < window_end,
+        or_(
+            CalendarEvent.recurrence["until"].astext.is_(None),
+            series_until + series_duration > window_start,
+        ),
+    )
     has_override = select(CalendarEventOverride.id).where(CalendarEventOverride.calendar_event_id == CalendarEvent.id).exists()
     result = await db.execute(
         select(CalendarEvent).where(
             CalendarEvent.deleted_at.is_(None),
             CalendarEvent.dashboard_id.in_(dashboard_ids),
             or_(
-                CalendarEvent.recurrence.is_not(None),
+                recurring_in_window,
                 (CalendarEvent.starts_at < window_end) & (CalendarEvent.ends_at > window_start),
-                # An override can move an occurrence outside its event's own times. Only
-                # recurring events can be overridden today, but an event that *was* recurring
-                # can still own override rows written before it was made one-off, and dropping
-                # it here would silently hide it. Cheap insurance: such rows are rare, and
-                # update_event now deletes them when recurrence is cleared.
+                # An override can move an occurrence outside its event's own times — before
+                # `starts_at` or after `until` — so this stays deliberately unbounded, and it is
+                # what makes the two bounds above safe. Only recurring events can be overridden
+                # today, but an event that *was* recurring can still own override rows written
+                # before it was made one-off, and dropping it here would silently hide it. Cheap
+                # insurance: such rows are rare, and update_event now deletes them when
+                # recurrence is cleared.
                 has_override,
             ),
         )

@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-07-26
+**Last reviewed:** 2026-07-27
 
 ## Overview
 
@@ -30,6 +30,16 @@ materialization; a year covers every realistic view.
 **Tradeoff:** Callers must always pass a window, and views spanning more than a year need multiple
 requests.
 
+Which events are *loaded* for a window is a separate, SQL-level question (#16). One-off events are
+bounded by their own times. Recurring ones are bounded by two facts already on the row — a series
+yields nothing before its `starts_at`, and a rule carrying `until` yields nothing after
+`until + duration` — both read from the row and the JSONB rule directly. **A denormalized
+"last occurrence" column was considered and rejected**: it would have to be recomputed whenever
+`starts_at`, `ends_at`, `timezone` or `recurrence` changes, and a single missed recomputation makes
+events silently vanish from the calendar. Series with a `count` limit and no `until` therefore still
+load unbounded — finding their end means expanding the rule, which is the work the predicate exists
+to avoid.
+
 ### 2. Per-occurrence overrides and cancellations, not series edits only
 
 **Decision:** A single occurrence can be overridden or cancelled independently of its series
@@ -41,6 +51,14 @@ override retimes an occurrence — but **that `occurrence_start` names a real in
 recurrence rule cannot be a CHECK**, since deciding it requires expanding the RRULE. That invariant
 is application-level by nature, not by omission, so an override written directly to the database
 can point at an occurrence that does not exist.
+
+Expansion reconciles in **both** directions, which is easy to get wrong in one. Overrides are keyed
+by the occurrence's *original* start, and the expander walks the requested window rather than the
+whole series — so an override that retimes an occurrence into the window from a date outside it has
+no generated start to attach to. Those overrides are collected explicitly (`services/calendar.py`),
+or "move next Tuesday's meeting to next month" would disappear from every window that did not also
+contain the date it came from. This is also what makes the window predicate's deliberately
+unbounded `has_override` clause mean something rather than load rows the expander discards.
 
 ### 3. Day-dependent views refresh at local midnight via `useLocalDay()`
 
