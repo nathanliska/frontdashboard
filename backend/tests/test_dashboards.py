@@ -21,17 +21,20 @@ from tests.helpers import (
 )
 
 
-async def test_default_dashboard_listing_and_shared_access(auth_client: AsyncClient) -> None:
+async def test_home_dashboard_listing_and_shared_access(auth_client: AsyncClient) -> None:
     me = await auth_client.get("/api/auth/me")
     assert me.status_code == 200
     home_dashboard_id = me.json()["preferences"]["home_dashboard_id"]
 
-    default_resp = await auth_client.get("/api/dashboards/default")
-    assert default_resp.status_code == 200
-    default_dashboard = default_resp.json()
-    assert default_dashboard["id"] == home_dashboard_id
-    assert default_dashboard["widgets"] == []
-    assert default_dashboard["layout"] == []
+    # Registration seeds a home dashboard and names it in preferences; the client fetches it by
+    # id like any other. (This used to go through GET /dashboards/default, a survivor of the
+    # one-auto-created-dashboard model that favourites replaced — no client ever called it.)
+    home_resp = await auth_client.get(f"/api/dashboards/{home_dashboard_id}")
+    assert home_resp.status_code == 200
+    home_dashboard = home_resp.json()
+    assert home_dashboard["id"] == home_dashboard_id
+    assert home_dashboard["widgets"] == []
+    assert home_dashboard["layout"] == []
 
     owned_dashboard = await create_dashboard(auth_client, name="Projects")
     owned_detail = await auth_client.get(f"/api/dashboards/{owned_dashboard['id']}")

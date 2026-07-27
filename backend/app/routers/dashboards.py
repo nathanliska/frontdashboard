@@ -634,42 +634,6 @@ async def restore_dashboard(
     )
 
 
-@router.get("/default", response_model=DashboardResponse)
-async def get_default_dashboard(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> DashboardResponse:
-    """Return the user's default active dashboard."""
-    favorite_dashboard_ids = favorite_dashboard_ids_from_preferences(current_user.preferences)
-    favorite_for_user = (
-        case(
-            (Dashboard.id.in_(favorite_dashboard_ids), literal(True)),
-            else_=literal(False),
-        )
-        if favorite_dashboard_ids
-        else literal(False)
-    )
-    result = await db.execute(
-        select(Dashboard)
-        .where(Dashboard.user_id == current_user.id, Dashboard.deleted_at.is_(None))
-        .order_by(favorite_for_user.desc(), Dashboard.created_at.asc())
-        .limit(1)
-    )
-    dashboard = result.scalar_one_or_none()
-    if dashboard is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
-    widgets = await _load_widgets(dashboard.id, db)
-    current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    return _to_response(
-        dashboard,
-        widgets,
-        bool(current_shares),
-        can_edit=True,
-        can_manage_shares=True,
-        is_favorite=dashboard.id in set(favorite_dashboard_ids),
-    )
-
-
 @router.get("/{dashboard_id}", response_model=DashboardResponse)
 async def get_dashboard(
     dashboard_id: uuid.UUID,

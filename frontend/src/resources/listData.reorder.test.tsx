@@ -5,7 +5,7 @@ import { ApiError } from '../api/http'
 import type { ListDetail } from '../api/lists'
 import { useAuthStore } from '../stores/auth'
 import { makeListDetail, makeListSummary } from '../test/fixtures'
-import { hasPendingListMutation } from '../utils/lists/listMutation'
+import { consumePendingListMutation } from '../utils/lists/listMutation'
 import {
   __resetListDataForTests,
   __seedListDetailForTests,
@@ -209,7 +209,8 @@ describe.each(REORDER_KINDS)(
 
       expect(screen.getByTestId('order')).toHaveTextContent('a,b,c')
       await waitFor(() => expect(refetchApi).toHaveBeenCalledTimes(1))
-      expect(hasPendingListMutation(mutationId)).toBe(false)
+      // Nothing left to consume — the bookkeeping was released rather than leaked.
+      expect(consumePendingListMutation(mutationId)).toBe(false)
     })
 
     it('rolls back with zero refetches on a non-409 error, forgetting the pending mutation', async () => {
@@ -226,7 +227,8 @@ describe.each(REORDER_KINDS)(
 
       expect(screen.getByTestId('order')).toHaveTextContent('a,b,c')
       expect(refetchApi).not.toHaveBeenCalled()
-      expect(hasPendingListMutation(mutationId)).toBe(false)
+      // Nothing left to consume — the bookkeeping was released rather than leaked.
+      expect(consumePendingListMutation(mutationId)).toBe(false)
     })
   },
 )
