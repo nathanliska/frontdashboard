@@ -30,7 +30,6 @@ from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.dashboard_widgets import remove_resource_widgets
 from app.services.shares import (
-    cleanup_resource_shares,
     list_accessible_dashboard_ids,
     load_dashboard_access,
 )
@@ -512,7 +511,6 @@ async def delete_list(
         client_mutation_id=client_mutation_id,
     )
     lst.deleted_at = datetime.now(UTC)
-    await cleanup_resource_shares(ResourceType.list, lst.id, db)
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
 

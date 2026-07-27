@@ -13,14 +13,20 @@ Everything here is a convention an agent can't safely infer from one file.
   `list_accessible_dashboard_ids` (`app/services/shares.py`), which silently filter trashed
   dashboards — querying the child table directly breaks the trashed-visibility invariant.
 - List/calendar `/shares` endpoints are **deliberate 409 stubs** — sharing is dashboard-managed
-  and inherited. Don't "implement" them.
+  and inherited. Don't "implement" them. Since #19 the database agrees: CHECK constraints pin
+  `resource_shares.resource_type` to `'dashboard'` and `principal_type` to `'user'`, which is what
+  lets `resource_id` and `principal_id` carry real FKs. Writing a share for any other resource type
+  is now an `IntegrityError`, not a row nobody reads.
 
 ## Mutation choreography (every mutating route)
 - Soft-delete is per-table and manual: `User`/`List`/`ListItem`/`CalendarEvent` have
   `deleted_at` (filter it in every query). `Dashboard.deleted_at` means **in the trash** (#40) —
   filter it in every access/listing/inheritance query — it is the *only* put-away flag now
   (`archived` was removed 2026-07-27, on dashboards and lists alike). Only `DashboardWidget`
-  is hard-deleted. The purge cascade lives in `services/retention.reap_expired_trash`.
+  is hard-deleted. The purge cascade lives in `services/retention.reap_expired_trash` — and it
+  sweeps children **by hand** because their `dashboard_id` FKs have no `ON DELETE CASCADE`. The one
+  exception is `resource_shares.resource_id`, which does cascade, so shares are not swept there at
+  all. Adding a child table means adding it to that sweep, or its rows outlive the purge.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single
   commit so events land in the same transaction as the mutation.
 - **SSE ordering is load-bearing:** build the event dict (`app/sse/events.py` — flush/refresh)

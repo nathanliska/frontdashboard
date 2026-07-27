@@ -13,9 +13,8 @@ def effective_role(
     shares: list[ResourceShare],
 ) -> ShareRole | None:
     """The one role computation (#18): owner -> None, else the highest direct user share,
-    else 404. Everything that resolves owner/viewer/editor goes through here — inheritance
-    (get_inherited_resource_role) maps a *dashboard* role through _dashboard_resource_role
-    after calling this."""
+    else 404. Everything that resolves owner/viewer/editor goes through here — child resources
+    included, since they reach it through their dashboard's shares (`load_dashboard_access`)."""
     if resource_created_by == user_id:
         return None
 

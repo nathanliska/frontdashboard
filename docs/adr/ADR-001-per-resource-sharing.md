@@ -29,6 +29,25 @@ for a child resource is resolved through the binding dashboard
 open StrEnums so more principal types or roles *could* be added, but broader principals and richer
 roles are intentionally not built (see CONTEXT.md "Deliberately deferred").
 
+### The polymorphism is pinned, not preserved (amended 2026-07-27)
+
+`resource_shares.resource_id` was designed to name a list, a calendar event *or* a dashboard, which
+is why it spent its whole life without a foreign key: no single FK can express "points at one of
+three tables". Inheritance made that generality unreachable — migration `q6s8u0w2y4a6` deleted the
+last list and event share rows, the child `/shares` endpoints are 409 stubs, and both write paths
+pass `ResourceType.dashboard` literally.
+
+**Decision: pin the discriminators and take the foreign keys** (finding #19). `resource_type` is
+constrained to `'dashboard'` and `principal_type` to `'user'` by CHECK constraints, which makes
+`resource_id → dashboards.id` (ON DELETE CASCADE) and `principal_id → users.id` expressible. The
+alternatives — per-type share tables, or a set of typed nullable columns with an exactly-one-set
+check — both buy a generality this app decided against; with one live type they are the same schema
+with more moving parts.
+
+The columns keep their names and the enum keeps its members (`DashboardWidget.resource_type` is
+still genuinely polymorphic over lists and events). Re-opening sharing to another resource type is
+therefore a migration that drops one CHECK and one FK, not a redesign.
+
 ## Consequences
 
 - **Simple mental model**: "I shared this dashboard with Alice as editor." No group indirection.
@@ -40,5 +59,11 @@ roles are intentionally not built (see CONTEXT.md "Deliberately deferred").
   as "no access" ([backend/CLAUDE.md](../../backend/CLAUDE.md)).
 - **Trashed-visibility invariant lives in the access helpers**: querying a child table directly
   bypasses the trashed-dashboard filter, so all child access must route through the shares service.
+- **A share row cannot outlive what it names**: the FKs mean a purged dashboard takes its grants
+  with it in the same statement, and a share can never be written against a dashboard or user that
+  does not exist. The trash reaper's hand-ordered share deletes were removed with the constraint,
+  as was the inheritance-discovery half of `services/shares.py` — a widget-join that looked for
+  *every* dashboard binding a resource, which stopped having a second row to find once lists and
+  events became dashboard-owned.
 - **Vestiges remain**: `EventType.membership_*` values persist as dead enum members from the removed
   groups feature (CONTEXT.md), a small cleanup debt.

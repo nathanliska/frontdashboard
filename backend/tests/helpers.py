@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
+from app.models.dashboard import Dashboard
 from app.models.user import User
 
 CSRF = "test-csrf-token"
@@ -45,6 +46,15 @@ async def make_db_user(db: AsyncSession, *, label: str = "user") -> User:
     db.add(user)
     await db.flush()
     return user
+
+
+async def make_db_dashboard(db: AsyncSession, owner: User, *, name: str = "Board") -> Dashboard:
+    """ORM-level dashboard for service tests. `resource_shares.resource_id` has a real FK to this
+    table (#19), so a share test cannot invent a dashboard id any more."""
+    dashboard = Dashboard(user_id=owner.id, name=name)
+    db.add(dashboard)
+    await db.flush()
+    return dashboard
 
 
 async def current_user(client: AsyncClient) -> dict:

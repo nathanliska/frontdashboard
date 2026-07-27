@@ -45,7 +45,6 @@ from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
-from app.models.share import ResourceShare, ResourceType
 
 logger = logging.getLogger("app.retention")
 
@@ -120,10 +119,10 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
     soft-deleted lists, items, and events that were individually trashed and never restored —
     before #40 those lingered forever, purged only if their dashboard happened to be deleted.
 
-    Order matters twice over: children before dashboards (their dashboard_id FKs have no
-    ON DELETE cascade), and share rows before their resources so an interrupted sweep leaves
-    orphaned share rows (inert — access resolution starts from the resource) rather than
-    resources whose shares vanished.
+    Order matters for the children: they go before dashboards, because their `dashboard_id` FKs
+    have no ON DELETE cascade. Share rows are not swept here at all — `resource_shares.resource_id`
+    does cascade (#19), so they die with the dashboard in the same statement, which is strictly
+    better than the hand-ordered deletes this used to run.
     """
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=settings.trash_retention_days)
@@ -134,12 +133,6 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
     # Lists die if individually trashed past the horizon OR owned by a purging dashboard.
     doomed_lists = or_(List.deleted_at < cutoff, List.dashboard_id.in_(expired_dashboard_ids))
     doomed_list_ids = select(List.id).where(doomed_lists).scalar_subquery()
-    await db.execute(
-        delete(ResourceShare).where(
-            ResourceShare.resource_type == ResourceType.list.value,
-            ResourceShare.resource_id.in_(doomed_list_ids),
-        )
-    )
     await db.execute(delete(ListItem).where(ListItem.list_id.in_(doomed_list_ids)))
     # Items individually soft-deleted inside lists that live on.
     item_result = cast(
@@ -154,23 +147,10 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
         CalendarEvent.deleted_at < cutoff,
         CalendarEvent.dashboard_id.in_(expired_dashboard_ids),
     )
-    doomed_event_ids = select(CalendarEvent.id).where(doomed_events).scalar_subquery()
-    await db.execute(
-        delete(ResourceShare).where(
-            ResourceShare.resource_type == ResourceType.calendar_event.value,
-            ResourceShare.resource_id.in_(doomed_event_ids),
-        )
-    )
     event_result = cast("CursorResult[Any]", await db.execute(delete(CalendarEvent).where(doomed_events)))
     counts["calendar_events"] = event_result.rowcount
 
     await db.execute(delete(DashboardWidget).where(DashboardWidget.dashboard_id.in_(expired_dashboard_ids)))
-    await db.execute(
-        delete(ResourceShare).where(
-            ResourceShare.resource_type == ResourceType.dashboard.value,
-            ResourceShare.resource_id.in_(expired_dashboard_ids),
-        )
-    )
     dashboard_result = cast(
         "CursorResult[Any]",
         await db.execute(delete(Dashboard).where(Dashboard.deleted_at < cutoff)),

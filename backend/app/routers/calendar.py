@@ -9,7 +9,7 @@ from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.models.dashboard import Dashboard
-from app.models.share import ResourceShare, ResourceType, ShareRole
+from app.models.share import ResourceShare, ShareRole
 from app.models.user import User
 from app.schemas.calendar import (
     CalendarEventCreate,
@@ -25,7 +25,6 @@ from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.calendar import expand_event_occurrences
 from app.services.shares import (
-    cleanup_resource_shares,
     list_accessible_dashboard_ids,
     load_dashboard_access,
 )
@@ -402,7 +401,6 @@ async def delete_event(
     event.deleted_at = datetime.now(UTC)
     event.updated_by = current_user.id
     event_message = await build_activity_sse_dict(db, activity)
-    await cleanup_resource_shares(ResourceType.calendar_event, event.id, db)
     await db.commit()
     await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
 

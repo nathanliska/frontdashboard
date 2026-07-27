@@ -15,14 +15,15 @@ from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRo
 from app.models.user import User
 from app.schemas.shares import ShareCreate
 from app.services.shares import create_share
-from tests.helpers import make_db_user
+from tests.helpers import make_db_dashboard, make_db_user
 
 
 @pytest.fixture
 async def target(db_session: AsyncSession) -> tuple[uuid.UUID, User, User]:
     owner = await make_db_user(db_session, label="owner")
     recipient = await make_db_user(db_session, label="recipient")
-    return uuid.uuid4(), owner, recipient
+    dashboard = await make_db_dashboard(db_session, owner)
+    return dashboard.id, owner, recipient
 
 
 async def _grant(db: AsyncSession, resource_id: uuid.UUID, recipient: User, owner: User, role: ShareRole) -> ResourceShare:
