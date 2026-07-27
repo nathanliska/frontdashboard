@@ -29,10 +29,25 @@ export async function apiCreateInvite(
   return parseJson(res, InviteCreatedResponse)
 }
 
+// Single-flighted for the same reason as apiGetDashboardShares: the share panel fetches from an
+// effect with no coalescing layer above it, and StrictMode double-invokes that effect in
+// development.
+const inviteListRequests = new Map<string, Promise<InviteResponse[]>>()
+
 export async function apiGetInvites(dashboardId: string): Promise<InviteResponse[]> {
-  const res = await apiFetch(`/api/dashboards/${dashboardId}/invites`)
-  if (!res.ok) throw await readError(res, 'Failed to load invite links.')
-  return parseJson(res, z.array(InviteResponse))
+  const existing = inviteListRequests.get(dashboardId)
+  if (existing) return existing
+
+  const request = (async () => {
+    const res = await apiFetch(`/api/dashboards/${dashboardId}/invites`)
+    if (!res.ok) throw await readError(res, 'Failed to load invite links.')
+    return parseJson(res, z.array(InviteResponse))
+  })().finally(() => {
+    inviteListRequests.delete(dashboardId)
+  })
+
+  inviteListRequests.set(dashboardId, request)
+  return request
 }
 
 export async function apiRevokeInvite(dashboardId: string, inviteId: string): Promise<void> {
@@ -43,11 +58,25 @@ export async function apiRevokeInvite(dashboardId: string, inviteId: string): Pr
   )
 }
 
+// In-flight only — a preview must stay fresh (the invite can be spent at any moment), so this
+// dedupes the StrictMode double-mount without caching the result.
+const invitePreviewRequests = new Map<string, Promise<InvitePreviewResponse>>()
+
 /** Describe an invite without redeeming it. Works signed out — the code is the credential. */
 export async function apiPreviewInvite(code: string): Promise<InvitePreviewResponse> {
-  const res = await apiFetch(`/api/invites/${encodeURIComponent(code)}`)
-  if (!res.ok) throw await readError(res, 'This invite link is no longer valid.')
-  return parseJson(res, InvitePreviewResponse)
+  const existing = invitePreviewRequests.get(code)
+  if (existing) return existing
+
+  const request = (async () => {
+    const res = await apiFetch(`/api/invites/${encodeURIComponent(code)}`)
+    if (!res.ok) throw await readError(res, 'This invite link is no longer valid.')
+    return parseJson(res, InvitePreviewResponse)
+  })().finally(() => {
+    invitePreviewRequests.delete(code)
+  })
+
+  invitePreviewRequests.set(code, request)
+  return request
 }
 
 export async function apiAcceptInvite(code: string): Promise<InviteAcceptResponse> {

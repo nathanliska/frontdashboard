@@ -47,12 +47,12 @@ _Last updated: 2026-07-26_
 
 **Dashboards & widgets**
 - Multiple dashboards per user; default "My Dashboard" created on registration. Listing page
-  with favorites, create modal, archive (badge + section + editor banner), and a **trash** (#40):
-  delete moves the dashboard (with its lists/events) to the owner's trash, restorable for 30 days
-  with the deadline shown; the retention reaper then purges the full cascade. Restore brings
-  shares and children back intact.
+  with favorites, a create modal, and a **Trash** view (#40): delete moves the dashboard (with its
+  lists/events) to the owner's trash, restorable for 30 days with the deadline shown; the retention
+  reaper then purges the full cascade. Restore brings shares and children back intact. **Archive was
+  removed (2026-07-27)** — trash is the only put-away state, for dashboards and lists alike.
 - Editor: react-grid-layout drag/resize, saves with optimistic version → 409 conflict banner +
-  reload resolution; settings modal (rename/archive/share).
+  reload resolution; settings modal (rename/share).
 - **The persisted layout is canonical; the mobile view is a derived projection.** Below 640px the
   grid renders a computed one-column stack, and layout events are ignored there (and on read-only
   dashboards), so the projection can never overwrite the desktop arrangement. Editable mobile
@@ -74,27 +74,29 @@ _Last updated: 2026-07-26_
   the public `/invite/:code` page previews the dashboard and inviter, and accepting is a separate POST
   so scanners can't burn a link.
 - Lists and calendar events inherit access from the dashboard that binds them; their `/shares`
-  endpoints are deliberate 409 stubs. Share/unshare and archiving notify affected users and clean up
+  endpoints are deliberate 409 stubs. Share/unshare notifies affected users and cleans up
   their preferences.
 
 **Lists**
 - Master/detail lists UI with nested routes + mobile slide nav; items support check, due date,
-  priority, category, assignee, manual sort order. Lists must be archived before delete (409
-  otherwise); delete cleans up bound widgets and shares. Soft delete throughout.
+  priority, category, assignee, manual sort order. Delete moves a list to the trash in one action
+  (no archive-first gate) — it unbinds the widgets that showed it and is restorable for 30 days via
+  `GET /lists/trash` + `POST /lists/{id}/restore`. Soft delete throughout.
 - **Drag-and-drop reorder** (dnd-kit) of items within a list and of lists in the sidebar, via
   drag handles with keyboard support. Order persists through two transactional endpoints
   (`PUT /lists/{id}/items/order`, `PUT /lists/order`) that renumber `sort_order` to `0..n-1`
   under a row lock and require the submitted id set to match exactly (409 otherwise); DB CHECK
   constraints keep `sort_order` nonnegative. Checked items stay in place — manual order is the
   only order. New lists append last.
-- The sidebar has an **Active/Archived** selector: Active is the default and is reorderable;
-  archived lists are viewable but not reorderable (the server renumbers only non-archived
-  lists, so the submitted set must equal that set). The dashboard `ListWidget` is deliberately
-  not reorderable — it sits inside react-grid-layout, whose own drag would conflict.
+- The sidebar has an **Active/Trash** selector: Active is the default and is reorderable; Trash
+  lists deleted lists with their purge deadline and a Restore action, and is fetched only when
+  opened. The server renumbers the dashboard's live lists, so a reorder's submitted set must equal
+  that set. The dashboard `ListWidget` is deliberately not reorderable — it sits inside
+  react-grid-layout, whose own drag would conflict.
 - The hot list SSE events — reorder, plus item check/update — carry the new state (id order, or
   the changed fields' values), so other clients patch their caches in place with no follow-up
   GET. A refetch happens only if the payload is absent (older events) or the patched result
-  diverges from cache. Rarer events (create/delete/archive) deliberately keep
+  diverges from cache. Rarer events (create/delete) deliberately keep
   invalidate-and-refetch: self-healing is worth more than bytes on cold paths. See
   [FDR-008](docs/fdr/FDR-008-realtime-sse.md) / [ADR-006](docs/adr/ADR-006-rest-fetch-sse-patch.md).
 

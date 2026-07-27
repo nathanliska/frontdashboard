@@ -21,7 +21,8 @@ class EventType(enum.StrEnum):
     # Lists
     list_created = "list.created"
     list_updated = "list.updated"
-    list_archived = "list.archived"
+    # No `list.archived`: archiving is gone. Historic rows keep the string — `event_type` is a
+    # plain String column read back as `str`, so retired members never break the feed.
     list_deleted = "list.deleted"
     list_reordered = "list.reordered"
     # List items

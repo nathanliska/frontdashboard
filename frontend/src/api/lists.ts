@@ -7,6 +7,7 @@ import {
   type ListType,
   ResourceAccessResponse,
   ShareResponse,
+  TrashedListSummary,
 } from './generated/contract'
 import { parseJson, requestVoid } from './http'
 import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } from './shares'
@@ -20,6 +21,7 @@ export type {
   ListItemResponse as ListItem,
   ListResponse as ListSummary,
   ListType,
+  TrashedListSummary as TrashedList,
 } from './generated/contract'
 
 export interface ListMutationOptions {
@@ -98,7 +100,7 @@ export async function apiCreateList(
 
 export async function apiUpdateList(
   id: string,
-  body: { name?: string; archived?: boolean },
+  body: { name?: string },
   options?: ListMutationOptions,
 ): Promise<ListResponse> {
   const res = await apiFetch(`/api/lists/${id}`, {
@@ -116,6 +118,27 @@ export async function apiDeleteList(id: string, options?: ListMutationOptions): 
     { method: 'DELETE', headers: buildListMutationHeaders(options) },
     'Failed to delete list',
   )
+}
+
+export async function apiGetListTrash(dashboardId: string): Promise<TrashedListSummary[]> {
+  const res = await apiFetch(`/api/lists/trash?dashboard_id=${dashboardId}`)
+  if (!res.ok) throw new Error('Failed to load trashed lists')
+  return parseJson(res, z.array(TrashedListSummary))
+}
+
+export async function apiRestoreList(
+  id: string,
+  options?: ListMutationOptions,
+): Promise<ListResponse> {
+  const res = await apiFetch(`/api/lists/${id}/restore`, {
+    method: 'POST',
+    headers: buildListMutationHeaders(options),
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(data.detail ?? 'Failed to restore list')
+  }
+  return parseJson(res, ListResponse)
 }
 
 export async function apiCreateItem(

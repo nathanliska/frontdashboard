@@ -1,4 +1,4 @@
-import { Archive, Check, GripVertical, Pencil, Trash2, X } from 'lucide-react'
+import { Check, GripVertical, Pencil, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ListSummary } from '../../api/lists'
 import { cn } from '../../utils/shared/cn'
@@ -10,15 +10,13 @@ export function ListSidebarRow({
   selectedId,
   onSelect,
   onRename,
-  onArchive,
   onDelete,
   sortable,
 }: {
-  list: Pick<ListSummary, 'id' | 'name' | 'list_type' | 'item_count' | 'archived'>
+  list: Pick<ListSummary, 'id' | 'name' | 'list_type' | 'item_count'>
   selectedId: string | null
   onSelect: (id: string) => void
   onRename: (listId: string, name: string) => Promise<void>
-  onArchive: (id: string, archived: boolean) => Promise<void>
   onDelete: (listId: string) => Promise<void>
   sortable?: SortableRow
 }) {
@@ -130,7 +128,7 @@ export function ListSidebarRow({
                   setConfirmingDelete(false)
                   void onDelete(list.id)
                 }}
-                title="Confirm delete"
+                title="Confirm move to trash"
                 className="p-0.5 text-zinc-500 hover:text-red-400"
               >
                 <Check size={13} />
@@ -141,7 +139,7 @@ export function ListSidebarRow({
                   event.stopPropagation()
                   setConfirmingDelete(false)
                 }}
-                title="Cancel delete"
+                title="Cancel"
                 className="p-0.5 text-zinc-500 hover:text-zinc-300"
               >
                 <X size={13} />
@@ -189,26 +187,13 @@ export function ListSidebarRow({
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation()
-                  void onArchive(list.id, !list.archived)
+                  setConfirmingDelete(true)
                 }}
-                title={list.archived ? 'Unarchive' : 'Archive'}
-                className="p-0.5 text-zinc-500 hover:text-zinc-300"
+                title="Move to trash"
+                className="p-0.5 text-zinc-500 hover:text-red-400"
               >
-                <Archive size={13} />
+                <Trash2 size={13} />
               </button>
-              {list.archived && (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setConfirmingDelete(true)
-                  }}
-                  title="Delete"
-                  className="p-0.5 text-zinc-500 hover:text-red-400"
-                >
-                  <Trash2 size={13} />
-                </button>
-              )}
             </>
           )}
         </div>
@@ -218,7 +203,6 @@ export function ListSidebarRow({
         <span className="text-xs text-zinc-600">
           {list.item_count} item{list.item_count !== 1 ? 's' : ''}
         </span>
-        {list.archived && <span className="text-xs text-amber-600">archived</span>}
       </div>
     </div>
   )

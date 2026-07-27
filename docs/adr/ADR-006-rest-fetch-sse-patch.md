@@ -19,7 +19,7 @@ Every resource does an **initial REST fetch**; **SSE events then patch caches in
 - **Hot events carry the new state.** List reorder and item check/update payloads carry the changed
   fields (or the id order), so other clients patch in place with no follow-up GET. A refetch happens
   only if the payload is absent (older events) or the patched result diverges from cache.
-- **Cold events invalidate-and-refetch.** Rarer events (create/delete/archive) deliberately keep the
+- **Cold events invalidate-and-refetch.** Rarer events (create/delete) deliberately keep the
   self-healing invalidate-and-refetch path — correctness is worth more than bytes on cold paths.
 - **Echo suppression.** Mutations send a `clientMutationId`; the matching SSE echo is skipped via
   `consumePending…MutationEcho`. On mutation *error* the client must `forgetPending…Mutation(id)` or
@@ -32,7 +32,7 @@ Every resource does an **initial REST fetch**; **SSE events then patch caches in
 
 - **Minimal network on hot paths**: the common mutations (check an item, reorder) propagate as a
   single in-place patch, no round-trip.
-- **Self-healing on cold paths**: create/delete/archive re-fetch, so a missed or malformed event
+- **Self-healing on cold paths**: create/delete re-fetch, so a missed or malformed event
   can't leave the UI permanently wrong for those operations.
 - **Echo bookkeeping is a leak risk**: the `clientMutationId` map must be cleaned on both success and
   error; the error-path `forgetPending…` is easy to forget and has no visible symptom until it

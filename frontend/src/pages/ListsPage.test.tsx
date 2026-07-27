@@ -10,7 +10,7 @@ import { ListsLayout } from './ListsLayout'
 
 vi.mock('../resources/listData', () => ({
   addListItem: vi.fn(),
-  archiveList: vi.fn(),
+  restoreList: vi.fn(),
   createList: vi.fn(),
   deleteList: vi.fn(),
   deleteListItem: vi.fn(),
@@ -32,7 +32,6 @@ function makeSummary(overrides: Partial<ListSummary> = {}): ListSummary {
     name: 'Weekend chores',
     list_type: 'checklist',
     sort_order: 0,
-    archived: false,
     created_by: 'user-1',
     created_at: '2026-04-21T00:00:00Z',
     updated_at: '2026-04-21T00:00:00Z',
@@ -191,7 +190,7 @@ describe('ListsLayout / ListDetailPage', () => {
     vi.mocked(deleteList).mockResolvedValue(undefined)
 
     mockedUseListSummaries.mockReturnValue({
-      data: [makeSummary({ archived: true })],
+      data: [makeSummary()],
       loading: false,
       error: null,
       refetch: () => {},
@@ -207,11 +206,9 @@ describe('ListsLayout / ListDetailPage', () => {
 
     await screen.findByText('Take out recycling')
 
-    // The list is archived, so it's hidden from the default Active sidebar view — switch to
-    // Archived to reach its row (and the Delete action, which only archived rows expose).
-    fireEvent.click(screen.getByRole('button', { name: 'Archived' }))
-    fireEvent.click(screen.getByTitle('Delete'))
-    fireEvent.click(screen.getByTitle('Confirm delete'))
+    // Delete is offered on every row now (trash is recoverable), behind an inline confirm.
+    fireEvent.click(screen.getByTitle('Move to trash'))
+    fireEvent.click(screen.getByTitle('Confirm move to trash'))
 
     await waitFor(() => {
       expect(vi.mocked(deleteList)).toHaveBeenCalledWith('list-1')
@@ -225,7 +222,7 @@ describe('ListsLayout / ListDetailPage', () => {
     vi.mocked(deleteList).mockRejectedValue(new Error('Failed to delete list.'))
 
     mockedUseListSummaries.mockReturnValue({
-      data: [makeSummary({ archived: true })],
+      data: [makeSummary()],
       loading: false,
       error: null,
       refetch: () => {},
@@ -241,11 +238,9 @@ describe('ListsLayout / ListDetailPage', () => {
 
     await screen.findByText('Take out recycling')
 
-    // The list is archived, so it's hidden from the default Active sidebar view — switch to
-    // Archived to reach its row (and the Delete action, which only archived rows expose).
-    fireEvent.click(screen.getByRole('button', { name: 'Archived' }))
-    fireEvent.click(screen.getByTitle('Delete'))
-    fireEvent.click(screen.getByTitle('Confirm delete'))
+    // Delete is offered on every row now (trash is recoverable), behind an inline confirm.
+    fireEvent.click(screen.getByTitle('Move to trash'))
+    fireEvent.click(screen.getByTitle('Confirm move to trash'))
 
     await waitFor(() => {
       expect(vi.mocked(deleteList)).toHaveBeenCalledWith('list-1')

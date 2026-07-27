@@ -30,7 +30,7 @@ and effort are noted inline where known.
 |------:|-------|---------------|
 | 4 | Data layer, contracts & exposure | #24◐ |
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐ |
-| 6 | UX & cleanup | #27, #40 |
+| 6 | UX & cleanup | #27 |
 | — | Backlog (unscheduled) | #16, #19◐, #39, #52, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
@@ -48,8 +48,7 @@ and effort are noted inline where known.
 
 ## Phase 6 — UX & cleanup
 
-- **#27◐ — Accessible primitives (core done 2026-07-26).** Done on Radix UI: one shared `ui/Dialog` (focus trap, labelling, Escape, focus restore — every modal + confirm migrated; none of the hand-rolled shells trapped focus), `confirm(message, {confirmLabel, tone})` so the button says what it does instead of always "Delete", the toaster is a persistent `role="status"` live region (a conditionally-mounted one announces nothing), NotificationPanel is a Radix Popover (aria-expanded, Escape, focus return), dashboard-card actions live in a visible ≥44px `ui/OverflowMenu` (Radix DropdownMenu; trash no longer hides behind archive-first), and desktop hover-revealed row actions also reveal on keyboard focus. Remaining: field-linked form errors (validation surfaces as toasts, not `aria-describedby` on the field). *(Small remaining)*
-- **#40◐ — Recoverable trash lifecycle (dashboards done 2026-07-26).** Done: dashboard DELETE is a trash move — restorable from the owner's trash for 30 days (`trash_retention_days`), purge deadline shown in the UI, shares and children intact on restore; the reaper runs the old delete cascade past the horizon and also purges individually soft-deleted lists/items/events that previously lingered forever ([ADR-007](adr/ADR-007-soft-delete-boundary.md) amended). Remaining: align lists with the same one-action lifecycle (today they still need archive-then-delete and have no restore UI). Card actions moved to #27's visible overflow menu, and dashboard trash no longer hides behind archive-first. *(Small-Medium remaining)*
+- **#27◐ — Accessible primitives (core done 2026-07-26).** Done on Radix UI: one shared `ui/Dialog` (focus trap, labelling, Escape, focus restore — every modal + confirm migrated; none of the hand-rolled shells trapped focus), `confirm(message, {confirmLabel, tone})` so the button says what it does instead of always "Delete", the toaster is a persistent `role="status"` live region (a conditionally-mounted one announces nothing), NotificationPanel is a Radix Popover (aria-expanded, Escape, focus return), dashboard-card actions live in a visible ≥44px `ui/OverflowMenu` (Radix DropdownMenu), and desktop hover-revealed row actions also reveal on keyboard focus. Remaining: field-linked form errors (validation surfaces as toasts, not `aria-describedby` on the field). *(Small remaining)*
 
 ## Backlog (unscheduled)
 

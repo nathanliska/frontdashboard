@@ -1,6 +1,7 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useMemo } from 'react'
 import type { WidgetCreate } from '../../../api/dashboards'
-import { apiGetLists, type ListSummary, type ListType } from '../../../api/lists'
+import type { ListType } from '../../../api/lists'
+import { useListSummaries } from '../../../resources/listData'
 
 export function AddWidgetListStep({
   dashboardId,
@@ -15,31 +16,15 @@ export function AddWidgetListStep({
   dashboardName?: string
   onAdd: (params: WidgetCreate) => Promise<void>
 }) {
-  const [availableLists, setAvailableLists] = useState<ListSummary[]>([])
-  const [loadingLists, setLoadingLists] = useState(true)
+  // Reads the SSE-maintained list cache instead of fetching: if any list widget is on the
+  // dashboard the data is already loaded, so opening the picker costs zero requests.
+  const { data: lists, loading: loadingLists } = useListSummaries(dashboardId)
   const existingListIdKey = existingListIds.join(':')
 
-  useEffect(() => {
-    let cancelled = false
+  const availableLists = useMemo(() => {
     const existingIdSet = new Set(existingListIdKey ? existingListIdKey.split(':') : [])
-
-    void apiGetLists(dashboardId)
-      .then((lists) => {
-        if (cancelled) return
-        setAvailableLists(lists.filter((list) => !existingIdSet.has(list.id)))
-      })
-      .catch(() => {
-        if (cancelled) return
-        setAvailableLists([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingLists(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [dashboardId, existingListIdKey])
+    return (lists ?? []).filter((list) => !existingIdSet.has(list.id))
+  }, [lists, existingListIdKey])
 
   async function handleCreateList(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

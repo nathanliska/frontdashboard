@@ -44,14 +44,16 @@ make audit-fix   # apply npm audit fixes (frontend)
   shared directly with users (viewer/editor, owner = creator); lists and calendar events
   **inherit** access from the dashboard whose widget binds them (their `/shares` endpoints are
   deliberate 409 stubs). Soft delete via `deleted_at` on lists/items/events; dashboards go to a
-  **trash** on DELETE (restorable 30 days, then the reaper purges the full cascade — #40).
+  **trash** on DELETE (restorable 30 days, then the reaper purges the full cascade — #40). Lists
+  follow the same trash contract; there is **no archive state** — it was removed 2026-07-27 in
+  favour of one recoverable put-away action ([ADR-007](docs/adr/ADR-007-soft-delete-boundary.md)).
 - **Auth**: JWT in HttpOnly cookies + CSRF double-submit pattern. No localStorage tokens.
   Email verification (required for login) + password reset flows; emails send in
   background tasks.
 - **Real-time**: SSE (not WebSocket), single multiplexed connection per user.
 - **State**: Zustand stores shared between widgets and full pages. REST for initial fetch,
   SSE for incremental updates.
-- **Dashboards**: multiple per user, favorites + archiving, react-grid-layout with a version
+- **Dashboards**: multiple per user, favorites, react-grid-layout with a version
   integer for conflict detection (stale layout save → 409).
 - **API contract**: the backend's OpenAPI document is authoritative — the frontend's types are
   generated from it (`make contracts`, committed, CI fails on drift) and every response body is

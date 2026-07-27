@@ -6,13 +6,12 @@ import { ListSidebarRow } from './ListSidebarRow'
 
 function makeList(
   overrides: Partial<ListSummary> = {},
-): Pick<ListSummary, 'id' | 'name' | 'list_type' | 'item_count' | 'archived'> {
+): Pick<ListSummary, 'id' | 'name' | 'list_type' | 'item_count'> {
   return {
     id: 'a',
     name: 'A',
     list_type: 'todo',
     item_count: 0,
-    archived: false,
     ...overrides,
   }
 }
@@ -28,7 +27,6 @@ describe('ListSidebarRow drag handle keyboard wiring', () => {
         selectedId={null}
         onSelect={onSelect}
         onRename={vi.fn()}
-        onArchive={vi.fn()}
         onDelete={vi.fn()}
         sortable={{
           setNodeRef: () => {},

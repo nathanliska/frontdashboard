@@ -113,7 +113,7 @@ async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
   // One batch request (#17) — this used to compose summaries + one detail request per list,
   // growing with the dashboard, and its synchronous read of the summaries cache made handler
   // order in useSSE load-bearing. The server is authoritative now; no client cache is read.
-  const details = (await apiGetListDetails(scope.dashboardId)).filter((detail) => !detail.archived)
+  const details = await apiGetListDetails(scope.dashboardId)
 
   return details.flatMap((detail) =>
     detail.items

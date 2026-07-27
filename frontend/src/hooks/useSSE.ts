@@ -58,7 +58,6 @@ type EventRoute = 'list' | 'calendar' | 'dashboard'
 const EVENT_ROUTES: Record<EventType, EventRoute> = {
   'list.created': 'list',
   'list.updated': 'list',
-  'list.archived': 'list',
   'list.deleted': 'list',
   'list.reordered': 'list',
   'list.item.created': 'list',
@@ -106,7 +105,9 @@ function parseFrame<T>(raw: string, schema: ZodType<T>): T | null {
  * Mount once inside the authenticated shell — closed automatically on logout.
  */
 export function useSSE(): void {
-  const user = useAuthStore((s) => s.user)
+  // Key on identity, not the user object: preferences/profile PATCHes replace the object, and
+  // depending on it here tore the EventSource down and reconnected after every such save.
+  const userId = useAuthStore((s) => s.user?.id ?? null)
   const handleDashboardEvent = useDashboardStore((s) => s.handleDashboardEvent)
   const handleDashboardContentEvent = useDashboardStore((s) => s.handleContentEvent)
   const addNotification = useNotificationsStore((s) => s.addFromSse)
@@ -119,7 +120,7 @@ export function useSSE(): void {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reconnectNonce is bumped after an auth-refresh succeeds purely to force teardown/recreate of the EventSource; it's never read in the effect body.
   useEffect(() => {
-    if (!user) return
+    if (!userId) return
 
     let cancelled = false
     const es = new EventSource('/api/sse', { withCredentials: true })
@@ -243,7 +244,7 @@ export function useSSE(): void {
       es.close()
     }
   }, [
-    user,
+    userId,
     handleDashboardEvent,
     handleDashboardContentEvent,
     addNotification,

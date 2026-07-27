@@ -20,6 +20,16 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 - **Echo suppression:** mutations send a `clientMutationId` and the SSE echo is skipped via
   `consumePending…MutationEcho`. On mutation error you must `forgetPending…Mutation(id)` or the
   bookkeeping leaks (see `stores/dashboard.ts`, `resources/listData.ts`).
+- **A mutation's response is the truth — apply it, never refetch it.** Every mutating endpoint
+  returns the updated resource; patch caches/state from that response and let echo suppression
+  absorb the SSE. A GET right after your own successful POST/PATCH/DELETE is a bug (this is how
+  the invite/trash/share double-requests happened). The only sanctioned refetches: 409 divergence
+  (client state provably stale → `invalidateWhere`), server-derived data the client can't compute
+  (calendar occurrence expansion), and someone *else's* change arriving via a non-echo SSE event.
+- Mount-effect fetches with no store/cache above them (settings-modal shares, invite lists) must
+  be single-flighted in `api/*` — StrictMode double-invokes effects in dev and the double GET is
+  visible in the network tab. Anything fetched on a *page* belongs in a store with a loaded-flag
+  cache instead (see `loadTrash`).
 - Any new resource cache needs a `resetXData()` wired into `stores/auth.ts` logout/failed-init,
   or stale data leaks across accounts.
 
@@ -46,8 +56,8 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
   lock, and focus restoration. Render conditionally (`{open && <Dialog …>}`); `onEscape` is for
   stepped modals that back out before closing (AddWidget). Never build a raw
   `role="dialog"` overlay — the hand-rolled ones never trapped focus.
-- **`confirm(message, { confirmLabel, tone })`** — the button must say what it does ("Archive",
-  "Remove", "Move to trash"); defaults are `Delete`/`danger`. Cancel is first in the DOM on
+- **`confirm(message, { confirmLabel, tone })`** — the button must say what it does ("Remove",
+  "Move to trash"); defaults are `Delete`/`danger`. Cancel is first in the DOM on
   purpose: Enter on open cancels, it never destroys.
 - **Row/card actions use `ui/OverflowMenu`** (Radix DropdownMenu, visible ≥44px trigger) or, for
   inline icon rows, must reveal on `group-focus-within` as well as hover — hover-only doesn't

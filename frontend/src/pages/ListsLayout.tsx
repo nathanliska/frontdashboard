@@ -1,17 +1,17 @@
 import { Plus } from 'lucide-react'
 import type { ComponentProps } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet, useMatch, useNavigate, useSearchParams } from 'react-router'
-import type { ListSummary, ListType } from '../api/lists'
+import { apiGetListTrash, type ListSummary, type ListType, type TrashedList } from '../api/lists'
 import { CreateListModal } from '../components/lists/CreateListModal'
 import { ListSidebarRow } from '../components/lists/ListSidebarRow'
 import { SortableList, useSortableRow } from '../components/lists/SortableList'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import {
-  archiveList,
   createList,
   deleteList,
   reorderLists,
+  restoreList,
   updateListName,
   useListSummaries,
 } from '../resources/listData'
@@ -22,7 +22,7 @@ import { cn } from '../utils/shared/cn'
 
 type SidebarRowHandlers = Pick<
   ComponentProps<typeof ListSidebarRow>,
-  'selectedId' | 'onSelect' | 'onRename' | 'onArchive' | 'onDelete'
+  'selectedId' | 'onSelect' | 'onRename' | 'onDelete'
 >
 
 function SortableSidebarRow({
@@ -44,9 +44,10 @@ const TYPE_FILTERS: { value: ListType | 'all'; label: string }[] = [
 ]
 const VIEW_FILTERS: { value: boolean; label: string }[] = [
   { value: false, label: 'Active' },
-  { value: true, label: 'Archived' },
+  { value: true, label: 'Trash' },
 ]
 const EMPTY_LISTS: ListSummary[] = []
+const EMPTY_TRASH: TrashedList[] = []
 
 export function ListsLayout() {
   const navigate = useNavigate()
@@ -58,8 +59,11 @@ export function ListsLayout() {
   const dashboardsLoading = useDashboardStore((s) => s.summariesLoading)
 
   const [typeFilter, setTypeFilter] = useState<ListType | 'all'>('all')
-  const [showArchived, setShowArchived] = useState(false)
+  const [showTrash, setShowTrash] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
+  const [trash, setTrash] = useState<TrashedList[]>(EMPTY_TRASH)
+  const [trashLoading, setTrashLoading] = useState(false)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
 
   const requestedDashboardId = searchParams.get('dashboard_id')
   const [dashboardId, setDashboardId, dashboardsReady] = useInitialDashboardSelection(
@@ -67,11 +71,10 @@ export function ListsLayout() {
     'Failed to load dashboards.',
   )
 
-  const activeDashboards = useMemo(() => dashboards.filter((d) => !d.archived), [dashboards])
   const effectiveDashboardId = useMemo(() => {
-    if (dashboardId && activeDashboards.some((d) => d.id === dashboardId)) return dashboardId
-    return activeDashboards[0]?.id ?? null
-  }, [activeDashboards, dashboardId])
+    if (dashboardId && dashboards.some((d) => d.id === dashboardId)) return dashboardId
+    return dashboards[0]?.id ?? null
+  }, [dashboards, dashboardId])
 
   useEffect(() => {
     if (!dashboardsReady) return
@@ -82,30 +85,41 @@ export function ListsLayout() {
     setSearchParams(next, { replace: true })
   }, [dashboardsReady, effectiveDashboardId, requestedDashboardId, searchParams, setSearchParams])
 
+  const loadTrash = useCallback(() => {
+    if (!effectiveDashboardId) return
+    setTrashLoading(true)
+    void apiGetListTrash(effectiveDashboardId)
+      .then(setTrash)
+      .catch(() => setTrash(EMPTY_TRASH))
+      .finally(() => setTrashLoading(false))
+  }, [effectiveDashboardId])
+
+  // Fetched on demand rather than with the summaries: the trash is a rarely-opened view, and
+  // nothing else on the page needs it.
+  useEffect(() => {
+    if (!showTrash) return
+    loadTrash()
+  }, [showTrash, loadTrash])
+
   const listSummariesQuery = useListSummaries(effectiveDashboardId)
   const lists = listSummariesQuery.data ?? EMPTY_LISTS
   const { loading, error: listsError, refetch: refetchLists } = listSummariesQuery
 
-  // The sidebar has two views — Active (default) and Archived — rather than one flat list
-  // with an "archived" badge mixed in. Archived lists stay reachable (archive/unarchive/delete
-  // depend on it) but are never reorderable.
-  const viewLists = showArchived
-    ? lists.filter((l) => l.archived)
-    : lists.filter((l) => !l.archived)
+  // The sidebar has two views — Active (default) and Trash. Trashed lists are fetched
+  // separately (they are not in the summaries cache at all), and only offer restore.
   const filteredLists =
-    typeFilter === 'all' ? viewLists : viewLists.filter((l) => l.list_type === typeFilter)
-  const activeDashboard = activeDashboards.find((d) => d.id === effectiveDashboardId) ?? null
+    typeFilter === 'all' ? lists : lists.filter((l) => l.list_type === typeFilter)
+  const filteredTrash =
+    typeFilter === 'all' ? trash : trash.filter((l) => l.list_type === typeFilter)
+  const activeDashboard = dashboards.find((d) => d.id === effectiveDashboardId) ?? null
   const showVisibleCreate = showCreate && Boolean(effectiveDashboardId)
 
   // Gate list reordering to exactly the set the backend will renumber: an unfiltered Active
-  // view on a known dashboard with at least 2 rows to reorder. A type filter or the Archived
-  // view would make the optimistic set diverge from the server's non-archived set, so drag is
+  // view on a known dashboard with at least 2 rows to reorder. A type filter or the Trash
+  // view would make the optimistic set diverge from the server's live set, so drag is
   // disabled entirely (no handle) rather than offered and 409ing.
   const canReorderLists =
-    typeFilter === 'all' &&
-    !showArchived &&
-    effectiveDashboardId != null &&
-    filteredLists.length >= 2
+    typeFilter === 'all' && !showTrash && effectiveDashboardId != null && filteredLists.length >= 2
 
   function listUrl(id: string) {
     return `${ROUTES.listDetail(id)}${effectiveDashboardId ? `?dashboard_id=${effectiveDashboardId}` : ''}`
@@ -141,12 +155,31 @@ export function ListsLayout() {
   async function handleDeleteList(deleteListId: string) {
     try {
       await deleteList(deleteListId)
+      // The trash gained a row; refresh it only if the user has it open (or has looked).
+      if (trash !== EMPTY_TRASH) void loadTrash()
       if (listId === deleteListId) {
         navigate(indexUrl(), { replace: true })
       }
     } catch {
       // deleteList already reports the failure
     }
+  }
+
+  async function handleRestoreList(trashed: TrashedList) {
+    if (!effectiveDashboardId) return
+    setRestoringId(trashed.id)
+    try {
+      if (await restoreList(trashed.id, effectiveDashboardId)) {
+        setTrash((current) => current.filter((l) => l.id !== trashed.id))
+        toast.success(`Restored "${trashed.name}".`)
+      }
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
+  function daysUntilPurge(trashed: TrashedList): number {
+    return Math.max(0, Math.ceil((new Date(trashed.purge_at).getTime() - Date.now()) / 86_400_000))
   }
 
   return (
@@ -166,7 +199,7 @@ export function ListsLayout() {
             className="min-w-0 max-w-44 sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
           >
             <option value="">Select dashboard</option>
-            {activeDashboards.map((dashboard) => (
+            {dashboards.map((dashboard) => (
               <option key={dashboard.id} value={dashboard.id}>
                 {dashboard.name}
               </option>
@@ -198,10 +231,10 @@ export function ListsLayout() {
             <button
               type="button"
               key={label}
-              onClick={() => setShowArchived(value)}
+              onClick={() => setShowTrash(value)}
               className={cn(
                 'shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                showArchived === value
+                showTrash === value
                   ? 'bg-zinc-700 text-zinc-100'
                   : 'text-zinc-500 hover:text-zinc-300',
               )}
@@ -238,7 +271,40 @@ export function ListsLayout() {
             listId ? '-translate-x-full pointer-events-none' : 'translate-x-0',
           )}
         >
-          {loading ? (
+          {showTrash ? (
+            trashLoading ? (
+              <p className="text-sm text-zinc-600 px-1">Loading…</p>
+            ) : filteredTrash.length === 0 ? (
+              <p className="text-sm text-zinc-600 px-1">Nothing in the trash.</p>
+            ) : (
+              filteredTrash.map((trashed) => {
+                const days = daysUntilPurge(trashed)
+                return (
+                  <div
+                    key={trashed.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-zinc-300">{trashed.name}</p>
+                      <p className="text-xs text-zinc-600">
+                        {days === 0
+                          ? 'Will be permanently deleted soon'
+                          : `Permanently deleted in ${days} day${days === 1 ? '' : 's'}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleRestoreList(trashed)}
+                      disabled={restoringId === trashed.id}
+                      className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
+                    >
+                      {restoringId === trashed.id ? 'Restoring…' : 'Restore'}
+                    </button>
+                  </div>
+                )
+              })
+            )
+          ) : loading ? (
             <p className="text-sm text-zinc-600 px-1">Loading…</p>
           ) : listsError ? (
             <div className="flex flex-col items-start gap-2 px-1">
@@ -255,9 +321,7 @@ export function ListsLayout() {
             <p className="text-sm text-zinc-600 px-1">
               {!effectiveDashboardId
                 ? 'Select a dashboard to load its lists.'
-                : showArchived
-                  ? 'No archived lists.'
-                  : 'No lists on this dashboard yet.'}
+                : 'No lists on this dashboard yet.'}
             </p>
           ) : (
             <SortableList
@@ -275,7 +339,6 @@ export function ListsLayout() {
                   selectedId={listId}
                   onSelect={(id) => navigate(listUrl(id))}
                   onRename={handleRenameList}
-                  onArchive={archiveList}
                   onDelete={handleDeleteList}
                 />
               )}

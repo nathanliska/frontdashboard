@@ -73,7 +73,6 @@ def _to_summary(
             "id": dashboard.id,
             "user_id": dashboard.user_id,
             "name": dashboard.name,
-            "archived": dashboard.archived,
             "access_description": access_description,
             "is_shared": is_shared,
             "can_edit": can_edit,
@@ -100,7 +99,6 @@ def _to_response(
         id=dashboard.id,
         user_id=dashboard.user_id,
         name=dashboard.name,
-        archived=dashboard.archived,
         is_shared=is_shared,
         can_edit=can_edit,
         can_manage_shares=can_manage_shares,
@@ -140,11 +138,6 @@ async def _resource_shares_by_dashboard(
     for share in shares_result.scalars().all():
         shares_by_dashboard.setdefault(share.resource_id, []).append(share)
     return shares_by_dashboard
-
-
-def _assert_dashboard_not_archived(dashboard: Dashboard) -> None:
-    if dashboard.archived:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dashboard is archived")
 
 
 async def _list_accessible_dashboard_summaries(
@@ -198,7 +191,7 @@ async def _list_accessible_dashboard_summaries(
                 direct_share_exists,
             ),
         )
-        .order_by(Dashboard.archived.asc(), favorite_for_user.desc(), Dashboard.updated_at.desc())
+        .order_by(favorite_for_user.desc(), Dashboard.updated_at.desc())
     )
     rows = result.all()
     shares_by_dashboard = await _resource_shares_by_dashboard(
@@ -504,16 +497,11 @@ async def update_dashboard_meta(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
-    """Update dashboard metadata such as name or archived state."""
-    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
+    """Update dashboard metadata (currently just the name)."""
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     if body.name is not None:
         permissions.assert_can_edit(role)
         dashboard.name = body.name
-    if body.archived is not None:
-        permissions.assert_can_delete(role)
-        dashboard.archived = body.archived
-        if body.archived:
-            await _remove_dashboard_from_user_preferences(dashboard, shares, db)
     event_message = await _build_dashboard_event_message(
         db,
         event_type=EventType.dashboard_updated,
@@ -521,7 +509,6 @@ async def update_dashboard_meta(
         dashboard=dashboard,
         payload={
             "name": dashboard.name,
-            "archived": dashboard.archived,
             "changed_fields": sorted(body.model_fields_set),
         },
         client_mutation_id=client_mutation_id,
@@ -556,9 +543,9 @@ async def delete_dashboard(
     (children included, since they resolve access through it), stays restorable from the
     owner's trash for `trash_retention_days`, and the reaper runs the real purge after that
     (`services/retention.reap_expired_trash`). Shares are kept so a restore brings the
-    dashboard back exactly as shared; favorites are dropped like archiving does.
+    dashboard back exactly as shared; favorites and home are dropped on the way in.
     """
-    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_delete(role)
     dashboard.deleted_at = datetime.now(UTC)
     await _remove_dashboard_from_user_preferences(dashboard, shares, db)
@@ -664,7 +651,7 @@ async def get_default_dashboard(
     )
     result = await db.execute(
         select(Dashboard)
-        .where(Dashboard.user_id == current_user.id, Dashboard.archived.is_(False), Dashboard.deleted_at.is_(None))
+        .where(Dashboard.user_id == current_user.id, Dashboard.deleted_at.is_(None))
         .order_by(favorite_for_user.desc(), Dashboard.created_at.asc())
         .limit(1)
     )
@@ -690,7 +677,7 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
     """Return a dashboard with its widgets and access metadata."""
-    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     widgets = await _load_widgets(dashboard.id, db)
     return _to_response(
         dashboard,
@@ -717,11 +704,9 @@ async def update_layout(
         dashboard_id,
         current_user,
         db,
-        allow_archived=True,
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
-    _assert_dashboard_not_archived(dashboard)
     if dashboard.version != body.version:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -769,11 +754,9 @@ async def add_widget(
         dashboard_id,
         current_user,
         db,
-        allow_archived=True,
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
-    _assert_dashboard_not_archived(dashboard)
     is_shared_dashboard = bool(shares)
     # exclude_unset so the stored config holds exactly the keys the caller sent (typed fields the
     # caller omitted stay absent rather than landing as explicit nulls); extras survive the dump
@@ -798,7 +781,7 @@ async def add_widget(
                     detail="Invalid list type",
                 ) from exc
 
-            # GET /lists orders all non-deleted lists (archived ones included), so
+            # GET /lists orders all non-deleted lists, so
             # the append position must be computed over that same set to land
             # truly last (mirrors create_list's identical append-order fix).
             max_order_result = await db.execute(
@@ -927,9 +910,8 @@ async def update_widget(
     db: AsyncSession = Depends(get_db),
 ) -> WidgetResponse:
     """Update widget configuration on a dashboard."""
-    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
-    _assert_dashboard_not_archived(dashboard)
     result = await db.execute(
         select(DashboardWidget).where(
             DashboardWidget.id == widget_id,
@@ -992,11 +974,9 @@ async def delete_widget(
         dashboard_id,
         current_user,
         db,
-        allow_archived=True,
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
-    _assert_dashboard_not_archived(dashboard)
     result = await db.execute(
         select(DashboardWidget).where(
             DashboardWidget.id == widget_id,
@@ -1034,7 +1014,7 @@ async def list_dashboard_shares(
     db: AsyncSession = Depends(get_db),
 ) -> list[ShareResponse]:
     """List direct shares configured for a dashboard."""
-    dashboard, _shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
+    dashboard, _shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
     shares = await get_resource_shares(ResourceType.dashboard, dashboard_id, db)
     return await resolve_share_responses(shares, db)
@@ -1050,7 +1030,7 @@ async def add_dashboard_share(
     db: AsyncSession = Depends(get_db),
 ) -> ShareResponse:
     """Create or upsert a direct share on a dashboard."""
-    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
     await _validate_share_targets([body], dashboard.user_id, db)
     existing_share = next(
@@ -1102,7 +1082,7 @@ async def update_dashboard_share(
     db: AsyncSession = Depends(get_db),
 ) -> ShareResponse:
     """Change the role for an existing dashboard share."""
-    dashboard, _shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
+    dashboard, _shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
     share = await get_resource_share(ResourceType.dashboard, dashboard_id, share_id, db)
     if share is None:
@@ -1146,7 +1126,7 @@ async def delete_dashboard_share(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Remove a direct share from a dashboard."""
-    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db, allow_archived=True)
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_manage_shares(role)
     share = await get_resource_share(ResourceType.dashboard, dashboard_id, share_id, db)
     if share is None:

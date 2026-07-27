@@ -113,7 +113,6 @@ class DashboardSummary(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     name: str
-    archived: bool
     access_description: str | None = None
     is_shared: bool = False
     can_edit: bool
@@ -141,7 +140,6 @@ class DashboardResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     name: str
-    archived: bool
     is_shared: bool
     can_edit: bool
     can_manage_shares: bool
@@ -170,11 +168,10 @@ class DashboardCreate(BaseModel):
 
 class DashboardUpdate(PatchModel):
     name: DashboardName | None = None
-    archived: bool | None = None
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("name", "archived", mode="before")
+    @field_validator("name", mode="before")
     @classmethod
     def _reject_null_updates(cls, value: object) -> object:
         if value is None:

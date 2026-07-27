@@ -46,7 +46,8 @@ class List(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     list_type: Mapped[ListType] = mapped_column(Enum(ListType, name="list_type"), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Set = "in the trash": hidden everywhere but the owner's trash view, restorable until the
+    # reaper purges it. Lists had an `archived` flag too; it went the same way dashboards' did.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

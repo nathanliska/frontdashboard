@@ -10,15 +10,16 @@ Everything here is a convention an agent can't safely infer from one file.
   for the creator and raises 404 for no access; never write `if role:` guards
   (`app/services/permissions.py`).
 - Child resources (lists, events) get access via `load_dashboard_access` /
-  `list_accessible_dashboard_ids` (`app/services/shares.py`), which silently filter archived
-  dashboards — querying the child table directly breaks the archived-visibility invariant.
+  `list_accessible_dashboard_ids` (`app/services/shares.py`), which silently filter trashed
+  dashboards — querying the child table directly breaks the trashed-visibility invariant.
 - List/calendar `/shares` endpoints are **deliberate 409 stubs** — sharing is dashboard-managed
   and inherited. Don't "implement" them.
 
 ## Mutation choreography (every mutating route)
 - Soft-delete is per-table and manual: `User`/`List`/`ListItem`/`CalendarEvent` have
   `deleted_at` (filter it in every query). `Dashboard.deleted_at` means **in the trash** (#40) —
-  filter it in every access/listing/inheritance query, like `archived`. Only `DashboardWidget`
+  filter it in every access/listing/inheritance query — it is the *only* put-away flag now
+  (`archived` was removed 2026-07-27, on dashboards and lists alike). Only `DashboardWidget`
   is hard-deleted. The purge cascade lives in `services/retention.reap_expired_trash`.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single
   commit so events land in the same transaction as the mutation.

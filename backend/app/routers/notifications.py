@@ -172,7 +172,7 @@ async def list_activity(
             or_(
                 ActivityEvent.event_type != EventType.dashboard_updated.value,
                 ActivityEvent.payload.contains({"changed_fields": ["name"]}),
-                ActivityEvent.payload.contains({"changed_fields": ["archived"]}),
+                ActivityEvent.payload.contains({"changed_fields": ["restored"]}),
             ),
         )
     )

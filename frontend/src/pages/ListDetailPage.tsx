@@ -96,7 +96,7 @@ export function ListDetailPage() {
     await updateListItem(listId, itemId, { checked })
   }
 
-  const sortingEnabled = !!detail && !detail.archived && detail.items.length >= 2
+  const sortingEnabled = !!detail && detail.items.length >= 2
 
   if (!detail) {
     return (
@@ -129,9 +129,6 @@ export function ListDetailPage() {
           onRename={submitListNameEdit}
         />
         <TypeBadge type={detail.list_type} />
-        {detail.archived && (
-          <span className="text-xs text-amber-600 sm:ml-auto">Archived — no new items</span>
-        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
@@ -159,7 +156,7 @@ export function ListDetailPage() {
         )}
       </div>
 
-      {!detail.archived && <AddItemForm key={detail.id} onAdd={handleAddItem} />}
+      <AddItemForm key={detail.id} onAdd={handleAddItem} />
     </div>
   )
 }

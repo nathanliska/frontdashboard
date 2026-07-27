@@ -22,8 +22,10 @@ import {
   apiCreateDashboard,
   apiDeleteDashboard,
   apiGetDashboard,
+  apiGetTrash,
   apiListDashboards,
   apiRemoveWidget,
+  apiRestoreDashboard,
   apiUpdateDashboardMeta,
   apiUpdateLayout,
   apiUpdateWidget,
@@ -31,6 +33,7 @@ import {
   type DashboardSummary,
   type DashboardWidget,
   type LayoutItem,
+  type TrashedDashboard,
   type WidgetCreate,
 } from '../api/dashboards'
 import type { ShareCreate } from '../api/shares'
@@ -76,6 +79,8 @@ let inFlightSummariesLoad: InFlightSummariesLoad | null = null
 let layoutSaveInFlight = false
 let pendingLayoutSave: { dashboardId: string; layout: LayoutItem[] } | null = null
 let queuedSummariesForceReload = false
+let inFlightTrashLoad: InFlightSummariesLoad | null = null
+let queuedTrashForceReload = false
 let latestDashboardRequest: { id: string; serial: number } | null = null
 let scheduledSummariesRefreshTimer: ReturnType<typeof setTimeout> | null = null
 let scheduledSummariesRefreshPromise: Promise<void> | null = null
@@ -168,7 +173,6 @@ function shouldApplyLocalDashboardSummaryTouch(event: SseEvent): boolean {
 
 function sortDashboardSummaries(summaries: DashboardSummary[]): DashboardSummary[] {
   return [...summaries].sort((a, b) => {
-    if (a.archived !== b.archived) return Number(a.archived) - Number(b.archived)
     if (a.is_favorite !== b.is_favorite) return Number(b.is_favorite) - Number(a.is_favorite)
     return b.updated_at.localeCompare(a.updated_at)
   })
@@ -217,12 +221,20 @@ function canSuppressLocalDashboardEcho(event: SseEvent): boolean {
     return true
   }
 
+  // A role change alters nothing this client caches: summaries key access flags off share
+  // *existence* (is_shared/access_description), not role, and the settings modal already applied
+  // the PATCH response. Add/remove echoes still reload — they flip is_shared.
+  if (event.event_type === 'dashboard.share_updated') return true
+
   if (event.event_type !== 'dashboard.updated') return false
 
   const changedFields = getDashboardEventChangedFields(event)
   return (
     changedFields.length > 0 &&
-    changedFields.every((field) => field === 'name' || field === 'layout' || field === 'widgets')
+    changedFields.every(
+      (field) =>
+        field === 'name' || field === 'layout' || field === 'widgets' || field === 'restored',
+    )
   )
 }
 
@@ -271,6 +283,10 @@ export interface DashboardState {
   summaries: DashboardSummary[]
   summariesLoaded: boolean
   summariesLoading: boolean
+  // Trash rides along with the listing: fetched once (loaded-flag cache), invalidated by this
+  // client's delete/restore and by non-echo SSE deleted/restored events.
+  trash: TrashedDashboard[]
+  trashLoaded: boolean
 
   // ── Active editor ──────────────────────────────────────────────────────────
   dashboard: Dashboard | null
@@ -284,10 +300,11 @@ export interface DashboardState {
     name: string
     shares?: ShareCreate[]
   }) => Promise<DashboardSummary | null>
-  archiveDashboard: (id: string, archived: boolean) => Promise<boolean>
   deleteDashboard: (id: string) => Promise<boolean>
   toggleFavorite: (id: string, current: boolean) => Promise<boolean>
   renameDashboard: (id: string, name: string) => Promise<boolean>
+  loadTrash: (force?: boolean) => Promise<void>
+  restoreDashboard: (id: string) => Promise<DashboardSummary | null>
 
   // ── Editor actions ─────────────────────────────────────────────────────────
   loadDashboard: (id: string, options?: LoadDashboardOptions) => Promise<void>
@@ -315,6 +332,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     summaries: [],
     summariesLoaded: false,
     summariesLoading: false,
+    trash: [],
+    trashLoaded: false,
     dashboard: null,
     loading: false,
     loadError: false,
@@ -376,32 +395,6 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       }
     },
 
-    async archiveDashboard(id, archived) {
-      const guard = sessionGuard()
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
-      try {
-        const updated = await apiUpdateDashboardMeta(id, { archived }, { clientMutationId })
-        guard.set((s) => ({
-          summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
-          dashboard:
-            s.dashboard?.id === id
-              ? {
-                  ...s.dashboard,
-                  archived: updated.archived,
-                  version: updated.version,
-                  name: updated.name,
-                }
-              : s.dashboard,
-        }))
-        return true
-      } catch {
-        forgetPendingDashboardMutation(clientMutationId)
-        toast.error(`Failed to ${archived ? 'archive' : 'unarchive'} dashboard.`)
-        return false
-      }
-    },
-
     async deleteDashboard(id) {
       const guard = sessionGuard()
       const clientMutationId = createClientMutationId()
@@ -409,11 +402,65 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       try {
         await apiDeleteDashboard(id, { clientMutationId })
         guard.set((s) => ({ summaries: s.summaries.filter((d) => d.id !== id) }))
+        // The row moved to the trash; the DELETE response carries no trash entry (purge_at), so
+        // refresh the cache it just invalidated.
+        if (guard.isCurrent() && get().trashLoaded) void get().loadTrash(true)
         return true
       } catch {
         forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to delete dashboard.')
         return false
+      }
+    },
+
+    async loadTrash(force = false) {
+      const guard = sessionGuard()
+      if (!force && get().trashLoaded) return
+      if (inFlightTrashLoad) {
+        if (force) queuedTrashForceReload = true
+        return inFlightTrashLoad.promise
+      }
+
+      const currentLoad: InFlightSummariesLoad = { promise: Promise.resolve() }
+      inFlightTrashLoad = currentLoad
+      currentLoad.promise = (async () => {
+        try {
+          do {
+            queuedTrashForceReload = false
+            try {
+              const trash = await apiGetTrash()
+              guard.set({ trash, trashLoaded: true })
+            } catch {
+              // Best-effort: the trash section simply doesn't render if this fails — the primary
+              // listing must not couple to it. Left un-loaded so the next visit retries.
+              break
+            }
+          } while (queuedTrashForceReload)
+        } finally {
+          if (inFlightTrashLoad === currentLoad) inFlightTrashLoad = null
+        }
+      })()
+
+      return currentLoad.promise
+    },
+
+    async restoreDashboard(id) {
+      const guard = sessionGuard()
+      const clientMutationId = createClientMutationId()
+      recordPendingDashboardMutation(clientMutationId)
+      try {
+        const summary = await apiRestoreDashboard(id, { clientMutationId })
+        // The response is the restored summary, so both caches update locally — the SSE echo
+        // (changed_fields ["restored"]) is suppressed instead of triggering a reload.
+        guard.set((s) => ({
+          trash: s.trash.filter((t) => t.id !== id),
+          summaries: sortDashboardSummaries([summary, ...s.summaries.filter((d) => d.id !== id)]),
+        }))
+        return summary
+      } catch (err) {
+        forgetPendingDashboardMutation(clientMutationId)
+        toast.error(err instanceof Error ? err.message : 'Failed to restore dashboard.')
+        return null
       }
     },
 
@@ -454,7 +501,6 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
               ? {
                   ...s.dashboard,
                   name: updated.name,
-                  archived: updated.archived,
                   version: updated.version,
                 }
               : s.dashboard,
@@ -708,12 +754,13 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       // suppress, and access may have been revoked while we were disconnected — so reload
       // both levels immediately (no debounce) and let access loss surface.
       if (event.event_type === 'resync') {
-        const { summaries, summariesLoaded, summariesLoading, dashboard } = get()
+        const { summaries, summariesLoaded, summariesLoading, trashLoaded, dashboard } = get()
         const activeId = dashboard?.id ?? null
         await Promise.all([
           summariesLoaded || summariesLoading || summaries.length > 0
             ? get().loadSummaries(true)
             : null,
+          trashLoaded ? get().loadTrash(true) : null,
           activeId
             ? get().loadDashboard(activeId, { background: true, surfaceAccessLoss: true })
             : null,
@@ -730,6 +777,16 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       const hasLocalMutationEcho = consumePendingDashboardMutationEcho(event)
       const shouldSuppressLocalMutationReload =
         hasLocalMutationEcho && canSuppressLocalDashboardEcho(event)
+
+      // Trash membership changed somewhere this client didn't see (own mutations update the
+      // cache from their responses and suppress the echo, so this only fires for other sessions).
+      const affectsTrash =
+        event.event_type === 'dashboard.deleted' ||
+        (event.event_type === 'dashboard.updated' &&
+          getDashboardEventChangedFields(event).includes('restored'))
+      if (affectsTrash && !shouldSuppressLocalMutationReload && get().trashLoaded) {
+        void get().loadTrash(true)
+      }
 
       const { summaries, summariesLoaded, summariesLoading } = get()
       let summariesRefreshPromise: Promise<void> | null = null
@@ -832,6 +889,8 @@ export function resetDashboardData(): void {
   resolveScheduledSummariesRefresh?.()
   inFlightDashboardLoad = null
   inFlightSummariesLoad = null
+  inFlightTrashLoad = null
+  queuedTrashForceReload = false
   layoutSaveInFlight = false
   pendingLayoutSave = null
   queuedSummariesForceReload = false
@@ -845,6 +904,8 @@ export function resetDashboardData(): void {
     summaries: [],
     summariesLoaded: false,
     summariesLoading: false,
+    trash: [],
+    trashLoaded: false,
     dashboard: null,
     loading: false,
     loadError: false,

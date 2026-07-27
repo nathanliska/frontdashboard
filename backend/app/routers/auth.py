@@ -184,7 +184,6 @@ async def _normalize_accessible_dashboard_ids(
     dashboard_result = await db.execute(
         select(Dashboard.id, Dashboard.user_id).where(
             Dashboard.id.in_(dashboard_uuids),
-            Dashboard.archived.is_(False),
             Dashboard.deleted_at.is_(None),
         )
     )

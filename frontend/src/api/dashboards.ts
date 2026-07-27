@@ -129,7 +129,7 @@ export async function apiCreateDashboard(
 
 export async function apiUpdateDashboardMeta(
   id: string,
-  data: { name?: string; archived?: boolean },
+  data: { name?: string },
   options?: DashboardMutationOptions,
 ): Promise<DashboardSummary> {
   const res = await apiFetch(`/api/dashboards/${id}`, {
@@ -158,8 +158,14 @@ export async function apiGetTrash(): Promise<TrashedDashboardSummary[]> {
   return parseJson(res, z.array(TrashedDashboardSummary))
 }
 
-export async function apiRestoreDashboard(id: string): Promise<DashboardSummaryType> {
-  const res = await apiFetch(`/api/dashboards/${id}/restore`, { method: 'POST' })
+export async function apiRestoreDashboard(
+  id: string,
+  options?: DashboardMutationOptions,
+): Promise<DashboardSummaryType> {
+  const res = await apiFetch(`/api/dashboards/${id}/restore`, {
+    method: 'POST',
+    headers: buildDashboardMutationHeaders(options),
+  })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { detail?: string }
     throw new Error(data.detail ?? 'Failed to restore dashboard')

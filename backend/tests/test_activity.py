@@ -118,28 +118,12 @@ async def test_list_item_events_include_client_mutation_id_in_payload(db_client:
 
 
 @pytest.mark.asyncio
-async def test_list_archived_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-
-    set_csrf(db_client)
-    resp = await db_client.patch(f"/api/lists/{lst['id']}", json={"archived": True})
-    assert resp.status_code == 200
-
-    event = await _latest_event(db_session)
-    assert event.event_type == EventType.list_archived
-    assert str(event.entity_id) == lst["id"]
-
-
-@pytest.mark.asyncio
 async def test_list_deleted_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
     await register_user(db_client, "alice@example.com", display_name="Alice")
     dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
     set_csrf(db_client)
-    await db_client.patch(f"/api/lists/{lst['id']}", json={"archived": True})
     resp = await db_client.delete(f"/api/lists/{lst['id']}")
     assert resp.status_code == 204
 

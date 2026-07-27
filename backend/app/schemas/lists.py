@@ -17,9 +17,8 @@ class ListUpdate(PatchModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(None, min_length=1, max_length=200)
-    archived: bool | None = None
 
-    @field_validator("name", "archived", mode="before")
+    @field_validator("name", mode="before")
     @classmethod
     def _reject_null_updates(cls, value: object) -> object:
         if value is None:
@@ -35,11 +34,23 @@ class ListResponse(BaseModel):
     name: str
     list_type: ListType
     sort_order: int
-    archived: bool
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
     item_count: int
+
+
+class TrashedListSummary(BaseModel):
+    """A list in the trash: enough to recognise it and restore it. Mirrors the dashboard trash."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    dashboard_id: uuid.UUID
+    name: str
+    list_type: ListType
+    deleted_at: datetime
+    purge_at: datetime
 
 
 class ListItemCreate(BaseModel):

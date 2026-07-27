@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
+from app.config import settings
 from app.database import get_db
 from app.models.dashboard import Dashboard
 from app.models.list import List, ListItem
@@ -22,6 +23,7 @@ from app.schemas.lists import (
     ListReorder,
     ListResponse,
     ListUpdate,
+    TrashedListSummary,
 )
 from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessResponse
 from app.services import permissions
@@ -114,7 +116,6 @@ def _list_response(lst: List, item_count: int) -> ListResponse:
         name=lst.name,
         list_type=lst.list_type,
         sort_order=lst.sort_order,
-        archived=lst.archived,
         created_by=lst.created_by,
         created_at=lst.created_at,
         updated_at=lst.updated_at,
@@ -165,8 +166,8 @@ async def create_list(
     )
     permissions.assert_can_edit(role)
 
-    # GET /lists orders all non-deleted lists (archived ones included), so the
-    # append position must be computed over that same set to land truly last.
+    # GET /lists orders all non-deleted lists, so the append position must be
+    # computed over that same set to land truly last.
     max_order_result = await db.execute(
         select(func.max(List.sort_order)).where(
             List.dashboard_id == dashboard.id,
@@ -246,7 +247,7 @@ async def reorder_lists(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Atomically renumber a dashboard's non-archived lists to the submitted order."""
+    """Atomically renumber a dashboard's live lists to the submitted order."""
     dashboard, shares, role = await load_dashboard_access(body.dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -255,7 +256,6 @@ async def reorder_lists(
         .where(
             List.dashboard_id == body.dashboard_id,
             List.deleted_at.is_(None),
-            List.archived.is_(False),
         )
         .order_by(List.id)
         .with_for_update()
@@ -301,7 +301,7 @@ async def list_list_details(
     list made the request count grow with the dashboard. Three queries total, regardless of
     how many lists there are.
     """
-    # The canonical parent door (#18): read access suffices, and an archived dashboard hides
+    # The canonical parent door (#18): read access suffices, and a trashed dashboard hides
     # its child content (404) exactly as the per-list routes do.
     await load_dashboard_access(dashboard_id, current_user, db)
 
@@ -328,7 +328,6 @@ async def list_list_details(
             name=lst.name,
             list_type=lst.list_type,
             sort_order=lst.sort_order,
-            archived=lst.archived,
             created_by=lst.created_by,
             created_at=lst.created_at,
             updated_at=lst.updated_at,
@@ -337,6 +336,91 @@ async def list_list_details(
         )
         for lst in lists
     ]
+
+
+# Declared before GET /{list_id} so the static segment wins (same pattern as /details).
+@router.get("/trash", response_model=list[TrashedListSummary])
+async def list_trash(
+    dashboard_id: uuid.UUID | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[TrashedListSummary]:
+    """Trashed lists on dashboards the caller can see, newest first, with their purge deadline.
+
+    Scoped by dashboard access rather than ownership (unlike the dashboard trash): a list belongs
+    to its dashboard, so anyone who can edit the dashboard put it there and can take it back.
+    Lists whose dashboard is itself trashed are excluded — they come back with the dashboard.
+    """
+    accessible_dashboard_ids = await list_accessible_dashboard_ids(current_user, db)
+    if not accessible_dashboard_ids:
+        return []
+
+    if dashboard_id is not None:
+        if dashboard_id not in accessible_dashboard_ids:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
+        dashboard_ids = [dashboard_id]
+    else:
+        dashboard_ids = accessible_dashboard_ids
+
+    result = await db.execute(select(List).where(List.deleted_at.is_not(None), List.dashboard_id.in_(dashboard_ids)).order_by(List.deleted_at.desc()))
+    retention = timedelta(days=settings.trash_retention_days)
+    summaries: list[TrashedListSummary] = []
+    for lst in result.scalars().all():
+        # The WHERE guarantees deleted_at; the assert narrows the Optional for the type checker.
+        assert lst.deleted_at is not None
+        summaries.append(
+            TrashedListSummary(
+                id=lst.id,
+                dashboard_id=lst.dashboard_id,
+                name=lst.name,
+                list_type=lst.list_type,
+                deleted_at=lst.deleted_at,
+                purge_at=lst.deleted_at + retention,
+            )
+        )
+    return summaries
+
+
+@router.post("/{list_id}/restore", response_model=ListResponse)
+async def restore_list(
+    list_id: uuid.UUID,
+    client_mutation_id: ClientMutationIdHeader = None,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ListResponse:
+    """Bring a trashed list back to its dashboard.
+
+    The widgets that showed it were unbound on delete and are not recreated — the list returns to
+    the sidebar, and it can be placed on the grid again. Access still runs through the parent
+    dashboard, so a list whose dashboard is itself trashed cannot be restored on its own: restore
+    the dashboard and the list comes back with it.
+    """
+    result = await db.execute(select(List).where(List.id == list_id, List.deleted_at.is_not(None)))
+    lst = result.scalar_one_or_none()
+    if lst is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="List not found")
+
+    dashboard, shares, role = await load_dashboard_access(lst.dashboard_id, current_user, db)
+    permissions.assert_can_edit(role)
+
+    lst.deleted_at = None
+    lst.updated_by = current_user.id
+
+    event_message = await _build_list_event_message(
+        db,
+        event_type=EventType.list_created,
+        current_user=current_user,
+        dashboard=dashboard,
+        entity_type="list",
+        entity_id=lst.id,
+        payload={"name": lst.name, "restored": True},
+        client_mutation_id=client_mutation_id,
+    )
+    await db.commit()
+    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == lst.id, ListItem.deleted_at.is_(None)))
+    return await _mutated_list_response(db, lst, count_result.scalar_one())
 
 
 @router.get("/{list_id}", response_model=ListDetailResponse)
@@ -357,7 +441,6 @@ async def get_list(
         name=lst.name,
         list_type=lst.list_type,
         sort_order=lst.sort_order,
-        archived=lst.archived,
         created_by=lst.created_by,
         created_at=lst.created_at,
         updated_at=lst.updated_at,
@@ -381,18 +464,16 @@ async def update_list(
 
     if body.name is not None:
         lst.name = body.name
-    if body.archived is not None:
-        lst.archived = body.archived
     lst.updated_by = current_user.id
 
     event_message = await _build_list_event_message(
         db,
-        event_type=EventType.list_archived if body.archived is not None else EventType.list_updated,
+        event_type=EventType.list_updated,
         current_user=current_user,
         dashboard=dashboard,
         entity_type="list",
         entity_id=lst.id,
-        payload={"name": lst.name, "archived": lst.archived},
+        payload={"name": lst.name},
         client_mutation_id=client_mutation_id,
     )
     await db.commit()
@@ -409,11 +490,15 @@ async def delete_list(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Soft-delete an archived list and clean up dependent resources."""
+    """Move a list to the trash, unbinding the widgets that showed it.
+
+    Recoverable via POST /{list_id}/restore until the reaper purges it past
+    `trash_retention_days` — the same contract dashboards have. There is no archive-first gate
+    any more: it existed to make an unrecoverable delete deliberate, and the delete is no longer
+    unrecoverable.
+    """
     lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     permissions.assert_can_edit(role)
-    if not lst.archived:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="List must be archived before it can be deleted")
     await remove_resource_widgets(ResourceType.list.value, lst.id, db)
 
     event_message = await _build_list_event_message(
@@ -450,9 +535,6 @@ async def create_item(
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
-    if lst.archived:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot add items to an archived list")
-
     max_order_result = await db.execute(select(func.max(ListItem.sort_order)).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)))
     next_order = (max_order_result.scalar_one() or -1) + 1
 

@@ -9,6 +9,7 @@ import {
   apiGetLists,
   apiReorderItems,
   apiReorderLists,
+  apiRestoreList,
   apiUpdateItem,
   apiUpdateList,
   type ListDetail,
@@ -207,18 +208,6 @@ export async function updateListName(id: string, name: string): Promise<void> {
   }
 }
 
-export async function archiveList(id: string, archived: boolean): Promise<void> {
-  const { clientMutationId, options } = nextListMutationOptions()
-  try {
-    const updated = await apiUpdateList(id, { archived }, options)
-    patchListSummaryById(id, () => updated)
-    patchListDetailById(id, (detail) => ({ ...detail, archived }))
-  } catch {
-    forgetPendingListMutation(clientMutationId)
-    toast.error('Failed to archive list.')
-  }
-}
-
 export async function deleteList(id: string): Promise<void> {
   const { clientMutationId, options } = nextListMutationOptions()
   try {
@@ -226,8 +215,29 @@ export async function deleteList(id: string): Promise<void> {
     removeListFromCaches(id)
   } catch (error) {
     forgetPendingListMutation(clientMutationId)
-    toast.error('Failed to delete list.')
-    throw error instanceof Error ? error : new Error('Failed to delete list.')
+    toast.error('Failed to move list to trash.')
+    throw error instanceof Error ? error : new Error('Failed to move list to trash.')
+  }
+}
+
+export async function restoreList(id: string, dashboardId: string): Promise<ListSummary | null> {
+  const { clientMutationId, options } = nextListMutationOptions()
+  try {
+    const restored = await apiRestoreList(id, options)
+    // The response is the restored row, so the summaries cache is patched from it rather than
+    // refetched; the SSE echo for our own mutation is suppressed.
+    listSummariesQuery.updateWhere(
+      (scope) => scope.dashboardId === dashboardId,
+      (state) =>
+        state.data
+          ? { ...state, data: [...state.data.filter((l) => l.id !== id), restored] }
+          : state,
+    )
+    return restored
+  } catch (error) {
+    forgetPendingListMutation(clientMutationId)
+    toast.error(error instanceof Error ? error.message : 'Failed to restore list.')
+    return null
   }
 }
 
@@ -316,24 +326,6 @@ export async function reorderListItems(listId: string, orderedIds: string[]): Pr
   }
 }
 
-/**
- * Apply an Active-only list order to a full set of summaries.
- *
- * `orderedIds` covers only non-archived lists (the sidebar reorders the Active
- * view, and the server renumbers only non-archived rows), while the cache holds
- * every summary for the dashboard. Archived rows keep their stale `sort_order`
- * and are appended after the active ones.
- *
- * Both the optimistic mutation and the `list.reordered` SSE branch go through
- * here so their results cannot drift apart. Returns `null` on divergence.
- */
-function applyActiveListOrder(rows: ListSummary[], orderedIds: string[]): ListSummary[] | null {
-  const archived = rows.filter((l) => l.archived)
-  const active = rows.filter((l) => !l.archived)
-  const orderedActive = orderByIds(active, orderedIds)
-  return orderedActive ? [...orderedActive, ...archived] : null
-}
-
 export async function reorderLists(dashboardId: string, orderedIds: string[]): Promise<void> {
   const previous = listSummariesQuery.getState({ dashboardId }).data ?? null
   const { clientMutationId, options } = nextListMutationOptions()
@@ -342,7 +334,7 @@ export async function reorderLists(dashboardId: string, orderedIds: string[]): P
     (scope) => scope.dashboardId === dashboardId,
     (state) => {
       if (!state.data) return state
-      const ordered = applyActiveListOrder(state.data, orderedIds)
+      const ordered = orderByIds(state.data, orderedIds)
       return ordered ? { ...state, data: ordered } : state
     },
   )
@@ -470,7 +462,7 @@ export function handleListResourceEvent(event: ResourceEvent): void {
           (scope) => scope.dashboardId === dashboardId,
           (state) => {
             if (!state.data) return state
-            const ordered = applyActiveListOrder(state.data, listIds)
+            const ordered = orderByIds(state.data, listIds)
             if (!ordered) {
               diverged = true
               return state

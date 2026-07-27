@@ -6,24 +6,25 @@
 ## Overview
 
 Dashboards are the top-level surface: a user has multiple, each a grid of widgets they arrange. This
-FDR covers the dashboard lifecycle (create, favorite, archive, delete), the grid layout editor, and
+FDR covers the dashboard lifecycle (create, favorite, trash, restore), the grid layout editor, and
 how concurrent and mobile edits are kept safe. Widgets themselves are [FDR-003](FDR-003-widgets.md);
 sharing is [FDR-004](FDR-004-sharing-and-access.md).
 
 ## Behavior
 
 - **Multiple dashboards per user.** A default "My Dashboard" is created at registration. A listing
-  page shows all of them with favorites, a create modal, and archive state.
+  page shows all of them with favorites, a create modal, and a Trash view.
 - **Favorites and home.** Dashboards can be favorited; a user picks a home dashboard in their profile.
-- **Archive.** A dashboard can be archived (shown with a badge, in its own section, with an editor
-  banner) rather than deleted. Archived dashboards are filtered out of child-resource access.
+- **Trash is the only put-away state.** There is no archive: a dashboard is either live or in the
+  trash. Trashed dashboards are filtered out of every listing and out of child-resource access
+  ([ADR-007](../adr/ADR-007-soft-delete-boundary.md)).
 - **Delete is hard and cascading.** Deleting a dashboard also removes its owned lists, items, events,
   widgets, and shares.
 - **Editor.** Drag/resize widgets on a react-grid-layout grid; changes save automatically. A
   conflicting concurrent save shows a banner and reloads rather than clobbering.
 - **Mobile is read-only stacking.** Below 640px the grid renders as a computed single-column stack;
   it never writes a layout back.
-- **Settings modal.** Rename, archive, and share from a per-dashboard settings modal.
+- **Settings modal.** Rename and share from a per-dashboard settings modal.
 - **Mutations preserve user input on failure.** A failed create/rename/widget-add/share-add keeps
   what the user typed instead of discarding it.
 
@@ -63,7 +64,7 @@ restorable — shares and children intact — until the reaper purges it after 3
 **Why:** A dashboard is the access root for everything on it; the old immediate cascade meant one
 misclick permanently destroyed content several people used. See ADR-007 (amended).
 **Tradeoff:** Trashed rows must be filtered at every access/listing/inheritance site (same footgun
-class as `archived`), and the purge cascade now runs in the reaper rather than the request path.
+class as the old `archived` flag did), and the purge cascade runs in the reaper rather than the request path.
 
 ### 5. All dashboard mutations share one success/failure contract
 

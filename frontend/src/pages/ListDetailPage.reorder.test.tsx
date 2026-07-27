@@ -44,7 +44,6 @@ describe('ListDetailPage item reordering', () => {
   // items to have an order worth changing.
   it.each([
     { name: 'an editable list with three items', detail: {}, handles: 3, disabled: false },
-    { name: 'an archived list', detail: { archived: true }, handles: 0, disabled: true },
     { name: 'a single-item list', detail: { itemIds: ['a'] }, handles: 0, disabled: true },
   ])('renders $handles drag handles for $name', ({ detail, handles, disabled }) => {
     mockedUseListDetail.mockReturnValue({

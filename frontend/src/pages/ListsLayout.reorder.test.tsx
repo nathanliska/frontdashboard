@@ -19,6 +19,11 @@ vi.mock('../resources/listData', async (importOriginal) => ({
   useListSummaries: () => mockedUseListSummaries(),
 }))
 
+vi.mock('../api/lists', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/lists')>()),
+  apiGetListTrash: () => Promise.resolve([]),
+}))
+
 vi.mock('../components/lists/SortableList', async () => {
   const { sortableListMock } = await import('../test/sortable-list')
   return sortableListMock(sortableListSpy)
@@ -60,11 +65,11 @@ describe('ListsLayout list reordering', () => {
       handles: 3,
     },
     {
-      view: 'the Active view while an archived list exists on the dashboard',
-      lists: [...ACTIVE_THREE, makeListSummary({ id: 'd', name: 'D', archived: true })],
+      view: 'the Active view with four lists',
+      lists: [...ACTIVE_THREE, makeListSummary({ id: 'd', name: 'D' })],
       filter: null,
-      handles: 3,
-      absent: ['D'],
+      handles: 4,
+      present: ['D'],
     },
     {
       view: 'a type-filtered view',
@@ -77,24 +82,12 @@ describe('ListsLayout list reordering', () => {
       handles: 0,
     },
     {
-      view: 'the Archived view',
-      lists: [
-        ...ACTIVE_THREE,
-        makeListSummary({ id: 'd', name: 'D', archived: true }),
-        makeListSummary({ id: 'e', name: 'E', archived: true }),
-      ],
-      filter: 'Archived',
-      handles: 0,
-      present: ['D', 'E'],
-      absent: ['A'],
-    },
-    {
       view: 'a single-list dashboard',
       lists: [makeListSummary({ id: 'a', name: 'A' })],
       filter: null,
       handles: 0,
     },
-  ])('renders $handles drag handles in $view', ({ lists, filter, handles, present, absent }) => {
+  ])('renders $handles drag handles in $view', ({ lists, filter, handles, present }) => {
     showLists(lists)
     renderLayout()
     if (filter) fireEvent.click(screen.getByRole('button', { name: filter }))
@@ -102,7 +95,21 @@ describe('ListsLayout list reordering', () => {
     expect(screen.queryAllByLabelText('Reorder list')).toHaveLength(handles)
     expect(sortableListSpy).toHaveBeenCalledWith(handles === 0, expect.any(Function))
     for (const name of present ?? []) expect(screen.getByText(name)).toBeInTheDocument()
-    for (const name of absent ?? []) expect(screen.queryByText(name)).not.toBeInTheDocument()
+  })
+
+  // The Trash view renders restore rows, not a sortable list — so there is no SortableList to
+  // disable, and the active rows are gone entirely.
+  it('renders neither drag handles nor a sortable list in the Trash view', async () => {
+    showLists(ACTIVE_THREE)
+    renderLayout()
+    sortableListSpy.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trash' }))
+
+    expect(await screen.findByText('Nothing in the trash.')).toBeInTheDocument()
+    expect(screen.queryAllByLabelText('Reorder list')).toHaveLength(0)
+    expect(screen.queryByText('A')).not.toBeInTheDocument()
+    expect(sortableListSpy).not.toHaveBeenCalled()
   })
 
   it('wires the SortableList onReorder callback to reorderLists(dashboardId, orderedIds)', () => {

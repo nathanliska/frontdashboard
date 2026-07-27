@@ -87,7 +87,7 @@ function authenticate() {
  * immediately, call the API, roll back on failure, refetch once on a 409 or when a remote payload
  * disagrees with what we hold. These cases are mirrored, so they are stated once and run against
  * both. Behavior that exists on only one side — self-echo suppression and the in-flight-fetch race
- * for items, archived-subset handling for lists — stays as its own test below, because that is
+ * for items — stays as its own test below, because that is
  * where the two genuinely differ.
  */
 const REORDER_KINDS = [
@@ -370,70 +370,5 @@ describe('reorderListItems / list.item.reordered — item-specific behavior', ()
     // for any future resync/remount) triggers a second GET that converges the client.
     // Against the pre-fix code this stays at 1 forever.
     await waitFor(() => expect(apiGetList).toHaveBeenCalledTimes(2))
-  })
-})
-
-describe('reorderLists / list.reordered — archived-list behavior', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    __resetListDataForTests()
-    authenticate()
-  })
-
-  // Only active lists are draggable, so an order arriving for them must be applied to that subset
-  // without discarding the archived rows the cache also holds.
-  const withArchived = [
-    makeListSummary({ id: 'a' }),
-    makeListSummary({ id: 'b' }),
-    makeListSummary({ id: 'zz', archived: true }),
-    makeListSummary({ id: 'c' }),
-  ]
-
-  it('optimistically reorders only the active subset, preserving an archived list', async () => {
-    __seedListSummariesForTests('dash-1', withArchived)
-    apiReorderLists.mockResolvedValueOnce(undefined)
-
-    render(<ListsProbe />)
-    expect(screen.getByTestId('order')).toHaveTextContent('a,b,zz,c')
-
-    let pending!: Promise<void>
-    act(() => {
-      pending = reorderLists('dash-1', ['c', 'a', 'b'])
-    })
-
-    // Must land immediately, reordering only the active lists and keeping the archived one —
-    // not bailing out to unchanged state because orderedIds.length !== rows.length.
-    expect(screen.getByTestId('order')).toHaveTextContent('c,a,b,zz')
-    expect(apiReorderLists).toHaveBeenCalledWith('dash-1', ['c', 'a', 'b'], expect.any(Object))
-
-    await act(async () => {
-      await pending
-    })
-    expect(apiGetLists).not.toHaveBeenCalled()
-  })
-
-  it('reorders the non-archived subset from a remote payload, appends archived, and issues no GET', async () => {
-    __seedListSummariesForTests('dash-1', withArchived)
-
-    render(<ListsProbe />)
-    expect(screen.getByTestId('order')).toHaveTextContent('a,b,zz,c')
-
-    act(() => {
-      handleListResourceEvent({
-        event_id: 1,
-        event_type: 'list.reordered',
-        entity_type: 'dashboard',
-        entity_id: 'dash-1',
-        entity_version: 2,
-        actor_id: 'other-user',
-        actor_display_name: 'Other User',
-        payload: { dashboard_id: 'dash-1', list_ids: ['c', 'b', 'a'] },
-        created_at: '2026-04-05T00:00:01Z',
-      })
-    })
-
-    expect(screen.getByTestId('order')).toHaveTextContent('c,b,a,zz')
-    expect(apiGetLists).not.toHaveBeenCalled()
-    expect(apiGetList).not.toHaveBeenCalled()
   })
 })

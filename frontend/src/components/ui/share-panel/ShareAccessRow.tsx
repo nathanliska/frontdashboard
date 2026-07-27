@@ -26,7 +26,7 @@ export const ShareAccessRow = memo(function ShareAccessRow({
         value={item.role}
         onChange={(event) => void onUpdate(item, event.target.value as ShareRole)}
         disabled={busy}
-        className="rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700 disabled:opacity-50"
+        className="h-8 rounded-md border border-zinc-800 bg-zinc-950 px-2.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-700 disabled:opacity-50"
       >
         {roleOptions.map((option) => (
           <option key={option.value} value={option.value}>
@@ -38,7 +38,7 @@ export const ShareAccessRow = memo(function ShareAccessRow({
         type="button"
         onClick={() => void onRemove(item)}
         disabled={busy}
-        className="rounded-md p-2 text-zinc-600 hover:text-red-400 transition-colors disabled:opacity-50"
+        className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:text-red-400 transition-colors disabled:opacity-50"
         aria-label={`Remove ${item.principal_name}`}
         title="Remove access"
       >

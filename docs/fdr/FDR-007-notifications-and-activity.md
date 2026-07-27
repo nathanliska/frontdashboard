@@ -16,7 +16,7 @@ delivery.
   live via SSE.
 - **Activity feed.** A keyset-paginated log of the caller's *own* events, with noisy event types
   hidden by default.
-- **Sharing triggers notifications.** Share, unshare, and archive actions notify the affected users.
+- **Sharing triggers notifications.** Share and unshare actions notify the affected users.
 
 ## Design Decisions
 

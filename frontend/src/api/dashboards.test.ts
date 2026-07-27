@@ -64,7 +64,6 @@ describe('response boundary validation', () => {
     id: 'dash-1',
     user_id: 'user-1',
     name: 'Primary Dashboard',
-    archived: false,
     can_edit: true,
     can_manage_shares: true,
     is_favorite: false,

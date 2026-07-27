@@ -75,9 +75,6 @@ async def create_invite(
 ) -> InviteCreatedResponse:
     """Mint an invite code. The raw code is returned here and nowhere else, ever again."""
     dashboard = await _dashboard_for_share_management(dashboard_id, current_user, db)
-    if dashboard.archived:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dashboard is archived")
-
     code, invite = await issue_invite(dashboard.id, body.role, current_user.id, db)
     await db.commit()
     return InviteCreatedResponse(
@@ -135,7 +132,7 @@ async def preview_invite(
 
     result = await db.execute(select(Dashboard).where(Dashboard.id == invite.dashboard_id))
     dashboard = result.scalar_one_or_none()
-    if dashboard is None or dashboard.archived:
+    if dashboard is None or dashboard.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
 
     inviter = await db.get(User, invite.created_by)
@@ -162,7 +159,7 @@ async def accept_invite(
 
     result = await db.execute(select(Dashboard).where(Dashboard.id == invite.dashboard_id))
     dashboard = result.scalar_one_or_none()
-    if dashboard is None or dashboard.archived:
+    if dashboard is None or dashboard.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
 
     role = ShareRole(invite.role)

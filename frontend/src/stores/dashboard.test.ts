@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Dashboard, DashboardSummary } from '../api/dashboards'
+import type { Dashboard, DashboardSummary, TrashedDashboard } from '../api/dashboards'
 import { RESYNC_SIGNAL, type SseEvent } from '../hooks/useSSE'
 import {
   __resetPendingDashboardMutationsForTests,
@@ -18,8 +18,10 @@ const {
   apiCreateDashboard,
   apiDeleteDashboard,
   apiGetDashboard,
+  apiGetTrash,
   apiListDashboards,
   apiRemoveWidget,
+  apiRestoreDashboard,
   apiUpdateDashboardMeta,
   apiUpdateLayout,
   apiUpdateWidget,
@@ -28,8 +30,10 @@ const {
   apiCreateDashboard: vi.fn(),
   apiDeleteDashboard: vi.fn(),
   apiGetDashboard: vi.fn(),
+  apiGetTrash: vi.fn(),
   apiListDashboards: vi.fn(),
   apiRemoveWidget: vi.fn(),
+  apiRestoreDashboard: vi.fn(),
   apiUpdateDashboardMeta: vi.fn(),
   apiUpdateLayout: vi.fn(),
   apiUpdateWidget: vi.fn(),
@@ -52,8 +56,10 @@ vi.mock('../api/dashboards', () => ({
   apiCreateDashboard,
   apiDeleteDashboard,
   apiGetDashboard,
+  apiGetTrash,
   apiListDashboards,
   apiRemoveWidget,
+  apiRestoreDashboard,
   apiUpdateDashboardMeta,
   apiUpdateLayout,
   apiUpdateWidget,
@@ -66,7 +72,6 @@ function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummar
     id: 'dash-1',
     user_id: 'user-1',
     name: 'Primary Dashboard',
-    archived: false,
     access_description: 'Owned by you',
     is_shared: false,
     can_edit: true,
@@ -84,7 +89,6 @@ function makeDashboard(overrides: Partial<Dashboard> = {}): Dashboard {
     id: 'dash-1',
     user_id: 'user-1',
     name: 'Primary Dashboard',
-    archived: false,
     is_shared: false,
     can_edit: true,
     can_manage_shares: true,
@@ -92,6 +96,16 @@ function makeDashboard(overrides: Partial<Dashboard> = {}): Dashboard {
     layout: [],
     version: 1,
     widgets: [],
+    ...overrides,
+  }
+}
+
+function makeTrashed(overrides: Partial<TrashedDashboard> = {}): TrashedDashboard {
+  return {
+    id: 'dash-9',
+    name: 'Old Dashboard',
+    deleted_at: '2026-04-05T00:00:00Z',
+    purge_at: '2026-05-05T00:00:00Z',
     ...overrides,
   }
 }
@@ -335,6 +349,31 @@ describe('useDashboardStore', () => {
 
     expect(apiGetDashboard).toHaveBeenCalledWith('dash-1')
     expect(useDashboardStore.getState().dashboard?.id).toBe('dash-1')
+  })
+
+  it('suppresses all reloads for a local share role-change echo (share_updated)', async () => {
+    recordPendingDashboardMutation('share-mut-2')
+
+    useDashboardStore.setState({
+      summaries: [makeSummary()],
+      summariesLoaded: true,
+      dashboard: makeDashboard(),
+    })
+
+    await useDashboardStore.getState().handleDashboardEvent(
+      makeSseEvent({
+        event_type: 'dashboard.share_updated',
+        entity_version: 2,
+        payload: {
+          dashboard_id: 'dash-1',
+          client_mutation_id: 'share-mut-2',
+        },
+      }),
+    )
+
+    // A role change alters nothing this client caches — no summaries or dashboard refetch.
+    expect(apiListDashboards).not.toHaveBeenCalled()
+    expect(apiGetDashboard).not.toHaveBeenCalled()
   })
 
   it('still reloads summaries and the active dashboard for local share echoes', async () => {
@@ -993,6 +1032,108 @@ describe('useDashboardStore', () => {
 
     expect(apiGetDashboard).toHaveBeenCalledWith('dash-1')
     expect(useDashboardStore.getState().dashboard?.name).toBe('Refreshed Dashboard')
+  })
+
+  it('loadTrash single-flights concurrent calls and caches the result', async () => {
+    apiGetTrash.mockResolvedValue([makeTrashed()])
+
+    // StrictMode's double-mounted effect collapses to one request…
+    await Promise.all([
+      useDashboardStore.getState().loadTrash(),
+      useDashboardStore.getState().loadTrash(),
+    ])
+    expect(apiGetTrash).toHaveBeenCalledTimes(1)
+    expect(useDashboardStore.getState().trash).toHaveLength(1)
+
+    // …a revisit costs nothing…
+    await useDashboardStore.getState().loadTrash()
+    expect(apiGetTrash).toHaveBeenCalledTimes(1)
+
+    // …and only an explicit force refetches.
+    await useDashboardStore.getState().loadTrash(true)
+    expect(apiGetTrash).toHaveBeenCalledTimes(2)
+  })
+
+  it('a failed trash load stays un-cached so the next visit retries', async () => {
+    apiGetTrash.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce([makeTrashed()])
+
+    await useDashboardStore.getState().loadTrash()
+    expect(useDashboardStore.getState().trashLoaded).toBe(false)
+
+    await useDashboardStore.getState().loadTrash()
+    expect(useDashboardStore.getState().trash).toHaveLength(1)
+    expect(useDashboardStore.getState().trashLoaded).toBe(true)
+  })
+
+  it('deleteDashboard refreshes an already-loaded trash cache', async () => {
+    apiDeleteDashboard.mockResolvedValue(undefined)
+    apiGetTrash.mockResolvedValue([makeTrashed({ id: 'dash-1' })])
+    useDashboardStore.setState({
+      summaries: [makeSummary()],
+      summariesLoaded: true,
+      trash: [],
+      trashLoaded: true,
+    })
+
+    expect(await useDashboardStore.getState().deleteDashboard('dash-1')).toBe(true)
+    expect(useDashboardStore.getState().summaries).toHaveLength(0)
+    await vi.waitFor(() => expect(useDashboardStore.getState().trash).toHaveLength(1))
+  })
+
+  it('restoreDashboard updates both caches locally and suppresses its SSE echo', async () => {
+    apiRestoreDashboard.mockResolvedValue(makeSummary({ id: 'dash-9', name: 'Old Dashboard' }))
+    useDashboardStore.setState({
+      summaries: [],
+      summariesLoaded: true,
+      trash: [makeTrashed({ id: 'dash-9' })],
+      trashLoaded: true,
+    })
+
+    expect(await useDashboardStore.getState().restoreDashboard('dash-9')).toMatchObject({
+      id: 'dash-9',
+    })
+    expect(useDashboardStore.getState().trash).toHaveLength(0)
+    expect(useDashboardStore.getState().summaries[0]?.id).toBe('dash-9')
+
+    const clientMutationId = (
+      apiRestoreDashboard.mock.calls[0]?.[1] as { clientMutationId?: string } | undefined
+    )?.clientMutationId
+    expect(clientMutationId).toBeTruthy()
+
+    await useDashboardStore.getState().handleDashboardEvent(
+      makeSseEvent({
+        entity_id: 'dash-9',
+        payload: {
+          dashboard_id: 'dash-9',
+          changed_fields: ['restored'],
+          client_mutation_id: clientMutationId,
+        },
+      }),
+    )
+
+    expect(apiListDashboards).not.toHaveBeenCalled()
+    expect(apiGetTrash).not.toHaveBeenCalled()
+  })
+
+  it('reloads the trash cache for a restore done in another session', async () => {
+    apiGetTrash.mockResolvedValue([])
+    apiListDashboards.mockResolvedValue([makeSummary()])
+    useDashboardStore.setState({
+      summaries: [makeSummary()],
+      summariesLoaded: true,
+      trash: [makeTrashed({ id: 'dash-1' })],
+      trashLoaded: true,
+    })
+
+    await useDashboardStore.getState().handleDashboardEvent(
+      makeSseEvent({
+        actor_id: 'user-2',
+        payload: { dashboard_id: 'dash-1', changed_fields: ['restored'] },
+      }),
+    )
+
+    await vi.waitFor(() => expect(apiGetTrash).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(useDashboardStore.getState().trash).toHaveLength(0))
   })
 
   it('resetDashboardData clears store fields and the pending-mutation map', () => {

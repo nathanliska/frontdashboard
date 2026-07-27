@@ -21,7 +21,7 @@ bound to that dashboard inherit the same access. This replaced an earlier groups
   dashboard whose widget binds them. They have no independent sharing UI.
 - **Unshare and role change.** Access can be revoked or changed; affected users are notified and their
   preferences (e.g. home dashboard) are cleaned up.
-- **Archiving affects visibility.** Archived dashboards are filtered out when resolving child-resource
+- **Trashing affects visibility.** Trashed dashboards are filtered out when resolving child-resource
   access.
 - **Only the invite carries identity outward.** The preview names the inviter and the dashboard,
   because the recipient has to know what they are joining. Nothing else in the product will tell one
@@ -54,7 +54,7 @@ deliberately return 409.
 **Why:** Sharing at the dashboard level keeps a bound resource exactly as shared as its dashboard —
 no confusing "list shared more widely than the board it's on." See ADR-001.
 **Tradeoff:** You can't share a single list independently of its dashboard. The access helpers also
-own the archived-dashboard filter, so child tables must never be queried directly for access.
+own the trashed-dashboard filter, so child tables must never be queried directly for access.
 
 ### 4. Only `user` principals, only viewer/editor roles
 

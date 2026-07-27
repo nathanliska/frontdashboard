@@ -17,7 +17,6 @@ export type EventType = z.infer<typeof EventType>
 export const EventType = z.union([
   z.literal('list.created'),
   z.literal('list.updated'),
-  z.literal('list.archived'),
   z.literal('list.deleted'),
   z.literal('list.reordered'),
   z.literal('list.item.created'),
@@ -307,7 +306,6 @@ export const ListWidgetResponse = z.object({
 
 export type DashboardResponse = z.infer<typeof DashboardResponse>
 export const DashboardResponse = z.object({
-  archived: z.boolean(),
   can_edit: z.boolean(),
   can_manage_shares: z.boolean(),
   id: z.string(),
@@ -332,7 +330,6 @@ export const DashboardSummary = z.object({
   access_description: z
     .union([z.union([z.string(), z.null()]), z.undefined()])
     .optional(),
-  archived: z.boolean(),
   can_edit: z.boolean(),
   can_manage_shares: z.boolean(),
   created_at: z.string(),
@@ -347,7 +344,6 @@ export const DashboardSummary = z.object({
 
 export type DashboardUpdate = z.infer<typeof DashboardUpdate>
 export const DashboardUpdate = z.object({
-  archived: z.union([z.boolean(), z.null()]).optional(),
   name: z.union([z.string(), z.null()]).optional()
 })
 
@@ -464,7 +460,6 @@ export const ListItemResponse = z.object({
 
 export type ListDetailResponse = z.infer<typeof ListDetailResponse>
 export const ListDetailResponse = z.object({
-  archived: z.boolean(),
   created_at: z.string(),
   created_by: z.string(),
   dashboard_id: z.string(),
@@ -512,7 +507,6 @@ export const ListReorder = z.object({
 
 export type ListResponse = z.infer<typeof ListResponse>
 export const ListResponse = z.object({
-  archived: z.boolean(),
   created_at: z.string(),
   created_by: z.string(),
   dashboard_id: z.string(),
@@ -526,7 +520,6 @@ export const ListResponse = z.object({
 
 export type ListUpdate = z.infer<typeof ListUpdate>
 export const ListUpdate = z.object({
-  archived: z.union([z.boolean(), z.null()]).optional(),
   name: z.union([z.string(), z.null()]).optional()
 })
 
@@ -678,6 +671,16 @@ export type TrashedDashboardSummary = z.infer<typeof TrashedDashboardSummary>
 export const TrashedDashboardSummary = z.object({
   deleted_at: z.string(),
   id: z.string(),
+  name: z.string(),
+  purge_at: z.string()
+})
+
+export type TrashedListSummary = z.infer<typeof TrashedListSummary>
+export const TrashedListSummary = z.object({
+  dashboard_id: z.string(),
+  deleted_at: z.string(),
+  id: z.string(),
+  list_type: ListType,
   name: z.string(),
   purge_at: z.string()
 })

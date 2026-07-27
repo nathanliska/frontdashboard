@@ -21,7 +21,7 @@ in the abstract) are not defined here.
 
 **Editor** *(dashboard editor)* — The drag/resize layout-editing mode of a dashboard. Distinct from the *editor role* under Access.
 
-**Listing page** — The page showing all of a user's dashboards, with favorites, create, and archive state.
+**Listing page** — The page showing all of a user's dashboards, with favorites, create, and a Trash view.
 
 **Master/detail (Lists UI)** — The lists layout: a sidebar of lists (master) and a pane of items (detail), with mobile slide navigation. See [FDR-005](fdr/FDR-005-lists.md).
 
@@ -33,7 +33,7 @@ in the abstract) are not defined here.
 
 **Favorite** — A user-flagged dashboard, surfaced on the listing page.
 
-**Archive** — A non-destructive "put away" state for a dashboard or list. Archived dashboards are excluded from child-resource access; archived lists are viewable but not reorderable. Distinct from delete.
+**Trash** — The one "put away" state, for dashboards and lists alike: delete stamps `deleted_at`, the row disappears from every listing and access path, and it stays restorable until the reaper purges it 30 days later. Replaced the separate **Archive** flag (removed 2026-07-27) — two overlapping hide-this states with different promises was one too many. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
 
 **List** — A checklist/task list of items. See [FDR-005](fdr/FDR-005-lists.md).
 
@@ -93,7 +93,7 @@ in the abstract) are not defined here.
 
 **clientMutationId / echo suppression** — A mutation tags itself with a `clientMutationId`; the matching SSE echo is skipped so the client doesn't double-apply its own change. Must be forgotten on error or the bookkeeping leaks. See [ADR-006](adr/ADR-006-rest-fetch-sse-patch.md).
 
-**Hot / cold events** — Hot SSE events (reorder, item check/update) carry new state for in-place patching; cold events (create/delete/archive) invalidate-and-refetch. See [ADR-006](adr/ADR-006-rest-fetch-sse-patch.md).
+**Hot / cold events** — Hot SSE events (reorder, item check/update) carry new state for in-place patching; cold events (create/delete) invalidate-and-refetch. See [ADR-006](adr/ADR-006-rest-fetch-sse-patch.md).
 
 **Build-before-commit / broadcast-after-commit** — The SSE write choreography: construct the event dict before the DB commit (ORM live), broadcast after (subscribers see only committed state). See [ADR-015](adr/ADR-015-sse-write-choreography.md).
 

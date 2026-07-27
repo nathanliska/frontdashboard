@@ -13,7 +13,6 @@ function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummar
     id: 'dash-new',
     user_id: 'user-1',
     name: 'New Board',
-    archived: false,
     access_description: 'Owned by you',
     is_shared: false,
     can_edit: true,

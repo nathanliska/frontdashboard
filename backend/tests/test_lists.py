@@ -134,7 +134,6 @@ async def test_delete_list_works_for_dashboard_owner(auth_client: AsyncClient) -
     lst = await create_list(auth_client, dashboard["id"])
 
     set_csrf(auth_client)
-    await auth_client.patch(f"/api/lists/{lst['id']}", json={"archived": True})
     resp = await auth_client.delete(f"/api/lists/{lst['id']}")
     assert resp.status_code == 204
 
@@ -143,14 +142,28 @@ async def test_delete_list_works_for_dashboard_owner(auth_client: AsyncClient) -
     assert get_resp.status_code == 404
 
 
-async def test_delete_list_requires_archive(auth_client: AsyncClient) -> None:
+async def test_deleted_list_sits_in_the_trash_and_restores(auth_client: AsyncClient) -> None:
+    """Delete is a trash move: no archive-first gate, and it is reversible."""
     dashboard = await create_dashboard(auth_client)
-    lst = await create_list(auth_client, dashboard["id"])
+    lst = await create_list(auth_client, dashboard["id"], name="Recoverable")
 
     set_csrf(auth_client)
-    resp = await auth_client.delete(f"/api/lists/{lst['id']}")
-    assert resp.status_code == 409
-    assert resp.json()["detail"] == "List must be archived before it can be deleted"
+    assert (await auth_client.delete(f"/api/lists/{lst['id']}")).status_code == 204
+    assert (await auth_client.get(f"/api/lists/{lst['id']}")).status_code == 404
+
+    trash = await auth_client.get("/api/lists/trash", params={"dashboard_id": dashboard["id"]})
+    assert trash.status_code == 200
+    assert [row["id"] for row in trash.json()] == [lst["id"]]
+    assert trash.json()[0]["purge_at"] > trash.json()[0]["deleted_at"]
+
+    set_csrf(auth_client)
+    restored = await auth_client.post(f"/api/lists/{lst['id']}/restore")
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["name"] == "Recoverable"
+
+    assert (await auth_client.get(f"/api/lists/{lst['id']}")).status_code == 200
+    empty_trash = await auth_client.get("/api/lists/trash", params={"dashboard_id": dashboard["id"]})
+    assert empty_trash.json() == []
 
 
 async def test_list_shares_returns_dashboard_managed_response(auth_client: AsyncClient) -> None:
@@ -301,8 +314,6 @@ async def test_list_details_returns_every_list_with_items_in_one_request(auth_cl
     assert (await auth_client.delete(f"/api/lists/{chores['id']}/items/{doomed_item['id']}")).status_code == 204
     doomed_list = await create_list(auth_client, dashboard["id"], name="Doomed List")
     set_csrf(auth_client)
-    assert (await auth_client.patch(f"/api/lists/{doomed_list['id']}", json={"archived": True})).status_code == 200
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/lists/{doomed_list['id']}")).status_code == 204
 
     resp = await auth_client.get("/api/lists/details", params={"dashboard_id": dashboard["id"]})
@@ -328,12 +339,29 @@ async def test_list_details_requires_dashboard_access(auth_client: AsyncClient) 
         await stranger.aclose()
 
 
-async def test_list_details_hides_archived_dashboard_content(auth_client: AsyncClient) -> None:
-    """An archived dashboard hides its children here exactly as on the per-list routes."""
+async def test_list_details_hides_trashed_dashboard_content(auth_client: AsyncClient) -> None:
+    """A trashed dashboard hides its children here exactly as on the per-list routes."""
     dashboard = await create_dashboard(auth_client)
     await create_list(auth_client, dashboard["id"])
     set_csrf(auth_client)
-    assert (await auth_client.patch(f"/api/dashboards/{dashboard['id']}", json={"archived": True})).status_code == 200
+    assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
 
     resp = await auth_client.get("/api/lists/details", params={"dashboard_id": dashboard["id"]})
     assert resp.status_code == 404
+
+
+async def test_list_trash_excludes_lists_whose_dashboard_is_trashed(auth_client: AsyncClient) -> None:
+    """A list only reachable through a trashed dashboard is not separately restorable."""
+    dashboard = await create_dashboard(auth_client)
+    lst = await create_list(auth_client, dashboard["id"])
+    set_csrf(auth_client)
+    assert (await auth_client.delete(f"/api/lists/{lst['id']}")).status_code == 204
+    set_csrf(auth_client)
+    assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
+
+    # The dashboard is gone from the access door, so its trash scope is gone with it.
+    trash = await auth_client.get("/api/lists/trash", params={"dashboard_id": dashboard["id"]})
+    assert trash.status_code == 404
+
+    set_csrf(auth_client)
+    assert (await auth_client.post(f"/api/lists/{lst['id']}/restore")).status_code == 404

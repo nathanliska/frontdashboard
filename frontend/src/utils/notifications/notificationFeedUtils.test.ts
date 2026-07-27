@@ -25,9 +25,9 @@ describe('formatActivityEvent', () => {
     ],
     [
       'dashboard.updated',
-      { name: 'Roadmap', archived: true, changed_fields: ['archived'] },
+      { name: 'Roadmap', changed_fields: ['restored'] },
       'Dashboard',
-      'You archived "Roadmap".',
+      'You restored "Roadmap" from the trash.',
     ],
     ['list.reordered', { dashboard_name: 'Home' }, 'List', 'You reordered lists in "Home".'],
     ['list.reordered', {}, 'List', 'You reordered your lists.'],

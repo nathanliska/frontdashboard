@@ -61,13 +61,10 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
     case 'dashboard.updated': {
       const changedFields = Array.isArray(payload.changed_fields) ? payload.changed_fields : []
       const name = quoted(payloadString(payload, 'name'), 'a dashboard')
-      if (changedFields.includes('archived')) {
+      if (changedFields.includes('restored')) {
         return {
           badge: 'Dashboard',
-          summary:
-            payloadBoolean(payload, 'archived') === false
-              ? `You unarchived ${name}.`
-              : `You archived ${name}.`,
+          summary: `You restored ${name} from the trash.`,
         }
       }
       return {
@@ -96,23 +93,15 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
     case 'list.created':
       return {
         badge: 'List',
-        summary: `You created ${quoted(payloadString(payload, 'name'), 'a list')}.`,
+        summary: payloadBoolean(payload, 'restored')
+          ? `You restored ${quoted(payloadString(payload, 'name'), 'a list')} from the trash.`
+          : `You created ${quoted(payloadString(payload, 'name'), 'a list')}.`,
       }
     case 'list.updated':
       return {
         badge: 'List',
         summary: `You renamed ${quoted(payloadString(payload, 'name'), 'a list')}.`,
       }
-    case 'list.archived': {
-      const archived = payloadBoolean(payload, 'archived')
-      return {
-        badge: 'List',
-        summary:
-          archived === false
-            ? `You unarchived ${quoted(payloadString(payload, 'name'), 'a list')}.`
-            : `You archived ${quoted(payloadString(payload, 'name'), 'a list')}.`,
-      }
-    }
     case 'list.deleted':
       return {
         badge: 'List',

@@ -23,7 +23,7 @@ users hold a `viewer` or `editor` role.
 Only **dashboards** are shared directly. Lists and calendar events **inherit** access from the
 dashboard whose widget binds them — their own `/shares` endpoints are deliberate 409 stubs. Access
 for a child resource is resolved through the binding dashboard
-(`load_dashboard_access` / `list_accessible_dashboard_ids`), which also filters archived dashboards.
+(`load_dashboard_access` / `list_accessible_dashboard_ids`), which also filters trashed dashboards.
 
 `PrincipalType` currently has only `user`; `ShareRole` only `viewer`/`editor`. Both are modelled as
 open StrEnums so more principal types or roles *could* be added, but broader principals and richer
@@ -38,7 +38,7 @@ roles are intentionally not built (see CONTEXT.md "Deliberately deferred").
 - **Owner is `role is None`, not a role value**: `permissions.effective_role` returns `None` for the
   creator and raises 404 for no access. Guards must never write `if role:` — that misreads the owner
   as "no access" ([backend/CLAUDE.md](../../backend/CLAUDE.md)).
-- **Archived-visibility invariant lives in the access helpers**: querying a child table directly
-  bypasses the archived-dashboard filter, so all child access must route through the shares service.
+- **Trashed-visibility invariant lives in the access helpers**: querying a child table directly
+  bypasses the trashed-dashboard filter, so all child access must route through the shares service.
 - **Vestiges remain**: `EventType.membership_*` values persist as dead enum members from the removed
   groups feature (CONTEXT.md), a small cleanup debt.

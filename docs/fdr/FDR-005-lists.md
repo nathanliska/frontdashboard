@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-27
 
 ## Overview
 
@@ -19,10 +19,11 @@ master/detail UI and surfaced on dashboards via the list widget ([FDR-003](FDR-0
   sinking. New items append last.
 - **Drag-and-drop reorder.** Reorder items within a list and lists within the sidebar, via drag
   handles with keyboard support.
-- **Active/Archived selector.** The sidebar defaults to Active (reorderable); Archived lists are
-  viewable but not reorderable.
-- **Archive before delete.** A list must be archived before it can be deleted (409 otherwise); delete
-  cleans up bound widgets and shares. Deletes are soft.
+- **Active/Trash selector.** The sidebar defaults to Active (reorderable); Trash lists what has been
+  deleted, with its purge deadline and a Restore action. Trash is fetched only when opened.
+- **Move to trash.** Delete is a single action on any list — it stamps `deleted_at`, unbinds the
+  widgets that showed the list, and is restorable for 30 days. There is no archive state and no
+  archive-before-delete gate ([ADR-007](../adr/ADR-007-soft-delete-boundary.md)).
 - **Live updates.** Item checks/updates and reorders from another client patch in place with no
   refetch.
 
@@ -38,18 +39,18 @@ duplicate orders; the exact-set requirement catches a stale client operating on 
 contents.
 **Tradeoff:** The client must submit the complete ordered id set, not a single moved item.
 
-### 2. Archived lists are excluded from the reorderable set
+### 2. Only live lists are reorderable
 
-**Decision:** The server renumbers only non-archived lists, so a reorder's submitted set must equal
-the active set; archived lists are viewable but not reorderable.
-**Why:** Manual order is a property of the working (active) set; mixing archived lists into ordering
-would be ambiguous.
-**Tradeoff:** Reordering isn't available while viewing the archived filter.
+**Decision:** The server renumbers the dashboard's live lists, so a reorder's submitted set must equal
+that set; trashed lists carry no order.
+**Why:** Manual order is a property of the working set. This used to be about excluding *archived*
+lists; with archive gone the rule is simply that trashed rows are not part of any ordering.
+**Tradeoff:** Reordering isn't offered from the Trash view (there is nothing orderable there).
 
 ### 3. Hot list events carry new state; cold events invalidate
 
 **Decision:** Reorder and item check/update SSE events carry the new state (id order, or changed
-field values) so clients patch in place; create/delete/archive invalidate-and-refetch.
+field values) so clients patch in place; create/delete invalidate-and-refetch.
 **Why:** The frequent operations avoid a follow-up GET, while rarer operations keep the self-healing
 refetch. See ADR-006.
 **Tradeoff:** Hot-event payloads are part of the contract; a missing field silently forces the

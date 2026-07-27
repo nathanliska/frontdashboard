@@ -67,10 +67,7 @@ export function CalendarPage() {
     requestedDashboardId,
     'Could not load dashboards for calendar.',
   )
-  const activeDashboards = useMemo(
-    () => dashboards.filter((dashboard) => !dashboard.archived),
-    [dashboards],
-  )
+  const activeDashboards = useMemo(() => dashboards, [dashboards])
   const effectiveActiveDashboardId = useMemo(() => {
     if (
       activeDashboardId &&

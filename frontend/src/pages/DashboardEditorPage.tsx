@@ -70,7 +70,7 @@ export function DashboardEditorPage() {
 
   if (!dashboard) return null
 
-  const canEdit = dashboard.can_edit && !dashboard.archived
+  const canEdit = dashboard.can_edit
 
   return (
     <div className="flex flex-col min-h-full gap-4">
@@ -120,22 +120,6 @@ export function DashboardEditorPage() {
           </button>
         )}
       </div>
-
-      {/* Archived banner */}
-      {dashboard.archived && (
-        <div className="flex items-center justify-between px-4 py-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg shrink-0">
-          <p className="text-sm text-amber-400">
-            This dashboard is archived. Widgets are read-only until it is unarchived.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate(ROUTES.dashboards)}
-            className="text-xs text-amber-400 hover:text-amber-300 transition-colors ml-4 shrink-0"
-          >
-            Manage
-          </button>
-        </div>
-      )}
 
       {/* Conflict banner */}
       {conflict && (

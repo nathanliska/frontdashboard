@@ -163,13 +163,13 @@ async def test_accepting_notifies_the_owner(auth_client: AsyncClient) -> None:
     await invitee.aclose()
 
 
-async def test_invite_for_an_archived_dashboard_is_rejected(auth_client: AsyncClient) -> None:
+async def test_invite_for_a_trashed_dashboard_is_rejected(auth_client: AsyncClient) -> None:
+    """A live link must not outlive the dashboard it grants access to."""
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"])
 
-    archived = await auth_client.patch(f"/api/dashboards/{dashboard['id']}", json={"archived": True})
-    assert archived.status_code == 200, archived.text
+    trashed = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
+    assert trashed.status_code == 204, trashed.text
 
     assert (await auth_client.get(f"/api/invites/{invite['code']}")).status_code == 404
-    minted = await auth_client.post(f"/api/dashboards/{dashboard['id']}/invites", json={"role": "viewer"})
-    assert minted.status_code == 403, minted.text
+    assert (await auth_client.post(f"/api/invites/{invite['code']}/accept")).status_code == 404

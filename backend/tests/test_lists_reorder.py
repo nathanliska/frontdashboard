@@ -207,57 +207,6 @@ async def test_new_list_appends_last_after_reorder(
 
 
 # ---------------------------------------------------------------------------
-# Archived lists excluded from PUT /lists/order
-# ---------------------------------------------------------------------------
-
-
-async def test_reorder_lists_excludes_archived(
-    auth_client: AsyncClient,
-    make_dashboard_with_lists,
-) -> None:
-    dash_id, list_ids = await make_dashboard_with_lists(["L1", "L2", "L3"])
-    archived_id = list_ids[1]
-
-    set_csrf(auth_client)
-    archive_resp = await auth_client.patch(f"/api/lists/{archived_id}", json={"archived": True})
-    assert archive_resp.status_code == 200
-    archived_sort_order_before = archive_resp.json()["sort_order"]
-
-    non_archived = [list_ids[0], list_ids[2]]
-    reordered = [non_archived[1], non_archived[0]]
-
-    set_csrf(auth_client)
-    res = await auth_client.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": reordered})
-    assert res.status_code == 204
-
-    lists = (await auth_client.get(f"/api/lists?dashboard_id={dash_id}")).json()
-    by_id = {lst["id"]: lst for lst in lists}
-    assert by_id[reordered[0]]["sort_order"] == 0
-    assert by_id[reordered[1]]["sort_order"] == 1
-    # The archived list's sort_order is untouched by a reorder that excludes it.
-    assert by_id[archived_id]["sort_order"] == archived_sort_order_before
-
-
-async def test_reorder_lists_rejects_submission_including_archived(
-    auth_client: AsyncClient,
-    make_dashboard_with_lists,
-) -> None:
-    dash_id, list_ids = await make_dashboard_with_lists(["L1", "L2", "L3"])
-    archived_id = list_ids[1]
-
-    set_csrf(auth_client)
-    archive_resp = await auth_client.patch(f"/api/lists/{archived_id}", json={"archived": True})
-    assert archive_resp.status_code == 200
-
-    set_csrf(auth_client)
-    res = await auth_client.put(
-        "/api/lists/order",
-        json={"dashboard_id": dash_id, "list_ids": list_ids},
-    )
-    assert res.status_code == 409
-
-
-# ---------------------------------------------------------------------------
 # Soft-deleted items excluded from PUT /lists/{id}/items/order
 # ---------------------------------------------------------------------------
 
