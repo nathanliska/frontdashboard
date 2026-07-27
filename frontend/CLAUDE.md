@@ -32,6 +32,16 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
   cache instead (see `loadTrash`).
 - Any new resource cache needs a `resetXData()` wired into `stores/auth.ts` logout/failed-init,
   or stale data leaks across accounts.
+- `createScopedQuery` caches the 32 most recently fetched scopes (`maxCachedScopes`) and evicts
+  the coldest beyond that. Entries with a **mounted subscriber** or an **in-flight request** are
+  never evicted — the first would hand React a fresh empty entry mid-render, the second would
+  resolve into a map the entry has left. Note that eviction does not notify listeners, so a
+  component cannot observe it; assert on `getState` in tests, not on rendered output.
+- **Snapshot a `Map`/`Set` before iterating it if the loop body can mutate it** —
+  `for (const entry of [...m.values()])`. A JS iterator visits entries inserted *during* iteration,
+  so anything that re-inserts (LRU `touch`, a listener that resubscribes) hands the loop the same
+  entry again and it never ends. It spins synchronously, so no `testTimeout` fires and no stack
+  identifies it — the process just exhausts its heap.
 
 ## API contract: generated, never hand-written
 - Request/response/SSE types come from `api/generated/contract.ts`, generated from the backend's
@@ -102,3 +112,11 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 - No global fetch/MSW mock: tests mock `api/*` modules (`vi.hoisted` + `vi.mock`) and
   `stores/toast`. Reset resource/mutation caches between tests with the exported
   `__resetXForTests()` helpers.
+- **Anything a module schedules must be cancellable, and cancelled in `test/setup.ts`.** A worker
+  is reused across files, so a `setTimeout` a test armed and never cleared keeps its closure —
+  and the store behind it — alive for the rest of the run. The toast store's auto-dismiss is the
+  worked example: it keeps its handles in a `Map` purely so `__resetToastStoreForTests` can clear
+  them from the global `afterEach`. Store a handle you can clear, not a fire-and-forget timer.
+- Running the suite with `NODE_OPTIONS=--max-old-space-size=1024` is worth it while touching
+  cache or timer code: a runaway loop then OOMs its own worker in seconds instead of taking the
+  machine down with it.

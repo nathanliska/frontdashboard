@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../api/dashboards'
 import { useAuthStore } from '../stores/auth'
-import { useDashboardStore } from '../stores/dashboard'
+import { resetDashboardData, useDashboardStore } from '../stores/dashboard'
 import { stubDashboardStore } from '../test/dashboard-store'
 import { makeDashboardSummary as makeSummary } from '../test/fixtures'
 import { DashboardsPage } from './DashboardsPage'
@@ -29,6 +29,8 @@ vi.mock('../components/dashboard/DashboardSettingsModal', () => ({
 
 describe('DashboardsPage', () => {
   beforeEach(() => {
+    // Module-level load/debounce state lives outside the store, so setState alone won't clear it.
+    resetDashboardData()
     useAuthStore.setState({
       status: 'authenticated',
       user: {

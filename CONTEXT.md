@@ -144,6 +144,17 @@ _Last updated: 2026-07-26_
   the page-level handlers no longer own an empty-name check they couldn't attach to anything.
   Multi-field forms mark every failing field at once, so the form is fixed in one pass.
 
+**Performance shape**
+- **The calendar window is a SQL predicate, not a Python filter** (#16): a one-off event is loaded
+  only if its own times overlap the requested window, so viewing a week no longer costs the
+  calendar's whole history. Recurring events still all load — bounding them needs each series'
+  last occurrence persisted, which the rule doesn't give us — but the expander skips ahead to the
+  window for unbounded daily/weekly series, and the window itself is capped at 366 days.
+- **Resource caches are bounded** (#24): `createScopedQuery` keeps the 32 most recently fetched
+  scopes and evicts the coldest, except entries with a mounted subscriber or a request in flight,
+  which are never evicted. Before this, a tab left open on the calendar accumulated one entry per
+  window scrolled to until logout.
+
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
 - **Both production images run unprivileged** (uid 10001), with base images pinned by digest and a

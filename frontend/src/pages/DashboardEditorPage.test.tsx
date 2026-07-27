@@ -2,7 +2,7 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useDashboardStore } from '../stores/dashboard'
+import { resetDashboardData, useDashboardStore } from '../stores/dashboard'
 import { stubDashboardStore } from '../test/dashboard-store'
 import { makeDashboard } from '../test/fixtures'
 import { DashboardEditorPage } from './DashboardEditorPage'
@@ -22,6 +22,8 @@ vi.mock('../components/dashboard/DashboardSettingsModal', () => ({
 describe('DashboardEditorPage', () => {
   beforeEach(() => {
     document.title = 'FrontDashboard'
+    // Module-level load/debounce state lives outside the store, so stubbing it won't clear it.
+    resetDashboardData()
     stubDashboardStore({
       summariesLoaded: false,
       dashboard: makeDashboard({ name: 'Product Roadmap' }),

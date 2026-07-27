@@ -28,7 +28,18 @@ type CreateScopedQueryOptions<Scope, Data> = {
   getKey: (scope: Scope) => string
   fetcher: (scope: Scope) => Promise<Data>
   fallbackErrorMessage?: string
+  /** How many scopes to keep cached. See `evictColdEntries` for what "cached" excludes. */
+  maxCachedScopes?: number
 }
+
+/** Cached scopes kept per query before the coldest are dropped (#24).
+ *
+ * Entries were never evicted, so a tab left open on the calendar accumulated one entry per window
+ * scrolled to, for the life of the session — growth driven by how long someone keeps a tab open
+ * rather than by anything bounded. 32 comfortably covers a year of calendar windows plus every
+ * dashboard's lists; past that, the oldest unused entries are worth less than the memory.
+ */
+const DEFAULT_MAX_CACHED_SCOPES = 32
 
 const EMPTY_STATE: ScopedQueryState<never> = {
   data: null,
@@ -44,8 +55,33 @@ export function createScopedQuery<Scope, Data>({
   getKey,
   fetcher,
   fallbackErrorMessage = 'Failed to load data.',
+  maxCachedScopes = DEFAULT_MAX_CACHED_SCOPES,
 }: CreateScopedQueryOptions<Scope, Data>) {
+  // Insertion-ordered, and that order *is* the recency order: `touch` re-inserts on fetch, so
+  // iterating from the front walks coldest-first.
   const entries = new Map<string, ScopedQueryEntry<Scope, Data>>()
+
+  /** Mark an entry as recently used by moving it to the back of the eviction order. */
+  function touch(entry: ScopedQueryEntry<Scope, Data>): void {
+    if (entries.delete(entry.key)) entries.set(entry.key, entry)
+  }
+
+  /** Drop the coldest entries nothing is using, down to `maxCachedScopes`.
+   *
+   * Two kinds of entry are pinned and skipped regardless of age: one with **listeners** (a
+   * mounted component reads it through `useSyncExternalStore`, and evicting would hand it a
+   * fresh empty entry on the next snapshot), and one with a request **in flight** (the response
+   * would resolve into an entry no longer in the map, silently discarding it). If everything is
+   * pinned the cache simply stays over its cap — correctness first, memory second.
+   */
+  function evictColdEntries(): void {
+    if (entries.size <= maxCachedScopes) return
+    for (const entry of entries.values()) {
+      if (entries.size <= maxCachedScopes) break
+      if (entry.listeners.size > 0 || entry.inFlight) continue
+      entries.delete(entry.key)
+    }
+  }
 
   function ensureEntry(scope: Scope): ScopedQueryEntry<Scope, Data> {
     const key = getKey(scope)
@@ -64,13 +100,19 @@ export function createScopedQuery<Scope, Data>({
       stale: false,
     }
     entries.set(key, entry)
+    // The new entry is newest in iteration order, so it is never the one evicted here.
+    evictColdEntries()
     return entry
   }
 
   function notify(entry: ScopedQueryEntry<Scope, Data>) {
-    entry.listeners.forEach((listener) => {
+    // Snapshot, for the same reason `invalidateWhere` does: `Set.forEach` visits entries added
+    // during iteration, so a listener that subscribed synchronously would be invoked in this same
+    // pass. Today's listeners are `useSyncExternalStore` callbacks that only schedule a render, so
+    // this is insurance rather than a live bug — but it is one refactor away from being one.
+    for (const listener of [...entry.listeners]) {
       listener()
-    })
+    }
   }
 
   function setState(entry: ScopedQueryEntry<Scope, Data>, nextState: ScopedQueryState<Data>): void {
@@ -93,6 +135,9 @@ export function createScopedQuery<Scope, Data>({
 
   async function fetch(scope: Scope, options: ScopedQueryFetchOptions = {}): Promise<Data> {
     const entry = ensureEntry(scope)
+    // A fetch is the honest signal that a scope is in use — reads happen on every render and
+    // would make recency meaningless.
+    touch(entry)
     if (entry.inFlight) {
       return entry.inFlight
     }
@@ -153,7 +198,12 @@ export function createScopedQuery<Scope, Data>({
   ): void {
     const activeOnly = options.activeOnly ?? true
 
-    for (const entry of entries.values()) {
+    // Iterate a snapshot, not the live map. `fetch` runs synchronously up to its first await, and
+    // one of those first statements is `touch`, which deletes and re-inserts the entry to move it
+    // to the back of the LRU order. A Map iterator *does* visit entries inserted during iteration,
+    // so iterating live would hand this loop the same entry again on the very next step — matching
+    // the predicate, fetching, touching, re-inserting — until the heap gave out.
+    for (const entry of [...entries.values()]) {
       if (!predicate(entry.scope)) continue
       entry.stale = true
 
@@ -169,7 +219,9 @@ export function createScopedQuery<Scope, Data>({
     predicate: (scope: Scope) => boolean,
     updater: (state: ScopedQueryState<Data>, scope: Scope) => ScopedQueryState<Data>,
   ): void {
-    for (const entry of entries.values()) {
+    // Snapshot for the same reason as `invalidateWhere`: `setState` notifies listeners, and a
+    // listener is arbitrary component code that may re-enter the cache and reorder it mid-loop.
+    for (const entry of [...entries.values()]) {
       if (!predicate(entry.scope)) continue
       // Deliberately does not touch `stale`. A patch writes part of an entry; it is not a
       // refetch, so it cannot resolve "the server has changes we haven't seen". Only fetch()

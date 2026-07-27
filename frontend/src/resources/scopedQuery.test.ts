@@ -54,3 +54,65 @@ describe('updateWhere and stale', () => {
     expect(q.getState({ id: 'b' }).data).toBe('patched')
   })
 })
+
+describe('cache eviction (#24)', () => {
+  function makeCappedQuery(fetcher: (scope: Scope) => Promise<string>, maxCachedScopes: number) {
+    return createScopedQuery<Scope, string>({
+      getKey: (s) => s.id,
+      fetcher,
+      maxCachedScopes,
+    })
+  }
+
+  it('drops the coldest entries once the cap is passed', async () => {
+    const fetcher = vi.fn(async (scope: Scope) => `data-${scope.id}`)
+    const q = makeCappedQuery(fetcher, 3)
+
+    for (const id of ['a', 'b', 'c', 'd']) {
+      await q.fetchIfStale({ id })
+    }
+
+    // 'a' was the coldest when 'd' arrived, so it is gone and re-reads refetch.
+    expect(q.getState({ id: 'a' }).data).toBeNull()
+    expect(q.getState({ id: 'd' }).data).toBe('data-d')
+    expect(q.getState({ id: 'c' }).data).toBe('data-c')
+  })
+
+  it('counts a re-fetch as recent use, so the genuinely coldest entry goes', async () => {
+    const fetcher = vi.fn(async (scope: Scope) => `data-${scope.id}`)
+    const q = makeCappedQuery(fetcher, 3)
+
+    await q.fetchIfStale({ id: 'a' })
+    await q.fetchIfStale({ id: 'b' })
+    await q.fetchIfStale({ id: 'c' })
+    // Touch 'a' so 'b' becomes the coldest.
+    await q.fetch({ id: 'a' })
+    await q.fetchIfStale({ id: 'd' })
+
+    expect(q.getState({ id: 'a' }).data).toBe('data-a')
+    expect(q.getState({ id: 'b' }).data).toBeNull()
+  })
+
+  it('never evicts an entry with a request still in flight', async () => {
+    let resolvePending: ((value: string) => void) | undefined
+    const fetcher = vi.fn(async (scope: Scope) => {
+      if (scope.id === 'slow') {
+        return new Promise<string>((resolve) => {
+          resolvePending = resolve
+        })
+      }
+      return `data-${scope.id}`
+    })
+    const q = makeCappedQuery(fetcher, 2)
+
+    const pending = q.fetch({ id: 'slow' })
+    for (const id of ['x', 'y', 'z']) {
+      await q.fetchIfStale({ id })
+    }
+
+    // The response must have an entry to land in, or it is silently discarded.
+    resolvePending?.('data-slow')
+    await pending
+    expect(q.getState({ id: 'slow' }).data).toBe('data-slow')
+  })
+})

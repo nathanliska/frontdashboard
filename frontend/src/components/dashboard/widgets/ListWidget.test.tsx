@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../api/http'
 import type { ListDetail, ListItem } from '../../../api/lists'
 import { __resetListDataForTests, handleListResourceEvent } from '../../../resources/listData'
-import { useDashboardStore } from '../../../stores/dashboard'
+import { resetDashboardData, useDashboardStore } from '../../../stores/dashboard'
 import {
   makeListDetail as baseListDetail,
   makeListItem as baseListItem,
@@ -54,6 +54,8 @@ describe('ListWidget', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     __resetListDataForTests()
+    // Module-level load/debounce state lives outside the store, so setState alone won't clear it.
+    resetDashboardData()
     useDashboardStore.setState({
       summaries: [],
       summariesLoaded: false,

@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -190,10 +190,32 @@ async def list_occurrences(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
 
     dashboard_ids = [dashboard_id] if dashboard_id is not None else accessible_dashboard_ids
+    window_start = window_start.astimezone(UTC)
+    window_end = window_end.astimezone(UTC)
+
+    # Only load what could possibly land in the window (#16). This used to fetch every event on
+    # every accessible dashboard and discard the misses after expanding them in Python, so the
+    # cost of viewing next week grew with the calendar's whole history.
+    #
+    # A one-off event is bounded by its own times, so the overlap test is the same one
+    # `_overlaps` applies after expansion. A recurring one is not: bounding it in SQL needs its
+    # last occurrence persisted, which the rule (count/until/interval) does not give us — those
+    # still load and are bounded by the expander's skip-ahead instead.
+    has_override = select(CalendarEventOverride.id).where(CalendarEventOverride.calendar_event_id == CalendarEvent.id).exists()
     result = await db.execute(
         select(CalendarEvent).where(
             CalendarEvent.deleted_at.is_(None),
             CalendarEvent.dashboard_id.in_(dashboard_ids),
+            or_(
+                CalendarEvent.recurrence.is_not(None),
+                (CalendarEvent.starts_at < window_end) & (CalendarEvent.ends_at > window_start),
+                # An override can move an occurrence outside its event's own times. Only
+                # recurring events can be overridden today, but an event that *was* recurring
+                # can still own override rows written before it was made one-off, and dropping
+                # it here would silently hide it. Cheap insurance: such rows are rare, and
+                # update_event now deletes them when recurrence is cleared.
+                has_override,
+            ),
         )
     )
     events = list(result.scalars().all())
@@ -207,8 +229,6 @@ async def list_occurrences(
     for override in overrides:
         overrides_by_event.setdefault(override.calendar_event_id, {})[override.occurrence_start] = override
 
-    window_start = window_start.astimezone(UTC)
-    window_end = window_end.astimezone(UTC)
     occurrences = []
     for event in events:
         occurrences.extend(
@@ -266,7 +286,13 @@ async def update_event(
     if "recurrence" in body.model_fields_set:
         if body.recurrence and body.recurrence.until and body.recurrence.until <= event.starts_at:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="recurrence until must be after starts_at")
+        became_one_off = event.recurrence is not None and body.recurrence is None
         event.recurrence = body.recurrence.model_dump(mode="json") if body.recurrence else None
+        if became_one_off:
+            # An override identifies one occurrence of a series. With the series gone they
+            # describe nothing, and leaving them stranded means a one-off event carrying
+            # per-occurrence edits that no code path can reach or remove.
+            await db.execute(delete(CalendarEventOverride).where(CalendarEventOverride.calendar_event_id == event.id))
     event.updated_by = current_user.id
 
     activity = log_event(

@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+// jsdom is required, not incidental: the test stubs `document.cookie` via defineProperty, and
+// `client.ts` itself reads `document.cookie` for the CSRF header and calls `window.location.replace`
+// when a refresh fails.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tryRefresh } from './client'
 

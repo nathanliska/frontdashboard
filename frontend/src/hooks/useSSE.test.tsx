@@ -5,7 +5,7 @@ import type { RefreshOutcome } from '../api/client'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
 import { handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
-import { useDashboardStore } from '../stores/dashboard'
+import { resetDashboardData, useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
 import { APP_RESYNC_EVENT, SSE_RECONNECT_MAX_MS, useSSE } from './useSSE'
 
@@ -103,6 +103,8 @@ function frame(overrides: Record<string, unknown>): string {
 describe('useSSE', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Module-level load/debounce state lives outside the store, so setState alone won't clear it.
+    resetDashboardData()
     handlerCallOrder.length = 0
     MockEventSource.instances = []
     globalThis.EventSource = MockEventSource as unknown as typeof EventSource
