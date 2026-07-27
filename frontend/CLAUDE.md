@@ -20,6 +20,16 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 - **Echo suppression:** mutations send a `clientMutationId` and the SSE echo is skipped via
   `consumePending…MutationEcho`. On mutation error you must `forgetPending…Mutation(id)` or the
   bookkeeping leaks (see `stores/dashboard.ts`, `resources/listData.ts`).
+- **The echo check consumes — so ask once, at the router, and pass the verdict down.** One SSE
+  frame fans out to several handlers (`onListEvent` feeds the list cache, the agenda and the
+  dashboard store), and whichever one calls `consumePending…MutationEcho` first is the only one
+  ever told the truth. That is exactly how the agenda kept refetching after every checkbox click
+  while the list cache correctly ignored the same event. New handler on a fanned-out event → take
+  `{ isOwnEcho }` as a parameter; don't call the check yourself.
+- **Suppressing an echo obliges you to patch what it would have refreshed.** The agenda's
+  reminders only updated *because* of that refetch, so silencing it without teaching the mutation
+  path to re-derive them would have left a checked reminder on screen. Both halves are pinned by
+  tests in `resources/agendaData.test.tsx`; removing either one fails.
 - **A mutation's response is the truth — apply it, never refetch it.** Every mutating endpoint
   returns the updated resource; patch caches/state from that response and let echo suppression
   absorb the SSE. A GET right after your own successful POST/PATCH/DELETE is a bug (this is how

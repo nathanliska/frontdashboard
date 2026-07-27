@@ -9,7 +9,7 @@ import {
 } from '../api/generated/contract'
 import { handleAgendaResourceEvent } from '../resources/agendaData'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
-import { handleListResourceEvent } from '../resources/listData'
+import { consumePendingListMutationEcho, handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
 import { useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
@@ -178,11 +178,18 @@ export function useSSE(): void {
     function onListEvent(e: MessageEvent<string>) {
       const data = parseFrame(e.data, SseEventSchema)
       if (!data) return
-      // Order is convention now, not correctness: the agenda's reminder fetcher asks the
-      // server for the whole batch (#17) and reads no client cache, so these handlers no
-      // longer depend on each other's writes landing first.
-      handleListResourceEvent(data)
-      handleAgendaResourceEvent(data)
+      // Ask once, here, and tell everyone. The check consumes the pending mutation id, so the
+      // first handler to call it is the only one that ever learns the answer — which is exactly
+      // how the agenda ended up refetching after every checkbox click while the list cache
+      // correctly ignored the same event.
+      const isOwnEcho = consumePendingListMutationEcho(data)
+      // Order is convention, not correctness: the agenda's reminder fetcher asks the server for
+      // the whole batch (#17) and reads no client cache, so these handlers do not depend on each
+      // other's writes landing first.
+      handleListResourceEvent(data, { isOwnEcho })
+      handleAgendaResourceEvent(data, { isOwnEcho })
+      // Not echo-gated: it only patches in memory (removing a deleted list's widget) and never
+      // fetches, so running it for our own events is both harmless and necessary.
       handleDashboardContentEvent(data)
     }
 

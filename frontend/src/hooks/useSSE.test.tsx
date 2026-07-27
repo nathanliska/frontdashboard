@@ -17,6 +17,9 @@ vi.mock('../resources/listData', () => ({
   handleListResourceEvent: vi.fn(() => {
     handlerCallOrder.push('list')
   }),
+  // The router asks this once per list event and passes the verdict to every handler; the
+  // default here is "not ours", which is the path these routing tests care about.
+  consumePendingListMutationEcho: vi.fn(() => false),
 }))
 
 vi.mock('../resources/calendarData', () => ({
@@ -278,6 +281,8 @@ describe('useSSE', () => {
         expect.objectContaining({
           payload: expect.objectContaining({ title: 'Milk' }),
         }),
+        // The router now hands every list handler one shared echo verdict.
+        { isOwnEcho: false },
       )
     })
   })
@@ -301,6 +306,7 @@ describe('useSSE', () => {
     await waitFor(() => {
       expect(handleListResourceEvent).toHaveBeenCalledWith(
         expect.objectContaining({ event_type: 'list.item.updated' }),
+        { isOwnEcho: false },
       )
       expect(useDashboardStore.getState().handleContentEvent).toHaveBeenCalledWith(
         expect.objectContaining({ event_type: 'list.item.updated' }),

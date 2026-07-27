@@ -97,6 +97,94 @@ function listItemToAgendaItem(
   }
 }
 
+/** Re-derive one item's agenda entry from a mutation response, in place of a refetch.
+ *
+ * This runs the *same* `listItemToAgendaItem` the fetcher runs, over the same shape the fetcher
+ * receives, so the result is what a refetch would have produced rather than an approximation.
+ * That only holds because the reminders fetch is uncapped — it maps every item on the dashboard,
+ * so removing or rewriting one entry can never reveal an item the client does not already hold.
+ *
+ * Entries can only ever leave the agenda this way: `listItemToAgendaItem` needs a `due_date`, and
+ * nothing in the UI can set one. An item that gains a due date does so elsewhere, which arrives
+ * as someone *else's* event and still refetches.
+ */
+export function applyAgendaItemUpdate(
+  dashboardId: string,
+  item: ListItem,
+  list: Pick<ListSummary, 'id' | 'name'>,
+): void {
+  const next = listItemToAgendaItem(item, list, dateKey(startOfDay(new Date())))
+  const entryId = `reminder:${item.id}`
+
+  agendaRemindersQuery.updateWhere(
+    (scope) => scope.dashboardId === dashboardId,
+    (state) => {
+      if (!state.data) return state
+      const without = state.data.filter((entry) => entry.id !== entryId)
+      return { ...state, data: next ? [...without, next] : without }
+    },
+  )
+}
+
+/** Drop agenda entries whose items no longer exist.
+ *
+ * Deliberately unscoped: reminder entry ids are `reminder:<itemId>` and an item belongs to exactly
+ * one list, which belongs to exactly one dashboard, so a match can only occur in the one scope
+ * that holds it. Sweeping every scope means the caller does not have to know the dashboard — and
+ * `deleteList` genuinely does not, since a list can be trashed from the sidebar without its detail
+ * ever being loaded.
+ */
+export function removeAgendaItems(itemIds: string[]): void {
+  const doomed = new Set(itemIds.map((id) => `reminder:${id}`))
+  agendaRemindersQuery.updateWhere(
+    () => true,
+    (state) => {
+      if (!state.data) return state
+      return { ...state, data: state.data.filter((entry) => !doomed.has(entry.id)) }
+    },
+  )
+}
+
+/** Rename a list's agenda entries — each reminder carries its list's name for display. */
+export function renameAgendaListEntries(listId: string, listName: string): void {
+  agendaRemindersQuery.updateWhere(
+    () => true,
+    (state) => {
+      if (!state.data) return state
+      return {
+        ...state,
+        data: state.data.map((entry) =>
+          entry.type === 'reminder' && entry.listId === listId ? { ...entry, listName } : entry,
+        ),
+      }
+    },
+  )
+}
+
+/** Refetch a dashboard's reminders — the one list mutation whose result we genuinely cannot derive.
+ *
+ * Restoring a list returns a summary, not its items, so there is nothing to rebuild its reminders
+ * from. This is the sanctioned kind of refetch (the client provably lacks the data), unlike the
+ * echo-driven one this module used to do after every checkbox click.
+ */
+export function invalidateAgendaReminders(dashboardId: string): void {
+  agendaRemindersQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
+}
+
+/** Drop every agenda entry belonging to a list, for a list that was trashed or deleted. */
+export function removeAgendaItemsForList(listId: string): void {
+  agendaRemindersQuery.updateWhere(
+    () => true,
+    (state) => {
+      if (!state.data) return state
+      return {
+        ...state,
+        data: state.data.filter((entry) => entry.type !== 'reminder' || entry.listId !== listId),
+      }
+    },
+  )
+}
+
 async function fetchAgendaOccurrences(scope: AgendaScope): Promise<CalendarOccurrence[]> {
   const today = startOfDay(new Date())
   const windowEnd = addDays(today, 8)
@@ -177,12 +265,25 @@ export function useAgendaItems(dashboardId: string | null) {
   )
 }
 
-export function handleAgendaResourceEvent(event: ResourceEvent): void {
+export function handleAgendaResourceEvent(
+  event: ResourceEvent,
+  { isOwnEcho = false }: { isOwnEcho?: boolean } = {},
+): void {
   if (event.event_type === 'resync') {
     agendaOccurrencesQuery.invalidateWhere(() => true)
     agendaRemindersQuery.invalidateWhere(() => true)
     return
   }
+
+  // Our own list mutation already patched this cache through `applyAgendaItemUpdate`, so the
+  // echo has nothing left to tell us — refetching it was the last of the PATCH-then-GET pairs.
+  // The verdict is decided once by the SSE router and passed in, because the check that produces
+  // it consumes the pending id: whichever handler asked first would be the only one told the
+  // truth, and this handler runs second.
+  //
+  // Calendar events are deliberately *not* covered by this: occurrence expansion is genuinely
+  // server-derived, so refetching after a calendar mutation is the sanctioned exception.
+  if (isOwnEcho && event.event_type.startsWith('list.')) return
 
   const dashboardId = getDashboardId(event)
   const invalidateMatching = (invalidate: (predicate: (scope: AgendaScope) => boolean) => void) => {

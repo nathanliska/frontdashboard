@@ -28,6 +28,13 @@ import {
   forgetPendingListMutation,
   recordPendingListMutation,
 } from '../utils/lists/listMutation'
+import {
+  applyAgendaItemUpdate,
+  invalidateAgendaReminders,
+  removeAgendaItems,
+  removeAgendaItemsForList,
+  renameAgendaListEntries,
+} from './agendaData'
 import { createScopedQuery } from './scopedQuery'
 
 type ListSummariesScope = {
@@ -79,7 +86,7 @@ function getListEventClientMutationId(event: SseEvent): string | null {
   return event.payload.client_mutation_id ?? null
 }
 
-function consumePendingListMutationEcho(event: SseEvent): boolean {
+export function consumePendingListMutationEcho(event: SseEvent): boolean {
   const currentUserId = useAuthStore.getState().user?.id
   const clientMutationId = getListEventClientMutationId(event)
   if (!currentUserId || event.actor_id !== currentUserId || !clientMutationId) {
@@ -201,6 +208,8 @@ export async function updateListName(id: string, name: string): Promise<void> {
       name: updated.name,
       updated_at: updated.updated_at,
     }))
+    // Each agenda reminder displays its list's name, so a rename has to reach them too.
+    renameAgendaListEntries(id, updated.name)
   } catch (error) {
     forgetPendingListMutation(clientMutationId)
     toast.error('Failed to rename list.')
@@ -213,6 +222,7 @@ export async function deleteList(id: string): Promise<void> {
   try {
     await apiDeleteList(id, options)
     removeListFromCaches(id)
+    removeAgendaItemsForList(id)
   } catch (error) {
     forgetPendingListMutation(clientMutationId)
     toast.error('Failed to move list to trash.')
@@ -233,6 +243,9 @@ export async function restoreList(id: string, dashboardId: string): Promise<List
           ? { ...state, data: [...state.data.filter((l) => l.id !== id), restored] }
           : state,
     )
+    // The one list mutation whose agenda effect cannot be derived: the response is a summary, so
+    // the restored list's items — and therefore its reminders — are not in hand.
+    invalidateAgendaReminders(dashboardId)
     return restored
   } catch (error) {
     forgetPendingListMutation(clientMutationId)
@@ -254,11 +267,28 @@ export async function addListItem(listId: string, text: string): Promise<void> {
       ...list,
       item_count: list.item_count + 1,
     }))
+    // A new item carries no due date, so this derives to "not on the agenda" and is a no-op
+    // today. It runs anyway so the agenda stays correct by construction if creation ever gains
+    // one, rather than silently dropping it.
+    patchAgendaFromListDetail(listId, item)
   } catch (error) {
     forgetPendingListMutation(clientMutationId)
     toast.error('Failed to add item.')
     throw error instanceof Error ? error : new Error('Failed to add item.')
   }
+}
+
+/** Re-derive an item's agenda entry after a mutation, using the cached list for its dashboard.
+ *
+ * The detail cache is always populated here in practice: you can only act on an item you are
+ * looking at, and both surfaces that mutate one (the list widget and the list page) read it
+ * through `useListDetail`. If it somehow is not, the agenda simply keeps its current entry until
+ * its next natural refresh rather than showing something wrong.
+ */
+function patchAgendaFromListDetail(listId: string, item: ListItem): void {
+  const detail = listDetailQuery.getState({ listId }).data
+  if (!detail) return
+  applyAgendaItemUpdate(detail.dashboard_id, item, { id: detail.id, name: detail.name })
 }
 
 export async function updateListItem(
@@ -273,6 +303,10 @@ export async function updateListItem(
       ...detail,
       items: detail.items.map((current) => (current.id === itemId ? item : current)),
     }))
+    // The agenda derives its reminders from these same items with a pure transform, so applying
+    // the response here is what lets its SSE echo be ignored instead of triggering a refetch.
+    // Read after the patch so the detail is the post-mutation one.
+    patchAgendaFromListDetail(listId, item)
   } catch (error) {
     forgetPendingListMutation(clientMutationId)
     toast.error(body.text != null ? 'Failed to rename item.' : 'Failed to update item.')
@@ -291,6 +325,7 @@ export async function deleteListItem(listId: string, itemId: string): Promise<vo
       items: detail.items.filter((item) => item.id !== itemId),
       item_count: Math.max(0, detail.item_count - 1),
     }))
+    removeAgendaItems([itemId])
     patchListSummaryById(listId, (list) => ({
       ...list,
       item_count: Math.max(0, list.item_count - 1),
@@ -378,7 +413,13 @@ function pickPatchableItemFields(values: Record<string, unknown>): Partial<ListI
   return patch as Partial<ListItem>
 }
 
-export function handleListResourceEvent(event: ResourceEvent): void {
+export function handleListResourceEvent(
+  event: ResourceEvent,
+  // Decided once by the SSE router and shared, because `consumePendingListMutationEcho` deletes
+  // the pending id — only the first handler to ask can learn the truth, and there are three.
+  // Defaults to asking directly so a lone caller (tests, a direct dispatch) still behaves.
+  { isOwnEcho }: { isOwnEcho?: boolean } = {},
+): void {
   if (event.event_type === 'resync') {
     listSummariesQuery.invalidateWhere(() => true)
     listDetailQuery.invalidateWhere(() => true)
@@ -389,7 +430,7 @@ export function handleListResourceEvent(event: ResourceEvent): void {
 
   const dashboardId = getEventDashboardId(event)
   const affectedListId = getAffectedListId(event)
-  if (consumePendingListMutationEcho(event)) {
+  if (isOwnEcho ?? consumePendingListMutationEcho(event)) {
     return
   }
 

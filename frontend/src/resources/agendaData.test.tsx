@@ -6,7 +6,12 @@ import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
 import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
 import { handleAgendaResourceEvent, resetAgendaData, useAgendaItems } from './agendaData'
-import { __resetListDataForTests, handleListResourceEvent } from './listData'
+import {
+  __resetListDataForTests,
+  __seedListDetailForTests,
+  handleListResourceEvent,
+  updateListItem,
+} from './listData'
 
 const { apiListOccurrences } = vi.hoisted(() => ({
   apiListOccurrences: vi.fn(),
@@ -223,6 +228,59 @@ describe('agendaData', () => {
     await screen.findByText('Launch review')
     expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
     expect(apiListOccurrences).toHaveBeenCalledTimes(1)
+    expect(apiGetListDetails).toHaveBeenCalledTimes(2)
+  })
+
+  it('patches reminders from our own item check instead of refetching them', async () => {
+    // The last PATCH-then-GET pair. Checking an item in a list widget applied the response to the
+    // list cache and then refetched the whole agenda anyway, because this handler saw the echo of
+    // our own mutation and had no way to recognise it — `handleListResourceEvent` had already
+    // consumed the pending id. Now the router decides once and both are told.
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetListDetails.mockResolvedValueOnce([makeListDetail()])
+    __seedListDetailForTests('list-1', makeListDetail())
+    apiUpdateItem.mockResolvedValueOnce(makeListItem({ checked: true }))
+
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await updateListItem('list-1', 'item-1', { checked: true })
+    })
+
+    // Derived locally with the same transform the fetcher uses: a checked item is not a reminder.
+    expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
+
+    act(() => {
+      const event = makeListItemCheckedEvent()
+      handleListResourceEvent(event, { isOwnEcho: true })
+      handleAgendaResourceEvent(event, { isOwnEcho: true })
+    })
+
+    // The whole point: still one fetch. Asserting on the count rather than the rendering,
+    // because the rendered agenda looks identical whether it was patched or refetched.
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
+  })
+
+  it('still refetches reminders when someone else checks an item', async () => {
+    // The suppression must be scoped to our *own* mutations. Another user's change carries no
+    // pending id of ours, so it is not derivable and the refetch stays.
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetListDetails
+      .mockResolvedValueOnce([makeListDetail()])
+      .mockResolvedValueOnce([makeListDetail({ items: [makeListItem({ checked: true })] })])
+
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      handleAgendaResourceEvent(makeListItemCheckedEvent(), { isOwnEcho: false })
+    })
+
+    await screen.findByText('Launch review')
     expect(apiGetListDetails).toHaveBeenCalledTimes(2)
   })
 })
