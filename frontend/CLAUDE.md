@@ -89,6 +89,13 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
   the page handler above it, or there is nothing to attach the message to.
 - The toaster is a **persistent `role="status"` live region** — do not conditionally mount it;
   a live region that mounts with its first message announces nothing.
+- **`ui/ErrorBoundary` wraps every widget and the app root** — a render throw must never reach
+  React's default, which unmounts the whole tree and leaves a blank page. It matters here because
+  dashboards render user-authored content, so a crash tends to be *deterministic*: reloading hits
+  the same data and throws again. Widget-level is the useful one (one bad tile costs its tile, not
+  the page) and is keyed by widget id so a reused grid slot resets. It is a class component
+  because `getDerivedStateFromError` has no hook equivalent — don't "modernise" it. Tests assert a
+  *sibling survives* the crash; neutering the boundary fails them.
 - In tests, Radix menus open on `fireEvent.pointerDown(trigger)`, not `click`.
 
 ## Network and errors
