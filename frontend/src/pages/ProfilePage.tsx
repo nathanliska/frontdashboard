@@ -1,4 +1,4 @@
-import { Home, LockKeyhole, Pencil, X } from 'lucide-react'
+import { Check, Home, LockKeyhole, Pencil, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { FormField } from '../components/ui/FormField'
@@ -6,6 +6,7 @@ import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 import { useDashboardStore } from '../stores/dashboard'
 import { toast } from '../stores/toast'
+import { cn } from '../utils/shared/cn'
 
 export function ProfilePage() {
   const user = useAuthStore((s) => s.user)
@@ -154,35 +155,63 @@ export function ProfilePage() {
             onSubmit={(event) => void handleProfileSubmit(event)}
             className="grid gap-4 border-t border-zinc-800/80 px-5 py-4 sm:grid-cols-2"
           >
-            <div className="space-y-1.5">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                <FormField
+            {/* Edits in place, like `EditableListName` and the list rows: the input replaces the
+                value inside the same cell, with Check/Cancel as inline icons. Full-size Save and
+                Cancel buttons had to live somewhere, and wherever they went they either shoved the
+                Email column out of alignment or added a row that resized the card on every edit.
+                Labelled locally rather than via `FormField` so the label matches the read view's
+                exactly — the aria wiring is the same either way (see frontend/CLAUDE.md). */}
+            <div className="space-y-1">
+              <label htmlFor="display-name" className="text-xs text-zinc-500">
+                Display name
+              </label>
+              <div className="flex items-center gap-2">
+                <input
                   id="display-name"
                   name="display-name"
-                  label="Display name"
                   defaultValue={currentUser.display_name}
-                  error={profileError}
+                  aria-invalid={profileError ? true : undefined}
+                  aria-describedby={profileError ? 'display-name-error' : undefined}
                   onChange={() => setProfileError(null)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      cancelProfileEdit()
+                    }
+                  }}
                   required
-                  className="min-w-0 w-full text-sm"
+                  className={cn(
+                    'min-w-0 flex-1 rounded border bg-zinc-800 px-2 py-1 text-sm text-zinc-100 focus:outline-none',
+                    profileError
+                      ? 'border-red-500/60 focus:border-red-500'
+                      : 'border-zinc-700 focus:border-zinc-500',
+                  )}
                 />
-                <div className="flex shrink-0 items-center justify-end gap-2 sm:mt-7">
-                  <button
-                    type="button"
-                    onClick={cancelProfileEdit}
-                    className="rounded-lg px-3 py-2 text-sm text-zinc-500 transition-colors hover:text-zinc-200"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={savingProfile}
-                    className="rounded-lg bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-950 transition-colors hover:bg-white disabled:opacity-60"
-                  >
-                    {savingProfile ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
+                <button
+                  type="submit"
+                  disabled={savingProfile}
+                  aria-label="Save display name"
+                  className="p-0.5 text-zinc-500 transition-colors hover:text-zinc-100 disabled:opacity-50"
+                >
+                  <Check size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelProfileEdit}
+                  aria-label="Cancel editing display name"
+                  className="p-0.5 text-zinc-500 transition-colors hover:text-zinc-300"
+                >
+                  <X size={14} />
+                </button>
               </div>
+              <p
+                id="display-name-error"
+                role="alert"
+                className="text-xs text-red-400"
+                hidden={!profileError}
+              >
+                {profileError}
+              </p>
             </div>
 
             <Field label="Email" value={currentUser.email} />
