@@ -158,7 +158,9 @@ export async function apiCreateItem(
 export async function apiUpdateItem(
   listId: string,
   itemId: string,
-  body: { text?: string; checked?: boolean },
+  // `due_date` is a plain YYYY-MM-DD calendar day, not a timestamp — it is what the agenda's
+  // TODAY/OVERDUE split compares against, so it must not carry a time or a zone. `null` clears it.
+  body: { text?: string; checked?: boolean; due_date?: string | null },
   options?: ListMutationOptions,
 ): Promise<ListItemResponse> {
   const res = await apiFetch(`/api/lists/${listId}/items/${itemId}`, {

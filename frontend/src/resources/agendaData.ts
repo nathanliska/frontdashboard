@@ -104,9 +104,10 @@ function listItemToAgendaItem(
  * That only holds because the reminders fetch is uncapped — it maps every item on the dashboard,
  * so removing or rewriting one entry can never reveal an item the client does not already hold.
  *
- * Entries can only ever leave the agenda this way: `listItemToAgendaItem` needs a `due_date`, and
- * nothing in the UI can set one. An item that gains a due date does so elsewhere, which arrives
- * as someone *else's* event and still refetches.
+ * Entries both leave and arrive this way. Setting a due date makes `listItemToAgendaItem` return
+ * an entry where it previously returned null, so the item appears in the agenda from this patch
+ * alone; clearing the date or checking the item removes it again. Ordering is not this function's
+ * problem — `mergeAgendaState` sorts the merged list on every read, so appending is enough.
  */
 export function applyAgendaItemUpdate(
   dashboardId: string,

@@ -294,7 +294,7 @@ function patchAgendaFromListDetail(listId: string, item: ListItem): void {
 export async function updateListItem(
   listId: string,
   itemId: string,
-  body: { text?: string; checked?: boolean },
+  body: { text?: string; checked?: boolean; due_date?: string | null },
 ): Promise<void> {
   const { clientMutationId, options } = nextListMutationOptions()
   try {

@@ -44,6 +44,20 @@ export function dateKey(value: string | Date): string {
   return `${year}-${month}-${day}`
 }
 
+/** Format a bare `YYYY-MM-DD` calendar day (a list item's `due_date`) as e.g. "Jul 25".
+ *
+ * Split by hand instead of `new Date(day)`: that reads a bare date as UTC midnight, so anywhere
+ * west of Greenwich it renders as the *previous* day. A due date has no time and no zone, and it
+ * has to survive display as the same day the user picked.
+ */
+export function formatCalendarDay(day: string): string {
+  const [year, month, dayOfMonth] = day.split('-').map(Number)
+  return new Date(year, month - 1, dayOfMonth).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 export function formatMonthLabel(date: Date): string {
   return new Intl.DateTimeFormat(undefined, {
     month: 'long',

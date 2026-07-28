@@ -23,7 +23,7 @@ import { scrollToNewestItem } from '../utils/shared/scrollToNewestItem'
 
 type ItemHandlers = Pick<
   ComponentProps<typeof ListItemRow>,
-  'onToggleChecked' | 'onRename' | 'onDelete'
+  'onToggleChecked' | 'onRename' | 'onSetDueDate' | 'onDelete'
 >
 
 function SortableItemRow({
@@ -93,6 +93,10 @@ export function ListDetailPage() {
     await updateListItem(listId, itemId, { checked })
   }
 
+  async function handleSetDueDate(itemId: string, dueDate: string | null) {
+    await updateListItem(listId, itemId, { due_date: dueDate })
+  }
+
   const sortingEnabled = !!detail && detail.items.length >= 2
 
   if (!detail) {
@@ -145,6 +149,7 @@ export function ListDetailPage() {
                   sortingEnabled={sortingEnabled}
                   onToggleChecked={handleToggleItem}
                   onRename={handleRenameItem}
+                  onSetDueDate={handleSetDueDate}
                   onDelete={handleDeleteItem}
                 />
               )}

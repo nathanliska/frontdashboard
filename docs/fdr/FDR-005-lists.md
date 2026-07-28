@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-07-27
+**Last reviewed:** 2026-07-28
 
 ## Overview
 
@@ -15,6 +15,13 @@ master/detail UI and surfaced on dashboards via the list widget ([FDR-003](FDR-0
   mobile slide navigation.
 - **Item metadata.** Items support check/uncheck, due date, priority, category, assignee, and a manual
   sort order.
+- **Due dates are the agenda's reminder source.** A `due_date` is a bare `YYYY-MM-DD` calendar day —
+  no time, no zone — because the agenda's TODAY/OVERDUE split compares it as a string against the
+  local day. Set it from a picker on the item row (its own control, not a field inside the text
+  editor, which saves on blur and would close before a date could be chosen); the list widget shows
+  it read-only. Only *priority, category and assignee* remain backend-only with no UI. Until the
+  picker existed the column was writable by API alone, so the Agenda widget's TODAY section was
+  permanently empty while this document already claimed due dates were supported.
 - **Manual order only.** Items keep their manual order; checked items stay in place rather than
   sinking. New items append last.
 - **Drag-and-drop reorder.** Reorder items within a list and lists within the sidebar, via drag

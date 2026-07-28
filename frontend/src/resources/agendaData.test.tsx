@@ -283,4 +283,28 @@ describe('agendaData', () => {
     await screen.findByText('Launch review')
     expect(apiGetListDetails).toHaveBeenCalledTimes(2)
   })
+
+  it('an item that gains a due date joins the agenda without a refetch', async () => {
+    // The other direction of `applyAgendaItemUpdate`. Until the due-date picker existed nothing in
+    // the UI could set a date, so entries could only ever *leave* the agenda this way — the docs in
+    // agendaData.ts said as much. Now an item can arrive, and it has to arrive from the mutation
+    // response rather than a refetch, or we are back to the PATCH-then-GET pair.
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    const undated = makeListDetail({ items: [makeListItem({ due_date: null })] })
+    apiGetListDetails.mockResolvedValueOnce([undated])
+    __seedListDetailForTests('list-1', undated)
+    apiUpdateItem.mockResolvedValueOnce(makeListItem({ due_date: DUE }))
+
+    render(<AgendaProbe />)
+    await screen.findByText('Launch review')
+    expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await updateListItem('list-1', 'item-1', { due_date: DUE })
+    })
+
+    expect(screen.getByText('Buy milk')).toBeInTheDocument()
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+  })
 })

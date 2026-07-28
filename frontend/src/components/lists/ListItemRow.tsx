@@ -1,6 +1,7 @@
-import { Check, GripVertical, Pencil, Trash2, X } from 'lucide-react'
+import { CalendarPlus, Check, GripVertical, Pencil, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ListItem } from '../../api/lists'
+import { dateKey, formatCalendarDay, startOfDay } from '../../utils/calendar/calendarUtils'
 import { cn } from '../../utils/shared/cn'
 import type { SortableRow } from './SortableList'
 
@@ -8,18 +9,24 @@ export function ListItemRow({
   item,
   onToggleChecked,
   onRename,
+  onSetDueDate,
   onDelete,
   sortable,
 }: {
   item: ListItem
   onToggleChecked: (itemId: string, checked: boolean) => Promise<void>
   onRename: (itemId: string, text: string) => Promise<void>
+  onSetDueDate: (itemId: string, dueDate: string | null) => Promise<void>
   onDelete: (itemId: string) => Promise<void>
   sortable?: SortableRow
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // Deliberately its own control rather than a field inside the text editor: the text input
+  // submits on blur, so clicking a date picker nested in it would save and close the editor
+  // before the date could be chosen.
+  const [pickingDate, setPickingDate] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -45,6 +52,15 @@ export function ListItemRow({
       setEditing(false)
     } catch {
       // keep the editor open so the user can retry
+    }
+  }
+
+  async function commitDueDate(value: string) {
+    try {
+      await onSetDueDate(item.id, value || null)
+      setPickingDate(false)
+    } catch {
+      // keep the picker open so the user can retry
     }
   }
 
@@ -121,6 +137,51 @@ export function ListItemRow({
           title={item.checked ? 'Uncheck item' : 'Check item'}
         >
           <span className="block truncate">{item.text}</span>
+        </button>
+      )}
+      {pickingDate ? (
+        <input
+          // The input replaces a button the user just activated, so focus has to follow it —
+          // without this the keyboard path opens a picker it cannot then reach.
+          // biome-ignore lint/a11y/noAutofocus: replaces the button that was just activated
+          autoFocus
+          type="date"
+          defaultValue={item.due_date ?? ''}
+          onChange={(event) => void commitDueDate(event.target.value)}
+          onBlur={() => setPickingDate(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              setPickingDate(false)
+            }
+          }}
+          aria-label="Due date"
+          className="shrink-0 bg-zinc-800 border border-zinc-700 rounded px-1.5 py-0.5 text-xs text-zinc-100 focus:outline-none focus:border-zinc-500"
+        />
+      ) : item.due_date ? (
+        <button
+          type="button"
+          onClick={() => setPickingDate(true)}
+          aria-label={`Due ${item.due_date}. Change due date`}
+          className={cn(
+            'shrink-0 rounded px-1.5 py-0.5 text-[10px] tabular-nums transition-colors',
+            // Overdue only matters while the item is outstanding — a checked item is done, and
+            // colouring it red says it still needs attention.
+            !item.checked && item.due_date < dateKey(startOfDay(new Date()))
+              ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+              : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200',
+          )}
+        >
+          {formatCalendarDay(item.due_date)}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPickingDate(true)}
+          aria-label="Set due date"
+          className="shrink-0 p-0.5 text-zinc-600 hover:text-zinc-300 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
+        >
+          <CalendarPlus size={14} />
         </button>
       )}
       {confirmingDelete ? (

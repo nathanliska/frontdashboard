@@ -5,6 +5,7 @@ import { ApiError } from '../../../api/http'
 import type { ListItem } from '../../../api/lists'
 import { addListItem, updateListItem, useListDetail } from '../../../resources/listData'
 import { useDashboardStore } from '../../../stores/dashboard'
+import { dateKey, formatCalendarDay, startOfDay } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
 import { scrollToNewestItem } from '../../../utils/shared/scrollToNewestItem'
 import { WidgetErrorState } from '../WidgetErrorState'
@@ -142,6 +143,20 @@ export function ListWidget({
             >
               {item.text}
             </span>
+            {/* Read-only here — the picker lives on the list page. Overdue is only meaningful for
+                an outstanding item, so a checked one stays neutral. */}
+            {item.due_date && (
+              <span
+                className={cn(
+                  'shrink-0 rounded px-1 py-0.5 text-[9px] tabular-nums leading-none mt-0.5',
+                  !item.checked && item.due_date < dateKey(startOfDay(new Date()))
+                    ? 'bg-red-500/10 text-red-400'
+                    : 'bg-zinc-800 text-zinc-500',
+                )}
+              >
+                {formatCalendarDay(item.due_date)}
+              </span>
+            )}
           </button>
         ))}
 
