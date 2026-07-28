@@ -152,8 +152,19 @@ async def accept_invite(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> InviteAcceptResponse:
-    """Redeem an invite for the signed-in user, granting the role it carries."""
-    invite = await consume_invite(code, current_user.id, db)
+    """Redeem an invite for the signed-in user, granting the role it carries.
+
+    Redemption **decides before it consumes**. The invite is single-use, so consuming first — as
+    this did — spent the code even when redeeming changed nothing: the owner clicking their own
+    link burned it for no grant at all, and anyone who already had access burned a code that was
+    presumably meant for someone else.
+
+    It also never downgrades. `create_share` upserts the role, so an existing editor who clicked a
+    viewer link was silently demoted — a link is an offer of access, not an instruction to reduce
+    it. Someone already at or above the offered role keeps what they have, and the invite stays
+    live for its intended recipient.
+    """
+    invite = await load_live_invite(code, db)
     if invite is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
 
@@ -163,46 +174,58 @@ async def accept_invite(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
 
     role = ShareRole(invite.role)
+    existing_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
+    held = permissions.highest_role(
+        [ShareRole(share.role) for share in existing_shares if share.principal_type == PrincipalType.user and share.principal_id == current_user.id]
+    )
+
     # The owner redeeming their own link is a no-op, not an error: they already have full access,
     # and a share row for the owner would contradict "owner is the absence of a share".
-    if dashboard.user_id != current_user.id:
-        await create_share(
-            ResourceType.dashboard,
-            dashboard.id,
-            ShareCreate(principal_type=PrincipalType.user, principal_id=current_user.id, role=role),
-            invite.created_by,
-            db,
-        )
+    if dashboard.user_id == current_user.id or (held is not None and permissions.is_at_least(held, role)):
+        # Nothing to grant, so nothing is consumed and no event is emitted — the response reports
+        # the access they actually hold rather than the one the link offered.
+        return InviteAcceptResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name, role=held or role)
 
-        notification = stage_notification(
-            db,
-            user_id=dashboard.user_id,
-            type=EventType.dashboard_share_added.value,
-            title="Someone joined a dashboard",
-            body=f"{current_user.display_name} accepted an invite to {dashboard.name}.",
-            reference_type="dashboard",
-            reference_id=dashboard.id,
-        )
-        event = log_event(
-            db,
-            event_type=EventType.dashboard_share_added,
-            actor_id=current_user.id,
-            actor_display_name=current_user.display_name,
-            entity_type="dashboard",
-            entity_id=dashboard.id,
-            entity_version=dashboard.version,
-            payload={"dashboard_id": str(dashboard.id), "changed_fields": ["shares"]},
-        )
-        # Built before the commit, broadcast after — the ordering the rest of the app relies on.
-        event_message = await build_activity_sse_dict(db, event)
-        notification_message = await build_notification_sse_dict(db, notification)
-        shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-        await db.commit()
+    # Consume only now that redemption will change something. Still the atomic UPDATE, so a code
+    # claimed by someone else between the check above and here loses here rather than double-granting.
+    if await consume_invite(code, current_user.id, db) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
 
-        recipients = {dashboard.user_id} | {share.principal_id for share in shares}
-        await manager.broadcast(event_message, user_ids=recipients, actor_id=current_user.id)
-        await manager.broadcast(notification_message, user_ids={dashboard.user_id}, actor_id=current_user.id)
-    else:
-        await db.commit()
+    await create_share(
+        ResourceType.dashboard,
+        dashboard.id,
+        ShareCreate(principal_type=PrincipalType.user, principal_id=current_user.id, role=role),
+        invite.created_by,
+        db,
+    )
+
+    notification = stage_notification(
+        db,
+        user_id=dashboard.user_id,
+        type=EventType.dashboard_share_added.value,
+        title="Someone joined a dashboard",
+        body=f"{current_user.display_name} accepted an invite to {dashboard.name}.",
+        reference_type="dashboard",
+        reference_id=dashboard.id,
+    )
+    event = log_event(
+        db,
+        event_type=EventType.dashboard_share_added,
+        actor_id=current_user.id,
+        actor_display_name=current_user.display_name,
+        entity_type="dashboard",
+        entity_id=dashboard.id,
+        entity_version=dashboard.version,
+        payload={"dashboard_id": str(dashboard.id), "changed_fields": ["shares"]},
+    )
+    # Built before the commit, broadcast after — the ordering the rest of the app relies on.
+    event_message = await build_activity_sse_dict(db, event)
+    notification_message = await build_notification_sse_dict(db, notification)
+    shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
+    await db.commit()
+
+    recipients = {dashboard.user_id} | {share.principal_id for share in shares}
+    await manager.broadcast(event_message, user_ids=recipients, actor_id=current_user.id)
+    await manager.broadcast(notification_message, user_ids={dashboard.user_id}, actor_id=current_user.id)
 
     return InviteAcceptResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name, role=role)

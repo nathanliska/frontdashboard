@@ -6,6 +6,38 @@ from fastapi import HTTPException, status
 
 from app.models.share import PrincipalType, ResourceShare, ShareRole
 
+# Ascending authority. Owner is deliberately absent: it is not a `ShareRole` but the *absence* of
+# one (see `effective_role`), so `rank` places it above every member here.
+_ROLE_RANK: dict[ShareRole, int] = {
+    ShareRole.viewer: 0,
+    ShareRole.editor: 1,
+}
+
+
+def rank(role: ShareRole | None) -> int:
+    """Comparable authority, owner (None) highest.
+
+    The single definition of "which role outranks which". It was previously written three times —
+    the iteration order picking a highest share, the membership test in `can_edit`, and anywhere
+    else that needed to compare — which is three chances for them to disagree when a role is added.
+    """
+    return len(_ROLE_RANK) if role is None else _ROLE_RANK[role]
+
+
+def is_at_least(role: ShareRole | None, required: ShareRole | None) -> bool:
+    """Does `role` carry at least the authority of `required`?"""
+    return rank(role) >= rank(required)
+
+
+def highest_role(roles: list[ShareRole]) -> ShareRole | None:
+    """The strongest of some share roles, or None if there are none.
+
+    None here means "no roles given", not owner — callers that can be the owner establish that
+    before asking. Kept separate from `effective_role` because the invite path needs to know what
+    someone already holds *without* the 404 that means "no access at all".
+    """
+    return max(roles, key=rank) if roles else None
+
 
 def effective_role(
     resource_created_by: uuid.UUID,
@@ -18,16 +50,12 @@ def effective_role(
     if resource_created_by == user_id:
         return None
 
-    matching = [s for s in shares if s.principal_type == PrincipalType.user and s.principal_id == user_id]
+    matching = [ShareRole(s.role) for s in shares if s.principal_type == PrincipalType.user and s.principal_id == user_id]
 
-    if not matching:
+    strongest = highest_role(matching)
+    if strongest is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
-    for r in (ShareRole.editor, ShareRole.viewer):
-        if any(s.role == r for s in matching):
-            return r
-
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")  # pragma: no cover
+    return strongest
 
 
 def can_read(role: ShareRole | None) -> bool:  # noqa: ARG001
@@ -36,7 +64,7 @@ def can_read(role: ShareRole | None) -> bool:  # noqa: ARG001
 
 def can_edit(role: ShareRole | None) -> bool:
     """True for owner and editor. Covers all content mutations."""
-    return role in (None, ShareRole.editor)
+    return is_at_least(role, ShareRole.editor)
 
 
 def can_delete(role: ShareRole | None) -> bool:
