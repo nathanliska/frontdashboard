@@ -170,7 +170,11 @@ _Last updated: 2026-07-26_
   the only tables that grow with usage rather than user count — are pruned past a 90-day horizon.
   It runs under a Postgres advisory lock, so extra workers can each schedule it and exactly one
   sweeps. Pruning history is safe for SSE because a reconnect carrying any `Last-Event-ID` triggers
-  a resync rather than a replay.
+  a resync rather than a replay. It also purges **unverified signups past 30 days** — registration is
+  open to the internet, so abandoned ones accumulate; login 403s until an address is verified, so
+  such an account provably holds no content, and purging it frees an email the unique index would
+  otherwise reserve forever. That sweep skips (and warns) rather than cascading if one somehow owns
+  content.
 - **The connection pool is bounded** (10 connections: `db_pool_size` + `db_max_overflow`), with a
   pool-acquire timeout, connection recycling, and a server-side `statement_timeout`. A request burst
   fails fast instead of queueing without limit or opening connections until Postgres runs out of

@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # tables that grow with usage rather than with the number of users, so without a horizon they
     # grow forever. 90 days is well past the point anyone scrolls back to.
     history_retention_days: int = 90
+    # How long an unverified signup is kept before the reaper purges it. Registration is open to
+    # the internet, so abandoned signups accumulate. Purging one destroys nothing a person could
+    # want: login 403s until the address is verified, so the account provably holds no content
+    # beyond the empty dashboard registration creates. It also *frees the email address*, which is
+    # otherwise reserved forever by the case-insensitive unique index — someone who mistyped their
+    # address can register properly instead of being locked out of their own email for good.
+    unverified_retention_days: int = 30
     # Connection pool bounds (finding #37). Postgres costs roughly 5-10 MiB per backend
     # connection, so an unbounded pool turns a request burst into database memory pressure.
     # size + overflow is the ceiling on concurrent connections from one worker.

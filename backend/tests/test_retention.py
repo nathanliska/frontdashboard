@@ -12,12 +12,15 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models.activity import ActivityEvent
+from app.models.dashboard import Dashboard
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.list import List
 from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
-from app.services.retention import reap_expired_auth_rows, reap_expired_history
+from app.models.user import User
+from app.services.retention import reap_abandoned_signups, reap_expired_auth_rows, reap_expired_history
 from tests.helpers import make_db_user
 
 
@@ -186,3 +189,64 @@ async def test_history_sweep_leaves_auth_rows_alone(db_session):
 
     assert await db_session.get(UserSession, session.id) is not None
     assert await db_session.get(RefreshToken, token.id) is not None
+
+
+async def _make_unverified_signup(db, *, age_days: int):
+    """A signup as `register` leaves it: unverified, with one empty auto-created dashboard."""
+    created = datetime.now(UTC) - timedelta(days=age_days)
+    user = User(
+        email=f"abandoned-{uuid.uuid4()}@example.com",
+        password_hash="x",
+        display_name="Abandoned",
+        email_verified_at=None,
+        created_at=created,
+        updated_at=created,
+    )
+    db.add(user)
+    await db.flush()
+    dashboard = Dashboard(user_id=user.id, name="My Dashboard")
+    db.add(dashboard)
+    await db.flush()
+    return user, dashboard
+
+
+async def test_an_abandoned_unverified_signup_is_purged_with_its_empty_dashboard(db_session):
+    """Registration is open to the internet, so these accumulate and never leave on their own."""
+    user, dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
+
+    counts = await reap_abandoned_signups(db_session)
+
+    assert counts["abandoned_signups"] == 1
+    assert (await db_session.execute(select(User).where(User.id == user.id))).scalar_one_or_none() is None
+    assert (await db_session.execute(select(Dashboard).where(Dashboard.id == dashboard.id))).scalar_one_or_none() is None
+
+
+async def test_a_recent_unverified_signup_is_left_alone(db_session):
+    """Someone who signed up an hour ago has not abandoned anything yet."""
+    user, _ = await _make_unverified_signup(db_session, age_days=0)
+
+    assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
+    assert (await db_session.execute(select(User).where(User.id == user.id))).scalar_one() is not None
+
+
+async def test_a_verified_user_is_never_purged_however_old(db_session):
+    """The horizon is about *unverified* accounts — a real user is not garbage at any age."""
+    user = await make_db_user(db_session, label="real")
+    user.created_at = datetime.now(UTC) - timedelta(days=settings.unverified_retention_days * 10)
+    await db_session.flush()
+
+    assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
+    assert (await db_session.execute(select(User).where(User.id == user.id))).scalar_one() is not None
+
+
+async def test_an_unverified_signup_owning_content_is_skipped_not_cascaded(db_session):
+    """The safety guard. Login 403s until verification, so this state should be unreachable —
+    which is exactly why it must fail safe. If the invariant ever slips, the sweep declines to
+    delete rather than cascading through somebody's data.
+    """
+    user, dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
+    db_session.add(List(dashboard_id=dashboard.id, created_by=user.id, updated_by=user.id, name="Unexpected", list_type="todo"))
+    await db_session.flush()
+
+    assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
+    assert (await db_session.execute(select(User).where(User.id == user.id))).scalar_one() is not None

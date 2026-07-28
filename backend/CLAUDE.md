@@ -27,6 +27,13 @@ Everything here is a convention an agent can't safely infer from one file.
   sweeps children **by hand** because their `dashboard_id` FKs have no `ON DELETE CASCADE`. The one
   exception is `resource_shares.resource_id`, which does cascade, so shares are not swept there at
   all. Adding a child table means adding it to that sweep, or its rows outlive the purge.
+- **`reap_abandoned_signups` is the one sweep that deletes a `User`.** It only takes accounts with
+  `email_verified_at IS NULL` past `unverified_retention_days`, and that is safe only because login
+  raises 403 while unverified — such an account has never held a session, so the sole row
+  registration made for it is one empty dashboard. It also **fails safe**: if a candidate somehow
+  owns a widget, list or event, the sweep logs a warning and deletes nothing that tick rather than
+  cascading. Keep that guard. Adding a table with a `users` FK means adding it to this sweep too —
+  none of those FKs cascade.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single
   commit so events land in the same transaction as the mutation.
 - **SSE ordering is load-bearing:** build the event dict (`app/sse/events.py` — flush/refresh)

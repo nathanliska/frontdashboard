@@ -45,6 +45,8 @@ from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
+from app.models.share import ResourceShare
+from app.models.user import User
 
 logger = logging.getLogger("app.retention")
 
@@ -159,6 +161,59 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
     return counts
 
 
+async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
+    """Purge unverified signups past `unverified_retention_days`. Caller owns the commit.
+
+    Registration is open to the internet, so abandoned signups accumulate and never leave. This is
+    the one sweep that deletes a *user*, so the argument for safety has to be exact rather than
+    comfortable:
+
+    - Login raises 403 while `email_verified_at` is NULL, so such an account has never held a
+      session. It cannot have created a list, an event, or a widget — the only row registration
+      makes for it is one empty "My Dashboard".
+    - Nothing is lost that the person could still want. They can re-register the same address
+      afterwards, which today they cannot: the case-insensitive unique index reserves it forever,
+      so a mistyped signup locks the real owner out permanently. Purging *restores* that option.
+
+    The guard below is belt-and-braces. If a user somehow owns real content — a bug, a future code
+    path that lets an unverified account write, a hand-edited row — that account is skipped rather
+    than cascaded through. A signup that never gets cleaned up is a cosmetic problem; deleting
+    someone's data because an invariant slipped is not.
+    """
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(days=settings.unverified_retention_days)
+
+    candidates = select(User.id).where(User.email_verified_at.is_(None), User.created_at < cutoff).scalar_subquery()
+    owned_dashboards = select(Dashboard.id).where(Dashboard.user_id.in_(candidates)).scalar_subquery()
+
+    has_content = or_(
+        select(DashboardWidget.id).where(DashboardWidget.dashboard_id.in_(owned_dashboards)).exists(),
+        select(List.id).where(List.dashboard_id.in_(owned_dashboards)).exists(),
+        select(CalendarEvent.id).where(CalendarEvent.dashboard_id.in_(owned_dashboards)).exists(),
+    )
+    if (await db.execute(select(has_content))).scalar():
+        logger.warning("reaper: unverified signup owns content; skipping the abandoned-signup sweep this tick")
+        return {"abandoned_signups": 0}
+
+    doomed_dashboards = select(Dashboard.id).where(Dashboard.user_id.in_(candidates)).scalar_subquery()
+    # Ordered by dependency: `resource_shares.resource_id` cascades from dashboards (#19), but
+    # `principal_id` does not, and the rest have no cascade at all.
+    await db.execute(delete(ResourceShare).where(ResourceShare.principal_id.in_(candidates)))
+    await db.execute(delete(Notification).where(Notification.user_id.in_(candidates)))
+    await db.execute(delete(ActivityEvent).where(ActivityEvent.actor_id.in_(candidates)))
+    await db.execute(delete(DashboardInvite).where(DashboardInvite.created_by.in_(candidates)))
+    await db.execute(
+        delete(RefreshToken).where(RefreshToken.session_id.in_(select(UserSession.id).where(UserSession.user_id.in_(candidates)).scalar_subquery()))
+    )
+    await db.execute(delete(UserSession).where(UserSession.user_id.in_(candidates)))
+    await db.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id.in_(candidates)))
+    await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id.in_(candidates)))
+    await db.execute(delete(Dashboard).where(Dashboard.id.in_(doomed_dashboards)))
+
+    user_result = cast("CursorResult[Any]", await db.execute(delete(User).where(User.id.in_(candidates))))
+    return {"abandoned_signups": user_result.rowcount}
+
+
 async def run_reaper_once() -> dict[str, int] | None:
     """Acquire the cross-process lock and reap once, or no-op if another worker holds it.
 
@@ -174,6 +229,7 @@ async def run_reaper_once() -> dict[str, int] | None:
         counts = await reap_expired_auth_rows(db)
         counts |= await reap_expired_history(db)
         counts |= await reap_expired_trash(db)
+        counts |= await reap_abandoned_signups(db)
     if any(counts.values()):
         logger.info("reaper: deleted %s", counts)
     return counts
