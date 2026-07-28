@@ -21,7 +21,13 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     environment: Environment
     log_level: str = "INFO"
-    access_token_expire_minutes: int = 15
+    # Long on purpose. The usual reason to keep an access token short is that a stateless token
+    # cannot be revoked, so a clock is the only bound on it — but `_resolve_auth_context` checks
+    # the session row on *every* request (ADR-003), so revocation already takes effect on the next
+    # call and the clock bounds nothing extra. What a short lifetime did buy was a mandatory
+    # /auth/refresh round trip four times an hour, and a transient failure on that call signs the
+    # user out. Twelve hours makes that path rare while costing no revocation latency.
+    access_token_expire_minutes: int = 720
     refresh_token_expire_days: int = 7
     email_verification_expire_hours: int = 1
     password_reset_expire_hours: int = 1
