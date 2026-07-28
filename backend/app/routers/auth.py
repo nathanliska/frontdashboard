@@ -480,7 +480,13 @@ async def update_profile(
 
 
 @router.patch("/password", status_code=status.HTTP_204_NO_CONTENT)
+# Verifies `current_password`, so it is a password oracle for anyone holding a stolen session
+# cookie — and each attempt costs a full Argon2id hash (64 MiB, 4 lanes) behind a capacity limiter
+# of 4. Unlimited, that is both a guessing surface and the cheapest way to saturate the pool for
+# every other user. 5/minute is well above deliberate use and far below either.
+@limiter.limit("5/minute")
 async def change_password(
+    request: Request,
     body: PasswordChangeRequest,
     response: Response,
     _csrf: None = Depends(require_csrf),
