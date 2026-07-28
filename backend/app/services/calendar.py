@@ -190,6 +190,40 @@ def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window
                 break
 
 
+def normalize_all_day_bounds(starts_at: datetime, ends_at: datetime, timezone: str) -> tuple[datetime, datetime]:
+    """Snap an all-day event to whole local days.
+
+    `all_day` was a passthrough flag: whatever times the client sent were stored verbatim, so
+    production accumulated "all-day" events starting at 09:00 — 20 of 25 of them. Nothing broke,
+    because the window predicate compares against `ends_at` and that was already local midnight,
+    but the agenda sorts by `starts_at` and so filed them among the timed events instead of at the
+    top of the day. More to the point, the flag did not mean what it says, which is a trap for the
+    next person who trusts it.
+
+    The end is **exclusive** — an event covering one day ends at local midnight on the next. That
+    is the convention the existing rows already follow, so this preserves them rather than shifting
+    everything by a day. A sub-microsecond step back before truncating is what makes it stable:
+    without it, re-normalizing an already-normalized event would extend it by a day each time.
+
+    Conversion goes through the event's own timezone, so a day that is 23 or 25 hours long across a
+    DST boundary still maps to exactly one local day.
+    """
+    tz = ZoneInfo(timezone)
+    start_local = starts_at.astimezone(tz)
+    end_local = ends_at.astimezone(tz)
+
+    first_day = start_local.date()
+    # An end already at local midnight belongs to the previous day; stepping back keeps it there.
+    last_day = (end_local - timedelta(microseconds=1)).date()
+    if last_day < first_day:
+        last_day = first_day
+
+    return (
+        _local_to_utc(tz, first_day, time.min),
+        _local_to_utc(tz, last_day + timedelta(days=1), time.min),
+    )
+
+
 def _local_to_utc(tz: ZoneInfo, local_date: date, local_time: time) -> datetime:
     return datetime.combine(local_date, local_time, tzinfo=tz).astimezone(UTC)
 

@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-07-27
+**Last reviewed:** 2026-07-28
 
 ## Overview
 
@@ -14,6 +14,13 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
 - **Views.** Day, week, and month.
 - **Event editor.** A mobile-optimized editor with all-day toggle, a duration toolbar, timezones, and
   weekly recurrence.
+- **All-day means whole local days.** Setting `all_day` snaps `starts_at` to local midnight and
+  `ends_at` to local midnight after the last covered day, in the event's *own* timezone, so a day
+  that runs 23 or 25 hours across a DST boundary is still exactly one day. The end is **exclusive**.
+  The flag used to be a passthrough — whatever times the client sent were stored, which left
+  "all-day" events starting at 09:00; they still appeared on the right days, but the agenda sorts by
+  `starts_at` and so filed them among the timed events. Normalization is idempotent: re-saving an
+  all-day event must not extend it, which is why the end steps back a microsecond before truncating.
 - **Recurrence with overrides.** A recurring event expands into occurrences over a requested window
   (max 366 days); individual occurrences can be overridden or cancelled.
 - **Midnight correctness.** Day-dependent views re-derive "today" at local midnight (DST-safe) and on

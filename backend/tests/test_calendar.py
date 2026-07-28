@@ -307,6 +307,50 @@ async def test_finished_and_unstarted_series_are_not_loaded(
     assert expanded == ["Live series"]
 
 
+async def test_creating_an_all_day_event_snaps_it_to_whole_local_days(auth_client: AsyncClient) -> None:
+    """`all_day` was a passthrough flag, so the client's arbitrary times were stored verbatim."""
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Conference",
+        starts_at="2026-07-25T13:00:00-04:00",  # 09:00 local — the shape production accumulated
+        ends_at="2026-07-25T21:30:00-04:00",
+        timezone="America/New_York",
+        all_day=True,
+    )
+
+    # Midnight New York on the 25th is 04:00Z; the exclusive end is midnight on the 26th.
+    assert event["starts_at"] == "2026-07-25T04:00:00Z"
+    assert event["ends_at"] == "2026-07-26T04:00:00Z"
+
+
+async def test_flipping_an_existing_event_to_all_day_snaps_it_too(auth_client: AsyncClient) -> None:
+    """The edit path matters as much as create — and a repeated edit must not grow the event."""
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        starts_at="2026-07-25T13:00:00-04:00",
+        ends_at="2026-07-25T14:00:00-04:00",
+        timezone="America/New_York",
+        all_day=False,
+    )
+
+    set_csrf(auth_client)
+    flipped = await auth_client.patch(f"/api/calendar/events/{event['id']}", json={"all_day": True})
+    assert flipped.status_code == 200, flipped.text
+    assert flipped.json()["starts_at"] == "2026-07-25T04:00:00Z"
+    assert flipped.json()["ends_at"] == "2026-07-26T04:00:00Z"
+
+    # Idempotence through the API: touching an unrelated field re-runs the snap, and the event
+    # must not gain a day each time it is edited.
+    again = await auth_client.patch(f"/api/calendar/events/{event['id']}", json={"title": "Renamed"})
+    assert again.status_code == 200, again.text
+    assert again.json()["starts_at"] == "2026-07-25T04:00:00Z"
+    assert again.json()["ends_at"] == "2026-07-26T04:00:00Z"
+
+
 async def test_a_past_one_off_event_is_not_loaded_as_an_unbounded_series(
     auth_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,

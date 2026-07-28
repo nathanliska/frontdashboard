@@ -23,7 +23,7 @@ from app.schemas.calendar import (
 from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessResponse
 from app.services import permissions
 from app.services.activity import EventType, log_event
-from app.services.calendar import expand_event_occurrences
+from app.services.calendar import expand_event_occurrences, normalize_all_day_bounds
 from app.services.shares import (
     list_accessible_dashboard_ids,
     load_dashboard_access,
@@ -131,6 +131,11 @@ async def create_event(
     dashboard, shares, role = await load_dashboard_access(body.dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
 
+    starts_at = body.starts_at.astimezone(UTC)
+    ends_at = body.ends_at.astimezone(UTC)
+    if body.all_day:
+        starts_at, ends_at = normalize_all_day_bounds(starts_at, ends_at, body.timezone)
+
     event = CalendarEvent(
         dashboard_id=dashboard.id,
         created_by=current_user.id,
@@ -138,8 +143,8 @@ async def create_event(
         title=body.title,
         description=body.description,
         location=body.location,
-        starts_at=body.starts_at.astimezone(UTC),
-        ends_at=body.ends_at.astimezone(UTC),
+        starts_at=starts_at,
+        ends_at=ends_at,
         timezone=body.timezone,
         all_day=body.all_day,
         recurrence=body.recurrence.model_dump(mode="json") if body.recurrence else None,
@@ -307,6 +312,11 @@ async def update_event(
         event.timezone = body.timezone
     if body.all_day is not None:
         event.all_day = body.all_day
+    if event.all_day:
+        # After every field is settled, because the snap depends on the event's timezone — which
+        # this same request may have just changed. Also covers the "was timed, now all-day" edit,
+        # not just creation. Turning all_day *off* deliberately leaves the times alone.
+        event.starts_at, event.ends_at = normalize_all_day_bounds(event.starts_at, event.ends_at, event.timezone)
     if "recurrence" in body.model_fields_set:
         if body.recurrence and body.recurrence.until and body.recurrence.until <= event.starts_at:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="recurrence until must be after starts_at")
