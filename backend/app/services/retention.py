@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import async_session_factory
 from app.models.activity import ActivityEvent
-from app.models.calendar import CalendarEvent
+from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.dashboard_invite import DashboardInvite
 from app.models.email_verification_token import EmailVerificationToken
@@ -175,26 +175,85 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
       afterwards, which today they cannot: the case-insensitive unique index reserves it forever,
       so a mistyped signup locks the real owner out permanently. Purging *restores* that option.
 
-    The guard below is belt-and-braces. If a user somehow owns real content — a bug, a future code
-    path that lets an unverified account write, a hand-edited row — that account is skipped rather
-    than cascaded through. A signup that never gets cleaned up is a cosmetic problem; deleting
-    someone's data because an invariant slipped is not.
+    Owning content disqualifies an account, and that is not merely belt-and-braces — it fired on the
+    first real run. Email verification arrived on 2026-04-30 and its migration added
+    `email_verified_at` as nullable *without backfilling*, so every account created before then
+    reads as unverified forever. Those are ordinary users who logged in and made things back when no
+    gate existed; they recover by logging in and using the resend flow, which returns their content
+    intact. The check is what keeps the sweep from deleting them.
+
+    It filters per user rather than vetoing the sweep. Getting that wrong is what production showed:
+    three candidates, two owning content, and the one genuinely empty account survived alongside
+    them because a single disqualified user aborted everything.
     """
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=settings.unverified_retention_days)
 
-    candidates = select(User.id).where(User.email_verified_at.is_(None), User.created_at < cutoff).scalar_subquery()
-    owned_dashboards = select(Dashboard.id).where(Dashboard.user_id.in_(candidates)).scalar_subquery()
-
-    has_content = or_(
-        select(DashboardWidget.id).where(DashboardWidget.dashboard_id.in_(owned_dashboards)).exists(),
-        select(List.id).where(List.dashboard_id.in_(owned_dashboards)).exists(),
-        select(CalendarEvent.id).where(CalendarEvent.dashboard_id.in_(owned_dashboards)).exists(),
+    # Disqualified if the account is referenced *anywhere*, evaluated per user rather than as a veto
+    # over the whole sweep. An earlier version asked "does anyone here own content?" and skipped
+    # everything if so, which let one real account shield every other candidate — production had
+    # exactly that: three candidates, two owning content, nothing purged.
+    #
+    # The list below is not "content" in a loose sense; it is every NOT NULL foreign key to
+    # `users.id` that this sweep does not itself delete. Each one has no ON DELETE clause, so it
+    # defaults to NO ACTION and *blocks* the final DELETE — including the nullable
+    # `list_items.assigned_to`, since nullability is not what decides that. Miss one and the sweep
+    # does not skip a user, it raises IntegrityError and rolls back every other sweep in the tick,
+    # because `run_reaper_once` shares one transaction.
+    #
+    # These are also exactly the marks of an account that *participated*. A genuine abandoned signup
+    # never held a session, so it authored nothing, granted nothing, and was assigned nothing.
+    disqualifying = or_(
+        *(
+            select(column).where(column == User.id).exists()
+            for column in (
+                List.created_by,
+                List.updated_by,
+                ListItem.created_by,
+                ListItem.updated_by,
+                ListItem.assigned_to,
+                CalendarEvent.created_by,
+                CalendarEvent.updated_by,
+                CalendarEventOverride.created_by,
+                CalendarEventOverride.updated_by,
+                ResourceShare.granted_by,
+            )
+        ),
+        # Widgets carry no author column, so owning a dashboard that holds one is the only way
+        # widget-only content shows up.
+        select(DashboardWidget.id).join(Dashboard, Dashboard.id == DashboardWidget.dashboard_id).where(Dashboard.user_id == User.id).exists(),
     )
-    if (await db.execute(select(has_content))).scalar():
-        logger.warning("reaper: unverified signup owns content; skipping the abandoned-signup sweep this tick")
+
+    # Resolved to a list once, rather than left as a subquery the way the other sweeps do. Every
+    # DELETE below would otherwise re-evaluate it *after* earlier statements have already removed
+    # rows it reads. That happens to stay correct here — only content-free dashboards are deleted,
+    # so `content_owners` cannot shrink — but that is a load-bearing argument sitting invisibly
+    # between statements, and this is the one sweep that deletes users.
+    candidate_ids = list(
+        (
+            await db.execute(
+                select(User.id).where(
+                    User.email_verified_at.is_(None),
+                    User.created_at < cutoff,
+                    ~disqualifying,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    skipped = (
+        await db.execute(select(func.count()).select_from(User).where(User.email_verified_at.is_(None), User.created_at < cutoff, disqualifying))
+    ).scalar_one()
+    if skipped:
+        # Expected for accounts predating email verification (added 2026-04-30): its migration made
+        # the column nullable without backfilling, so every user from before then reads unverified.
+        # They are real accounts that recover by logging in and using the resend flow.
+        logger.info("reaper: %s unverified account(s) own content and were left alone", skipped)
+    if not candidate_ids:
         return {"abandoned_signups": 0}
 
+    candidates = candidate_ids
     doomed_dashboards = select(Dashboard.id).where(Dashboard.user_id.in_(candidates)).scalar_subquery()
     # Ordered by dependency: `resource_shares.resource_id` cascades from dashboards (#19), but
     # `principal_id` does not, and the rest have no cascade at all.

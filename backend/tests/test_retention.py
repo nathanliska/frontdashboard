@@ -19,9 +19,10 @@ from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
+from app.models.share import ResourceShare
 from app.models.user import User
 from app.services.retention import reap_abandoned_signups, reap_expired_auth_rows, reap_expired_history
-from tests.helpers import make_db_user
+from tests.helpers import make_db_dashboard, make_db_user
 
 
 async def test_expired_tokens_deleted_live_and_consumed_ones_kept(db_session):
@@ -237,6 +238,91 @@ async def test_a_verified_user_is_never_purged_however_old(db_session):
 
     assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
     assert (await db_session.execute(select(User).where(User.id == user.id))).scalar_one() is not None
+
+
+async def test_authoring_on_someone_elses_dashboard_disqualifies(db_session):
+    """A reference from *anywhere* disqualifies, not just content on the candidate's own dashboard.
+
+    This is the production shape: an account that predates email verification authored a list on
+    another user's dashboard. Checking only dashboards the candidate owns would clear them for
+    purge, and `lists.created_by` — NOT NULL, no ON DELETE — would then raise IntegrityError on the
+    final DELETE. Because `run_reaper_once` shares one transaction, that would roll back the auth,
+    history and trash sweeps for the tick as well.
+    """
+    author, _ = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
+    owner = await make_db_user(db_session, label="owner")
+    owners_dashboard = await make_db_dashboard(db_session, owner)
+    db_session.add(
+        List(
+            dashboard_id=owners_dashboard.id,
+            created_by=author.id,
+            updated_by=author.id,
+            name="Authored elsewhere",
+            list_type="todo",
+        )
+    )
+    await db_session.flush()
+
+    assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
+    assert (await db_session.execute(select(User).where(User.id == author.id))).scalar_one() is not None
+
+
+async def test_having_granted_a_share_disqualifies(db_session):
+    """`resource_shares.granted_by` is NOT NULL with no ON DELETE, so it blocks the delete too.
+
+    Easy to miss because the sweep already deletes shares where the candidate is the *principal*.
+    Being the grantor is the other direction, and nothing removes those rows.
+    """
+    granter, _ = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
+    recipient = await make_db_user(db_session, label="recipient")
+    owner = await make_db_user(db_session, label="owner")
+    dashboard = await make_db_dashboard(db_session, owner)
+    db_session.add(
+        ResourceShare(
+            resource_type="dashboard",
+            resource_id=dashboard.id,
+            principal_type="user",
+            principal_id=recipient.id,
+            role="viewer",
+            granted_by=granter.id,
+        )
+    )
+    await db_session.flush()
+
+    assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
+    assert (await db_session.execute(select(User).where(User.id == granter.id))).scalar_one() is not None
+
+
+async def test_a_content_owner_does_not_shield_the_other_abandoned_signups(db_session):
+    """The disqualification is per user, not a veto over the sweep.
+
+    This is what production did on the first real run: three unverified accounts past the horizon,
+    two owning content, and the third — genuinely empty — survived because one disqualified user
+    aborted everything. Every other test here uses a single candidate, which is exactly why the
+    original all-or-nothing check looked correct.
+    """
+    empty_user, empty_dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
+    content_user, content_dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
+    db_session.add(
+        List(
+            dashboard_id=content_dashboard.id,
+            created_by=content_user.id,
+            updated_by=content_user.id,
+            name="Predates verification",
+            list_type="todo",
+        )
+    )
+    await db_session.flush()
+
+    counts = await reap_abandoned_signups(db_session)
+
+    assert counts["abandoned_signups"] == 1
+    assert (await db_session.execute(select(User).where(User.id == empty_user.id))).scalar_one_or_none() is None
+    assert (await db_session.execute(select(Dashboard).where(Dashboard.id == empty_dashboard.id))).scalar_one_or_none() is None
+    # The content owner keeps everything — account, dashboard and list.
+    assert (await db_session.execute(select(User).where(User.id == content_user.id))).scalar_one() is not None
+    assert (await db_session.execute(select(Dashboard).where(Dashboard.id == content_dashboard.id))).scalar_one() is not None
+    assert (await db_session.execute(select(List).where(List.dashboard_id == content_dashboard.id))).scalar_one() is not None
 
 
 async def test_an_unverified_signup_owning_content_is_skipped_not_cascaded(db_session):

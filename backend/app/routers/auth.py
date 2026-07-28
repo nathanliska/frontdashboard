@@ -147,6 +147,20 @@ async def _issue_password_reset(user: User, db: AsyncSession) -> str:
 
 
 async def _create_session(user: User, response: Response, db: AsyncSession) -> None:
+    """Mint a session and set the auth cookies. **The only path to an authenticated session.**
+
+    The verification gate lives here rather than only in the callers. `UserSession` is instantiated
+    in exactly one place (`services/sessions.py`), reached only through this helper, so this is the
+    choke point where "unverified accounts cannot act" is decidable — and where a third caller added
+    later cannot quietly skip it. `login` also checks, and must: it needs to answer 403 *before*
+    spending an Argon2 verify, and it distinguishes wrong-password from unverified. `verify_email`
+    sets `email_verified_at` on the line above its call, so it passes on the in-memory value.
+
+    Not an `assert`: those vanish under `python -O`, and this decides whether an account can act.
+    """
+    if user.email_verified_at is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")
+
     session, raw_refresh = await start_session(user.id, db)
     csrf = generate_csrf_token()
     access = create_access_token(user.id, user.email, session.id)

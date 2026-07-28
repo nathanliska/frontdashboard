@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
+from fastapi import HTTPException, Response
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -726,3 +727,29 @@ async def test_email_uniqueness_is_case_insensitive_at_db(db_session: AsyncSessi
     db_session.add(User(email="DBCase@Example.com", password_hash="x", display_name="B"))
     with pytest.raises(IntegrityError):
         await db_session.flush()
+
+
+async def test_create_session_refuses_an_unverified_user(db_session: AsyncSession) -> None:
+    """The verification gate holds at the choke point, not only inside `login`.
+
+    `_create_session` is the one path to a `UserSession` (it is the only caller of `start_session`,
+    which is the only place `UserSession` is instantiated). Today its two callers each remember to
+    check verification themselves — `login` returns 403 before spending an Argon2 verify, and
+    `verify_email` sets `email_verified_at` immediately before calling. That invariant should not
+    depend on every future caller remembering, so the helper refuses on its own.
+    """
+    user = User(
+        email="choke-point@example.com",
+        password_hash="x",
+        display_name="Choke",
+        email_verified_at=None,
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    with pytest.raises(HTTPException) as excinfo:
+        await auth_router._create_session(user, Response(), db_session)
+
+    assert excinfo.value.status_code == 403
+    sessions = await db_session.execute(select(func.count()).select_from(UserSession).where(UserSession.user_id == user.id))
+    assert sessions.scalar_one() == 0

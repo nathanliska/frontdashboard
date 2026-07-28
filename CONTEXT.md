@@ -172,9 +172,11 @@ _Last updated: 2026-07-26_
   sweeps. Pruning history is safe for SSE because a reconnect carrying any `Last-Event-ID` triggers
   a resync rather than a replay. It also purges **unverified signups past 30 days** — registration is
   open to the internet, so abandoned ones accumulate; login 403s until an address is verified, so
-  such an account provably holds no content, and purging it frees an email the unique index would
-  otherwise reserve forever. That sweep skips (and warns) rather than cascading if one somehow owns
-  content.
+  such an account holds no content, and purging it frees an email the unique index would otherwise
+  reserve forever. Accounts that **do** own content are excluded **per user** rather than vetoing
+  the sweep — which matters because users predating email verification (2026-04-30, whose migration
+  did not backfill) read as unverified forever despite having been ordinary users. They recover by
+  logging in: the 403 redirects to the resend-verification page with their address prefilled.
 - **The connection pool is bounded** (10 connections: `db_pool_size` + `db_max_overflow`), with a
   pool-acquire timeout, connection recycling, and a server-side `statement_timeout`. A request burst
   fails fast instead of queueing without limit or opening connections until Postgres runs out of

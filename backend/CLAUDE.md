@@ -20,20 +20,27 @@ Everything here is a convention an agent can't safely infer from one file.
 
 ## Mutation choreography (every mutating route)
 - Soft-delete is per-table and manual: `User`/`List`/`ListItem`/`CalendarEvent` have
-  `deleted_at` (filter it in every query). `Dashboard.deleted_at` means **in the trash** (#40) —
+  `deleted_at` (filter it in every query). **`User.deleted_at` is the exception that is filtered but
+  never set** — there is no account-deletion route, so no user is ever soft-deleted. Keep filtering
+  it (the column is real and #56 intends to use it); just don't infer from those filters that
+  account deletion exists. `Dashboard.deleted_at` means **in the trash** (#40) —
   filter it in every access/listing/inheritance query — it is the *only* put-away flag now
   (`archived` was removed 2026-07-27, on dashboards and lists alike). Only `DashboardWidget`
   is hard-deleted. The purge cascade lives in `services/retention.reap_expired_trash` — and it
   sweeps children **by hand** because their `dashboard_id` FKs have no `ON DELETE CASCADE`. The one
   exception is `resource_shares.resource_id`, which does cascade, so shares are not swept there at
   all. Adding a child table means adding it to that sweep, or its rows outlive the purge.
-- **`reap_abandoned_signups` is the one sweep that deletes a `User`.** It only takes accounts with
-  `email_verified_at IS NULL` past `unverified_retention_days`, and that is safe only because login
-  raises 403 while unverified — such an account has never held a session, so the sole row
-  registration made for it is one empty dashboard. It also **fails safe**: if a candidate somehow
-  owns a widget, list or event, the sweep logs a warning and deletes nothing that tick rather than
-  cascading. Keep that guard. Adding a table with a `users` FK means adding it to this sweep too —
-  none of those FKs cascade.
+- **`reap_abandoned_signups` is the one sweep that deletes a `User`.** It takes accounts with
+  `email_verified_at IS NULL` past `unverified_retention_days` **that own no content**. Login raises
+  403 while unverified, so an account created since email verification shipped cannot have written
+  anything — but **accounts predating 2026-04-30 can**: that migration added the column nullable
+  without backfilling, so every earlier user reads unverified forever despite being an ordinary
+  logged-in user at the time. The content check is what protects them, and it fired on the first
+  real run against production. It **filters per user** — an earlier version vetoed the whole sweep
+  when any candidate owned content, which let one real account shield every other candidate.
+  Candidate ids are resolved to a list up front rather than left as a subquery, because each
+  `DELETE` would otherwise re-evaluate it after earlier statements had removed rows it reads.
+  Adding a table with a `users` FK means adding it to this sweep too — none of those FKs cascade.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single
   commit so events land in the same transaction as the mutation.
 - **SSE ordering is load-bearing:** build the event dict (`app/sse/events.py` — flush/refresh)
