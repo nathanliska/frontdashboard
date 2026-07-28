@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import DateTime, and_, cast, delete, or_, select
+from sqlalchemy import DateTime, and_, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -210,8 +210,13 @@ async def list_occurrences(
     # avoid; an unlimited one genuinely runs forever and must be considered for every window.
     series_duration = CalendarEvent.ends_at - CalendarEvent.starts_at
     series_until = cast(CalendarEvent.recurrence["until"].astext, DateTime(timezone=True))
+    # `jsonb_typeof(...) = 'object'` rather than `IS NOT NULL`: a JSONB column can hold the scalar
+    # 'null', which is not SQL NULL and so passes an IS NOT NULL test. Production held 33 such rows
+    # (see the model), and every one was treated here as an unbounded series — the window's lower
+    # bound never applied to them. The migration converts those rows and the model stops writing
+    # them, but this predicate now asks the question it actually means either way.
     recurring_in_window = and_(
-        CalendarEvent.recurrence.is_not(None),
+        func.jsonb_typeof(CalendarEvent.recurrence) == "object",
         CalendarEvent.starts_at < window_end,
         or_(
             CalendarEvent.recurrence["until"].astext.is_(None),

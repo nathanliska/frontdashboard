@@ -307,6 +307,54 @@ async def test_finished_and_unstarted_series_are_not_loaded(
     assert expanded == ["Live series"]
 
 
+async def test_a_past_one_off_event_is_not_loaded_as_an_unbounded_series(
+    auth_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-recurring event must be bounded by its own times, not treated as a series.
+
+    This is the JSONB-null bug. `recurrence` was a plain `JSONB` column, and SQLAlchemy's JSON
+    types default to `none_as_null=False`, so a Python `None` was stored as the JSONB scalar
+    `null` — which is *not* SQL NULL and therefore satisfies `IS NOT NULL`. Every one-off event
+    was consequently matched by the recurring branch, and since `recurrence['until']` is NULL for
+    a JSONB null it took the "unbounded series" path, whose only bound is `starts_at < window_end`.
+    Past one-off events loaded on every request; production had 33 of them.
+
+    Counted at the expander, not asserted on the response, for the usual reason: Python reads a
+    JSONB null back as `None`, so the expander emitted a single occurrence and `_overlaps` dropped
+    it. The JSON was byte-identical whether or not the row should ever have been fetched.
+    """
+    expanded: list[str] = []
+    real_expand = calendar_router.expand_event_occurrences
+
+    def counting_expand(event, *args, **kwargs):
+        expanded.append(event.title)
+        return real_expand(event, *args, **kwargs)
+
+    monkeypatch.setattr(calendar_router, "expand_event_occurrences", counting_expand)
+
+    dashboard = await create_dashboard(auth_client)
+    await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Last year's lunch",
+        starts_at="2025-03-04T12:00:00+00:00",
+        ends_at="2025-03-04T13:00:00+00:00",
+    )
+
+    resp = await auth_client.get(
+        "/api/calendar/events",
+        params={
+            "window_start": "2026-04-10T00:00:00+00:00",
+            "window_end": "2026-04-11T00:00:00+00:00",
+            "dashboard_id": dashboard["id"],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
+    assert expanded == []
+
+
 async def test_a_series_ending_at_the_window_edge_is_kept(auth_client: AsyncClient) -> None:
     """`until` bounds the last *start*; the occurrence it names still has a duration.
 

@@ -37,7 +37,13 @@ class CalendarEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     timezone: Mapped[str] = mapped_column(String(100), nullable=False)
     all_day: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    recurrence: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # none_as_null=True is load-bearing, not decoration. SQLAlchemy's JSON types default to
+    # none_as_null=False, which persists a Python None as the JSONB scalar 'null' rather than SQL
+    # NULL. Python reads it back as None either way, so the application never noticed — but in SQL
+    # `recurrence IS NOT NULL` then matched every one-off event, and the occurrence window query
+    # classified all of them as unbounded recurring series (finding surfaced by auditing prod:
+    # 33 of 41 live events held a JSONB null).
+    recurrence: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
