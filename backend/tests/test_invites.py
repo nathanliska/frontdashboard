@@ -173,3 +173,24 @@ async def test_invite_for_a_trashed_dashboard_is_rejected(auth_client: AsyncClie
 
     assert (await auth_client.get(f"/api/invites/{invite['code']}")).status_code == 404
     assert (await auth_client.post(f"/api/invites/{invite['code']}/accept")).status_code == 404
+
+
+async def test_invites_cannot_be_managed_on_a_trashed_dashboard(auth_client: AsyncClient) -> None:
+    """Minting, listing and revoking stop at the trash, like every other dashboard route.
+
+    The redeem side above was always guarded, but `_dashboard_for_share_management` loaded the
+    dashboard with a hand-rolled query that checked `deleted_at` neither in SQL nor in Python —
+    the only place in this file that did not. So a trashed dashboard could still mint invite codes
+    that `accept_invite` would then refuse: unusable links, issued on request.
+    """
+    dashboard = await create_dashboard(auth_client)
+    invite = await _create_invite(auth_client, dashboard["id"])
+
+    trashed = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
+    assert trashed.status_code == 204, trashed.text
+
+    set_csrf(auth_client)
+    minted = await auth_client.post(f"/api/dashboards/{dashboard['id']}/invites", json={"role": "viewer"})
+    assert minted.status_code == 404, minted.text
+    assert (await auth_client.get(f"/api/dashboards/{dashboard['id']}/invites")).status_code == 404
+    assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}/invites/{invite['id']}")).status_code == 404

@@ -39,7 +39,7 @@ from app.services.invites import (
     revoke_invite,
 )
 from app.services.notifications import stage_notification
-from app.services.shares import create_share, get_resource_shares, load_resource_access
+from app.services.shares import create_share, get_resource_shares, load_dashboard_access
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dict
 from app.sse.manager import manager
 
@@ -51,12 +51,12 @@ async def _dashboard_for_share_management(
     user: User,
     db: AsyncSession,
 ) -> Dashboard:
-    result = await db.execute(select(Dashboard).where(Dashboard.id == dashboard_id))
-    dashboard = result.scalar_one_or_none()
-    if dashboard is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
-
-    _, role = await load_resource_access(ResourceType.dashboard, dashboard.id, dashboard.user_id, user, db)
+    # Goes through the canonical accessor rather than a hand-rolled query: it filters trashed
+    # dashboards, which this function previously did not check at all — in SQL or in Python — so
+    # invites could be minted, listed and revoked on a dashboard sitting in the trash. The redeem
+    # paths below always rejected those, so the result was invite codes nobody could ever use.
+    # It also drops a query, since this returns the shares and role the old body re-fetched.
+    dashboard, _shares, role = await load_dashboard_access(dashboard_id, user, db)
     permissions.assert_can_manage_shares(role)
     return dashboard
 
