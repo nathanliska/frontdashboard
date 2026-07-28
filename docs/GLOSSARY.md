@@ -67,6 +67,25 @@ in the abstract) are not defined here.
 
 ## Backend
 
+**Reaper** — The scheduled background task that removes rows nothing can act on any more
+(`services/retention.py`, started from the app lifespan, every `reaper_interval_hours`). It runs
+under a Postgres transaction-scoped advisory lock, so every worker may schedule it and exactly one
+executes per tick. Referenced throughout as "the retention reaper".
+
+**Sweep** — One pass of the reaper over one category, each its own function: the **auth-row sweep**
+(expired refresh/verification/reset tokens and invites, plus sessions no live token can name), the
+**history sweep** (`activity_events` and `notifications`), the **trash sweep**, and the
+**abandoned-signup sweep**. All four share a single transaction — one failing sweep rolls back the
+whole tick.
+
+**Horizon** — The age past which a sweep acts, always a `*_retention_days` setting: 30 days for
+trash, 90 for history, 30 for unverified signups. "Past the horizon" means overdue for removal, so
+a non-zero count of it is a sign the reaper has stopped rather than that the data is wrong.
+
+**Purge** — The destructive half of the trash lifecycle: the reaper deleting a trashed row and its
+cascade for real, as opposed to the `deleted_at` stamp that put it there. See
+[ADR-007](adr/ADR-007-soft-delete-boundary.md).
+
 **Soft delete** — Marking a row deleted via `deleted_at` (on `User`/`List`/`ListItem`/`CalendarEvent`, and since #40 on `Dashboard`, where it means "in the trash") and filtering it in every query, rather than removing it. Widgets are hard-deleted; the retention reaper purges trashed dashboards and lingering soft-deleted content after 30 days. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
 
 **Layout version** — The `dashboard.version` integer used for optimistic concurrency on layout saves; a client/server mismatch is a 409. See [ADR-008](adr/ADR-008-layout-version-occ.md).
