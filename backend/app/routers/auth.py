@@ -61,6 +61,7 @@ _COOKIE_MAX_AGE = settings.session_absolute_days * 24 * 3600
 
 
 def _set_auth_cookies(response: Response, session_token: str, csrf_token: str) -> None:
+    _delete_legacy_cookies(response)
     response.set_cookie(
         settings.session_cookie_name,
         session_token,
@@ -81,12 +82,26 @@ def _set_auth_cookies(response: Response, session_token: str, csrf_token: str) -
     )
 
 
+# Pre-2026-07-28 cookie names, still live in browsers from before the `__Host-` rename. The server
+# never reads them, but the *client* picks its CSRF cookie by name, so a stale `csrf_token` sitting
+# beside `__Host-csrf_token` is a double-submit mismatch on every mutation — logout included, which
+# is what makes it unrecoverable from inside the app. Cleared on every cookie write, not just
+# logout, so an affected browser heals by logging in. Removable once these have aged out.
+_LEGACY_COOKIE_NAMES = ("access_token", "refresh_token", "session", "csrf_token")
+
+
+def _delete_legacy_cookies(response: Response) -> None:
+    active = {settings.session_cookie_name, settings.csrf_cookie_name}
+    for name in _LEGACY_COOKIE_NAMES:
+        # Development's active names *are* the unprefixed ones; deleting those clears the live pair.
+        if name not in active:
+            response.delete_cookie(name)
+
+
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(settings.session_cookie_name)
     response.delete_cookie(settings.csrf_cookie_name)
-    # Cutover hygiene, removable once pre-2026-07-28 cookies have aged out. Nothing reads them.
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
+    _delete_legacy_cookies(response)
 
 
 async def _issue_email_verification(user: User, db: AsyncSession) -> str:

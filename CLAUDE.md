@@ -56,7 +56,8 @@ make audit-fix   # apply npm audit fixes (frontend)
   follow the same trash contract; there is **no archive state** — it was removed 2026-07-27 in
   favour of one recoverable put-away action ([ADR-007](docs/adr/ADR-007-soft-delete-boundary.md)).
 - **Auth**: one opaque session cookie (HttpOnly, `__Host-` prefixed in prod) resolved against a
-  `sessions` row on every request, plus CSRF double-submit. No JWT, no refresh token, no
+  `sessions` row on every request, plus an `Origin` check and CSRF double-submit. No JWT, no
+  refresh token, no
   `/auth/refresh` — removed 2026-07-28 ([ADR-002](docs/adr/ADR-002-jwt-httponly-cookies-csrf.md),
   [ADR-003](docs/adr/ADR-003-first-class-sessions.md)). No localStorage tokens. Email verification
   (required for login) + password reset flows; emails send in background tasks.

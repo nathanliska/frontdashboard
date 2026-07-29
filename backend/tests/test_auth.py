@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import dependencies
 from app.auth.hashing import _DUMMY_HASH
 from app.auth.tokens import create_opaque_token, hash_token
 from app.main import app
@@ -396,6 +397,80 @@ async def test_logout(auth_client: AsyncClient) -> None:
     assert csrf is not None
     resp = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf})
     assert resp.status_code == 204
+
+
+async def test_a_matching_origin_is_accepted(auth_client: AsyncClient) -> None:
+    csrf = auth_client.cookies.get(auth_router.settings.csrf_cookie_name)
+    assert csrf is not None
+    resp = await auth_client.post(
+        _LOGOUT_URL,
+        headers={"X-CSRF-Token": csrf, "Origin": auth_router.settings.frontend_base_url},
+    )
+    assert resp.status_code == 204
+
+
+async def test_a_foreign_origin_is_rejected_even_with_a_valid_token_pair(auth_client: AsyncClient) -> None:
+    """The token pair is deliberately valid here: a cross-site caller that somehow holds it still
+    cannot set `Origin`, which is a forbidden header. This is the check that does not depend on
+    cookie state staying in sync."""
+    csrf = auth_client.cookies.get(auth_router.settings.csrf_cookie_name)
+    assert csrf is not None
+    resp = await auth_client.post(
+        _LOGOUT_URL,
+        headers={"X-CSRF-Token": csrf, "Origin": "https://evil.example"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Cross-origin request rejected"
+
+
+async def test_cors_origins_widens_the_allowlist(auth_client: AsyncClient, monkeypatch) -> None:
+    """The escape hatch for a dev server reached over the LAN (`vite --host`, testing on a phone):
+    the browser then sends its LAN address as `Origin`, which is not `frontend_base_url`. That is
+    the one workflow this check makes harder, and CORS_ORIGINS is how it is widened — pinned here
+    so the documented remedy cannot quietly stop working."""
+    lan_origin = "http://192.168.1.50:5173"
+    monkeypatch.setattr(dependencies, "_ALLOWED_ORIGINS", frozenset({lan_origin}))
+
+    csrf = auth_client.cookies.get(auth_router.settings.csrf_cookie_name)
+    assert csrf is not None
+    resp = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf, "Origin": lan_origin})
+
+    assert resp.status_code == 204
+
+
+async def test_a_missing_origin_falls_back_to_the_token_pair(auth_client: AsyncClient) -> None:
+    """Additive, not a replacement. A client that sends no `Origin` must still work if its
+    double-submit is good, or enabling the check would have locked out anyone whose browser omits
+    it — the precise failure this whole area has already produced once."""
+    csrf = auth_client.cookies.get(auth_router.settings.csrf_cookie_name)
+    assert csrf is not None
+    resp = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf})
+    assert resp.status_code == 204
+
+
+async def test_a_missing_origin_does_not_excuse_a_bad_token_pair(auth_client: AsyncClient) -> None:
+    resp = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": "wrong"})
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "CSRF token invalid"
+
+
+def test_legacy_cookie_cleanup_spares_the_active_pair() -> None:
+    """Development's active cookie names *are* the unprefixed legacy ones, so the cleanup must skip
+    them or a login emits a `Max-Age=0` delete and a set for the same name in one response.
+
+    That currently survives only because the delete is written first and last-wins ordering saves
+    it — verified by removing the guard, which leaves every logout test green and fails only this
+    one. So the guard buys not depending on header order, and this is the only test that can see
+    it: the two name sets diverge solely under `environment=production`, which no test runs under.
+    """
+    response = Response()
+    auth_router._delete_legacy_cookies(response)
+    cleared = {header.split("=", 1)[0] for header in response.headers.getlist("set-cookie")}
+
+    assert auth_router.settings.session_cookie_name not in cleared
+    assert auth_router.settings.csrf_cookie_name not in cleared
+    # The pre-rename names that are never active, so they are always safe to clear.
+    assert {"access_token", "refresh_token"} <= cleared
 
 
 async def test_logout_requires_csrf(auth_client: AsyncClient) -> None:

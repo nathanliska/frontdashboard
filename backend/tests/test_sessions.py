@@ -250,8 +250,20 @@ async def test_the_liveness_predicate_is_shared(db_session: AsyncSession) -> Non
         await db_session.execute(update(UserSession).where(UserSession.id == session_id).values(**values))
         db_session.expire_all()
 
-        assert await resolve_session(raw, db_session) is None, values
-        assert await session_is_live(session_id, db_session) is False, values
+        resolved = await resolve_session(raw, db_session)
+        live = await session_is_live(session_id, db_session)
+
+        # Instrumentation, not belt-and-braces. This failed once on 2026-07-29 and never again in
+        # 56 runs, and the three cases above are provably timing-proof — each fails its predicate by
+        # a margin that *grows* as the run slows. The only remaining explanation is the UPDATE not
+        # being visible to these reads, so a recurrence needs to show what the row actually held.
+        # Queried only on failure, so the passing path is unchanged and cannot mask the cause.
+        if resolved is not None or live:
+            row = (await db_session.execute(select(UserSession).where(UserSession.id == session_id))).scalar_one_or_none()
+            state = None if row is None else (row.revoked_at, row.expires_at, row.last_used_at)
+            raise AssertionError(
+                f"applied {values}; row holds (revoked_at, expires_at, last_used_at)={state}; resolved={resolved is not None} live={live}"
+            )
 
         # Restore for the next case, so each one is tested in isolation.
         await db_session.execute(

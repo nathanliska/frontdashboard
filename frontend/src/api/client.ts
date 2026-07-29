@@ -1,8 +1,20 @@
+// Both names, because development genuinely uses the unprefixed one: `__Host-` requires Secure and
+// dev is plain HTTP, so the browser would reject a prefixed cookie. Branching on
+// `import.meta.env.PROD` instead would make the frontend's build mode and the backend's
+// ENVIRONMENT two switches that must agree, and disagreement 403s every mutation with no clue why.
+//
+// Order is the load-bearing part. A browser that still holds a pre-2026-07-28 `csrf_token` carries
+// *both*, and an optional `(?:__Host-)?` in one non-global regex returns whichever the browser
+// happened to list first — the stale one, which mismatches what the server reads and 403s every
+// mutation including logout, leaving no way out from inside the app.
+const CSRF_COOKIE_NAMES = ['__Host-csrf_token', 'csrf_token'] as const
+
 function getCsrfToken(): string {
-  // Production sets `__Host-csrf_token`; development cannot (the prefix requires Secure, and dev
-  // is plain HTTP), so both names are accepted here rather than branching on environment.
-  const match = document.cookie.match(/(?:^|;\s*)(?:__Host-)?csrf_token=([^;]*)/)
-  return match ? decodeURIComponent(match[1]) : ''
+  for (const name of CSRF_COOKIE_NAMES) {
+    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`))
+    if (match) return decodeURIComponent(match[1])
+  }
+  return ''
 }
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])

@@ -101,6 +101,14 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 ## Network and errors
 - `apiFetch` (`api/client.ts`) is the **only** network entry for `/api` — it sets the CSRF
   header and includes credentials. Never call `fetch` directly.
+- **Renaming a cookie does not remove the old one**, so any client-side read must name the new
+  cookie *first* rather than treat the prefix as optional. Production sets `__Host-csrf_token`;
+  browsers from before that rename still hold `csrf_token`, and a single regex with an optional
+  `(?:__Host-)?` returns whichever the browser happened to list first — the stale one. That shipped
+  on 2026-07-28 and 403'd every mutation with "CSRF token invalid", **logout included**, so the app
+  offered no way out of it (the store swallows logout errors, so it merely *looked* like it
+  worked). Cookie order is the browser's choice: assert both orderings, and have the server clear
+  superseded names on every cookie write so they don't linger for the cookie's full max-age.
 - **Only `401` means logged out.** Not `403` (that is the permission layer answering "editor
   access required"), and never a `5xx`, timeout or network rejection — reading those as a lost
   session is what signed users out during deploys before ADR-003's amendment. A 401 calls the

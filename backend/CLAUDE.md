@@ -5,7 +5,13 @@ Everything here is a convention an agent can't safely infer from one file.
 
 ## Security & permissions
 - **Every non-GET route must add `_csrf: None = Depends(require_csrf)`.** CSRF is a dependency,
-  not middleware — omit it and the endpoint silently accepts cross-site requests.
+  not middleware — omit it and the endpoint silently accepts cross-site requests. It runs two
+  checks: `Origin` against the allowed origins (skipped when the header is absent, so it can never
+  lock out a client on its own), then the double-submit cookie/header pair. The allowlist is
+  `frontend_base_url` + `cors_origins_list` and is **not** branched on environment — a rule only
+  production runs is a rule no test executes. The one cost: browsing the dev server by LAN address
+  (Vite binds all interfaces) sends that address as `Origin`, so it must be in `CORS_ORIGINS` or
+  every mutation 403s. Rejections log the origin.
 - **`role is None` means owner, not "no access".** `permissions.effective_role` returns `None`
   for the creator and raises 404 for no access; never write `if role:` guards
   (`app/services/permissions.py`).

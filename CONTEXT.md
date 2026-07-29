@@ -4,13 +4,14 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-07-26_
+_Last updated: 2026-07-29_
 
 ## What's built
 
 **Auth & account**
 - Registration → email verification (required before login) → an opaque session cookie
-  (HttpOnly) with CSRF double-submit. One credential, no access/refresh split.
+  (HttpOnly) guarded by an `Origin` check plus CSRF double-submit. One credential, no
+  access/refresh split.
 - **Email identity is case-insensitive**: addresses are normalized (trim + lowercase) at the API
   boundary and a `lower(email)` functional unique index is the DB guarantee, so casing can't create
   duplicate accounts or block login. Display names are bounded (trimmed, non-empty, ≤100 chars).

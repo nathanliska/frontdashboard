@@ -70,6 +70,46 @@ describe('apiFetch', () => {
       expect(headerOf(init, 'X-CSRF-Token')).toBe('token/with+special=chars')
     })
 
+    it('reads the __Host- prefixed cookie production sets', async () => {
+      cookieJar = '__Host-csrf_token=prefixed-value'
+      vi.mocked(fetch).mockResolvedValue(response(200))
+
+      await apiFetch('/api/lists', { method: 'POST', body: '{}' })
+
+      const [, init] = vi.mocked(fetch).mock.calls[0]
+      expect(headerOf(init, 'X-CSRF-Token')).toBe('prefixed-value')
+    })
+
+    // The 2026-07-28 production incident: a browser holding a pre-rename `csrf_token` alongside the
+    // new `__Host-csrf_token` sent the stale one, so every mutation 403'd "CSRF token invalid" —
+    // logout included, leaving no way out from inside the app. Both orderings are asserted because
+    // the bug was a non-global regex returning whichever name appeared first in document.cookie,
+    // and cookie order is the browser's choice, not ours.
+    it.each([
+      ['stale cookie first', 'csrf_token=stale; __Host-csrf_token=current'],
+      ['prefixed cookie first', '__Host-csrf_token=current; csrf_token=stale'],
+    ])('prefers the prefixed cookie over a pre-rename one (%s)', async (_label, jar) => {
+      cookieJar = jar
+      vi.mocked(fetch).mockResolvedValue(response(200))
+
+      await apiFetch('/api/lists', { method: 'POST', body: '{}' })
+
+      const [, init] = vi.mocked(fetch).mock.calls[0]
+      expect(headerOf(init, 'X-CSRF-Token')).toBe('current')
+    })
+
+    it('does not mistake a prefixed cookie for the unprefixed name', async () => {
+      // `csrf_token=` is a suffix of `__Host-csrf_token=`, so a name match that ignores the
+      // delimiter would read the prefixed cookie as the legacy one and silently pass above.
+      cookieJar = '__Host-csrf_token=only-prefixed'
+      vi.mocked(fetch).mockResolvedValue(response(200))
+
+      await apiFetch('/api/lists', { method: 'POST', body: '{}' })
+
+      const [, init] = vi.mocked(fetch).mock.calls[0]
+      expect(headerOf(init, 'X-CSRF-Token')).toBe('only-prefixed')
+    })
+
     it('still sends the header (empty) when no csrf_token cookie is present', async () => {
       vi.mocked(fetch).mockResolvedValue(response(200))
 

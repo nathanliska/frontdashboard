@@ -100,7 +100,9 @@ cascade for real, as opposed to the `deleted_at` stamp that put it there. See
 
 **Session-generation counter** — A shared client counter captured at the start of every async store write; a write whose generation has since changed (an auth boundary crossed) is dropped, preventing cross-account leakage. See [ADR-012](adr/ADR-012-session-generation-guard.md).
 
-**CSRF double-submit** — The pattern where a readable CSRF cookie's value is echoed in a request header and compared server-side; enforced per-route via `require_csrf`. See [ADR-002](adr/ADR-002-jwt-httponly-cookies-csrf.md).
+**CSRF double-submit** — The pattern where a readable CSRF cookie's value is echoed in a request header and compared server-side; enforced per-route via `require_csrf`, together with the Origin check. See [ADR-002](adr/ADR-002-jwt-httponly-cookies-csrf.md).
+
+**Origin check** — The second half of `require_csrf`: a state-changing request whose `Origin` header is not an allowed origin is refused, whatever its cookies say. `Origin` cannot be set by script, and unlike the double-submit pair it holds no state that can drift. Absent `Origin` is not a rejection — the token pair still applies. See [ADR-002](adr/ADR-002-jwt-httponly-cookies-csrf.md).
 
 **Enumeration-safe login** — Login always does exactly one Argon2 verify (dummy hash for unknown emails) and returns an identical 401, closing the account-existence oracle. See [ADR-011](adr/ADR-011-enumeration-safe-login.md).
 

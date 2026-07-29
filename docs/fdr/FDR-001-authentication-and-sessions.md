@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-07-28
+**Last reviewed:** 2026-07-29
 
 ## Overview
 
@@ -34,15 +34,20 @@ multi-user account model with immediate, per-device session control — not just
 
 ## Design Decisions
 
-### 1. The credential lives in an HttpOnly cookie with CSRF double-submit
+### 1. The credential lives in an HttpOnly cookie, guarded by an Origin check and CSRF double-submit
 
 **Decision:** An opaque session token in an HttpOnly cookie (`__Host-` prefixed in production);
-non-GET requests carry a double-submit CSRF token.
+non-GET requests must pass an `Origin` check *and* carry a double-submit CSRF token.
 **Why:** Keeps the credential unreadable by JavaScript (XSS can't steal it) while defending the
 automatic cookie send against CSRF; the prefix stops a sibling subdomain planting a session value.
+`Origin` is a forbidden header, so it cannot be forged by script, and unlike the token pair it holds
+no state that can drift out of sync — the two checks fail in different ways on purpose. A request
+without `Origin` still has to satisfy the token pair, so the check cannot lock anyone out.
 See ADR-002.
 **Tradeoff:** Every mutating route must opt into the CSRF dependency, and cookie names differ
-between development and production, so nothing may hard-code them.
+between development and production, so nothing may hard-code them — and because the old name
+survives a rename in the browser, the client must try the names in a defined order rather than
+treat the prefix as optional.
 
 ### 2. Sessions are first-class rows, checked every request — and are the whole credential
 
@@ -97,7 +102,7 @@ editor / viewer) is covered in [FDR-004](FDR-004-sharing-and-access.md).
 
 ## Related
 
-- **ADRs:** ADR-002 (credential cookies + CSRF), ADR-003 (first-class sessions), ADR-010 (Argon2 off the
+- **ADRs:** ADR-002 (credential cookies + Origin check + CSRF), ADR-003 (first-class sessions), ADR-010 (Argon2 off the
   event loop), ADR-011 (enumeration-safe login), ADR-012 (session-generation guard), ADR-013 (rate
   limiting), ADR-014 (fail-fast prod config)
 - **FDRs:** FDR-004 (Sharing & Access), FDR-008 (Real-Time Delivery)
