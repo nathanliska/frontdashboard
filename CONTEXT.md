@@ -195,7 +195,9 @@ _Last updated: 2026-07-26_
 - **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
-  are in-memory/per-process, correct for the current single worker (shared store tracked in #45).
+  are in-memory/per-process, correct for the current single worker: N workers would mean N× every
+  limit. Going shared is a `storage_uri` on the `Limiter`, so it is deferred as a one-line change
+  rather than pre-built (#21/#45).
 - **The backend schema is the API contract** ([ADR-018](docs/adr/ADR-018-generated-validated-contracts.md)):
   `make contracts` exports FastAPI's OpenAPI document and generates the frontend's zod schemas into
   `frontend/src/api/generated/contract.ts` (committed; CI fails on drift). Every response body is

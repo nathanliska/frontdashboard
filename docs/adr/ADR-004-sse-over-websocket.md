@@ -31,6 +31,20 @@ to connected clients with bounded per-client queues.
   probes `/auth/me`, so a genuinely signed-out tab is discovered without a merely-down backend
   being mistaken for one (amended 2026-07-28; see [ADR-003](ADR-003-first-class-sessions.md)).
 
+Two properties of that design are **invariants, not incidental** — they are what keeps the
+single-process registry replaceable in one place, and each is easy to break with a change that looks
+harmless:
+
+- **All fan-out goes through `SseManager.broadcast`.** Routers publish; only the stream generator in
+  `routers/sse.py` reads a client queue. Nothing outside `sse/manager.py` may write to one. A
+  "quick" direct queue write from a router would work perfectly on one worker and be invisible until
+  the day there are two.
+- **Resync is ordering-free.** `_should_resync_on_connect` treats *any* `Last-Event-ID` as "refetch
+  everything"; it never replays `activity_events` from that id. So delivery needs to be
+  at-least-once and nothing more — a duplicated or reordered message costs a redundant refetch, not
+  a divergence. Making reconnect replay from the event log instead would buy some bandwidth and
+  spend that guarantee.
+
 ## Consequences
 
 - **Reuses the existing HTTP/cookie/proxy stack**: no separate WS auth or upgrade handling; the
@@ -38,8 +52,13 @@ to connected clients with bounded per-client queues.
 - **One connection, not one per resource**: multiplexing keeps the connection count at one per user
   and centralises reconnect logic — but it means the manager must route every event type and a
   single overflow policy governs all of them.
-- **In-memory manager is single-process**: correct for the current single-worker deployment; a
-  multi-worker or multi-instance deployment needs a shared backplane (tracked as future work).
+- **In-memory manager is single-process**: correct for the current single-worker deployment, and the
+  one thing a second worker would break — a client attached to worker A is unreachable from worker
+  B. Per-user affinity at the proxy does *not* defer it, because a shared dashboard fans out to
+  other users, who land on other workers. Because of the two invariants above, the fix is a
+  backplane behind `broadcast` needing only at-least-once delivery, which Postgres `LISTEN/NOTIFY`
+  satisfies without new infrastructure. Deferred, with the rest of the multi-process picture, as
+  #21/#45.
 - **Overflow favours resync over silence**: bounded queues can drop a slow client, but the eviction
   sentinel guarantees it *knows* it was dropped and re-syncs, so it never silently diverges.
 - **Client-side write ordering matters on the server**: because REST mutations and SSE fan-out are

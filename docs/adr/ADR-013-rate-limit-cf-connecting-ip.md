@@ -28,5 +28,8 @@ Cloudflare.
   header would become spoofable and this keying would be unsafe.
 - **Dev parity via fallback**: local development, with no Cloudflare, falls back to the peer address
   so the limiter still works without special-casing.
-- **Buckets are in-memory/per-process**: correct for the current single worker; a multi-worker
-  deployment needs a shared limiter store (tracked as #45 in CONTEXT.md).
+- **Buckets are in-memory/per-process**: correct for the current single worker; N workers would mean
+  N× every limit — degraded rather than broken, unlike SSE fan-out under the same change
+  ([ADR-004](ADR-004-sse-over-websocket.md)). slowapi's `Limiter` accepts a `storage_uri`, so
+  adopting a shared store is a one-line change and is deliberately *not* pre-built as configuration
+  nothing reads (#21/#45 in [TODO.md](../TODO.md)).

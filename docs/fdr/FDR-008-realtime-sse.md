@@ -35,7 +35,10 @@ in-memory manager and bounded per-client queues.
 **Why:** The data flow is server→client only; SSE reuses the existing cookie auth and reverse proxy
 and has built-in reconnection, with none of WebSocket's unused duplex or extra handshake. See ADR-004.
 **Tradeoff:** The in-memory manager is single-process (correct for the current single worker); a
-multi-worker deployment needs a shared backplane.
+multi-worker deployment needs a shared backplane, and proxy-level affinity would not substitute for
+one, since a shared dashboard fans out to users on other workers. Two invariants keep that swap
+confined to `broadcast` — single choke point, ordering-free resync — and both are stated in ADR-004
+because a change that breaks either would look harmless on one worker.
 
 ### 2. Overflow evicts with a resync sentinel
 
