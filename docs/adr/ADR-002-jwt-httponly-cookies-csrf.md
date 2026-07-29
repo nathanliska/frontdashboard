@@ -61,10 +61,10 @@ which the server compares) and **`Origin` verification** against the configured 
 - **Cookie names differ between environments, and renaming one does not remove the old.** Nothing
   may hard-code a name: the server reads through `Cookie(alias=...)`, and `getCsrfToken` tries the
   names **in order, prefixed first**. It must not treat the prefix as optional in a single pattern —
-  a browser holding a pre-rename `csrf_token` carries both, and an optional-prefix match returns
+  a browser holding a superseded `csrf_token` carries both, and an optional-prefix match returns
   whichever the browser listed first. That shipped on 2026-07-28 and 403'd every mutation in
-  production, logout included, so the app offered no way out of it. Superseded names are now
-  cleared on every cookie write rather than only at logout.
+  production, logout included, so the app offered no way out of it. Deleting a prefixed cookie needs
+  `Secure` too, or the browser rejects the deletion for an invalid prefix and keeps it.
 - **The Origin allowlist is not branched on environment, and that costs LAN development.** Vite
   binds all interfaces, so browsing the dev server by its LAN address (testing on a phone — which
   this product is *for*) makes the browser send that address as `Origin`, and it must be added to
@@ -75,7 +75,7 @@ which the server compares) and **`Origin` verification** against the configured 
 - **Two independent CSRF checks, and only one of them holds state.** The double-submit pair can
   desynchronise — it did. `Origin` cannot: there is nothing to go stale, nothing to rename, and
   nothing for a deploy to leave behind. If the token pair is ever retired, this is what remains,
-  and the dual-name reader and superseded-cookie cleanup would go with it.
+  and the dual-name reader would go with it.
 - **A mutating GET route would silently break the model** — it would be reachable cross-site with
   the session cookie attached and no CSRF check, since CSRF is only wired to non-GET.
 - **Cross-origin API access is not cookie-based**: a separate opaque-bearer path would be needed for

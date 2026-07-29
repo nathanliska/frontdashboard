@@ -276,14 +276,13 @@ export function handleAgendaResourceEvent(
     return
   }
 
-  // Our own list mutation already patched this cache through `applyAgendaItemUpdate`, so the
-  // echo has nothing left to tell us — refetching it was the last of the PATCH-then-GET pairs.
-  // The verdict is decided once by the SSE router and passed in, because the check that produces
-  // it consumes the pending id: whichever handler asked first would be the only one told the
-  // truth, and this handler runs second.
+  // Our own list mutation already patched this cache through `applyAgendaItemUpdate`, so the echo
+  // has nothing left to tell us. The verdict is decided once by the SSE router and passed in,
+  // because the check that produces it consumes the pending id — whichever handler asked first
+  // would be the only one told the truth, and this one runs second.
   //
-  // Calendar events are deliberately *not* covered by this: occurrence expansion is genuinely
-  // server-derived, so refetching after a calendar mutation is the sanctioned exception.
+  // Calendar events are deliberately not covered: occurrence expansion is genuinely server-derived,
+  // so refetching after a calendar mutation is the sanctioned exception.
   if (isOwnEcho && event.event_type.startsWith('list.')) return
 
   const dashboardId = getDashboardId(event)

@@ -273,20 +273,14 @@ async def test_stream_deregisters_client_from_its_own_manager() -> None:
 async def test_stream_ends_when_revalidation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """The guarantee: a revoked session stops streaming, with no help from the manager.
 
-    _REVALIDATE_EVERY is 30s in production — far longer than any test should run.
-    It's shrunk to 0 here (same as test_revalidation_deadline_fires_on_a_busy_stream)
-    so the deadline is already due and `_never_live` actually gets exercised, instead
-    of the stream just idling out via move_on_after before the real 30s check fires.
+    `_REVALIDATE_EVERY` is shrunk to 0 so the deadline is already due at loop entry and `_never_live`
+    is actually exercised, rather than the stream idling out through `move_on_after` first.
 
-    A stream that calls `revalidate` but doesn't act on its `False` result (e.g.
-    the guard collapsed to a bare `await revalidate(...)`) would still pass a
-    call-count check: it falls through to `wait_for` on an empty queue, blocks,
-    and gets cut off by move_on_after(2) with frames still == [connected_dict()]
-    — for the wrong reason (wall-clock, not correctness). To catch that, a single
-    sentinel item is pre-queued: correct code returns before ever reaching
-    `wait_for` (the deadline is already due at loop entry), so the item is never
-    drained. The "checked but ignored" regression falls through and drains it,
-    producing an extra frame that fails the frames assertion below.
+    The pre-queued sentinel is what makes the assertion mean something. A stream that calls
+    `revalidate` but ignores its `False` result would still pass a call-count check — it blocks on
+    an empty queue and gets cut off by `move_on_after` with the right frames for the wrong reason.
+    Correct code returns before reaching `wait_for`, so the sentinel is never drained; the broken
+    version drains it and fails on the extra frame.
     """
     from datetime import timedelta
 

@@ -51,11 +51,8 @@ async def _dashboard_for_share_management(
     user: User,
     db: AsyncSession,
 ) -> Dashboard:
-    # Goes through the canonical accessor rather than a hand-rolled query: it filters trashed
-    # dashboards, which this function previously did not check at all — in SQL or in Python — so
-    # invites could be minted, listed and revoked on a dashboard sitting in the trash. The redeem
-    # paths below always rejected those, so the result was invite codes nobody could ever use.
-    # It also drops a query, since this returns the shares and role the old body re-fetched.
+    # The canonical accessor rather than a hand-rolled query, because it filters trashed dashboards:
+    # the redeem paths below reject those, so minting an invite on one yields a code nobody can use.
     dashboard, _shares, role = await load_dashboard_access(dashboard_id, user, db)
     permissions.assert_can_manage_shares(role)
     return dashboard
@@ -158,15 +155,10 @@ async def accept_invite(
 ) -> InviteAcceptResponse:
     """Redeem an invite for the signed-in user, granting the role it carries.
 
-    Redemption **decides before it consumes**. The invite is single-use, so consuming first — as
-    this did — spent the code even when redeeming changed nothing: the owner clicking their own
-    link burned it for no grant at all, and anyone who already had access burned a code that was
-    presumably meant for someone else.
-
-    It also never downgrades. `create_share` upserts the role, so an existing editor who clicked a
-    viewer link was silently demoted — a link is an offer of access, not an instruction to reduce
-    it. Someone already at or above the offered role keeps what they have, and the invite stays
-    live for its intended recipient.
+    Two rules, both because the code is single-use. Redemption **decides before it consumes**, so a
+    redeem that changes nothing leaves the code live for its intended recipient. And it never
+    downgrades: a link is an offer of access, not an instruction to reduce it, so someone already at
+    or above the offered role keeps what they have.
     """
     invite = await load_live_invite(code, db)
     if invite is None:
@@ -186,9 +178,8 @@ async def accept_invite(
     # The owner redeeming their own link is a no-op, not an error: they already have full access,
     # and a share row for the owner would contradict "owner is the absence of a share".
     if dashboard.user_id == current_user.id or (held is not None and permissions.is_at_least(held, role)):
-        # Nothing to grant, so nothing is consumed and no event is emitted — the response reports
-        # the access they actually hold rather than the one the link offered. For the owner that is
-        # `None` (no share row exists to describe them), not the role the link happened to carry.
+        # Nothing to grant, so nothing is consumed — and the response reports the access they hold,
+        # not what the link offered. For the owner that is `None`, this codebase's spelling of owner.
         return InviteAcceptResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name, role=held)
 
     # Consume only now that redemption will change something. Still the atomic UPDATE, so a code

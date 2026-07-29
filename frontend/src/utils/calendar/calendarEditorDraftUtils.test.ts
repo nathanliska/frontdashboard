@@ -61,8 +61,8 @@ describe('buildEventUpdateFromDraft', () => {
   })
 
   it('sends null for a cleared location and description, never undefined', () => {
-    // The reported bug. `undefined` is dropped by JSON.stringify, so the key never reaches the
-    // server, which reads an absent key as "leave unchanged" — the old value could not be removed.
+    // `undefined` is dropped by JSON.stringify, so the key never reaches the server, which reads an
+    // absent key as "leave unchanged" — making the old value impossible to remove.
     const body = buildEventUpdateFromDraft(
       draft({ eventLocation: '', description: '' }),
       null,

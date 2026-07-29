@@ -31,18 +31,16 @@ export function NotificationsPage() {
   const loadActivity = useNotificationsStore((s) => s.loadActivity)
   const loadMoreActivity = useNotificationsStore((s) => s.loadMoreActivity)
 
-  // Guarded exactly as the sidebar panel guards it (`setPanelOpen`). Unconditional, this refetched
-  // a list the store already had — opening the panel and then following "View all notifications"
-  // fetched the same page twice. SSE keeps the store current, so arriving here is not a reason to
-  // re-read it, and skipping the fetch also preserves any extra pages "Load more" had appended.
+  // Guarded exactly as the sidebar panel guards it (`setPanelOpen`): SSE keeps the store current,
+  // so arriving here is not a reason to re-read it, and skipping the fetch preserves any extra
+  // pages "Load more" had appended.
   const loaded = useNotificationsStore((s) => s.loaded)
   useEffect(() => {
     if (!loaded) void load()
   }, [load, loaded])
 
-  // The store owns both the fetch and the cache now: the resync listener it used to need lives in
-  // `useSSE`, which is where the stream's own opinion about staleness belongs. Switching tabs no
-  // longer refetches — `loadActivity` returns immediately once loaded, and SSE keeps it current.
+  // Same for activity: `loadActivity` returns immediately once loaded. Staleness is the stream's
+  // call, so the resync refetch lives in `useSSE`.
   useEffect(() => {
     if (tab !== 'activity') return
     void loadActivity()

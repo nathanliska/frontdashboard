@@ -16,15 +16,10 @@ class Dashboard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (Index("ix_dashboards_user_deleted_updated", "user_id", "deleted_at", "updated_at"),)
 
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    # No server_default: the column never had one in any migration, and every insert path supplies
-    # a name. It dates from the original one-auto-created-dashboard-per-user design and became
-    # vestigial when dashboards became multiple and explicitly created.
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    # Trash (finding #40): set = "moved to trash", invisible everywhere but the owner's trash
-    # view, restorable until the reaper purges it past `trash_retention_days`. Dashboards used to
-    # hard-delete on DELETE — one misclick permanently took every child list and event with it.
-    # This is now the *only* put-away state: `archived` was removed once trash could do the job
-    # recoverably, because two overlapping "hide this" concepts is one too many to explain.
+    # Trash (finding #40): set = "moved to trash", invisible everywhere but the owner's trash view,
+    # restorable until the reaper purges it past `trash_retention_days`. The *only* put-away state —
+    # two overlapping "hide this" concepts is one too many to explain (ADR-007).
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     layout: Mapped[Any] = mapped_column(JSONB, nullable=False, server_default="[]")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")

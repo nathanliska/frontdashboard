@@ -133,10 +133,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
  * A 401 from any request means the session is gone — revoked elsewhere, idled out, or past its
  * absolute expiry. Transition the store and let `RequireAuth` route to the login page.
  *
- * Deliberately *not* `window.location.replace('/login')`, which is what `apiFetch` used to do: a
- * full document teardown discards in-memory state and the URL the user was on, so they came back
- * to wherever the login flow decided rather than where they were. It is also why a transient 502
- * being misread as a logout was so destructive — there was no way back.
+ * Deliberately *not* `window.location.replace('/login')`: a full document teardown discards
+ * in-memory state and the URL the user was on, so they return to wherever the login flow decides
+ * rather than where they were.
  */
 function handleSessionExpired(): void {
   if (useAuthStore.getState().status === 'unauthenticated') return

@@ -1,14 +1,9 @@
 """Every mutating route carries a rate limit.
 
 `test_limiter.py` proves the mechanism — login really answers 429 on the eleventh attempt. What it
-cannot prove is *coverage*, and coverage is the weak point of the per-route approach: a limit is a
-decorator someone has to remember, exactly like `require_csrf`. This is the test that makes
-forgetting it a build failure instead of an unbounded endpoint nobody notices.
-
-The application-wide alternative was tried and reverted. slowapi enforces `application_limits` in a
-middleware that resolves the handler via `app.routes`, which cannot see through this FastAPI
-version's included-router nesting; it therefore treats every request as exempt. Measured, not
-assumed: 1260 requests through the real app produced zero 429s.
+cannot prove is *coverage*, which is the weak point of the per-route approach: a limit is a
+decorator someone has to remember, exactly like `require_csrf`. This makes forgetting it a build
+failure rather than an unbounded endpoint nobody notices.
 """
 
 from fastapi.routing import APIRoute
@@ -24,8 +19,8 @@ def _all_api_routes() -> list[APIRoute]:
     """Walk nested routers.
 
     `app.routes` holds five entries in this FastAPI version — four docs routes and an
-    `_IncludedRouter` — so iterating it directly examines none of the application's own routes and
-    any assertion over it passes vacuously. That mistake is what hid this gap in the first place.
+    `_IncludedRouter` — so iterating it directly examines none of the app's own routes, and any
+    assertion over it passes vacuously.
     """
     found: list[APIRoute] = []
     seen: set[int] = set()

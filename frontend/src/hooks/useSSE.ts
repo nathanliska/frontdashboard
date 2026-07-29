@@ -122,8 +122,8 @@ export function useSSE(): void {
   const handleDashboardEvent = useDashboardStore((s) => s.handleDashboardEvent)
   const handleDashboardContentEvent = useDashboardStore((s) => s.handleContentEvent)
   const addNotification = useNotificationsStore((s) => s.addFromSse)
-  // Every mutation frame is also an activity-feed entry. Without this the cached feed would only
-  // ever refresh on a resync, so the tab would quietly show a timeline that stopped at page load.
+  // Every mutation frame is also an activity-feed entry. Without this the cached feed would refresh
+  // only on a resync, so the tab would show a timeline that stopped at page load.
   const addActivity = useNotificationsStore((s) => s.addActivityFromSse)
   const loadNotifications = useNotificationsStore((s) => s.load)
   const loadUnreadCount = useNotificationsStore((s) => s.loadUnreadCount)
@@ -237,8 +237,8 @@ export function useSSE(): void {
       if (panelOpen || window.location.pathname === '/notifications') {
         void loadNotifications()
       }
-      // The stream is admitting it may have dropped frames, so the cached feed can no longer be
-      // trusted — but only re-read one that was actually being shown.
+      // Frames may have been dropped, so the cached feed can no longer be trusted — but only
+      // re-read one that was actually being shown.
       if (activityLoaded) void loadActivity({ force: true })
       window.dispatchEvent(new Event(APP_RESYNC_EVENT))
     }

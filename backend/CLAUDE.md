@@ -14,13 +14,12 @@ Everything here is a convention an agent can't safely infer from one file.
   every mutation 403s. Rejections log the origin.
 - **Every non-GET route also needs `@limiter.limit(WRITE_LIMIT)` and a `request: Request`
   parameter.** slowapi resolves the decorator at import and needs that argument even though the
-  handler never reads it. `test_rate_limit_coverage.py` fails the build if a mutating route has no
-  limit, so this cannot be silently forgotten the way it was until 2026-07-29. It has to be per
-  route: slowapi's application-wide limit runs in a middleware that resolves handlers through
-  `app.routes`, which cannot see through this FastAPI version's included-router nesting, so it
-  exempts everything (measured — 1260 requests, zero 429s). **Beware that same nesting when writing
-  any audit over routes**: iterating `app.routes` reaches four docs routes and one `_IncludedRouter`,
-  so an assertion over it passes having checked nothing.
+  handler never reads it; `test_rate_limit_coverage.py` fails the build if a mutating route has no
+  limit. It has to be per route — slowapi's application-wide limit runs in a middleware that
+  resolves handlers through `app.routes`, which cannot see through this FastAPI version's
+  included-router nesting, so it exempts everything. **Beware that same nesting in any audit over
+  routes**: `app.routes` holds four docs routes and one `_IncludedRouter`, so an assertion over it
+  passes having checked nothing.
 - **`role is None` means owner, not "no access".** `permissions.effective_role` returns `None`
   for the creator and raises 404 for no access; never write `if role:` guards
   (`app/services/permissions.py`).
@@ -51,16 +50,14 @@ Everything here is a convention an agent can't safely infer from one file.
   real protection, not the content check. `NULL` means two different things: after the gate shipped
   it means "signed up, never verified"; before it, the column simply did not exist (migration
   `y2a4c6e8g0i2` added it nullable and never backfilled), so **every pre-gate account reads
-  unverified forever** however ordinary it is. The content check was believed to cover them and does
-  not — a pre-gate user who only ever *viewed* a dashboard shared with them authored nothing,
-  granted nothing and was assigned nothing, and being a share **principal** is explicitly not
-  disqualifying (the sweep deletes those rows). That user was silently deleted until 2026-07-29;
-  both cases are now pinned in `test_retention.py`. It **filters per user** — an earlier version
-  vetoed the whole sweep when any candidate owned content, which let one real account shield every
-  other candidate.
-  Candidate ids are resolved to a list up front rather than left as a subquery, because each
-  `DELETE` would otherwise re-evaluate it after earlier statements had removed rows it reads.
-  Adding a table with a `users` FK means adding it to this sweep too — none of those FKs cascade.
+  unverified forever** however ordinary it is — and the content check does not separate them, since
+  a pre-gate user who only ever *viewed* a shared dashboard authored nothing, granted nothing and
+  was assigned nothing (being a share **principal** is not disqualifying — the sweep deletes those
+  rows). Both cases are pinned in `test_retention.py`. It **filters per user**: as a veto over the
+  whole sweep, one real account shields every other candidate. Candidate ids are resolved to a list
+  up front rather than left as a subquery, because each `DELETE` would otherwise re-evaluate it
+  after earlier statements had removed rows it reads. Adding a table with a `users` FK means adding
+  it to this sweep too — none of those FKs cascade.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single
   commit so events land in the same transaction as the mutation.
 - **SSE ordering is load-bearing:** build the event dict (`app/sse/events.py` — flush/refresh)

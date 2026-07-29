@@ -5,10 +5,9 @@ import { cn } from '../../utils/shared/cn'
 
 /** The one modal shell (#27), on Radix Dialog.
  *
- * Every modal used to hand-roll its own overlay, labelling, and Escape handling — none of them
- * trapped focus, so Tab walked out into the page behind the overlay. Radix owns the focus trap,
- * scroll lock, Escape, aria-modal wiring, and focus restoration on close; this wrapper owns the
- * house style. Render it conditionally (`{open && <Dialog …>}`) like the modals always were.
+ * Radix owns the focus trap, scroll lock, Escape, aria-modal wiring and focus restoration on close;
+ * this wrapper owns the house style. A hand-rolled overlay does not trap focus, so Tab walks out
+ * into the page behind it. Render conditionally (`{open && <Dialog …>}`).
  *
  * `onEscape` exists for modals with internal steps (AddWidget: Escape first backs out of a step,
  * only then closes); everything else just gets `onClose`.

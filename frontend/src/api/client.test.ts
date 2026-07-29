@@ -80,11 +80,9 @@ describe('apiFetch', () => {
       expect(headerOf(init, 'X-CSRF-Token')).toBe('prefixed-value')
     })
 
-    // The 2026-07-28 production incident: a browser holding a pre-rename `csrf_token` alongside the
-    // new `__Host-csrf_token` sent the stale one, so every mutation 403'd "CSRF token invalid" —
-    // logout included, leaving no way out from inside the app. Both orderings are asserted because
-    // the bug was a non-global regex returning whichever name appeared first in document.cookie,
-    // and cookie order is the browser's choice, not ours.
+    // Both orderings, because cookie order is the browser's choice: a lookup that treats the
+    // prefix as optional returns whichever name it happened to list first, and sending the stale
+    // one 403s every mutation with "CSRF token invalid", logout included.
     it.each([
       ['stale cookie first', 'csrf_token=stale; __Host-csrf_token=current'],
       ['prefixed cookie first', '__Host-csrf_token=current; csrf_token=stale'],
@@ -132,9 +130,8 @@ describe('apiFetch', () => {
       expect(res.status).toBe(401)
     })
 
-    // The regression this whole change exists for. A backend restart, a Cloudflare hiccup or a
-    // dropped connection used to be read as "logged out" and hard-redirect to /login, while the
-    // session was still perfectly valid server-side.
+    // A backend restart, a Cloudflare hiccup or a dropped connection must not read as "logged
+    // out": the session is still valid server-side, so a redirect to /login is wrong.
     it.each([500, 502, 503, 504, 429])('does not log the user out on %i', async (status) => {
       const expired = vi.fn()
       setSessionExpiredHandler(expired)

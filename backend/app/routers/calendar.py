@@ -192,29 +192,19 @@ async def list_occurrences(
     window_start = window_start.astimezone(UTC)
     window_end = window_end.astimezone(UTC)
 
-    # Only load what could possibly land in the window (#16). This used to fetch every event on
-    # every accessible dashboard and discard the misses after expanding them in Python, so the
-    # cost of viewing next week grew with the calendar's whole history.
+    # Only load what could possibly land in the window (#16), so the cost of viewing next week does
+    # not grow with the calendar's whole history. A one-off event is bounded by its own times. A
+    # recurring one is bounded by two facts already in the row — its first occurrence is
+    # `starts_at`, and a rule carrying `until` ends by `until + duration`, read straight out of the
+    # JSONB rather than a denormalized column that could go stale.
     #
-    # A one-off event is bounded by its own times, so the overlap test is the same one
-    # `_overlaps` applies after expansion.
-    #
-    # A recurring one is bounded by two facts already in the row, so no denormalized "last
-    # occurrence" column is needed to use them. Its first occurrence is `starts_at`, so a series
-    # beginning after the window cannot reach back into it. And a rule carrying `until` stops
-    # there, so its last occurrence ends by `until + duration` — read straight out of the JSONB
-    # rule, which cannot go stale the way a copy of it could.
-    #
-    # What still loads unbounded: series with no `until`. A `count`-limited one has an end, but
-    # finding it means expanding the rule, which is exactly the work this predicate exists to
-    # avoid; an unlimited one genuinely runs forever and must be considered for every window.
+    # Series with no `until` still load unbounded. A `count`-limited one has an end, but finding it
+    # means expanding the rule — the exact work this predicate exists to avoid.
     series_duration = CalendarEvent.ends_at - CalendarEvent.starts_at
     series_until = cast(CalendarEvent.recurrence["until"].astext, DateTime(timezone=True))
     # `jsonb_typeof(...) = 'object'` rather than `IS NOT NULL`: a JSONB column can hold the scalar
-    # 'null', which is not SQL NULL and so passes an IS NOT NULL test. Production held 33 such rows
-    # (see the model), and every one was treated here as an unbounded series — the window's lower
-    # bound never applied to them. The migration converts those rows and the model stops writing
-    # them, but this predicate now asks the question it actually means either way.
+    # 'null', which is not SQL NULL and would pass an IS NOT NULL test — read as an unbounded
+    # series, so the window's lower bound would never apply to it (see the model).
     recurring_in_window = and_(
         func.jsonb_typeof(CalendarEvent.recurrence) == "object",
         CalendarEvent.starts_at < window_end,
@@ -233,11 +223,8 @@ async def list_occurrences(
                 (CalendarEvent.starts_at < window_end) & (CalendarEvent.ends_at > window_start),
                 # An override can move an occurrence outside its event's own times — before
                 # `starts_at` or after `until` — so this stays deliberately unbounded, and it is
-                # what makes the two bounds above safe. Only recurring events can be overridden
-                # today, but an event that *was* recurring can still own override rows written
-                # before it was made one-off, and dropping it here would silently hide it. Cheap
-                # insurance: such rows are rare, and update_event now deletes them when
-                # recurrence is cleared.
+                # what makes the two bounds above safe. It also covers an event that *was*
+                # recurring and still owns override rows written before it was made one-off.
                 has_override,
             ),
         )

@@ -3,11 +3,10 @@ import { cn } from '../../utils/shared/cn'
 
 /** A labelled input whose error is attached to the field itself (#27).
  *
- * Validation used to surface only as a toast: the message appeared away from the input, was
- * announced without saying which field it belonged to, and vanished on a timer. Here the label is
- * wired with `htmlFor`, the message is owned by the field via `aria-describedby`, and
- * `aria-invalid` marks the control — so a screen reader announces the error when focus lands on
- * the offending input, and it persists until the user fixes it.
+ * The label is wired with `htmlFor`, the message owned by the field via `aria-describedby`, and
+ * `aria-invalid` marks the control — so a screen reader announces the error when focus lands on the
+ * offending input, and it persists until the user fixes it. A toast cannot do either: it appears
+ * away from the input, never says which field it belongs to, and vanishes on a timer.
  *
  * `role="alert"` on the message means a validation failure is also announced immediately on
  * submit, without moving focus.

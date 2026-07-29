@@ -99,8 +99,8 @@ describe('useAuthStore', () => {
 
     await useAuthStore.getState().init()
 
-    // Bootstrap used to call /me, attempt a silent refresh, then call /me again. The session
-    // cookie either resolves to a live row or it does not, so one question is the whole check.
+    // One question is the whole check: the session cookie either resolves to a live row or it does
+    // not, so bootstrap has nothing to retry and no second /me to make.
     expect(apiGetMe).toHaveBeenCalledTimes(1)
     expect(fetch).not.toHaveBeenCalled()
 

@@ -521,9 +521,8 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('keeps reconnecting through an outage instead of signing the user out', async () => {
-    // The regression. A closed stream used to trigger a refresh call whose failure — including a
-    // plain 502 while the backend was restarting — hard-redirected to /login. Reconnecting is now
-    // the only response, so an outage costs staleness, never the session.
+    // Reconnecting is the only response to a closed stream, so an outage — a 502 while the backend
+    // restarts, say — costs staleness and never the session.
     apiFetchMock.mockResolvedValue({ ok: false, status: 502 } as Response)
     render(<TestHarness />)
 

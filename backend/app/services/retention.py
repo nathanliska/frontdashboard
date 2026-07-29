@@ -57,10 +57,9 @@ _EXPIRING_TOKEN_TABLES = (
 # one runs it per tick. Never reuse this key for a different advisory lock.
 _REAP_ADVISORY_LOCK_KEY = 0x2026_0738
 
-# When email verification shipped (migration y2a4c6e8g0i2). It added `users.email_verified_at`
-# nullable and did not backfill, so an account older than this reads unverified forever however
-# ordinary it is. Purge candidacy is floored here because only after this date does NULL carry the
-# meaning the sweep acts on.
+# When email verification shipped (migration y2a4c6e8g0i2, which added `email_verified_at` nullable
+# and never backfilled). Purge candidacy is floored here: only after this date does NULL mean
+# "never verified" rather than "the column did not exist yet".
 _EMAIL_VERIFICATION_SHIPPED = datetime(2026, 4, 30, tzinfo=UTC)
 
 
@@ -99,13 +98,10 @@ async def reap_expired_history(db: AsyncSession, *, now: datetime | None = None)
     cutoff = now - timedelta(days=settings.history_retention_days)
     counts: dict[str, int] = {}
 
-    # Neither table has an index on created_at alone, so these are sequential scans. That is the
-    # right trade at this size: the scan runs four times a day on tables this sweep is itself
-    # keeping bounded, while the index would cost a write on every event and notification.
-    #
-    # Notifications first: they are the readable surface, and deleting them before the events
-    # they point at means a sweep interrupted midway leaves dangling references rather than
-    # notifications whose event has silently vanished.
+    # Sequential scans — neither table has an index on created_at alone, which is the right trade
+    # here: four scans a day on tables this sweep keeps bounded, against a write cost on every
+    # event and notification. Notifications go first so an interrupted sweep leaves a dangling
+    # reference rather than a notification whose event has vanished.
     for name, model in (("notifications", Notification), ("activity_events", ActivityEvent)):
         result = cast("CursorResult[Any]", await db.execute(delete(model).where(model.created_at < cutoff)))
         counts[name] = result.rowcount
@@ -116,15 +112,12 @@ async def reap_expired_history(db: AsyncSession, *, now: datetime | None = None)
 async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
     """Purge trash past `trash_retention_days` (finding #40). Caller owns the commit.
 
-    This is the cascade that DELETE /dashboards used to run inline: a trashed dashboard takes
-    its widgets, lists (items included), events, and share rows with it. It also sweeps
-    soft-deleted lists, items, and events that were individually trashed and never restored —
-    before #40 those lingered forever, purged only if their dashboard happened to be deleted.
+    A purged dashboard takes its widgets, lists (items included), events and share rows with it.
+    Individually-trashed lists, items and events are swept on the same horizon.
 
-    Order matters for the children: they go before dashboards, because their `dashboard_id` FKs
-    have no ON DELETE cascade. Share rows are not swept here at all — `resource_shares.resource_id`
-    does cascade (#19), so they die with the dashboard in the same statement, which is strictly
-    better than the hand-ordered deletes this used to run.
+    Order matters: children go before dashboards, because their `dashboard_id` FKs have no ON
+    DELETE cascade. Share rows are not swept here at all — `resource_shares.resource_id` does
+    cascade (#19), so they die with the dashboard in the same statement.
     """
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=settings.trash_retention_days)
@@ -165,44 +158,29 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
     """Purge unverified signups past `unverified_retention_days`. Caller owns the commit.
 
     Registration is open to the internet, so abandoned signups accumulate and never leave. This is
-    the one sweep that deletes a *user*, so the argument for safety has to be exact rather than
-    comfortable:
+    the one sweep that deletes a *user*, so its safety argument has to be exact:
 
     - Login raises 403 while `email_verified_at` is NULL, so such an account has never held a
       session. It cannot have created a list, an event, or a widget — the only row registration
       makes for it is one empty "My Dashboard".
-    - Nothing is lost that the person could still want. They can re-register the same address
-      afterwards, which today they cannot: the case-insensitive unique index reserves it forever,
-      so a mistyped signup locks the real owner out permanently. Purging *restores* that option.
+    - Nothing is lost that the person could still want. The case-insensitive unique index reserves
+      the address forever, so a mistyped signup locks the real owner out; purging restores it.
 
-    Owning content disqualifies an account, and that is not merely belt-and-braces — it fired on the
-    first real run. Email verification arrived on 2026-04-30 and its migration added
-    `email_verified_at` as nullable *without backfilling*, so every account created before then
-    reads as unverified forever. Those are ordinary users who logged in and made things back when no
-    gate existed; they recover by logging in and using the resend flow, which returns their content
-    intact. The check is what keeps the sweep from deleting them.
-
-    It filters per user rather than vetoing the sweep. Getting that wrong is what production showed:
-    three candidates, two owning content, and the one genuinely empty account survived alongside
-    them because a single disqualified user aborted everything.
+    Two guards separate a genuine abandoned signup from an account that merely reads as one: the
+    `_EMAIL_VERIFICATION_SHIPPED` floor and per-user disqualification. Both are load-bearing —
+    see the comments below and `test_retention.py`.
     """
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=settings.unverified_retention_days)
 
-    # Disqualified if the account is referenced *anywhere*, evaluated per user rather than as a veto
-    # over the whole sweep. An earlier version asked "does anyone here own content?" and skipped
-    # everything if so, which let one real account shield every other candidate — production had
-    # exactly that: three candidates, two owning content, nothing purged.
+    # Disqualified if the account is referenced *anywhere*, evaluated per user: as a veto over the
+    # whole sweep, one real account shields every other candidate.
     #
-    # The list below is not "content" in a loose sense; it is every NOT NULL foreign key to
-    # `users.id` that this sweep does not itself delete. Each one has no ON DELETE clause, so it
-    # defaults to NO ACTION and *blocks* the final DELETE — including the nullable
-    # `list_items.assigned_to`, since nullability is not what decides that. Miss one and the sweep
-    # does not skip a user, it raises IntegrityError and rolls back every other sweep in the tick,
-    # because `run_reaper_once` shares one transaction.
-    #
-    # These are also exactly the marks of an account that *participated*. A genuine abandoned signup
-    # never held a session, so it authored nothing, granted nothing, and was assigned nothing.
+    # Not "content" in a loose sense — this is every foreign key to `users.id` that the sweep does
+    # not itself delete. None carries an ON DELETE clause, so each one *blocks* the final DELETE,
+    # nullable `list_items.assigned_to` included. Miss one and the sweep doesn't skip a user, it
+    # raises IntegrityError and rolls back every other sweep in the tick (`run_reaper_once` shares
+    # one transaction). They are also the marks of an account that participated at all.
     disqualifying = or_(
         *(
             select(column).where(column == User.id).exists()
@@ -224,23 +202,18 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
         select(DashboardWidget.id).join(Dashboard, Dashboard.id == DashboardWidget.dashboard_id).where(Dashboard.user_id == User.id).exists(),
     )
 
-    # Resolved to a list once, rather than left as a subquery the way the other sweeps do. Every
-    # DELETE below would otherwise re-evaluate it *after* earlier statements have already removed
-    # rows it reads. That happens to stay correct here — only content-free dashboards are deleted,
-    # so `content_owners` cannot shrink — but that is a load-bearing argument sitting invisibly
-    # between statements, and this is the one sweep that deletes users.
-    # NULL means two different things, and conflating them deletes real people. For an account
-    # created after the gate shipped it means "signed up, never verified". For one created before,
-    # it means "the column did not exist yet" — y2a4c6e8g0i2 added it nullable and never backfilled.
-    # Content ownership alone does not separate them: a pre-gate user who only ever *viewed* a
-    # dashboard shared with them authored nothing, granted nothing and was assigned nothing, so
-    # every disqualifying check above passes them straight through to deletion.
+    # NULL means two different things, and conflating them deletes real people: after the gate
+    # shipped it means "signed up, never verified"; before it, "the column did not exist yet".
+    # Disqualification alone does not separate them — a pre-gate user who only ever *viewed* a
+    # shared dashboard authored nothing, granted nothing and was assigned nothing.
     eligible = (
         User.email_verified_at.is_(None),
         User.created_at < cutoff,
         User.created_at >= _EMAIL_VERIFICATION_SHIPPED,
     )
 
+    # Resolved to a list rather than left as a subquery: every DELETE below would otherwise
+    # re-evaluate it after earlier statements had removed rows it reads.
     candidate_ids = list((await db.execute(select(User.id).where(*eligible, ~disqualifying))).scalars().all())
     skipped = (await db.execute(select(func.count()).select_from(User).where(*eligible, disqualifying))).scalar_one()
     predating = (
@@ -251,9 +224,6 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
     if predating:
         logger.info("reaper: %s account(s) predate email verification and are never purge candidates", predating)
     if skipped:
-        # Expected for accounts predating email verification (added 2026-04-30): its migration made
-        # the column nullable without backfilling, so every user from before then reads unverified.
-        # They are real accounts that recover by logging in and using the resend flow.
         logger.info("reaper: %s unverified account(s) own content and were left alone", skipped)
     if not candidate_ids:
         return {"abandoned_signups": 0}

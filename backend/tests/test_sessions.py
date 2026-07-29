@@ -66,7 +66,7 @@ async def test_a_revoked_session_stops_resolving(db_session: AsyncSession) -> No
 
 
 async def test_a_session_past_its_absolute_expiry_stops_resolving(db_session: AsyncSession) -> None:
-    """The bound the previous model never had: an actively used session used to slide forever."""
+    """Without the absolute bound, an actively used session would slide forever."""
     user = await make_db_user(db_session)
     session, raw = await start_session(user.id, db_session)
     session_id = session.id  # captured before expire_all() below expires `session` too
@@ -236,8 +236,8 @@ async def test_concurrent_logins_get_independent_sessions(
 
 
 async def test_the_liveness_predicate_is_shared(db_session: AsyncSession) -> None:
-    """`resolve_session` and `session_is_live` must not drift apart. They agreed by coincidence
-    before the absolute bound existed; `_live` is what keeps them agreeing now."""
+    """`resolve_session` and `session_is_live` must not drift apart — `_live` is the one predicate
+    both of them ask, so every clock rejects a session through both doors."""
     user = await make_db_user(db_session)
     session, raw = await start_session(user.id, db_session)
     session_id = session.id  # captured before expire_all() below expires `session` too
@@ -253,11 +253,9 @@ async def test_the_liveness_predicate_is_shared(db_session: AsyncSession) -> Non
         resolved = await resolve_session(raw, db_session)
         live = await session_is_live(session_id, db_session)
 
-        # Instrumentation, not belt-and-braces. This failed once on 2026-07-29 and never again in
-        # 56 runs, and the three cases above are provably timing-proof — each fails its predicate by
-        # a margin that *grows* as the run slows. The only remaining explanation is the UPDATE not
-        # being visible to these reads, so a recurrence needs to show what the row actually held.
-        # Queried only on failure, so the passing path is unchanged and cannot mask the cause.
+        # Reported by hand rather than with a plain assert, because a failure here has exactly one
+        # plausible cause left — the UPDATE not being visible to these reads — and diagnosing it
+        # needs the row. Read only on failure, so the passing path is unchanged.
         if resolved is not None or live:
             row = (await db_session.execute(select(UserSession).where(UserSession.id == session_id))).scalar_one_or_none()
             state = None if row is None else (row.revoked_at, row.expires_at, row.last_used_at)

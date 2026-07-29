@@ -8,12 +8,10 @@
 
 	# API routes
 	handle /api/* {
-		# Rejected at the proxy rather than after FastAPI has read and parsed it. Field-level
-		# max_length validators bound individual strings, but nothing bounded a whole body, so a
-		# single request was limited only by what the origin would accept. 1MB is far above any
-		# real payload here — the largest is a dashboard layout PUT, a few KB — and is not a
-		# limit any legitimate client can reach. Excluded from the /api/sse handler above, which
-		# is a long-lived response rather than a request body.
+		# An oversized body is rejected here rather than after FastAPI has read and parsed it:
+		# field-level max_length validators bound individual strings, nothing bounds the whole
+		# body. 1MB is far above any real payload — the largest is a dashboard layout PUT, a few
+		# KB. Not applied to /api/sse above, which is a long-lived response, not a body.
 		request_body {
 			max_size 1MB
 		}

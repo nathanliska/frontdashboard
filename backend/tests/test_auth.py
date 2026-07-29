@@ -455,43 +455,19 @@ async def test_a_missing_origin_does_not_excuse_a_bad_token_pair(auth_client: As
 
 
 def test_clearing_prefixed_cookies_keeps_them_secure(monkeypatch) -> None:
-    """A `__Host-` cookie must carry Secure even when the point is to delete it.
-
-    Starlette's `delete_cookie` defaults `secure=False`, so the emitted header failed the prefix
-    rules and browsers rejected the deletion, leaving the cookie in place. Only production ever
-    saw it, since only production prefixes the names — hence the monkeypatch, which is the only
-    way this file can reach that configuration.
-    """
+    """A `__Host-` cookie must carry Secure even when the point is to delete it, or the browser
+    rejects the deletion for an invalid prefix and keeps the cookie. The monkeypatch is the only
+    way this file reaches that configuration — only production prefixes the names."""
     monkeypatch.setattr(auth_router, "_SECURE", True)
     response = Response()
 
     auth_router._clear_auth_cookies(response)
 
-    # Asserted by cookie name rather than by the `__Host-` prefix: this file runs under
-    # `environment=development`, where the names are unprefixed, so a prefix-keyed assertion would
-    # match nothing and pass without testing anything.
+    # Keyed by cookie name, not by the `__Host-` prefix: this file runs under
+    # `environment=development`, so a prefix-keyed assertion would match nothing and pass.
     cleared = {header.split("=", 1)[0]: header for header in response.headers.getlist("set-cookie")}
     for name in (auth_router.settings.session_cookie_name, auth_router.settings.csrf_cookie_name):
         assert "Secure" in cleared[name], cleared[name]
-
-
-def test_legacy_cookie_cleanup_spares_the_active_pair() -> None:
-    """Development's active cookie names *are* the unprefixed legacy ones, so the cleanup must skip
-    them or a login emits a `Max-Age=0` delete and a set for the same name in one response.
-
-    That currently survives only because the delete is written first and last-wins ordering saves
-    it — verified by removing the guard, which leaves every logout test green and fails only this
-    one. So the guard buys not depending on header order, and this is the only test that can see
-    it: the two name sets diverge solely under `environment=production`, which no test runs under.
-    """
-    response = Response()
-    auth_router._delete_legacy_cookies(response)
-    cleared = {header.split("=", 1)[0] for header in response.headers.getlist("set-cookie")}
-
-    assert auth_router.settings.session_cookie_name not in cleared
-    assert auth_router.settings.csrf_cookie_name not in cleared
-    # The pre-rename names that are never active, so they are always safe to clear.
-    assert {"access_token", "refresh_token"} <= cleared
 
 
 async def test_logout_requires_csrf(auth_client: AsyncClient) -> None:
@@ -528,7 +504,7 @@ async def test_update_profile(auth_client: AsyncClient) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["display_name"] == "Updated User"
-    # No cookie work: this used to re-issue the access token because the JWT embedded `email`.
+    # No cookie work — the session cookie carries no identity to re-issue.
     assert "session" not in resp.cookies
 
     me = await auth_client.get(_ME_URL)
@@ -563,9 +539,8 @@ async def test_profile_and_preferences_reject_empty_or_unknown_patches(auth_clie
 
 
 async def test_any_request_slides_the_session_idle_clock(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """A plain GET, not a mutation. Routes used to bump `last_used_at` by hand, which meant only
-    the handful that did so kept a session alive — a user who merely read would have idled out
-    mid-use. The auth dependency owns the clock now, so every authenticated request slides it."""
+    """A plain GET, not a mutation: the auth dependency owns the idle clock, so reading is enough
+    to keep a session alive. Bumped per route, a user who merely read would idle out mid-use."""
     session = (await db_session.execute(select(UserSession))).scalars().one()
     old = datetime.now(UTC) - timedelta(hours=1)
     session.last_used_at = old

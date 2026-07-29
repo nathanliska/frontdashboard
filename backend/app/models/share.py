@@ -27,16 +27,14 @@ class ShareRole(enum.StrEnum):
 class ResourceShare(UUIDPrimaryKeyMixin, Base):
     """A direct grant of one dashboard to one user.
 
-    The table is named for a polymorphism it no longer has. `resource_type` was meant to select
-    between lists, calendar events and dashboards, but lists and events now **inherit** access from
-    the dashboard that owns them ([ADR-001](../../../docs/adr/ADR-001-per-resource-sharing.md)):
-    their `/shares` endpoints are 409 stubs, migration `q6s8u0w2y4a6` deleted the last of their
-    rows, and both write paths pass `ResourceType.dashboard` literally.
+    The table is named for a polymorphism it does not have. Lists and calendar events **inherit**
+    access from the dashboard that owns them ([ADR-001](../../../docs/adr/ADR-001-per-resource-sharing.md)),
+    so both write paths pass `ResourceType.dashboard` literally.
 
-    So the discriminators are pinned to their single live value by CHECK constraints, and that is
-    what makes the foreign keys expressible at all (#19) — a column that might point at any of
-    three tables cannot reference one. `resource_id` is a real dashboard and `principal_id` is a
-    real user, enforced by the database rather than by remembering to check.
+    The discriminators are therefore pinned to their single live value by CHECK constraints, which
+    is what makes the foreign keys expressible at all (#19) — a column that might point at any of
+    three tables cannot reference one. `resource_id` is a real dashboard and `principal_id` a real
+    user, enforced by the database rather than by remembering to check.
 
     Re-opening this to more resource types means dropping `ck_resource_shares_resource_type` and
     `fk_resource_shares_resource_id` together; the discriminator columns are kept precisely so that
@@ -59,10 +57,8 @@ class ResourceShare(UUIDPrimaryKeyMixin, Base):
     )
 
     resource_type: Mapped[str] = mapped_column(String(30), nullable=False)
-    # ON DELETE CASCADE: a grant on a dashboard that no longer exists is not recoverable state, it
-    # is a row nothing can ever read. The trash reaper used to delete these by hand, in an order
-    # chosen so an interrupted sweep left orphans rather than the reverse — the cascade makes that
-    # one atomic statement and retires the ordering argument.
+    # ON DELETE CASCADE: a grant on a dashboard that no longer exists is a row nothing can ever
+    # read, so the reaper does not have to sweep these by hand in a safe order.
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("dashboards.id", name="fk_resource_shares_resource_id", ondelete="CASCADE"),

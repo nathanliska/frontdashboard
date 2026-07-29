@@ -54,14 +54,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _SECURE = settings.environment == Environment.production
 
 
-# Cookie max-age tracks the absolute session bound, not the idle one. A cookie that outlives its
-# session is harmless (the row rejects it); one that dies *first* would log out a user whose
-# session is perfectly valid, which is the failure mode this whole change exists to remove.
+# Tracks the absolute session bound, not the idle one. A cookie that outlives its session is
+# harmless (the row rejects it); one that dies first logs out a user whose session is still valid.
 _COOKIE_MAX_AGE = settings.session_absolute_days * 24 * 3600
 
 
 def _set_auth_cookies(response: Response, session_token: str, csrf_token: str) -> None:
-    _delete_legacy_cookies(response)
     response.set_cookie(
         settings.session_cookie_name,
         session_token,
@@ -82,31 +80,12 @@ def _set_auth_cookies(response: Response, session_token: str, csrf_token: str) -
     )
 
 
-# Pre-2026-07-28 cookie names, still live in browsers from before the `__Host-` rename. The server
-# never reads them, but the *client* picks its CSRF cookie by name, so a stale `csrf_token` sitting
-# beside `__Host-csrf_token` is a double-submit mismatch on every mutation — logout included, which
-# is what makes it unrecoverable from inside the app. Cleared on every cookie write, not just
-# logout, so an affected browser heals by logging in. Removable once these have aged out.
-_LEGACY_COOKIE_NAMES = ("access_token", "refresh_token", "session", "csrf_token")
-
-
-def _delete_legacy_cookies(response: Response) -> None:
-    active = {settings.session_cookie_name, settings.csrf_cookie_name}
-    for name in _LEGACY_COOKIE_NAMES:
-        # Development's active names *are* the unprefixed ones; deleting those clears the live pair.
-        if name not in active:
-            response.delete_cookie(name)
-
-
 def _clear_auth_cookies(response: Response) -> None:
-    # `secure=` matters even to delete. Starlette's `delete_cookie` defaults it to False, and a
-    # `__Host-` cookie without Secure fails the prefix rules, so the browser rejects the deletion
-    # outright ("rejected for invalid prefix") and keeps the cookie. Only production hit this,
-    # because only production prefixes the names. Logout still ended the session — revoking the row
-    # is what does that, not clearing the cookie — but the cookie itself survived until it expired.
+    # `secure=` matters even to delete: Starlette defaults it to False, and a `__Host-` cookie
+    # without Secure fails the prefix rules, so the browser rejects the deletion and keeps the
+    # cookie. Only production prefixes the names, so only production sees it.
     response.delete_cookie(settings.session_cookie_name, secure=_SECURE)
     response.delete_cookie(settings.csrf_cookie_name, secure=_SECURE)
-    _delete_legacy_cookies(response)
 
 
 async def _issue_email_verification(user: User, db: AsyncSession) -> str:

@@ -26,9 +26,8 @@ async def test_home_dashboard_listing_and_shared_access(auth_client: AsyncClient
     assert me.status_code == 200
     home_dashboard_id = me.json()["preferences"]["home_dashboard_id"]
 
-    # Registration seeds a home dashboard and names it in preferences; the client fetches it by
-    # id like any other. (This used to go through GET /dashboards/default, a survivor of the
-    # one-auto-created-dashboard model that favourites replaced — no client ever called it.)
+    # Registration seeds a home dashboard and names it in preferences; the client fetches it by id
+    # like any other, so there is no dedicated "default dashboard" endpoint.
     home_resp = await auth_client.get(f"/api/dashboards/{home_dashboard_id}")
     assert home_resp.status_code == 200
     home_dashboard = home_resp.json()

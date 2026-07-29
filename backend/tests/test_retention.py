@@ -273,8 +273,8 @@ async def test_having_granted_a_share_disqualifies(db_session):
 
 
 async def _make_pre_gate_user(db, *, label: str):
-    """An account from before email verification existed. Anchored to the constant rather than to
-    a day count, so this stays a pre-gate account however long from now the suite runs."""
+    """An account from before email verification existed. Anchored to the constant rather than a
+    day count, so it stays a pre-gate account however long from now the suite runs."""
     created = _EMAIL_VERIFICATION_SHIPPED - timedelta(days=1)
     user = User(
         email=f"{label}-{uuid.uuid4()}@example.com",
@@ -303,11 +303,9 @@ async def test_an_account_predating_email_verification_is_never_a_candidate(db_s
 
 
 async def test_a_pre_gate_viewer_survives_though_it_authored_nothing(db_session):
-    """The realistic casualty, and the one the content checks miss entirely. A household member who
-    was shared a dashboard and only ever *read* it authored nothing, granted nothing, and was
-    assigned nothing — every disqualifying check passes them through. Being a share **principal**
-    is explicitly not protective (the sweep deletes those rows), so before the date floor this user
-    was purged along with their access.
+    """The realistic casualty the disqualifying checks miss entirely: a household member who was
+    shared a dashboard and only ever *read* it authored nothing, granted nothing and was assigned
+    nothing. Being a share **principal** is not protective — the sweep deletes those rows.
     """
     legacy = await _make_pre_gate_user(db_session, label="viewer")
     owner = await make_db_user(db_session, label="owner")
@@ -329,12 +327,9 @@ async def test_a_pre_gate_viewer_survives_though_it_authored_nothing(db_session)
 
 
 async def test_a_content_owner_does_not_shield_the_other_abandoned_signups(db_session):
-    """The disqualification is per user, not a veto over the sweep.
-
-    This is what production did on the first real run: three unverified accounts past the horizon,
-    two owning content, and the third — genuinely empty — survived because one disqualified user
-    aborted everything. Every other test here uses a single candidate, which is exactly why the
-    original all-or-nothing check looked correct.
+    """The disqualification is per user, not a veto over the sweep: one account owning content must
+    not shield the rest. Needs two candidates to see — every other test here uses one, which is why
+    an all-or-nothing check looks correct.
     """
     empty_user, empty_dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
     content_user, content_dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)

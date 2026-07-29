@@ -211,9 +211,8 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
     },
 
     async loadActivity(options) {
-      // Guarded like `load`: arriving on the tab again is not a reason to re-read a feed SSE has
-      // been keeping current. `force` is for resync, where the stream admits it may have missed
-      // frames, so the cache can no longer be trusted.
+      // Guarded like `load`: arriving on the tab again is not a reason to re-read a feed SSE keeps
+      // current. `force` is for resync, where frames may have been missed.
       if (!options?.force && get().activityLoaded) return
       if (activityPromise) return activityPromise
 

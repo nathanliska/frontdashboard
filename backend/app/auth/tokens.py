@@ -1,9 +1,8 @@
 """Opaque bearer tokens.
 
 Every credential this app hands out — the session cookie, email verification, password reset,
-dashboard invites — is 256 bits of urandom stored only as its SHA-256. Nothing here is a JWT:
-the signed access token was removed with the access/refresh split (ADR-003), and with it the
-last consumer of `SECRET_KEY`.
+dashboard invites — is 256 bits of urandom stored only as its SHA-256. Nothing here is a JWT, and
+nothing signs anything, so the app has no `SECRET_KEY` (ADR-003).
 
 Plain SHA-256 rather than a password hash is right for all of them: these are full-entropy
 random values, so there is nothing to brute-force and no salt to need. It is emphatically *not*

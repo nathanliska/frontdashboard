@@ -53,8 +53,8 @@ describe('NotificationsPage', () => {
       setPanelOpen: vi.fn(),
       addFromSse: vi.fn(),
       // The store is module-level and outlives each test, so the activity cache has to be cleared
-      // explicitly — otherwise the second test sees the first one's feed, skips its fetch, and
-      // still renders, which looks like a pass (frontend/CLAUDE.md).
+      // here — otherwise the next test inherits this one's feed, skips its fetch and still renders,
+      // which looks like a pass (frontend/CLAUDE.md).
       activity: [],
       activityLoaded: false,
       activityLoading: false,
@@ -98,8 +98,7 @@ describe('NotificationsPage', () => {
   })
 
   it('does not refetch activity when the tab is revisited', async () => {
-    // The reported behaviour: every Notifications -> Activity switch issued another GET. The feed
-    // is cached in the store now, and SSE keeps it current, so returning to it must cost nothing.
+    // The feed is cached in the store and SSE keeps it current, so switching back must cost nothing.
     mockedApiGetActivity.mockResolvedValue(ACTIVITY_PAGE)
     renderPage()
 
@@ -114,8 +113,8 @@ describe('NotificationsPage', () => {
   })
 
   it('refetches when the caller forces it, which is how a resync recovers', async () => {
-    // Resync moved to `useSSE`, where the stream's own opinion about staleness belongs. What the
-    // store still owes it is a way past the cache.
+    // Staleness is the stream's call (`useSSE` owns the resync); what the store owes it is a way
+    // past the cache.
     mockedApiGetActivity.mockResolvedValue(ACTIVITY_PAGE)
     renderPage()
 

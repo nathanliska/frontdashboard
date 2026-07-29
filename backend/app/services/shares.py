@@ -25,12 +25,9 @@ def dashboard_audience_user_ids(dashboard: Dashboard, shares: list[ResourceShare
     """Everyone entitled to an SSE event about this dashboard, or about a list or event bound to it.
 
     The owner plus every user principal. Lists and calendar events inherit access from the dashboard
-    (ADR-001), so they share this audience rather than computing their own — three copies of it had
-    drifted, and the two in `routers/lists.py` and `routers/calendar.py` had lost the
-    `principal_type` filter the dashboards one kept. Harmless while `ck_resource_shares_principal_type`
-    pins the column to `'user'`, which is exactly the kind of "safe for now" that stops being true
-    quietly. Broadcasting to too few users is the failure that matters: the missed tab shows stale
-    data with nothing to indicate it (backend/CLAUDE.md).
+    (ADR-001), so they share this audience rather than computing their own — broadcasting to too few
+    users is the failure that matters, since the missed tab shows stale data with nothing to
+    indicate it (backend/CLAUDE.md).
     """
     return {dashboard.user_id} | {share.principal_id for share in shares if share.principal_type == PrincipalType.user}
 
@@ -107,11 +104,8 @@ async def load_resource_access(
     if resource_created_by == user.id:
         return shares, None
 
-    # Direct grants are the whole story. This used to also look for an *inherited* role by joining
-    # through the widgets that bind the resource — machinery for a resource that several dashboards
-    # could surface. A list or event now belongs to exactly one dashboard and its router answers
-    # from `dashboard_id` directly, and a dashboard is never itself bound as a widget's resource,
-    # so that join had no row to find from either side (findings #25, #19).
+    # Direct grants are the whole story: a list or event belongs to exactly one dashboard and its
+    # router resolves access from `dashboard_id`, so there is no inherited role to join for here.
     return shares, permissions.effective_role(resource_created_by, user.id, shares)
 
 
