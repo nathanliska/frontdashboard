@@ -1,4 +1,4 @@
-import type { CalendarEvent } from '../../api/calendar'
+import type { CalendarEvent, UpdateCalendarEventInput } from '../../api/calendar'
 import { dateKey, defaultLocalDateTime, toLocalInputValue } from './calendarUtils'
 
 export type RecurrenceMode = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
@@ -304,4 +304,33 @@ export function formatEndDateLabel(value: string): string {
 export function toLocalDateTimeInput(value: string): string {
   const date = new Date(value)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * The PATCH body for an edited event.
+ *
+ * Lives here, beside `createCalendarEditorDraftFromEvent`, because it is that function's inverse
+ * and the pair has to agree about how an empty field round-trips. It was inline in `CalendarPage`
+ * and therefore unreachable from a test, which is how it shipped sending `undefined` for a cleared
+ * description or location: `JSON.stringify` drops undefined keys, the server reads an absent key
+ * as "leave unchanged", and the old value survived every attempt to remove it.
+ *
+ * `null` is the only way to say "clear this". `timezone` and `all_day` are always sent because the
+ * editor always knows them.
+ */
+export function buildEventUpdateFromDraft(
+  draft: CalendarEditorDraft,
+  recurrence: UpdateCalendarEventInput['recurrence'],
+  timezone: string,
+): UpdateCalendarEventInput {
+  return {
+    title: draft.title.trim(),
+    description: draft.description.trim() || null,
+    location: draft.eventLocation.trim() || null,
+    starts_at: new Date(draft.startsAt).toISOString(),
+    ends_at: new Date(draft.endsAt).toISOString(),
+    timezone,
+    all_day: draft.allDay,
+    recurrence,
+  }
 }

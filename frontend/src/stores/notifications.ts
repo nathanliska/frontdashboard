@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import {
+  type ActivityEvent,
+  apiGetActivity,
   apiGetNotifications,
   apiGetUnreadCount,
   apiMarkAllRead,
@@ -11,6 +13,10 @@ import { bumpSessionGeneration, currentSessionGeneration } from './sessionGenera
 let notificationsPromise: Promise<void> | null = null
 let unreadCountPromise: Promise<void> | null = null
 let loadMorePromise: Promise<void> | null = null
+let activityPromise: Promise<void> | null = null
+let activityLoadMorePromise: Promise<void> | null = null
+// The endpoint pages at 50, so a full page means older history may exist (#22).
+const ACTIVITY_PAGE_SIZE = 50
 // Where the next older page starts. Module-level like the promises: it is request bookkeeping,
 // not render state — hasMore below is the rendered fact.
 let nextCursor: string | null = null
@@ -25,6 +31,18 @@ interface NotificationsState {
   /** Older history exists past what is loaded — render a "Load more" affordance (#22). */
   hasMore: boolean
   loadingMore: boolean
+  /**
+   * Activity lives here rather than in the page so switching tabs stops refetching it
+   * (frontend/CLAUDE.md: anything fetched on a page belongs in a store with a loaded flag).
+   * Caching it is only safe *because* `addActivityFromSse` keeps it current — a cached feed with
+   * no live updates would have traded a redundant GET for a silently stale timeline.
+   */
+  activity: ActivityEvent[]
+  activityLoaded: boolean
+  activityLoading: boolean
+  activityFailed: boolean
+  activityHasMore: boolean
+  activityLoadingMore: boolean
   load: () => Promise<void>
   loadMore: () => Promise<void>
   loadUnreadCount: () => Promise<void>
@@ -32,6 +50,9 @@ interface NotificationsState {
   markAllRead: () => Promise<void>
   setPanelOpen: (open: boolean) => void
   addFromSse: (notif: Notification) => void
+  loadActivity: (options?: { force?: boolean }) => Promise<void>
+  loadMoreActivity: () => Promise<void>
+  addActivityFromSse: (event: ActivityEvent) => void
   reset: () => void
 }
 
@@ -53,6 +74,12 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
     loadFailed: false,
     hasMore: false,
     loadingMore: false,
+    activity: [],
+    activityLoaded: false,
+    activityLoading: false,
+    activityFailed: false,
+    activityHasMore: false,
+    activityLoadingMore: false,
 
     async load() {
       if (notificationsPromise) return notificationsPromise
@@ -183,11 +210,80 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
       })
     },
 
+    async loadActivity(options) {
+      // Guarded like `load`: arriving on the tab again is not a reason to re-read a feed SSE has
+      // been keeping current. `force` is for resync, where the stream admits it may have missed
+      // frames, so the cache can no longer be trusted.
+      if (!options?.force && get().activityLoaded) return
+      if (activityPromise) return activityPromise
+
+      activityPromise = (async () => {
+        const guard = sessionGuard()
+        guard.set({ activityLoading: true })
+        try {
+          const activity = await apiGetActivity()
+          guard.set({
+            activity,
+            activityLoaded: true,
+            activityFailed: false,
+            activityHasMore: activity.length === ACTIVITY_PAGE_SIZE,
+          })
+        } catch {
+          // An outage must render as a failure with a retry, not an empty timeline (#26).
+          guard.set({ activityFailed: !get().activityLoaded })
+        } finally {
+          guard.set({ activityLoading: false })
+          activityPromise = null
+        }
+      })()
+      return activityPromise
+    },
+
+    async loadMoreActivity() {
+      if (activityLoadMorePromise) return activityLoadMorePromise
+      const { activity, activityLoadingMore } = get()
+      const oldest = activity[activity.length - 1]
+      if (!oldest || activityLoadingMore) return
+
+      activityLoadMorePromise = (async () => {
+        const guard = sessionGuard()
+        guard.set({ activityLoadingMore: true })
+        try {
+          const older = await apiGetActivity({ before_event_id: oldest.event_id })
+          guard.set((s) => {
+            const known = new Set(s.activity.map((e) => e.event_id))
+            return {
+              activity: [...s.activity, ...older.filter((e) => !known.has(e.event_id))],
+              activityHasMore: older.length === ACTIVITY_PAGE_SIZE,
+            }
+          })
+        } catch {
+          // Keep the button so the user can retry (#26).
+        } finally {
+          guard.set({ activityLoadingMore: false })
+          activityLoadMorePromise = null
+        }
+      })()
+      return activityLoadMorePromise
+    },
+
+    addActivityFromSse(event) {
+      // Only meaningful once the feed has been read; prepending onto an unloaded list would
+      // render a timeline of exactly the events that happened to arrive while the tab was open.
+      if (!get().activityLoaded) return
+      set((s) => {
+        if (s.activity.some((existing) => existing.event_id === event.event_id)) return s
+        return { activity: [event, ...s.activity] }
+      })
+    },
+
     reset() {
       bumpSessionGeneration()
       notificationsPromise = null
       unreadCountPromise = null
       loadMorePromise = null
+      activityPromise = null
+      activityLoadMorePromise = null
       nextCursor = null
       set({
         notifications: [],
@@ -197,6 +293,12 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
         loadFailed: false,
         hasMore: false,
         loadingMore: false,
+        activity: [],
+        activityLoaded: false,
+        activityLoading: false,
+        activityFailed: false,
+        activityHasMore: false,
+        activityLoadingMore: false,
       })
     },
   }

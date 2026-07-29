@@ -99,8 +99,13 @@ def _delete_legacy_cookies(response: Response) -> None:
 
 
 def _clear_auth_cookies(response: Response) -> None:
-    response.delete_cookie(settings.session_cookie_name)
-    response.delete_cookie(settings.csrf_cookie_name)
+    # `secure=` matters even to delete. Starlette's `delete_cookie` defaults it to False, and a
+    # `__Host-` cookie without Secure fails the prefix rules, so the browser rejects the deletion
+    # outright ("rejected for invalid prefix") and keeps the cookie. Only production hit this,
+    # because only production prefixes the names. Logout still ended the session — revoking the row
+    # is what does that, not clearing the cookie — but the cookie itself survived until it expired.
+    response.delete_cookie(settings.session_cookie_name, secure=_SECURE)
+    response.delete_cookie(settings.csrf_cookie_name, secure=_SECURE)
     _delete_legacy_cookies(response)
 
 

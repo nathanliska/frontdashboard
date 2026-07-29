@@ -1,10 +1,9 @@
 import { Check } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { apiGetActivity, type Notification } from '../api/notifications'
+import type { Notification } from '../api/notifications'
 import { ActivityFeed } from '../components/notifications/ActivityFeed'
 import { NotificationFeed } from '../components/notifications/NotificationFeed'
-import { APP_RESYNC_EVENT } from '../hooks/useSSE'
 import { useNotificationsStore } from '../stores/notifications'
 import { getNotificationDestination } from '../utils/notifications/notificationFeedUtils'
 import { cn } from '../utils/shared/cn'
@@ -24,71 +23,30 @@ export function NotificationsPage() {
   const markRead = useNotificationsStore((s) => s.markRead)
   const markAllRead = useNotificationsStore((s) => s.markAllRead)
 
-  const [activity, setActivity] = useState<Awaited<ReturnType<typeof apiGetActivity>>>([])
-  const [activityLoading, setActivityLoading] = useState(false)
-  const [activityFailed, setActivityFailed] = useState(false)
-  const [activityHasMore, setActivityHasMore] = useState(false)
-  const [activityLoadingMore, setActivityLoadingMore] = useState(false)
+  const activity = useNotificationsStore((s) => s.activity)
+  const activityLoading = useNotificationsStore((s) => s.activityLoading)
+  const activityFailed = useNotificationsStore((s) => s.activityFailed)
+  const activityHasMore = useNotificationsStore((s) => s.activityHasMore)
+  const activityLoadingMore = useNotificationsStore((s) => s.activityLoadingMore)
+  const loadActivity = useNotificationsStore((s) => s.loadActivity)
+  const loadMoreActivity = useNotificationsStore((s) => s.loadMoreActivity)
 
+  // Guarded exactly as the sidebar panel guards it (`setPanelOpen`). Unconditional, this refetched
+  // a list the store already had — opening the panel and then following "View all notifications"
+  // fetched the same page twice. SSE keeps the store current, so arriving here is not a reason to
+  // re-read it, and skipping the fetch also preserves any extra pages "Load more" had appended.
+  const loaded = useNotificationsStore((s) => s.loaded)
   useEffect(() => {
-    void load()
-  }, [load])
+    if (!loaded) void load()
+  }, [load, loaded])
 
-  // Stable loader shared by the tab effect, the resync listener, and the retry button — a retry
-  // is just another call, not a state-counter poke that re-runs an effect.
-  const loadActivity = useCallback(async (isCancelled?: () => boolean) => {
-    setActivityLoading(true)
-    try {
-      const nextActivity = await apiGetActivity()
-      if (!isCancelled?.()) {
-        setActivity(nextActivity)
-        setActivityFailed(false)
-        // The endpoint pages at 50; a full page means older history may exist (#22).
-        setActivityHasMore(nextActivity.length === 50)
-      }
-    } catch {
-      // An outage must render as a failure with a retry, not an empty timeline (#26).
-      if (!isCancelled?.()) setActivityFailed(true)
-    } finally {
-      if (!isCancelled?.()) {
-        setActivityLoading(false)
-      }
-    }
-  }, [])
-
+  // The store owns both the fetch and the cache now: the resync listener it used to need lives in
+  // `useSSE`, which is where the stream's own opinion about staleness belongs. Switching tabs no
+  // longer refetches — `loadActivity` returns immediately once loaded, and SSE keeps it current.
   useEffect(() => {
     if (tab !== 'activity') return
-    let cancelled = false
-    const isCancelled = () => cancelled
-
-    void loadActivity(isCancelled)
-    function onResync() {
-      void loadActivity(isCancelled)
-    }
-    window.addEventListener(APP_RESYNC_EVENT, onResync)
-    return () => {
-      cancelled = true
-      window.removeEventListener(APP_RESYNC_EVENT, onResync)
-    }
+    void loadActivity()
   }, [tab, loadActivity])
-
-  async function loadMoreActivity() {
-    const last = activity[activity.length - 1]
-    if (!last || activityLoadingMore) return
-    setActivityLoadingMore(true)
-    try {
-      const older = await apiGetActivity({ before_event_id: last.event_id })
-      setActivity((current) => {
-        const known = new Set(current.map((e) => e.event_id))
-        return [...current, ...older.filter((e) => !known.has(e.event_id))]
-      })
-      setActivityHasMore(older.length === 50)
-    } catch {
-      // Keep the button so the user can retry (#26).
-    } finally {
-      setActivityLoadingMore(false)
-    }
-  }
 
   function handleNotificationClick(notification: Notification) {
     if (notification.read_at === null) {

@@ -3,7 +3,6 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiGetActivity } from '../api/notifications'
-import { APP_RESYNC_EVENT } from '../hooks/useSSE'
 import { useNotificationsStore } from '../stores/notifications'
 import { NotificationsPage } from './NotificationsPage'
 
@@ -53,53 +52,80 @@ describe('NotificationsPage', () => {
       markAllRead: vi.fn().mockResolvedValue(undefined),
       setPanelOpen: vi.fn(),
       addFromSse: vi.fn(),
+      // The store is module-level and outlives each test, so the activity cache has to be cleared
+      // explicitly — otherwise the second test sees the first one's feed, skips its fetch, and
+      // still renders, which looks like a pass (frontend/CLAUDE.md).
+      activity: [],
+      activityLoaded: false,
+      activityLoading: false,
+      activityFailed: false,
+      activityHasMore: false,
+      activityLoadingMore: false,
     })
   })
 
-  it('reloads the activity tab when a resync occurs', async () => {
-    mockedApiGetActivity
-      .mockResolvedValueOnce([
-        {
-          event_id: 1,
-          event_type: 'dashboard.share_added',
-          entity_type: 'dashboard',
-          entity_id: 'dash-1',
-          actor_id: 'user-1',
-          actor_display_name: 'Example User',
-          payload: { dashboard_name: 'Roadmap', role: 'viewer' },
-          created_at: '2026-04-06T12:00:00.000Z',
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          event_id: 2,
-          event_type: 'list.created',
-          entity_type: 'list',
-          entity_id: 'list-1',
-          actor_id: 'user-1',
-          actor_display_name: 'Example User',
-          payload: { name: 'Chores' },
-          created_at: '2026-04-06T12:05:00.000Z',
-        },
-      ])
+  const ACTIVITY_PAGE = [
+    {
+      event_id: 1,
+      event_type: 'dashboard.share_added',
+      entity_type: 'dashboard',
+      entity_id: 'dash-1',
+      actor_id: 'user-1',
+      actor_display_name: 'Example User',
+      payload: { dashboard_name: 'Roadmap', role: 'viewer' },
+      created_at: '2026-04-06T12:00:00.000Z',
+    },
+  ]
 
-    render(
+  function renderPage() {
+    return render(
       <MemoryRouter initialEntries={['/notifications']}>
         <Routes>
           <Route path="/notifications" element={<NotificationsPage />} />
         </Routes>
       </MemoryRouter>,
     )
+  }
+
+  it('fetches activity the first time the tab is opened', async () => {
+    mockedApiGetActivity.mockResolvedValue(ACTIVITY_PAGE)
+    renderPage()
 
     fireEvent.click(screen.getByRole('button', { name: /^activity$/i }))
 
     await screen.findByText('You granted viewer access to "Roadmap".')
+    expect(mockedApiGetActivity).toHaveBeenCalledTimes(1)
+  })
 
-    act(() => {
-      window.dispatchEvent(new Event(APP_RESYNC_EVENT))
+  it('does not refetch activity when the tab is revisited', async () => {
+    // The reported behaviour: every Notifications -> Activity switch issued another GET. The feed
+    // is cached in the store now, and SSE keeps it current, so returning to it must cost nothing.
+    mockedApiGetActivity.mockResolvedValue(ACTIVITY_PAGE)
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /^activity$/i }))
+    await screen.findByText('You granted viewer access to "Roadmap".')
+
+    fireEvent.click(screen.getByRole('button', { name: /^notifications/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^activity$/i }))
+    await screen.findByText('You granted viewer access to "Roadmap".')
+
+    expect(mockedApiGetActivity).toHaveBeenCalledTimes(1)
+  })
+
+  it('refetches when the caller forces it, which is how a resync recovers', async () => {
+    // Resync moved to `useSSE`, where the stream's own opinion about staleness belongs. What the
+    // store still owes it is a way past the cache.
+    mockedApiGetActivity.mockResolvedValue(ACTIVITY_PAGE)
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /^activity$/i }))
+    await screen.findByText('You granted viewer access to "Roadmap".')
+
+    await act(async () => {
+      await useNotificationsStore.getState().loadActivity({ force: true })
     })
 
-    await screen.findByText('You created "Chores".')
     await waitFor(() => {
       expect(mockedApiGetActivity).toHaveBeenCalledTimes(2)
     })

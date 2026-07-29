@@ -122,6 +122,9 @@ export function useSSE(): void {
   const handleDashboardEvent = useDashboardStore((s) => s.handleDashboardEvent)
   const handleDashboardContentEvent = useDashboardStore((s) => s.handleContentEvent)
   const addNotification = useNotificationsStore((s) => s.addFromSse)
+  // Every mutation frame is also an activity-feed entry. Without this the cached feed would only
+  // ever refresh on a resync, so the tab would quietly show a timeline that stopped at page load.
+  const addActivity = useNotificationsStore((s) => s.addActivityFromSse)
   const loadNotifications = useNotificationsStore((s) => s.load)
   const loadUnreadCount = useNotificationsStore((s) => s.loadUnreadCount)
   const [reconnectNonce, setReconnectNonce] = useState(0)
@@ -191,6 +194,7 @@ export function useSSE(): void {
       // Order is convention, not correctness: the agenda's reminder fetcher asks the server for
       // the whole batch (#17) and reads no client cache, so these handlers do not depend on each
       // other's writes landing first.
+      addActivity(data)
       handleListResourceEvent(data, { isOwnEcho })
       handleAgendaResourceEvent(data, { isOwnEcho })
       // Not echo-gated: it only patches in memory (removing a deleted list's widget) and never
@@ -201,6 +205,7 @@ export function useSSE(): void {
     function onCalendarEvent(e: MessageEvent<string>) {
       const data = parseFrame(e.data, SseEventSchema)
       if (!data) return
+      addActivity(data)
       handleCalendarResourceEvent(data)
       handleAgendaResourceEvent(data)
     }
@@ -218,6 +223,7 @@ export function useSSE(): void {
     function onDashboardEvent(e: MessageEvent<string>) {
       const data = parseFrame(e.data, SseEventSchema)
       if (!data) return
+      addActivity(data)
       void handleDashboardEvent(data)
     }
 
@@ -227,10 +233,13 @@ export function useSSE(): void {
       handleAgendaResourceEvent(RESYNC_SIGNAL)
       void handleDashboardEvent(RESYNC_SIGNAL)
       void loadUnreadCount()
-      const { panelOpen } = useNotificationsStore.getState()
+      const { panelOpen, activityLoaded, loadActivity } = useNotificationsStore.getState()
       if (panelOpen || window.location.pathname === '/notifications') {
         void loadNotifications()
       }
+      // The stream is admitting it may have dropped frames, so the cached feed can no longer be
+      // trusted — but only re-read one that was actually being shown.
+      if (activityLoaded) void loadActivity({ force: true })
       window.dispatchEvent(new Event(APP_RESYNC_EVENT))
     }
 

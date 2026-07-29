@@ -18,6 +18,7 @@ import {
 import { confirm } from '../stores/confirm'
 import { useDashboardStore } from '../stores/dashboard'
 import {
+  buildEventUpdateFromDraft,
   type CalendarEditorDraft,
   createCalendarEditorDraftFromEvent,
   createDefaultCalendarEditorDraft,
@@ -172,16 +173,10 @@ export function CalendarPage() {
 
       try {
         if (editorSession.mode === 'edit' && editorSession.eventId) {
-          await updateCalendarEvent(editorSession.eventId, {
-            title: trimmedTitle,
-            description: draft.description.trim() || undefined,
-            location: draft.eventLocation.trim() || undefined,
-            starts_at: new Date(draft.startsAt).toISOString(),
-            ends_at: new Date(draft.endsAt).toISOString(),
-            timezone: DEFAULT_TIMEZONE,
-            all_day: draft.allDay,
-            recurrence,
-          })
+          await updateCalendarEvent(
+            editorSession.eventId,
+            buildEventUpdateFromDraft(draft, recurrence, DEFAULT_TIMEZONE),
+          )
         } else {
           await createCalendarEvent({
             dashboard_id: effectiveActiveDashboardId,

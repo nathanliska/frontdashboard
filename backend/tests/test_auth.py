@@ -454,6 +454,27 @@ async def test_a_missing_origin_does_not_excuse_a_bad_token_pair(auth_client: As
     assert resp.json()["detail"] == "CSRF token invalid"
 
 
+def test_clearing_prefixed_cookies_keeps_them_secure(monkeypatch) -> None:
+    """A `__Host-` cookie must carry Secure even when the point is to delete it.
+
+    Starlette's `delete_cookie` defaults `secure=False`, so the emitted header failed the prefix
+    rules and browsers rejected the deletion, leaving the cookie in place. Only production ever
+    saw it, since only production prefixes the names — hence the monkeypatch, which is the only
+    way this file can reach that configuration.
+    """
+    monkeypatch.setattr(auth_router, "_SECURE", True)
+    response = Response()
+
+    auth_router._clear_auth_cookies(response)
+
+    # Asserted by cookie name rather than by the `__Host-` prefix: this file runs under
+    # `environment=development`, where the names are unprefixed, so a prefix-keyed assertion would
+    # match nothing and pass without testing anything.
+    cleared = {header.split("=", 1)[0]: header for header in response.headers.getlist("set-cookie")}
+    for name in (auth_router.settings.session_cookie_name, auth_router.settings.csrf_cookie_name):
+        assert "Secure" in cleared[name], cleared[name]
+
+
 def test_legacy_cookie_cleanup_spares_the_active_pair() -> None:
     """Development's active cookie names *are* the unprefixed legacy ones, so the cleanup must skip
     them or a login emits a `Max-Age=0` delete and a set for the same name in one response.

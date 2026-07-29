@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { syncCreateDraftToSelectedDate } from './calendarEditorDraftUtils'
+import {
+  buildEventUpdateFromDraft,
+  type CalendarEditorDraft,
+  syncCreateDraftToSelectedDate,
+} from './calendarEditorDraftUtils'
 
 describe('calendar editor draft utils', () => {
   it('moves the draft to the selected date while preserving time and duration', () => {
@@ -28,5 +32,53 @@ describe('calendar editor draft utils', () => {
     expect(synced.startsAt).toBe('2026-04-16T09:00')
     expect(synced.endsAt).toBe('2026-04-16T10:00')
     expect(synced.recurrenceWeekdays).toEqual([3])
+  })
+})
+
+describe('buildEventUpdateFromDraft', () => {
+  function draft(overrides: Partial<CalendarEditorDraft> = {}): CalendarEditorDraft {
+    return {
+      title: 'Dentist',
+      description: 'Bring the referral',
+      eventLocation: '12 High Street',
+      startsAt: '2026-04-13T11:00',
+      endsAt: '2026-04-13T12:30',
+      allDay: false,
+      recurrenceMode: 'none',
+      recurrenceInterval: '1',
+      recurrenceWeekdays: [],
+      recurrenceEndsOn: '',
+      ...overrides,
+    }
+  }
+
+  it('sends the entered values', () => {
+    const body = buildEventUpdateFromDraft(draft(), null, 'Europe/London')
+
+    expect(body.description).toBe('Bring the referral')
+    expect(body.location).toBe('12 High Street')
+    expect(body.timezone).toBe('Europe/London')
+  })
+
+  it('sends null for a cleared location and description, never undefined', () => {
+    // The reported bug. `undefined` is dropped by JSON.stringify, so the key never reaches the
+    // server, which reads an absent key as "leave unchanged" — the old value could not be removed.
+    const body = buildEventUpdateFromDraft(
+      draft({ eventLocation: '', description: '' }),
+      null,
+      'UTC',
+    )
+
+    expect(body.location).toBeNull()
+    expect(body.description).toBeNull()
+    // The property that actually matters: the keys survive serialisation.
+    expect(JSON.parse(JSON.stringify(body))).toMatchObject({ location: null, description: null })
+    expect(Object.keys(JSON.parse(JSON.stringify(body)))).toContain('location')
+  })
+
+  it('treats whitespace as cleared', () => {
+    const body = buildEventUpdateFromDraft(draft({ eventLocation: '   ' }), null, 'UTC')
+
+    expect(body.location).toBeNull()
   })
 })
