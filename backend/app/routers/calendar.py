@@ -1,12 +1,13 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import DateTime, and_, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
+from app.limiter import WRITE_LIMIT, limiter
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.models.dashboard import Dashboard
 from app.models.share import ResourceShare, ShareRole
@@ -113,7 +114,9 @@ def _raise_dashboard_managed_permissions_error() -> None:
 
 
 @router.post("/events", status_code=status.HTTP_201_CREATED, response_model=CalendarEventResponse)
+@limiter.limit(WRITE_LIMIT)
 async def create_event(
+    request: Request,
     body: CalendarEventCreate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -277,7 +280,9 @@ async def get_event(
 
 
 @router.patch("/events/{event_id}", response_model=CalendarEventResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_event(
+    request: Request,
     event_id: uuid.UUID,
     body: CalendarEventUpdate,
     _csrf: None = Depends(require_csrf),
@@ -338,7 +343,9 @@ async def update_event(
 
 
 @router.patch("/events/{event_id}/occurrences", response_model=CalendarOccurrenceMutationResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_occurrence(
+    request: Request,
     event_id: uuid.UUID,
     body: CalendarOccurrenceUpdate,
     _csrf: None = Depends(require_csrf),
@@ -406,7 +413,9 @@ async def update_occurrence(
 
 
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_event(
+    request: Request,
     event_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -444,7 +453,9 @@ async def list_event_shares(
 
 
 @router.post("/events/{event_id}/shares", status_code=status.HTTP_201_CREATED)
+@limiter.limit(WRITE_LIMIT)
 async def add_event_share(
+    request: Request,
     event_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -456,7 +467,9 @@ async def add_event_share(
 
 
 @router.patch("/events/{event_id}/shares/{share_id}")
+@limiter.limit(WRITE_LIMIT)
 async def update_event_share(
+    request: Request,
     event_id: uuid.UUID,
     share_id: uuid.UUID,  # noqa: ARG001
     _csrf: None = Depends(require_csrf),
@@ -469,7 +482,9 @@ async def update_event_share(
 
 
 @router.delete("/events/{event_id}/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_event_share(
+    request: Request,
     event_id: uuid.UUID,
     share_id: uuid.UUID,  # noqa: ARG001
     _csrf: None = Depends(require_csrf),

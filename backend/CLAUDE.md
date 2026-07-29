@@ -12,6 +12,15 @@ Everything here is a convention an agent can't safely infer from one file.
   production runs is a rule no test executes. The one cost: browsing the dev server by LAN address
   (Vite binds all interfaces) sends that address as `Origin`, so it must be in `CORS_ORIGINS` or
   every mutation 403s. Rejections log the origin.
+- **Every non-GET route also needs `@limiter.limit(WRITE_LIMIT)` and a `request: Request`
+  parameter.** slowapi resolves the decorator at import and needs that argument even though the
+  handler never reads it. `test_rate_limit_coverage.py` fails the build if a mutating route has no
+  limit, so this cannot be silently forgotten the way it was until 2026-07-29. It has to be per
+  route: slowapi's application-wide limit runs in a middleware that resolves handlers through
+  `app.routes`, which cannot see through this FastAPI version's included-router nesting, so it
+  exempts everything (measured — 1260 requests, zero 429s). **Beware that same nesting when writing
+  any audit over routes**: iterating `app.routes` reaches four docs routes and one `_IncludedRouter`,
+  so an assertion over it passes having checked nothing.
 - **`role is None` means owner, not "no access".** `permissions.effective_role` returns `None`
   for the creator and raises 404 for no access; never write `if role:` guards
   (`app/services/permissions.py`).

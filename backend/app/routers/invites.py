@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
-from app.limiter import limiter
+from app.limiter import WRITE_LIMIT, limiter
 from app.models.activity import EventType
 from app.models.dashboard import Dashboard
 from app.models.share import PrincipalType, ResourceType, ShareRole
@@ -66,7 +66,9 @@ async def _dashboard_for_share_management(
     status_code=status.HTTP_201_CREATED,
     response_model=InviteCreatedResponse,
 )
+@limiter.limit(WRITE_LIMIT)
 async def create_invite(
+    request: Request,
     dashboard_id: uuid.UUID,
     body: InviteCreate,
     _csrf: None = Depends(require_csrf),
@@ -99,7 +101,9 @@ async def list_invites(
 
 
 @router.delete("/dashboards/{dashboard_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_invite(
+    request: Request,
     dashboard_id: uuid.UUID,
     invite_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),

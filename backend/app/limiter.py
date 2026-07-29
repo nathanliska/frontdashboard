@@ -33,3 +33,17 @@ def client_ip_key(request: Request) -> str:
 
 
 limiter = Limiter(key_func=client_ip_key)
+
+# Every authenticated write carries this. Registration is open to the internet, so each of these
+# routes is reachable by anyone willing to verify an email, and until now none of them had a bound.
+#
+# It has to be applied per route: slowapi's application-wide limit is enforced by a middleware that
+# resolves the handler through `app.routes`, which cannot see through this FastAPI version's
+# included-router nesting, so it treats every request as exempt and enforces nothing (measured —
+# 1260 requests, no 429). The decorator path resolves at import instead and does work.
+#
+# Generous on purpose. The key is the client IP and a household behind one NAT shares it, so this
+# has to sit far above a family working through a list together; 5 writes a second sustained is not
+# something people produce. What it bounds is a runaway client or a crude script — **not** storage
+# abuse, since a patient attacker stays under it forever. Per-user quotas are that tool (TODO #61).
+WRITE_LIMIT = "300/minute"

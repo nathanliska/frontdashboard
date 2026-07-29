@@ -3,12 +3,13 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import and_, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
+from app.limiter import WRITE_LIMIT, limiter
 from app.models.activity import ActivityEvent, EventType
 from app.models.notification import Notification
 from app.models.user import User
@@ -101,7 +102,9 @@ async def unread_count(
 
 
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)
+@limiter.limit(WRITE_LIMIT)
 async def mark_read(
+    request: Request,
     notification_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -126,7 +129,9 @@ async def mark_read(
 
 
 @router.patch("/read-all", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def mark_all_read(
+    request: Request,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

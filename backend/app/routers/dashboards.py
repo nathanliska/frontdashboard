@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import ValidationError
 from sqlalchemy import case, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_csrf
 from app.config import settings
 from app.database import get_db
+from app.limiter import WRITE_LIMIT, limiter
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.list import List, ListType
 from app.models.notification import Notification
@@ -435,7 +436,9 @@ async def list_dashboards(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=DashboardSummary)
+@limiter.limit(WRITE_LIMIT)
 async def create_dashboard(
+    request: Request,
     body: DashboardCreate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -481,7 +484,9 @@ async def create_dashboard(
 
 
 @router.patch("/{dashboard_id}", response_model=DashboardSummary)
+@limiter.limit(WRITE_LIMIT)
 async def update_dashboard_meta(
+    request: Request,
     dashboard_id: uuid.UUID,
     body: DashboardUpdate,
     _csrf: None = Depends(require_csrf),
@@ -521,7 +526,9 @@ async def update_dashboard_meta(
 
 
 @router.delete("/{dashboard_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_dashboard(
+    request: Request,
     dashboard_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -580,7 +587,9 @@ async def list_trash(
 
 
 @router.post("/{dashboard_id}/restore", response_model=DashboardSummary)
+@limiter.limit(WRITE_LIMIT)
 async def restore_dashboard(
+    request: Request,
     dashboard_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -646,7 +655,9 @@ async def get_dashboard(
 
 
 @router.put("/{dashboard_id}/layout", response_model=DashboardResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_layout(
+    request: Request,
     dashboard_id: uuid.UUID,
     body: LayoutUpdate,
     _csrf: None = Depends(require_csrf),
@@ -696,7 +707,9 @@ async def update_layout(
 
 
 @router.post("/{dashboard_id}/widgets", status_code=status.HTTP_201_CREATED, response_model=DashboardResponse)
+@limiter.limit(WRITE_LIMIT)
 async def add_widget(
+    request: Request,
     dashboard_id: uuid.UUID,
     body: WidgetCreate,
     _csrf: None = Depends(require_csrf),
@@ -856,7 +869,9 @@ async def add_widget(
 
 
 @router.patch("/{dashboard_id}/widgets/{widget_id}", response_model=WidgetResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_widget(
+    request: Request,
     dashboard_id: uuid.UUID,
     widget_id: uuid.UUID,
     body: WidgetConfigUpdate,
@@ -916,7 +931,9 @@ async def update_widget(
 
 
 @router.delete("/{dashboard_id}/widgets/{widget_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_widget(
+    request: Request,
     dashboard_id: uuid.UUID,
     widget_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
@@ -977,7 +994,9 @@ async def list_dashboard_shares(
 
 
 @router.post("/{dashboard_id}/shares", status_code=status.HTTP_201_CREATED, response_model=ShareResponse)
+@limiter.limit(WRITE_LIMIT)
 async def add_dashboard_share(
+    request: Request,
     dashboard_id: uuid.UUID,
     body: ShareCreate,
     _csrf: None = Depends(require_csrf),
@@ -1028,7 +1047,9 @@ async def add_dashboard_share(
 
 
 @router.patch("/{dashboard_id}/shares/{share_id}", response_model=ShareResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_dashboard_share(
+    request: Request,
     dashboard_id: uuid.UUID,
     share_id: uuid.UUID,
     body: ShareUpdate,
@@ -1073,7 +1094,9 @@ async def update_dashboard_share(
 
 
 @router.delete("/{dashboard_id}/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_dashboard_share(
+    request: Request,
     dashboard_id: uuid.UUID,
     share_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),

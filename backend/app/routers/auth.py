@@ -17,7 +17,7 @@ from app.auth.hashing import _DUMMY_HASH, hash_password, verify_password
 from app.auth.tokens import create_opaque_token, hash_token
 from app.config import Environment, settings
 from app.database import get_db
-from app.limiter import limiter
+from app.limiter import WRITE_LIMIT, limiter
 from app.models.dashboard import Dashboard
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
@@ -410,7 +410,9 @@ async def login(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def logout(
+    request: Request,
     response: Response,
     _csrf: None = Depends(require_csrf),
     session: UserSession = Depends(get_current_session),
@@ -434,7 +436,9 @@ async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
 
 
 @router.patch("/profile", response_model=UserResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_profile(
+    request: Request,
     body: ProfileUpdate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -512,7 +516,9 @@ async def change_password(
 
 
 @router.patch("/preferences", response_model=UserResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_preferences(
+    request: Request,
     body: PreferencesUpdate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),

@@ -2,13 +2,14 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
 from app.config import settings
 from app.database import get_db
+from app.limiter import WRITE_LIMIT, limiter
 from app.models.dashboard import Dashboard
 from app.models.list import List, ListItem
 from app.models.share import ResourceShare, ResourceType, ShareRole
@@ -139,7 +140,9 @@ def _raise_dashboard_managed_permissions_error() -> None:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ListResponse)
+@limiter.limit(WRITE_LIMIT)
 async def create_list(
+    request: Request,
     body: ListCreate,
     client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
@@ -231,7 +234,9 @@ async def list_lists(
 
 
 @router.put("/order", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def reorder_lists(
+    request: Request,
     body: ListReorder,
     client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
@@ -373,7 +378,9 @@ async def list_trash(
 
 
 @router.post("/{list_id}/restore", response_model=ListResponse)
+@limiter.limit(WRITE_LIMIT)
 async def restore_list(
+    request: Request,
     list_id: uuid.UUID,
     client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
@@ -441,7 +448,9 @@ async def get_list(
 
 
 @router.patch("/{list_id}", response_model=ListResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_list(
+    request: Request,
     list_id: uuid.UUID,
     body: ListUpdate,
     client_mutation_id: ClientMutationIdHeader = None,
@@ -474,7 +483,9 @@ async def update_list(
 
 
 @router.delete("/{list_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_list(
+    request: Request,
     list_id: uuid.UUID,
     client_mutation_id: ClientMutationIdHeader = None,
     _csrf: None = Depends(require_csrf),
@@ -508,7 +519,9 @@ async def delete_list(
 
 
 @router.post("/{list_id}/items", status_code=status.HTTP_201_CREATED, response_model=ListItemResponse)
+@limiter.limit(WRITE_LIMIT)
 async def create_item(
+    request: Request,
     list_id: uuid.UUID,
     body: ListItemCreate,
     client_mutation_id: ClientMutationIdHeader = None,
@@ -557,7 +570,9 @@ async def create_item(
 
 
 @router.patch("/{list_id}/items/{item_id}", response_model=ListItemResponse)
+@limiter.limit(WRITE_LIMIT)
 async def update_item(
+    request: Request,
     list_id: uuid.UUID,
     item_id: uuid.UUID,
     body: ListItemUpdate,
@@ -614,7 +629,9 @@ async def update_item(
 
 
 @router.delete("/{list_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_item(
+    request: Request,
     list_id: uuid.UUID,
     item_id: uuid.UUID,
     client_mutation_id: ClientMutationIdHeader = None,
@@ -653,7 +670,9 @@ async def delete_item(
 
 
 @router.put("/{list_id}/items/order", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def reorder_items(
+    request: Request,
     list_id: uuid.UUID,
     body: ItemReorder,
     client_mutation_id: ClientMutationIdHeader = None,
@@ -706,7 +725,9 @@ async def list_list_shares(
 
 
 @router.post("/{list_id}/shares", status_code=status.HTTP_201_CREATED)
+@limiter.limit(WRITE_LIMIT)
 async def add_list_share(
+    request: Request,
     list_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
@@ -718,7 +739,9 @@ async def add_list_share(
 
 
 @router.patch("/{list_id}/shares/{share_id}")
+@limiter.limit(WRITE_LIMIT)
 async def update_list_share(
+    request: Request,
     list_id: uuid.UUID,
     share_id: uuid.UUID,  # noqa: ARG001
     _csrf: None = Depends(require_csrf),
@@ -731,7 +754,9 @@ async def update_list_share(
 
 
 @router.delete("/{list_id}/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
 async def delete_list_share(
+    request: Request,
     list_id: uuid.UUID,
     share_id: uuid.UUID,  # noqa: ARG001
     _csrf: None = Depends(require_csrf),
