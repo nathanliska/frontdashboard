@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RefreshOutcome } from '../api/client'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
 import { handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
 import { resetDashboardData, useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
-import { APP_RESYNC_EVENT, SSE_RECONNECT_MAX_MS, useSSE } from './useSSE'
+import { APP_RESYNC_EVENT, SSE_AUTH_PROBE_EVERY, SSE_RECONNECT_MAX_MS, useSSE } from './useSSE'
 
 const { handlerCallOrder } = vi.hoisted(() => ({
   handlerCallOrder: [] as string[],
@@ -32,12 +31,15 @@ vi.mock('../resources/agendaData', () => ({
   }),
 }))
 
-const { tryRefreshMock } = vi.hoisted(() => ({
-  tryRefreshMock: vi.fn<() => Promise<RefreshOutcome>>(),
+const { apiFetchMock } = vi.hoisted(() => ({
+  apiFetchMock: vi.fn<(path: string) => Promise<Response>>(),
 }))
 
 vi.mock('../api/client', () => ({
-  tryRefresh: tryRefreshMock,
+  apiFetch: apiFetchMock,
+  // `stores/auth` registers its handler at module scope, so the mock has to carry it even when
+  // this file never exercises it.
+  setSessionExpiredHandler: vi.fn(),
 }))
 
 type Listener = (event: MessageEvent<string>) => void
@@ -369,6 +371,13 @@ describe('useSSE reconnect backoff', () => {
       loadUnreadCount: vi.fn().mockResolvedValue(undefined),
     })
 
+    apiFetchMock.mockResolvedValue({ ok: true, status: 200 } as Response)
+
+    // The delay is jittered — `Math.random() * ceiling`. Pinning random to its maximum makes the
+    // delay exactly the ceiling, so the timings asserted below still mean what they say. The
+    // jitter itself is covered by its own test.
+    vi.spyOn(Math, 'random').mockReturnValue(1)
+
     replaceSpy = vi.fn()
     Object.defineProperty(window, 'location', {
       value: { ...window.location, replace: replaceSpy },
@@ -398,7 +407,7 @@ describe('useSSE reconnect backoff', () => {
     })
   }
 
-  it('does not call tryRefresh or reconnect when readyState is CONNECTING (browser is already retrying)', async () => {
+  it('does not reconnect when readyState is CONNECTING (browser is already retrying)', async () => {
     render(<TestHarness />)
     const es = MockEventSource.instances[0]
     es.readyState = MockEventSource.CONNECTING
@@ -410,13 +419,12 @@ describe('useSSE reconnect backoff', () => {
       await vi.advanceTimersByTimeAsync(60_000)
     })
 
-    expect(tryRefreshMock).not.toHaveBeenCalled()
+    expect(apiFetchMock).not.toHaveBeenCalled()
     expect(MockEventSource.instances).toHaveLength(1)
     expect(replaceSpy).not.toHaveBeenCalled()
   })
 
   it('waits out the backoff before reconnecting rather than retrying immediately', async () => {
-    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     const es = MockEventSource.instances[0]
@@ -425,24 +433,21 @@ describe('useSSE reconnect backoff', () => {
       es.triggerError()
     })
 
-    // Nothing may happen before the first delay elapses — not even the refresh.
+    // Nothing may happen before the first delay elapses.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(999)
     })
-    expect(tryRefreshMock).not.toHaveBeenCalled()
     expect(MockEventSource.instances).toHaveLength(1)
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1)
     })
-    expect(tryRefreshMock).toHaveBeenCalledTimes(1)
     expect(MockEventSource.instances).toHaveLength(2)
     expect(MockEventSource.instances[1]).not.toBe(es)
     expect(replaceSpy).not.toHaveBeenCalled()
   })
 
   it('doubles the delay on each successive failure', async () => {
-    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     await failLatest(1000)
@@ -466,7 +471,6 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('caps the delay and keeps retrying indefinitely instead of going permanently dead', async () => {
-    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     // Ten consecutive failures: a capped backoff must still be reconnecting at the end. The
@@ -483,7 +487,6 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('resets the backoff once a stream connects successfully', async () => {
-    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     await failLatest(1000)
@@ -500,7 +503,6 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('cancels a pending reconnect when the hook unmounts', async () => {
-    tryRefreshMock.mockResolvedValue('refreshed')
     const view = render(<TestHarness />)
 
     const es = MockEventSource.instances[0]
@@ -515,67 +517,79 @@ describe('useSSE reconnect backoff', () => {
     })
 
     // A reconnect firing after logout would re-open a stream for a signed-out user.
-    expect(tryRefreshMock).not.toHaveBeenCalled()
     expect(MockEventSource.instances).toHaveLength(1)
   })
 
-  it('does not redirect to /login when the hook unmounts while the refresh is in flight', async () => {
-    // Distinct from the timer-cancel case above: here the timer has already fired and the
-    // refresh is pending, so clearTimeout cannot help. Without the `cancelled` guard, logging
-    // out during that window would bounce the user to /login on a failed refresh they no
-    // longer care about.
-    let resolveRefresh!: (outcome: RefreshOutcome) => void
-    tryRefreshMock.mockReturnValue(
-      new Promise<RefreshOutcome>((resolve) => {
-        resolveRefresh = resolve
-      }),
-    )
-    const view = render(<TestHarness />)
+  it('keeps reconnecting through an outage instead of signing the user out', async () => {
+    // The regression. A closed stream used to trigger a refresh call whose failure — including a
+    // plain 502 while the backend was restarting — hard-redirected to /login. Reconnecting is now
+    // the only response, so an outage costs staleness, never the session.
+    apiFetchMock.mockResolvedValue({ ok: false, status: 502 } as Response)
+    render(<TestHarness />)
 
-    const es = MockEventSource.instances[0]
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await failLatest(SSE_RECONNECT_MAX_MS)
+    }
+
+    expect(replaceSpy).not.toHaveBeenCalled()
+    expect(MockEventSource.instances).toHaveLength(7)
+  })
+
+  it('probes the session periodically so a signed-out tab does not retry forever', async () => {
+    // Without a refresh call to fail, nothing else would ever reveal a dead session: the tab
+    // would back off politely forever, looking connected and receiving nothing.
+    render(<TestHarness />)
+
+    for (let attempt = 0; attempt < SSE_AUTH_PROBE_EVERY; attempt += 1) {
+      await failLatest(SSE_RECONNECT_MAX_MS)
+    }
+    expect(apiFetchMock).not.toHaveBeenCalled()
+
+    await failLatest(SSE_RECONNECT_MAX_MS)
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/auth/me')
+  })
+
+  it('survives the session probe failing, which is exactly when it runs', async () => {
+    // `apiFetch` throws once it exhausts its retries on a network failure, and a backend that is
+    // down is precisely the condition this probe fires under. Unhandled, that rejection surfaces
+    // every fourth reconnect for the whole outage.
+    const unhandled = vi.fn()
+    window.addEventListener('unhandledrejection', unhandled)
+    apiFetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<TestHarness />)
+
+    for (let attempt = 0; attempt <= SSE_AUTH_PROBE_EVERY; attempt += 1) {
+      await failLatest(SSE_RECONNECT_MAX_MS)
+    }
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/auth/me')
+    expect(unhandled).not.toHaveBeenCalled()
+    expect(MockEventSource.instances).toHaveLength(SSE_AUTH_PROBE_EVERY + 2)
+    window.removeEventListener('unhandledrejection', unhandled)
+  })
+
+  it('jitters the delay so every tab does not retry on the same schedule', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    render(<TestHarness />)
+
+    const es = latestStream()
     es.readyState = MockEventSource.CLOSED
     act(() => {
       es.triggerError()
     })
+
+    // Half of the 1s ceiling. Un-jittered this would still be waiting.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(500)
     })
-    expect(tryRefreshMock).toHaveBeenCalledTimes(1)
-
-    view.unmount()
-    await act(async () => {
-      resolveRefresh('unauthorized')
-      await Promise.resolve()
-    })
-
-    expect(replaceSpy).not.toHaveBeenCalled()
-    expect(MockEventSource.instances).toHaveLength(1)
-  })
-
-  it('navigates to /login when the refresh fails, without reconnecting', async () => {
-    tryRefreshMock.mockResolvedValue('unauthorized')
-    render(<TestHarness />)
-
-    await failLatest(1000)
-
-    expect(replaceSpy).toHaveBeenCalledWith('/login')
-    expect(MockEventSource.instances).toHaveLength(1)
-  })
-
-  it('reconnects instead of logging out when refresh is rate-limited (429)', async () => {
-    // A transient 429 on /refresh must not bounce the user to /login. The stream
-    // reconnects and re-enters the widening backoff, which self-throttles refreshes.
-    tryRefreshMock.mockResolvedValue('rate-limited')
-    render(<TestHarness />)
-
-    await failLatest(1000)
-
-    expect(replaceSpy).not.toHaveBeenCalled()
     expect(MockEventSource.instances).toHaveLength(2)
   })
 
   it('resyncs after a reconnect, because the fresh EventSource sends no Last-Event-ID', async () => {
-    tryRefreshMock.mockResolvedValue('refreshed')
     render(<TestHarness />)
 
     await failLatest(1000)

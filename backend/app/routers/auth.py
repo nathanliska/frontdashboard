@@ -1,9 +1,8 @@
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,10 +12,9 @@ from app.auth.dependencies import (
     get_current_session,
     get_current_user,
     require_csrf,
-    require_csrf_without_session,
 )
 from app.auth.hashing import _DUMMY_HASH, hash_password, verify_password
-from app.auth.tokens import create_access_token, create_opaque_token, hash_token
+from app.auth.tokens import create_opaque_token, hash_token
 from app.config import Environment, settings
 from app.database import get_db
 from app.limiter import limiter
@@ -43,11 +41,9 @@ from app.schemas.auth import (
 from app.services.email import send_existing_account_email, send_password_reset_email, send_verification_email
 from app.services.password_reset import consume_password_reset_token
 from app.services.sessions import (
-    RefreshRejected,
     drop_session_streams,
     revoke_session,
     revoke_user_sessions,
-    rotate_refresh_token,
     start_session,
 )
 
@@ -58,48 +54,39 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _SECURE = settings.environment == Environment.production
 
 
-def _set_auth_cookies(response: Response, access_token: str, refresh_token: str, csrf_token: str) -> None:
+# Cookie max-age tracks the absolute session bound, not the idle one. A cookie that outlives its
+# session is harmless (the row rejects it); one that dies *first* would log out a user whose
+# session is perfectly valid, which is the failure mode this whole change exists to remove.
+_COOKIE_MAX_AGE = settings.session_absolute_days * 24 * 3600
+
+
+def _set_auth_cookies(response: Response, session_token: str, csrf_token: str) -> None:
     response.set_cookie(
-        "access_token",
-        access_token,
+        settings.session_cookie_name,
+        session_token,
         httponly=True,
         samesite="lax",
         secure=_SECURE,
-        max_age=settings.access_token_expire_minutes * 60,
+        max_age=_COOKIE_MAX_AGE,
     )
+    # Readable by script on purpose — the double-submit check needs the client to echo it back
+    # in a header, which is exactly what a cross-site caller cannot do.
     response.set_cookie(
-        "refresh_token",
-        refresh_token,
-        httponly=True,
-        samesite="lax",
-        secure=_SECURE,
-        max_age=settings.refresh_token_expire_days * 24 * 3600,
-    )
-    response.set_cookie(
-        "csrf_token",
+        settings.csrf_cookie_name,
         csrf_token,
         httponly=False,
         samesite="lax",
         secure=_SECURE,
-        max_age=settings.refresh_token_expire_days * 24 * 3600,
+        max_age=_COOKIE_MAX_AGE,
     )
 
 
 def _clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(settings.session_cookie_name)
+    response.delete_cookie(settings.csrf_cookie_name)
+    # Cutover hygiene, removable once pre-2026-07-28 cookies have aged out. Nothing reads them.
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
-    response.delete_cookie("csrf_token")
-
-
-def _set_access_cookie(response: Response, access_token: str) -> None:
-    response.set_cookie(
-        "access_token",
-        access_token,
-        httponly=True,
-        samesite="lax",
-        secure=_SECURE,
-        max_age=settings.access_token_expire_minutes * 60,
-    )
 
 
 async def _issue_email_verification(user: User, db: AsyncSession) -> str:
@@ -161,10 +148,8 @@ async def _create_session(user: User, response: Response, db: AsyncSession) -> N
     if user.email_verified_at is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")
 
-    session, raw_refresh = await start_session(user.id, db)
-    csrf = generate_csrf_token()
-    access = create_access_token(user.id, user.email, session.id)
-    _set_auth_cookies(response, access, raw_refresh, csrf)
+    _session, raw_token = await start_session(user.id, db)
+    _set_auth_cookies(response, raw_token, generate_csrf_token())
 
 
 async def _normalize_accessible_dashboard_ids(
@@ -404,34 +389,6 @@ async def login(
     return UserResponse.model_validate(user)
 
 
-@router.post("/refresh", response_model=UserResponse)
-@limiter.limit("30/minute")
-async def refresh_tokens(
-    request: Request,
-    response: Response,
-    _csrf: None = Depends(require_csrf_without_session),
-    refresh_token: Annotated[str | None, Cookie()] = None,
-    db: AsyncSession = Depends(get_db),
-) -> UserResponse:
-    """Rotate refresh credentials and issue a new access token."""
-    if not refresh_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
-
-    try:
-        session, user, raw_refresh = await rotate_refresh_token(refresh_token, db)
-    except RefreshRejected as exc:
-        await db.commit()  # a reuse-triggered revocation must persist
-        drop_session_streams([exc.revoked_session_id] if exc.revoked_session_id else [])
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token") from None
-
-    csrf = generate_csrf_token()
-    await db.commit()
-
-    access = create_access_token(user.id, user.email, session.id)
-    _set_auth_cookies(response, access, raw_refresh, csrf)
-    return UserResponse.model_validate(user)
-
-
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     response: Response,
@@ -441,8 +398,8 @@ async def logout(
 ) -> None:
     """Revoke the current session and clear auth cookies.
 
-    The session comes from the access token (require_csrf already authenticated it),
-    so logout revokes the session even when the refresh cookie is absent.
+    The session comes from the cookie `require_csrf` already authenticated, so it is the
+    session being ended — logout can never revoke somebody else's.
     """
     revoked_id = await revoke_session(session.id, db)
     await db.commit()
@@ -459,13 +416,16 @@ async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
 @router.patch("/profile", response_model=UserResponse)
 async def update_profile(
     body: ProfileUpdate,
-    response: Response,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    session: UserSession = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
-    """Update editable profile fields for the current user."""
+    """Update editable profile fields for the current user.
+
+    No cookie work left to do here. This used to re-issue the access token because the JWT
+    embedded `email`, so an identity change had to be minted into a new one; the session cookie
+    carries no claims, so there is nothing to keep in sync.
+    """
     if body.display_name is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -486,10 +446,8 @@ async def update_profile(
             )
         current_user.display_name = display_name
 
-    session.last_used_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(current_user)
-    _set_access_cookie(response, create_access_token(current_user.id, current_user.email, session.id))
     return UserResponse.model_validate(current_user)
 
 
@@ -502,13 +460,19 @@ async def update_profile(
 async def change_password(
     request: Request,
     body: PasswordChangeRequest,
-    response: Response,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     session: UserSession = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Change the current user's password and refresh the access cookie."""
+    """Change the current user's password, signing out every other device.
+
+    The calling session is deliberately kept — being logged out of the tab you just changed your
+    password in reads as a failure, not a security measure. Its cookie is left as-is rather than
+    re-minted: session fixation is the reason to rotate an identifier on a credential change, and
+    it cannot arise here because a session only ever comes into existence at login or email
+    verification, never before authentication.
+    """
     if not await verify_password(body.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -523,10 +487,8 @@ async def change_password(
 
     current_user.password_hash = await hash_password(body.new_password)
     revoked_ids = await revoke_user_sessions(current_user.id, db, except_session_id=session.id)
-    session.last_used_at = datetime.now(UTC)
     await db.commit()
     drop_session_streams(revoked_ids)
-    _set_access_cookie(response, create_access_token(current_user.id, current_user.email, session.id))
 
 
 @router.patch("/preferences", response_model=UserResponse)

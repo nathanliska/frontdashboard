@@ -10,25 +10,18 @@ class Environment(StrEnum):
     test = "test"
 
 
-# Placeholder secrets shipped in example env files — never valid in production.
-_INSECURE_SECRETS = frozenset({"changeme", "change_me", "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"})
-
-
 class Settings(BaseSettings):
     database_url: str
-    secret_key: str
     # Comma-separated origins, e.g. "http://localhost:5173,http://localhost:3000"
     cors_origins: str = "http://localhost:5173"
     environment: Environment
     log_level: str = "INFO"
-    # Long on purpose. The usual reason to keep an access token short is that a stateless token
-    # cannot be revoked, so a clock is the only bound on it — but `_resolve_auth_context` checks
-    # the session row on *every* request (ADR-003), so revocation already takes effect on the next
-    # call and the clock bounds nothing extra. What a short lifetime did buy was a mandatory
-    # /auth/refresh round trip four times an hour, and a transient failure on that call signs the
-    # user out. Twelve hours makes that path rare while costing no revocation latency.
-    access_token_expire_minutes: int = 720
-    refresh_token_expire_days: int = 7
+    # The two session timeouts OWASP asks for, both enforced server-side (ADR-003). Idle rides on
+    # `last_used_at` and slides; absolute is fixed at login and never extends, so an actively used
+    # session cannot live forever — which is what the old sliding-only model allowed. Idle matches
+    # the lifetime the retired refresh token had, so nobody is signed out sooner than before.
+    session_idle_days: int = 7
+    session_absolute_days: int = 30
     email_verification_expire_hours: int = 1
     password_reset_expire_hours: int = 1
     # Invite links are handed out person-to-person, so they need a longer life than an
@@ -89,8 +82,6 @@ class Settings(BaseSettings):
         if self.environment is not Environment.production:
             return self
         errors: list[str] = []
-        if len(self.secret_key) < 32 or self.secret_key in _INSECURE_SECRETS:
-            errors.append("secret_key must be at least 32 characters and not a placeholder")
         if not self.resend_api_key:
             errors.append("resend_api_key is required in production (email verification is mandatory)")
         if "@frontdashboard.local" in self.email_from.lower():
@@ -102,6 +93,19 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    # `__Host-` forbids a Domain attribute and requires Secure + path=/, so a sibling subdomain
+    # cannot set a cookie of the same name that shadows ours — the fixation vector a plain name
+    # leaves open. Browsers reject the prefix without Secure, so development (plain HTTP) keeps
+    # the unprefixed name; nothing reads these by literal string except `getCsrfToken` on the
+    # client, which matches both.
+    @property
+    def session_cookie_name(self) -> str:
+        return "__Host-session" if self.environment is Environment.production else "session"
+
+    @property
+    def csrf_cookie_name(self) -> str:
+        return "__Host-csrf_token" if self.environment is Environment.production else "csrf_token"
 
     model_config = SettingsConfigDict(env_file=["../.env", ".env"], env_file_encoding="utf-8", extra="ignore")
 

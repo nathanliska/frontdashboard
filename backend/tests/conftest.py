@@ -196,7 +196,7 @@ async def concurrent_sessions(test_database: _TestDatabase) -> AsyncGenerator[tu
         await first.close()
         await second.close()
         async with AsyncSession(test_database.engine, expire_on_commit=False) as cleanup:
-            # refresh_tokens and sessions both cascade from users.
+            # sessions cascade from users.
             await cleanup.execute(delete(User).where(User.id == user_id))
             await cleanup.commit()
 

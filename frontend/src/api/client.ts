@@ -1,34 +1,58 @@
 function getCsrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+  // Production sets `__Host-csrf_token`; development cannot (the prefix requires Secure, and dev
+  // is plain HTTP), so both names are accepted here rather than branching on environment.
+  const match = document.cookie.match(/(?:^|;\s*)(?:__Host-)?csrf_token=([^;]*)/)
   return match ? decodeURIComponent(match[1]) : ''
 }
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
-// 'refreshed' — new tokens issued. 'rate-limited' — /refresh returned 429 (a burst
-// of tabs refreshing at once); the session is NOT lost, so callers back off instead
-// of redirecting to /login. 'unauthorized' — anything else, treat as logged out.
-export type RefreshOutcome = 'refreshed' | 'rate-limited' | 'unauthorized'
+// Worth retrying: the server or the path to it failed, which says nothing about our credentials.
+// 429 is deliberately absent — also not a logout, but retrying it is the opposite of complying.
+const TRANSIENT_STATUS = new Set([500, 502, 503, 504])
 
-let refreshPromise: Promise<RefreshOutcome> | null = null
+const MAX_ATTEMPTS = 2
+const RETRY_BASE_MS = 300
 
-export function tryRefresh(): Promise<RefreshOutcome> {
-  if (!refreshPromise) {
-    refreshPromise = fetch('/api/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'X-CSRF-Token': getCsrfToken() },
-    })
-      .then(
-        (r): RefreshOutcome =>
-          r.ok ? 'refreshed' : r.status === 429 ? 'rate-limited' : 'unauthorized',
-      )
-      .catch((): RefreshOutcome => 'unauthorized')
-      .finally(() => {
-        refreshPromise = null
-      })
-  }
-  return refreshPromise
+// Handles for in-flight retry waits. Kept so tests can cancel them: a worker is reused across
+// files, and a setTimeout nobody cleared keeps its closure alive for the rest of the run
+// (frontend/CLAUDE.md).
+const pendingRetries = new Set<ReturnType<typeof setTimeout>>()
+
+let onSessionExpired: () => void = () => {}
+
+/**
+ * Register what happens when the server says we are not authenticated. `stores/auth` owns the
+ * actual transition; wiring it through a handler rather than importing the store keeps this
+ * module free of the cycle (`stores/auth` → `api/auth` → `api/client`).
+ */
+export function setSessionExpiredHandler(handler: () => void): void {
+  onSessionExpired = handler
+}
+
+/**
+ * Full jitter (AWS, "Exponential Backoff and Jitter"). Every tab that dropped at the same instant
+ * — during a deploy, that is all of them — would otherwise retry at the same instant too, against
+ * the single worker that just came back up.
+ */
+function retryDelayMs(attempt: number): number {
+  return Math.random() * RETRY_BASE_MS * 2 ** attempt
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const handle = setTimeout(() => {
+      pendingRetries.delete(handle)
+      resolve()
+    }, ms)
+    pendingRetries.add(handle)
+  })
+}
+
+export function __resetApiClientForTests(): void {
+  for (const handle of pendingRetries) clearTimeout(handle)
+  pendingRetries.clear()
+  onSessionExpired = () => {}
 }
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -41,25 +65,34 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     headers.set('X-CSRF-Token', getCsrfToken())
   }
 
-  const res = await fetch(path, { ...init, headers, credentials: 'include' })
+  // GET only — echo suppression, not idempotency (PATCH/DELETE here are idempotent).
+  // `consumePendingListMutationEcho` deletes the pending `client_mutation_id` on the first SSE
+  // frame, so a retry's second frame reads as someone else's change and triggers a refetch.
+  const maxAttempts = MUTATING.has(method) ? 1 : MAX_ATTEMPTS
 
-  if (res.status === 401) {
-    const outcome = await tryRefresh()
-    if (outcome === 'rate-limited') {
-      // Refresh is momentarily throttled — don't log the user out over a transient
-      // 429. Surface the original 401 so a later retry, under the limit, refreshes.
+  for (let attempt = 0; ; attempt++) {
+    const lastAttempt = attempt + 1 >= maxAttempts
+    let res: Response
+    try {
+      res = await fetch(path, { ...init, headers, credentials: 'include' })
+    } catch (error) {
+      // Network failure says nothing about our credentials: retry, then surface. Never a logout.
+      if (lastAttempt) throw error
+      await wait(retryDelayMs(attempt))
+      continue
+    }
+
+    // 401 only. Not 403 — that is the permission layer ("editor access required"), and treating
+    // it as a session failure would sign you out for opening someone else's dashboard.
+    if (res.status === 401) {
+      onSessionExpired()
       return res
     }
-    if (outcome === 'unauthorized') {
-      window.location.replace('/login')
-      return new Promise(() => {}) // never resolves — navigation is underway
-    }
-    // Retry with refreshed CSRF cookie
-    if (MUTATING.has(method)) {
-      headers.set('X-CSRF-Token', getCsrfToken())
-    }
-    return fetch(path, { ...init, headers, credentials: 'include' })
-  }
 
-  return res
+    if (TRANSIENT_STATUS.has(res.status) && !lastAttempt) {
+      await wait(retryDelayMs(attempt))
+      continue
+    }
+    return res
+  }
 }

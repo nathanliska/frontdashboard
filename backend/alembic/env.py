@@ -12,7 +12,6 @@ import app.models.email_verification_token  # noqa: F401
 import app.models.list  # noqa: F401
 import app.models.notification  # noqa: F401
 import app.models.password_reset_token  # noqa: F401
-import app.models.refresh_token  # noqa: F401
 import app.models.session  # noqa: F401
 import app.models.share  # noqa: F401
 import app.models.user  # noqa: F401

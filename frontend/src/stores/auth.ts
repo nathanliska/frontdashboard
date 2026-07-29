@@ -12,7 +12,7 @@ import {
   type User,
   type UserPreferences,
 } from '../api/auth'
-import { tryRefresh } from '../api/client'
+import { setSessionExpiredHandler } from '../api/client'
 import { resetAgendaData } from '../resources/agendaData'
 import { resetCalendarData } from '../resources/calendarData'
 import { resetListData } from '../resources/listData'
@@ -54,21 +54,14 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     if (get().status !== 'loading') return
     if (authInitPromise) return authInitPromise
 
+    setSessionExpiredHandler(handleSessionExpired)
     authInitPromise = (async () => {
-      // Try current access token first
-      let user = await apiGetMe()
+      // One question, one answer. There is no silent-refresh step any more: the session cookie
+      // either resolves to a live row or it does not, so /me is the whole of the check.
+      const user = await apiGetMe()
       if (user) {
         set({ status: 'authenticated', user })
         return
-      }
-      // Access token may be expired — attempt silent refresh
-      const outcome = await tryRefresh()
-      if (outcome === 'refreshed') {
-        user = await apiGetMe()
-        if (user) {
-          set({ status: 'authenticated', user })
-          return
-        }
       }
       resetSessionData()
       set({ status: 'unauthenticated', user: null })
@@ -135,3 +128,23 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }
   },
 }))
+
+/**
+ * A 401 from any request means the session is gone — revoked elsewhere, idled out, or past its
+ * absolute expiry. Transition the store and let `RequireAuth` route to the login page.
+ *
+ * Deliberately *not* `window.location.replace('/login')`, which is what `apiFetch` used to do: a
+ * full document teardown discards in-memory state and the URL the user was on, so they came back
+ * to wherever the login flow decided rather than where they were. It is also why a transient 502
+ * being misread as a logout was so destructive — there was no way back.
+ */
+function handleSessionExpired(): void {
+  if (useAuthStore.getState().status === 'unauthenticated') return
+  resetSessionData()
+  useAuthStore.setState({ status: 'unauthenticated', user: null })
+}
+
+// Registered here *and* in `init()`. Module scope alone would make the behaviour depend on
+// `stores/auth` having been imported before the first request — true today by the import graph,
+// but silently and unrecoverably false if that ever changes.
+setSessionExpiredHandler(handleSessionExpired)

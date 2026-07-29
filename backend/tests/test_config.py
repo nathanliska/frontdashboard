@@ -11,7 +11,6 @@ from tests.conftest import POSTGRES_IMAGE_DEFAULT
 _BASE: dict[str, Any] = {
     "_env_file": None,
     "database_url": "postgresql+asyncpg://u:p@localhost/db",
-    "secret_key": "x" * 40,
     "environment": "development",
 }
 
@@ -26,13 +25,15 @@ def test_invalid_environment_rejected() -> None:
 
 
 def test_development_skips_production_checks() -> None:
-    # weak secret + no email config is fine outside production
-    _make(environment="development", secret_key="short", resend_api_key=None)
+    # No email config is fine outside production.
+    _make(environment="development", resend_api_key=None)
 
 
-def test_production_requires_strong_secret_and_email() -> None:
-    with pytest.raises(ValidationError):
-        _make(environment="production", secret_key="short")
+def test_the_session_windows_are_ordered() -> None:
+    """Idle must be the tighter of the two. Inverted, the absolute bound would be unreachable and
+    a session would once again slide forever — the exact gap ADR-003's amendment closed."""
+    settings = _make()
+    assert 0 < settings.session_idle_days <= settings.session_absolute_days
 
 
 def test_production_requires_resend_key() -> None:
@@ -56,7 +57,6 @@ def test_production_rejects_default_email_from() -> None:
 def test_valid_production_config_constructs() -> None:
     settings = _make(
         environment="production",
-        secret_key="s" * 40,
         resend_api_key="re_test",
         email_from="FrontDashboard <noreply@example.com>",
     )
@@ -72,7 +72,6 @@ def test_environment_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings(
             _env_file=None,  # ty: ignore[unknown-argument]  # pydantic-settings runtime option
             database_url="postgresql+asyncpg://u:p@localhost/db",
-            secret_key="x" * 40,
         )
 
 

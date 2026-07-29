@@ -29,7 +29,6 @@ jobs:
       - name: Validate the production Compose file
         env:
           DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
-          SECRET_KEY: ci-secret-key
           FRONTEND_BASE_URL: https://example.invalid
           RESEND_API_KEY: ci
           EMAIL_FROM: ci@example.invalid
@@ -43,7 +42,6 @@ jobs:
         working-directory: backend
     env:
       DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
-      SECRET_KEY: ci-secret-key
       # ENVIRONMENT is required (no default) — CI has no .env, so provide it inline.
       ENVIRONMENT: development
     steps:
@@ -120,7 +118,6 @@ jobs:
         # requires these to be set (no defaults) for app.main to import.
         env:
           DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
-          SECRET_KEY: ci-secret-key
           ENVIRONMENT: development
         working-directory: .
         run: |

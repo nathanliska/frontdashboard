@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User } from '../api/auth'
-import type { RefreshOutcome } from '../api/client'
 import { useAuthStore } from './auth'
 import { confirm } from './confirm'
 import { bumpSessionGeneration } from './sessionGeneration'
@@ -38,12 +37,12 @@ const {
 
 const toastError = vi.hoisted(() => vi.fn())
 
-const { tryRefreshMock } = vi.hoisted(() => ({
-  tryRefreshMock: vi.fn<() => Promise<RefreshOutcome>>(),
+const { setSessionExpiredHandlerMock } = vi.hoisted(() => ({
+  setSessionExpiredHandlerMock: vi.fn<(handler: () => void) => void>(),
 }))
 
 vi.mock('../api/client', () => ({
-  tryRefresh: tryRefreshMock,
+  setSessionExpiredHandler: setSessionExpiredHandlerMock,
 }))
 
 vi.mock('../api/auth', () => ({
@@ -95,28 +94,14 @@ describe('useAuthStore', () => {
     expect(useAuthStore.getState().user).toEqual(user)
   })
 
-  it('refreshes and retries when the current access token is stale', async () => {
-    apiGetMe.mockResolvedValueOnce(null).mockResolvedValueOnce(user)
-    tryRefreshMock.mockResolvedValue('refreshed')
-
-    await useAuthStore.getState().init()
-
-    // Bootstrap must go through the shared tryRefresh — it is the only refresh
-    // path that sends the X-CSRF-Token header and single-flights the request.
-    // A hand-rolled fetch here would 403 against the backend CSRF guard.
-    expect(tryRefreshMock).toHaveBeenCalledTimes(1)
-    expect(fetch).not.toHaveBeenCalled()
-    expect(apiGetMe).toHaveBeenCalledTimes(2)
-    expect(useAuthStore.getState().status).toBe('authenticated')
-  })
-
-  it('falls back to unauthenticated when refresh does not recover the session', async () => {
+  it('asks once and takes the answer, with no refresh step to retry through', async () => {
     apiGetMe.mockResolvedValue(null)
-    tryRefreshMock.mockResolvedValue('unauthorized')
 
     await useAuthStore.getState().init()
 
-    expect(tryRefreshMock).toHaveBeenCalledTimes(1)
+    // Bootstrap used to call /me, attempt a silent refresh, then call /me again. The session
+    // cookie either resolves to a live row or it does not, so one question is the whole check.
+    expect(apiGetMe).toHaveBeenCalledTimes(1)
     expect(fetch).not.toHaveBeenCalled()
 
     expect(useAuthStore.getState().status).toBe('unauthenticated')
@@ -160,7 +145,6 @@ describe('useAuthStore', () => {
 
   it('resets dashboard state when unauthenticated init settles', async () => {
     apiGetMe.mockResolvedValue(null)
-    tryRefreshMock.mockResolvedValue('unauthorized')
     await useAuthStore.getState().init()
     expect(resetDashboardData).toHaveBeenCalledTimes(1)
   })

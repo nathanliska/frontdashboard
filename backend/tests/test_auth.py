@@ -1,6 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-import jwt
 import pytest
 from fastapi import HTTPException, Response
 from httpx import ASGITransport, AsyncClient
@@ -9,8 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.hashing import _DUMMY_HASH
-from app.auth.tokens import decode_access_token, hash_token
-from app.config import settings
+from app.auth.tokens import create_opaque_token, hash_token
 from app.main import app
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
@@ -33,14 +31,14 @@ _PASSWORD_URL = "/api/auth/password"
 _PREFERENCES_URL = "/api/auth/preferences"
 
 
-def test_access_token_tolerates_small_clock_skew() -> None:
-    token = jwt.encode(
-        {"iat": datetime.now(UTC) + timedelta(seconds=2)},
-        settings.secret_key,
-        algorithm="HS256",
-    )
+def test_the_session_cookie_is_unguessable() -> None:
+    """Replaces the JWT clock-skew test: there is no signed token to skew any more, and the
+    property that matters for an opaque credential is entropy, not expiry arithmetic."""
+    raw, token_hash = create_opaque_token()
 
-    decode_access_token(token)
+    assert len(bytes.fromhex(raw)) == 32
+    assert token_hash == hash_token(raw)
+    assert raw != create_opaque_token()[0]
 
 
 async def test_register(db_client: AsyncClient) -> None:
@@ -51,8 +49,7 @@ async def test_register(db_client: AsyncClient) -> None:
     assert resp.status_code == 201
     data = resp.json()
     assert data["email"] == "new@example.com"
-    assert "access_token" not in resp.cookies
-    assert "refresh_token" not in resp.cookies
+    assert "session" not in resp.cookies
     assert "csrf_token" not in resp.cookies
     assert app.state.email_verification_tokens["new@example.com"]
 
@@ -159,7 +156,7 @@ async def test_login(db_client: AsyncClient) -> None:
 
     resp = await db_client.post(_LOGIN_URL, json={"email": "login@example.com", "password": "mypassword"})
     assert resp.status_code == 200
-    assert "access_token" in resp.cookies
+    assert "session" in resp.cookies
     assert "csrf_token" in resp.cookies
 
 
@@ -186,8 +183,7 @@ async def test_verify_email_authenticates_user(db_client: AsyncClient) -> None:
     assert resp.status_code == 200
     assert resp.json()["email"] == "verify@example.com"
     assert resp.json()["email_verified_at"] is not None
-    assert "access_token" in resp.cookies
-    assert "refresh_token" in resp.cookies
+    assert "session" in resp.cookies
     assert "csrf_token" in resp.cookies
 
 
@@ -200,13 +196,12 @@ async def test_verify_email_rejects_consumed_token_replay(db_client: AsyncClient
 
     first = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
     assert first.status_code == 200
-    assert "access_token" in first.cookies
+    assert "session" in first.cookies
 
     replay = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
     assert replay.status_code == 409
     assert replay.json()["detail"] == "Email already verified. Please sign in."
-    assert "access_token" not in replay.cookies
-    assert "refresh_token" not in replay.cookies
+    assert "session" not in replay.cookies
     assert "csrf_token" not in replay.cookies
 
 
@@ -376,29 +371,24 @@ async def test_me_authenticated(auth_client: AsyncClient) -> None:
     assert resp.json()["email"] == "testuser@example.com"
 
 
-async def test_refresh_requires_csrf(auth_client: AsyncClient) -> None:
-    csrf = auth_client.cookies.get("csrf_token")
-    assert csrf is not None
-
-    assert (await auth_client.post(_REFRESH_URL)).status_code == 403
-    assert (await auth_client.post(_REFRESH_URL, headers={"X-CSRF-Token": "wrong"})).status_code == 403
-    assert (await auth_client.post(_REFRESH_URL, headers={"X-CSRF-Token": csrf})).status_code == 200
-
-
-async def test_refresh(auth_client: AsyncClient) -> None:
+async def test_there_is_no_refresh_endpoint(auth_client: AsyncClient) -> None:
+    """The endpoint is gone, not merely unused. Its mandatory 15-minute round trip was the thing
+    a deploy or a proxy 502 landed on, and a client that still called it would be relying on
+    behaviour the server no longer has."""
     set_csrf(auth_client)
-    resp = await auth_client.post(_REFRESH_URL)
-    assert resp.status_code == 200
-    assert "access_token" in resp.cookies
-    assert "csrf_token" in resp.cookies
+    assert (await auth_client.post(_REFRESH_URL)).status_code == 404
 
 
-async def test_refresh_rotates_token(auth_client: AsyncClient) -> None:
-    set_csrf(auth_client)
-    old_refresh = auth_client.cookies.get("refresh_token")
-    await auth_client.post(_REFRESH_URL)
-    new_refresh = auth_client.cookies.get("refresh_token")
-    assert old_refresh != new_refresh
+async def test_the_session_cookie_survives_ordinary_use(auth_client: AsyncClient) -> None:
+    """Nothing rotates it. The old client had to keep up with a cookie that changed under it on
+    every refresh; losing that response is what turned an honest client into a "replay"."""
+    before = auth_client.cookies.get("session")
+    assert before is not None
+
+    assert (await auth_client.get(_ME_URL)).status_code == 200
+    assert (await auth_client.get(_ME_URL)).status_code == 200
+
+    assert auth_client.cookies.get("session") == before
 
 
 async def test_logout(auth_client: AsyncClient) -> None:
@@ -418,15 +408,19 @@ async def test_logout_wrong_csrf(auth_client: AsyncClient) -> None:
     assert resp.status_code == 403
 
 
-async def test_refresh_after_logout_fails(auth_client: AsyncClient) -> None:
+async def test_the_session_cookie_is_dead_after_logout(auth_client: AsyncClient) -> None:
+    """Logout revokes the row, so the cookie the client may still be holding is inert. Asserting
+    through a request rather than on the response's Set-Cookie is the point: clearing the cookie
+    is cosmetic, revoking the row is what actually ends the session."""
     csrf = auth_client.cookies.get("csrf_token")
     assert csrf is not None
+    session_cookie = auth_client.cookies.get("session")
+    assert session_cookie is not None
+
     await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf})
-    # Logout clears the csrf_token cookie along with the rest — restore the
-    # double-submit pair so this exercises "no refresh token" (401), not CSRF (403).
-    auth_client.cookies.set("csrf_token", csrf)
-    resp = await auth_client.post(_REFRESH_URL, headers={"X-CSRF-Token": csrf})
-    assert resp.status_code == 401
+
+    auth_client.cookies.set("session", session_cookie)
+    assert (await auth_client.get(_ME_URL)).status_code == 401
 
 
 async def test_update_profile(auth_client: AsyncClient) -> None:
@@ -438,7 +432,8 @@ async def test_update_profile(auth_client: AsyncClient) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["display_name"] == "Updated User"
-    assert "access_token" in resp.cookies
+    # No cookie work: this used to re-issue the access token because the JWT embedded `email`.
+    assert "session" not in resp.cookies
 
     me = await auth_client.get(_ME_URL)
     assert me.status_code == 200
@@ -471,21 +466,65 @@ async def test_profile_and_preferences_reject_empty_or_unknown_patches(auth_clie
         assert response.status_code == 422
 
 
-async def test_profile_update_bumps_session_last_used_at(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    from datetime import UTC, datetime, timedelta
-
+async def test_any_request_slides_the_session_idle_clock(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """A plain GET, not a mutation. Routes used to bump `last_used_at` by hand, which meant only
+    the handful that did so kept a session alive — a user who merely read would have idled out
+    mid-use. The auth dependency owns the clock now, so every authenticated request slides it."""
     session = (await db_session.execute(select(UserSession))).scalars().one()
     old = datetime.now(UTC) - timedelta(hours=1)
     session.last_used_at = old
     await db_session.flush()
 
-    set_csrf(auth_client)
-    resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "Bumped"})
-    assert resp.status_code == 200
+    assert (await auth_client.get(_ME_URL)).status_code == 200
 
     await db_session.refresh(session)
-    assert session.last_used_at is not None
     assert session.last_used_at > old
+
+
+async def test_the_idle_slide_is_committed(auth_client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
+    """The test above cannot prove durability: the route shares this test's session, so an
+    uncommitted UPDATE is visible to it either way — it passes with or without the commit.
+
+    The commit is the whole point. A GET route never commits, so without one the slide is rolled
+    back and a read-only user idles out mid-use. Asserting the result proves nothing about how it
+    was produced, so assert the mechanism instead (root CLAUDE.md).
+    """
+    session = (await db_session.execute(select(UserSession))).scalars().one()
+    session.last_used_at = datetime.now(UTC) - timedelta(hours=1)
+    await db_session.flush()
+
+    commits = 0
+    real_commit = db_session.commit
+
+    async def counting_commit() -> None:
+        nonlocal commits
+        commits += 1
+        await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", counting_commit)
+
+    assert (await auth_client.get(_ME_URL)).status_code == 200
+
+    assert commits == 1, "the auth dependency must commit the slide; a GET route never will"
+
+
+async def test_a_freshly_used_session_costs_no_write(auth_client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
+    """The other half of the throttle, at request level: back-to-back reads must not each pay for
+    an UPDATE plus a COMMIT."""
+    commits = 0
+    real_commit = db_session.commit
+
+    async def counting_commit() -> None:
+        nonlocal commits
+        commits += 1
+        await real_commit()
+
+    monkeypatch.setattr(db_session, "commit", counting_commit)
+
+    assert (await auth_client.get(_ME_URL)).status_code == 200
+    assert (await auth_client.get(_ME_URL)).status_code == 200
+
+    assert commits == 0
 
 
 async def test_change_password_updates_login_credentials(auth_client: AsyncClient) -> None:
@@ -495,7 +534,8 @@ async def test_change_password_updates_login_credentials(auth_client: AsyncClien
         json={"current_password": "testpassword123", "new_password": "betterpassword456"},
     )
     assert resp.status_code == 204
-    assert "access_token" in resp.cookies
+    # The calling session is kept as-is — see the note on `change_password`.
+    assert "session" not in resp.cookies
 
     set_csrf(auth_client)
     logout = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": CSRF})
@@ -580,12 +620,13 @@ async def test_update_preferences_rejects_inaccessible_favorite_dashboard(auth_c
         await other.__aexit__(None, None, None)
 
 
-async def test_access_token_carries_the_sid_of_a_real_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_the_session_cookie_hashes_to_a_real_session_row(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """The cookie is the credential: it carries no claims, so the only thing tying it to an
+    identity is that its hash is stored on a live row."""
     session = (await db_session.execute(select(UserSession))).scalars().one()
     assert session.revoked_at is None
 
-    payload = decode_access_token(auth_client.cookies["access_token"])
-    assert payload["sid"] == str(session.id)
+    assert hash_token(auth_client.cookies["session"]) == session.token_hash
 
 
 async def test_a_revoked_session_stops_being_accepted_immediately(auth_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -648,11 +689,10 @@ async def test_logout_revokes_only_the_current_session(auth_client: AsyncClient,
     assert sum(s.revoked_at is None for s in sessions) == 1
 
 
-async def test_logout_revokes_without_the_refresh_cookie(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """Logout identifies the session from the access token, so it still revokes when
-    the refresh cookie is absent — it used to silently no-op."""
+async def test_logout_revokes_the_calling_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """Logout identifies the session from the cookie that authenticated the request, so it
+    revokes exactly that session and can never no-op."""
     set_csrf(auth_client)
-    auth_client.cookies.delete("refresh_token")
 
     resp = await auth_client.post(_LOGOUT_URL)
     assert resp.status_code == 204

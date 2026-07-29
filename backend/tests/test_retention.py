@@ -17,7 +17,6 @@ from app.models.email_verification_token import EmailVerificationToken
 from app.models.list import List
 from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
-from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
 from app.models.share import ResourceShare
 from app.models.user import User
@@ -25,50 +24,45 @@ from app.services.retention import reap_abandoned_signups, reap_expired_auth_row
 from tests.helpers import make_db_dashboard, make_db_user
 
 
-async def test_expired_tokens_deleted_live_and_consumed_ones_kept(db_session):
+def _session(user_id, now, *, idle: timedelta = timedelta(0), expires_in: timedelta = timedelta(days=30)) -> UserSession:
+    return UserSession(
+        user_id=user_id,
+        token_hash=f"t-{uuid.uuid4()}",
+        last_used_at=now - idle,
+        expires_at=now + expires_in,
+    )
+
+
+async def test_expired_tokens_deleted_and_live_ones_kept(db_session):
     now = datetime.now(UTC)
     user = await make_db_user(db_session, label="reap")
-    session = UserSession(user_id=user.id, last_used_at=now)
+    session = _session(user.id, now)
     db_session.add(session)
     await db_session.flush()
 
-    live = RefreshToken(session_id=session.id, user_id=user.id, token_hash=f"live-{uuid.uuid4()}", expires_at=now + timedelta(days=3))
-    expired = RefreshToken(session_id=session.id, user_id=user.id, token_hash=f"exp-{uuid.uuid4()}", expires_at=now - timedelta(days=1))
-    # Consumed but NOT yet expired: this row IS reuse-detection evidence and must survive.
-    consumed = RefreshToken(
-        session_id=session.id,
-        user_id=user.id,
-        token_hash=f"con-{uuid.uuid4()}",
-        expires_at=now + timedelta(days=2),
-        revoked_at=now - timedelta(minutes=1),
-    )
     ev_live = EmailVerificationToken(user_id=user.id, token_hash=f"evl-{uuid.uuid4()}", expires_at=now + timedelta(hours=1))
     ev_exp = EmailVerificationToken(user_id=user.id, token_hash=f"eve-{uuid.uuid4()}", expires_at=now - timedelta(hours=1))
     pr_live = PasswordResetToken(user_id=user.id, token_hash=f"prl-{uuid.uuid4()}", expires_at=now + timedelta(hours=1))
     pr_exp = PasswordResetToken(user_id=user.id, token_hash=f"pre-{uuid.uuid4()}", expires_at=now - timedelta(hours=1))
-    db_session.add_all([live, expired, consumed, ev_live, ev_exp, pr_live, pr_exp])
+    db_session.add_all([ev_live, ev_exp, pr_live, pr_exp])
     await db_session.flush()
 
     counts = await reap_expired_auth_rows(db_session, now=now)
 
-    assert counts["refresh_tokens"] == 1
     assert counts["email_verification_tokens"] == 1
     assert counts["password_reset_tokens"] == 1
-
-    remaining = (await db_session.execute(select(RefreshToken.token_hash).where(RefreshToken.session_id == session.id))).scalars().all()
-    assert set(remaining) == {live.token_hash, consumed.token_hash}
-    # Session survives — it still holds unexpired tokens.
+    assert await db_session.get(EmailVerificationToken, ev_live.id) is not None
+    assert await db_session.get(PasswordResetToken, pr_live.id) is not None
+    # A session in current use is untouched.
+    assert counts["sessions"] == 0
     assert await db_session.get(UserSession, session.id) is not None
 
 
-async def test_idle_session_with_only_expired_tokens_is_deleted(db_session):
+async def test_a_session_idle_past_the_window_is_deleted(db_session):
     now = datetime.now(UTC)
     user = await make_db_user(db_session, label="reap")
-    idle = now - timedelta(minutes=settings.access_token_expire_minutes + 5)
-    dead = UserSession(user_id=user.id, last_used_at=idle)
+    dead = _session(user.id, now, idle=timedelta(days=settings.session_idle_days, seconds=1))
     db_session.add(dead)
-    await db_session.flush()
-    db_session.add(RefreshToken(session_id=dead.id, user_id=user.id, token_hash=f"d-{uuid.uuid4()}", expires_at=now - timedelta(days=1)))
     await db_session.flush()
 
     counts = await reap_expired_auth_rows(db_session, now=now)
@@ -77,45 +71,33 @@ async def test_idle_session_with_only_expired_tokens_is_deleted(db_session):
     assert await db_session.get(UserSession, dead.id) is None
 
 
-async def test_recently_used_session_is_kept_even_with_no_unexpired_token(db_session):
-    # Guards the early-logout failure: a still-valid 15-minute access token names it.
+async def test_a_session_past_its_absolute_expiry_is_deleted(db_session):
+    """Recently used, so only the absolute clock can condemn it. The old sweep had no way to
+    reach this row at all — it keyed on idleness alone."""
     now = datetime.now(UTC)
     user = await make_db_user(db_session, label="reap")
-    recent = UserSession(user_id=user.id, last_used_at=now - timedelta(minutes=1))
-    db_session.add(recent)
+    dead = _session(user.id, now, expires_in=-timedelta(seconds=1))
+    db_session.add(dead)
     await db_session.flush()
-    db_session.add(RefreshToken(session_id=recent.id, user_id=user.id, token_hash=f"r-{uuid.uuid4()}", expires_at=now - timedelta(days=1)))
+
+    counts = await reap_expired_auth_rows(db_session, now=now)
+
+    assert counts["sessions"] == 1
+    assert await db_session.get(UserSession, dead.id) is None
+
+
+async def test_a_session_still_inside_both_windows_is_kept(db_session):
+    """The early-logout guard: the sweep must never collect a session a request would accept."""
+    now = datetime.now(UTC)
+    user = await make_db_user(db_session, label="reap")
+    alive = _session(user.id, now, idle=timedelta(days=settings.session_idle_days) - timedelta(hours=1))
+    db_session.add(alive)
     await db_session.flush()
 
     counts = await reap_expired_auth_rows(db_session, now=now)
 
     assert counts["sessions"] == 0
-    assert await db_session.get(UserSession, recent.id) is not None
-
-
-async def test_idle_session_with_an_unexpired_token_is_kept(db_session):
-    # Preserves reuse evidence: any unexpired token (even consumed) pins the session.
-    now = datetime.now(UTC)
-    user = await make_db_user(db_session, label="reap")
-    idle = now - timedelta(days=10)
-    pinned = UserSession(user_id=user.id, last_used_at=idle)
-    db_session.add(pinned)
-    await db_session.flush()
-    db_session.add(
-        RefreshToken(
-            session_id=pinned.id,
-            user_id=user.id,
-            token_hash=f"u-{uuid.uuid4()}",
-            expires_at=now + timedelta(days=1),
-            revoked_at=now - timedelta(days=1),
-        )
-    )
-    await db_session.flush()
-
-    counts = await reap_expired_auth_rows(db_session, now=now)
-
-    assert counts["sessions"] == 0
-    assert await db_session.get(UserSession, pinned.id) is not None
+    assert await db_session.get(UserSession, alive.id) is not None
 
 
 async def test_history_older_than_the_horizon_is_pruned(db_session):
@@ -172,24 +154,16 @@ async def test_history_older_than_the_horizon_is_pruned(db_session):
 async def test_history_sweep_leaves_auth_rows_alone(db_session):
     now = datetime.now(UTC)
     user = await make_db_user(db_session, label="reap")
-    session = UserSession(user_id=user.id, last_used_at=now - timedelta(days=365))
+    session = _session(user.id, now, idle=timedelta(days=365))
     db_session.add(session)
     await db_session.flush()
-    token = RefreshToken(
-        session_id=session.id,
-        user_id=user.id,
-        token_hash=f"keep-{uuid.uuid4()}",
-        expires_at=now + timedelta(days=3),
-    )
-    db_session.add(token)
-    await db_session.flush()
 
-    # An old session with a live token is not history — the two sweeps answer different questions
-    # and must not bleed into each other.
+    # A session far past the *history* horizon is not history — the two sweeps answer different
+    # questions and must not bleed into each other. (`reap_expired_auth_rows` would collect this
+    # one; `reap_expired_history` must not.)
     await reap_expired_history(db_session, now=now)
 
     assert await db_session.get(UserSession, session.id) is not None
-    assert await db_session.get(RefreshToken, token.id) is not None
 
 
 async def _make_unverified_signup(db, *, age_days: int):

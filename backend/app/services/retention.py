@@ -6,15 +6,11 @@ login path, and gives a deterministic bound on the oldest row. This module is th
 reaper; `reaper_loop` schedules it from the app lifespan.
 
 Only provably-inert rows are deleted:
-  - expired refresh / email-verification / password-reset tokens (`expires_at < now`)
-  - sessions whose tokens are ALL expired AND that are idle beyond the access-token
-    lifetime — so neither a live refresh token nor a still-valid 15-minute access
-    token can depend on them.
-
-A consumed-but-unexpired refresh token is NOT deleted: that row is reuse detection's
-evidence (a replay is caught by finding it and reading `revoked_at`). Only rows past
-`expires_at` go, and a session is kept while ANY unexpired token pins it, so the
-sweep can never cascade-delete that evidence.
+  - expired email-verification / password-reset tokens and dashboard invites
+    (`expires_at < now`)
+  - sessions past their absolute expiry or idle beyond the window — the same two
+    clocks `services/sessions._live` refuses to authenticate against, so nothing
+    deleted here could still have been used.
 
 It also enforces the history horizon. Activity events and notifications are the only
 tables that grow with *usage* rather than with the number of users, so they are the
@@ -43,7 +39,6 @@ from app.models.email_verification_token import EmailVerificationToken
 from app.models.list import List, ListItem
 from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
-from app.models.refresh_token import RefreshToken
 from app.models.session import UserSession
 from app.models.share import ResourceShare
 from app.models.user import User
@@ -51,7 +46,6 @@ from app.models.user import User
 logger = logging.getLogger("app.retention")
 
 _EXPIRING_TOKEN_TABLES = (
-    ("refresh_tokens", RefreshToken),
     ("email_verification_tokens", EmailVerificationToken),
     ("password_reset_tokens", PasswordResetToken),
     # Same shape and the same reasoning: an expired invite can never be redeemed again.
@@ -73,19 +67,19 @@ async def reap_expired_auth_rows(db: AsyncSession, *, now: datetime | None = Non
         result = cast("CursorResult[Any]", await db.execute(delete(model).where(model.expires_at < now)))
         counts[name] = result.rowcount
 
-    # A session has no expires_at of its own. It is inert once every token under it has
-    # expired (so it can never be refreshed again) AND it has been idle longer than an
-    # access token can live (so no still-valid 15-minute access token names it). Keeping
-    # it while any unexpired token remains also preserves consumed-but-unexpired reuse
-    # evidence — deletion strictly follows the whole token's death.
-    idle_cutoff = now - timedelta(minutes=settings.access_token_expire_minutes)
-    has_unexpired_token = select(RefreshToken.id).where(RefreshToken.session_id == UserSession.id, RefreshToken.expires_at > now).exists()
+    # A session now carries both of its own clocks (ADR-003), so "inert" is decidable from the
+    # row alone: past its absolute expiry, or idle beyond the window. Either way the liveness
+    # predicate in `services/sessions._live` would already refuse it, so nothing is deleted here
+    # that could still authenticate. The old version had to consult `refresh_tokens` to work this
+    # out, and had to keep spent-but-unexpired tokens as reuse evidence — neither exists now.
     session_result = cast(
         "CursorResult[Any]",
         await db.execute(
             delete(UserSession).where(
-                UserSession.last_used_at < idle_cutoff,
-                ~has_unexpired_token,
+                or_(
+                    UserSession.expires_at < now,
+                    UserSession.last_used_at < now - timedelta(days=settings.session_idle_days),
+                )
             )
         ),
     )
@@ -261,9 +255,6 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
     await db.execute(delete(Notification).where(Notification.user_id.in_(candidates)))
     await db.execute(delete(ActivityEvent).where(ActivityEvent.actor_id.in_(candidates)))
     await db.execute(delete(DashboardInvite).where(DashboardInvite.created_by.in_(candidates)))
-    await db.execute(
-        delete(RefreshToken).where(RefreshToken.session_id.in_(select(UserSession.id).where(UserSession.user_id.in_(candidates)).scalar_subquery()))
-    )
     await db.execute(delete(UserSession).where(UserSession.user_id.in_(candidates)))
     await db.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id.in_(candidates)))
     await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id.in_(candidates)))

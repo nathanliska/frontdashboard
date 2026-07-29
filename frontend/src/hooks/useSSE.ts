@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { type ZodType, z } from 'zod'
-import { tryRefresh } from '../api/client'
+import { apiFetch } from '../api/client'
 import {
   ActivitySseEvent,
   ActivitySsePayload,
@@ -42,10 +42,21 @@ export const RESYNC_SIGNAL: ResyncSignal = { event_type: 'resync' }
 
 export const APP_RESYNC_EVENT = 'frontdashboard:resync'
 
-// Reconnect backoff: 1s, 2s, 4s … capped at 30s, retried indefinitely. No jitter — a
-// household-sized user base cannot thunder, and every tab backs off independently anyway.
+// Reconnect backoff: 1s, 2s, 4s … capped at 30s, retried indefinitely.
 const SSE_RECONNECT_BASE_MS = 1000
 export const SSE_RECONNECT_MAX_MS = 30_000
+
+// How often, in reconnect attempts, to ask the server whether the session is still alive.
+// Every attempt would hammer a backend that is merely down; never would leave a logged-out tab
+// retrying forever. Every fourth attempt lands roughly a minute or two into an outage.
+export const SSE_AUTH_PROBE_EVERY = 4
+
+// Full jitter: every stream drops on the same backend restart, so without it every tab retries
+// on the same schedule against the one worker still coming up.
+function reconnectDelayMs(attempt: number): number {
+  const ceiling = Math.min(SSE_RECONNECT_BASE_MS * 2 ** attempt, SSE_RECONNECT_MAX_MS)
+  return Math.random() * ceiling
+}
 
 type EventRoute = 'list' | 'calendar' | 'dashboard'
 
@@ -118,7 +129,7 @@ export function useSSE(): void {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const needsResyncRef = useRef(false)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reconnectNonce is bumped after an auth-refresh succeeds purely to force teardown/recreate of the EventSource; it's never read in the effect body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reconnectNonce is bumped to force teardown/recreate of the EventSource; it's never read in the effect body.
   useEffect(() => {
     if (!userId) return
 
@@ -137,33 +148,27 @@ export function useSSE(): void {
       // Back off rather than capping attempts. A cap would leave the app looking live while
       // receiving nothing, recoverable only by a reload; retrying forever on a widening delay
       // costs one request per 30s at worst and self-heals whenever the server does.
-      const delay = Math.min(
-        SSE_RECONNECT_BASE_MS * 2 ** reconnectAttemptsRef.current,
-        SSE_RECONNECT_MAX_MS,
-      )
+      const attempt = reconnectAttemptsRef.current
       reconnectAttemptsRef.current += 1
 
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null
-        void tryRefresh().then((outcome) => {
-          // The effect was torn down (logout, unmount) while the refresh was in flight.
-          if (cancelled) return
-          if (outcome === 'unauthorized') {
-            window.location.replace('/login')
-            return
-          }
-          // 'rate-limited' falls through to reconnect just like 'refreshed': the token
-          // is still stale, so the new EventSource will be rejected and re-enter this
-          // widening backoff — which self-throttles our refreshes — rather than logging
-          // the user out over a transient 429.
-          // A fresh EventSource has an empty last-event-id, so it sends no Last-Event-ID header
-          // and the server will NOT send a resync frame (see _should_resync_on_connect). Unlike
-          // the browser's own auto-retry, this path must therefore ask for the resync itself, or
-          // events broadcast while we were disconnected are lost from the caches for good.
-          needsResyncRef.current = true
-          setReconnectNonce((n) => n + 1)
-        })
-      }, delay)
+        if (cancelled) return
+
+        // Nothing else would ever reveal a dead session, so a logged-out tab would otherwise
+        // retry forever looking connected. `apiFetch` handles the 401; the catch is required
+        // because it *throws* on network failure, which is when this runs.
+        if (attempt > 0 && attempt % SSE_AUTH_PROBE_EVERY === 0) {
+          void apiFetch('/api/auth/me').catch(() => {})
+        }
+
+        // A fresh EventSource has an empty last-event-id, so it sends no Last-Event-ID header
+        // and the server will NOT send a resync frame (see _should_resync_on_connect). Unlike
+        // the browser's own auto-retry, this path must therefore ask for the resync itself, or
+        // events broadcast while we were disconnected are lost from the caches for good.
+        needsResyncRef.current = true
+        setReconnectNonce((n) => n + 1)
+      }, reconnectDelayMs(attempt))
     }
 
     function onConnected() {
