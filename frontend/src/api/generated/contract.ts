@@ -378,7 +378,7 @@ export type InviteAcceptResponse = z.infer<typeof InviteAcceptResponse>
 export const InviteAcceptResponse = z.object({
   dashboard_id: z.string(),
   dashboard_name: z.string(),
-  role: ShareRole
+  role: z.union([ShareRole, z.null()])
 })
 
 export type InviteCreate = z.infer<typeof InviteCreate>

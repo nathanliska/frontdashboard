@@ -183,8 +183,9 @@ async def accept_invite(
     # and a share row for the owner would contradict "owner is the absence of a share".
     if dashboard.user_id == current_user.id or (held is not None and permissions.is_at_least(held, role)):
         # Nothing to grant, so nothing is consumed and no event is emitted — the response reports
-        # the access they actually hold rather than the one the link offered.
-        return InviteAcceptResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name, role=held or role)
+        # the access they actually hold rather than the one the link offered. For the owner that is
+        # `None` (no share row exists to describe them), not the role the link happened to carry.
+        return InviteAcceptResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name, role=held)
 
     # Consume only now that redemption will change something. Still the atomic UPDATE, so a code
     # claimed by someone else between the check above and here loses here rather than double-granting.

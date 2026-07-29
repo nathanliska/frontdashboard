@@ -41,4 +41,7 @@ class InvitePreviewResponse(BaseModel):
 class InviteAcceptResponse(BaseModel):
     dashboard_id: uuid.UUID
     dashboard_name: str
-    role: ShareRole
+    # `None` means owner, the same as `permissions.effective_role` — an owner holds no share row,
+    # so there is no role to report. Reporting the *link's* role instead said an owner had just
+    # been given viewer access, which is both untrue and contradicted by the grant never happening.
+    role: ShareRole | None

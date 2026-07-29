@@ -40,6 +40,7 @@ from app.services.preferences import (
 )
 from app.services.shares import (
     create_share,
+    dashboard_audience_user_ids,
     get_resource_share,
     get_resource_shares,
     insert_shares,
@@ -216,15 +217,6 @@ async def _list_accessible_dashboard_summaries(
     return summaries
 
 
-def _dashboard_audience_user_ids(
-    dashboard: Dashboard,
-    shares: list[ResourceShare],
-) -> set[uuid.UUID]:
-    audience_user_ids: set[uuid.UUID] = {dashboard.user_id}
-    audience_user_ids.update({share.principal_id for share in shares if share.principal_type == PrincipalType.user})
-    return audience_user_ids
-
-
 async def _validate_share_targets(
     share_inputs: list[ShareCreate],
     owner_id: uuid.UUID,
@@ -274,7 +266,7 @@ async def _broadcast_dashboard_event(
     shares: list[ResourceShare],
     actor_id: uuid.UUID,
 ) -> None:
-    user_ids = _dashboard_audience_user_ids(dashboard, shares)
+    user_ids = dashboard_audience_user_ids(dashboard, shares)
 
     await manager.broadcast(
         message,

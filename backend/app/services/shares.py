@@ -21,6 +21,20 @@ from app.schemas.shares import ShareCreate, ShareResponse
 from app.services import permissions
 
 
+def dashboard_audience_user_ids(dashboard: Dashboard, shares: list[ResourceShare]) -> set[uuid.UUID]:
+    """Everyone entitled to an SSE event about this dashboard, or about a list or event bound to it.
+
+    The owner plus every user principal. Lists and calendar events inherit access from the dashboard
+    (ADR-001), so they share this audience rather than computing their own — three copies of it had
+    drifted, and the two in `routers/lists.py` and `routers/calendar.py` had lost the
+    `principal_type` filter the dashboards one kept. Harmless while `ck_resource_shares_principal_type`
+    pins the column to `'user'`, which is exactly the kind of "safe for now" that stops being true
+    quietly. Broadcasting to too few users is the failure that matters: the missed tab shows stale
+    data with nothing to indicate it (backend/CLAUDE.md).
+    """
+    return {dashboard.user_id} | {share.principal_id for share in shares if share.principal_type == PrincipalType.user}
+
+
 async def load_dashboard_access(
     dashboard_id: uuid.UUID,
     user: User,

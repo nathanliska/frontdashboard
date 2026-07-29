@@ -25,6 +25,7 @@ from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.calendar import expand_event_occurrences, normalize_all_day_bounds
 from app.services.shares import (
+    dashboard_audience_user_ids,
     list_accessible_dashboard_ids,
     load_dashboard_access,
 )
@@ -32,15 +33,6 @@ from app.sse.events import build_activity_sse_dict
 from app.sse.manager import manager
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
-
-
-def _dashboard_user_ids(
-    dashboard: Dashboard,
-    shares: list[ResourceShare],
-) -> set[uuid.UUID]:
-    user_ids: set[uuid.UUID] = {dashboard.user_id}
-    user_ids.update(share.principal_id for share in shares)
-    return user_ids
 
 
 async def _broadcast_dashboard_event(
@@ -51,7 +43,7 @@ async def _broadcast_dashboard_event(
 ) -> None:
     await manager.broadcast(
         message,
-        user_ids=_dashboard_user_ids(dashboard, shares),
+        user_ids=dashboard_audience_user_ids(dashboard, shares),
         actor_id=actor_id,
     )
 
