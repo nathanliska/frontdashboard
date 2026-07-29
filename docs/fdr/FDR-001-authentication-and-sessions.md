@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-28
 
 ## Overview
 
@@ -21,9 +21,11 @@ multi-user account model with immediate, per-device session control — not just
 - **Sessions are per-login and revocable.** Each login is its own session. Logging out ends that
   session immediately. Changing your password ends every *other* session but keeps the one you're
   using; a password reset ends sessions accordingly.
-- **Staying logged in is seamless.** Access renews silently in the background; multiple tabs stay
-  logged in together. A session that's been revoked stops working within seconds, including its live
-  event stream.
+- **Staying logged in is seamless.** One cookie stays valid for the life of the session — there is
+  no background renewal to fail — and multiple tabs share it without interfering. A session that's
+  been revoked stops working within seconds, including its live event stream.
+- **Sessions expire two ways.** After 7 days without use (idle), or 30 days after login however
+  actively used (absolute). Both are enforced server-side.
 - **Password reset and change.** Reset via emailed link; authenticated users can change their
   password or rename their profile.
 - **Emails.** Verification and reset emails send in the background via Resend; without an API key the
@@ -32,30 +34,36 @@ multi-user account model with immediate, per-device session control — not just
 
 ## Design Decisions
 
-### 1. Tokens live in HttpOnly cookies with CSRF double-submit
+### 1. The credential lives in an HttpOnly cookie with CSRF double-submit
 
-**Decision:** Access and refresh JWTs are stored in HttpOnly cookies; non-GET requests carry a
-double-submit CSRF token.
-**Why:** Keeps the session credential unreadable by JavaScript (XSS can't steal it) while defending
-the automatic cookie send against CSRF. See ADR-002.
-**Tradeoff:** Every mutating route must opt into the CSRF dependency, and the JWT's embedded `email`
-means identity-changing routes must re-issue the cookie.
+**Decision:** An opaque session token in an HttpOnly cookie (`__Host-` prefixed in production);
+non-GET requests carry a double-submit CSRF token.
+**Why:** Keeps the credential unreadable by JavaScript (XSS can't steal it) while defending the
+automatic cookie send against CSRF; the prefix stops a sibling subdomain planting a session value.
+See ADR-002.
+**Tradeoff:** Every mutating route must opt into the CSRF dependency, and cookie names differ
+between development and production, so nothing may hard-code them.
 
-### 2. Sessions are first-class rows, checked every request
+### 2. Sessions are first-class rows, checked every request — and are the whole credential
 
-**Decision:** One `sessions` row per login, its `sid` embedded in the access JWT; every request
-verifies the session is live.
-**Why:** Stateless JWTs can't be revoked before expiry. A server-side session handle makes logout and
-password-change revocation take effect immediately. See ADR-003.
-**Tradeoff:** A session-liveness read on every authenticated request.
+**Decision:** One `sessions` row per login, holding the SHA-256 of the cookie's token; every request
+resolves that row. Two clocks bound it: idle (`last_used_at`) and absolute (`expires_at`).
+**Why:** A stateless token can't be revoked before expiry, so logout and password-change revocation
+need a server-side handle. See ADR-003.
+**Tradeoff:** A session-liveness read on every authenticated request — accepted, and it is precisely
+what made a separate short-lived access token redundant.
 
-### 3. Refresh tokens rotate single-use with a grace window
+### 3. No token rotation, and no theft detection
 
-**Decision:** Refresh tokens are single-use and rotating, consumed atomically with a 10-second grace
-window; replay after the window revokes the session as suspected reuse.
-**Why:** Rotation limits the value of a stolen refresh token; the grace window keeps racing tabs
-(sharing one cookie) from logging each other out. See ADR-003.
-**Tradeoff:** A spurious late replay can trip the reuse tripwire and force a re-login.
+**Decision:** The access/refresh split and single-use rotating refresh tokens were removed
+2026-07-28. One credential, never rotated.
+**Why:** Because revocation was already immediate, a short access-token lifetime bounded nothing —
+while the mandatory periodic refresh call turned any deploy or proxy blip into a logout, and reuse
+detection read a *lost response* as theft and killed the session. Both were observed in production.
+See ADR-003.
+**Tradeoff:** Nothing now signals that a session cookie has been copied. The compensating controls
+are the absolute timeout and server-side revocation; a session-management UI is the intended
+replacement (TODO #60).
 
 ### 4. Login is enumeration-safe and constant-work
 
@@ -89,7 +97,7 @@ editor / viewer) is covered in [FDR-004](FDR-004-sharing-and-access.md).
 
 ## Related
 
-- **ADRs:** ADR-002 (JWT cookies + CSRF), ADR-003 (first-class sessions), ADR-010 (Argon2 off the
+- **ADRs:** ADR-002 (credential cookies + CSRF), ADR-003 (first-class sessions), ADR-010 (Argon2 off the
   event loop), ADR-011 (enumeration-safe login), ADR-012 (session-generation guard), ADR-013 (rate
   limiting), ADR-014 (fail-fast prod config)
 - **FDRs:** FDR-004 (Sharing & Access), FDR-008 (Real-Time Delivery)

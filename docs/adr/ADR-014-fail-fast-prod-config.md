@@ -15,8 +15,9 @@ Make insecure production configuration a **boot failure**, not a runtime surpris
 
 - `ENVIRONMENT` is a **required, validated enum** — a prod deploy that forgets it won't boot, rather
   than defaulting to an insecure mode.
-- Production startup **aborts** on: a weak/placeholder `secret_key` (< 32 chars), a missing
-  `resend_api_key`, or an undeliverable `email_from`.
+- Production startup **aborts** on: a missing `resend_api_key`, or an undeliverable
+  `email_from`. (A weak `secret_key` was checked here too until the JWT was removed — see
+  [ADR-003](ADR-003-first-class-sessions.md) — and the setting no longer exists.)
 - Startup **logs the active environment and cookie posture** (`INFO` in prod, `WARNING` otherwise),
   so the security-relevant configuration is visible in the logs of every boot.
 

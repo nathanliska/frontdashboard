@@ -55,9 +55,11 @@ make audit-fix   # apply npm audit fixes (frontend)
   **trash** on DELETE (restorable 30 days, then the reaper purges the full cascade — #40). Lists
   follow the same trash contract; there is **no archive state** — it was removed 2026-07-27 in
   favour of one recoverable put-away action ([ADR-007](docs/adr/ADR-007-soft-delete-boundary.md)).
-- **Auth**: JWT in HttpOnly cookies + CSRF double-submit pattern. No localStorage tokens.
-  Email verification (required for login) + password reset flows; emails send in
-  background tasks.
+- **Auth**: one opaque session cookie (HttpOnly, `__Host-` prefixed in prod) resolved against a
+  `sessions` row on every request, plus CSRF double-submit. No JWT, no refresh token, no
+  `/auth/refresh` — removed 2026-07-28 ([ADR-002](docs/adr/ADR-002-jwt-httponly-cookies-csrf.md),
+  [ADR-003](docs/adr/ADR-003-first-class-sessions.md)). No localStorage tokens. Email verification
+  (required for login) + password reset flows; emails send in background tasks.
 - **Real-time**: SSE (not WebSocket), single multiplexed connection per user.
 - **State**: Zustand stores shared between widgets and full pages. REST for initial fetch,
   SSE for incremental updates.

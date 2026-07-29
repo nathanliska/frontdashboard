@@ -100,8 +100,15 @@ Stack-specific memory for the React/TypeScript frontend. Repo-wide rules live in
 
 ## Network and errors
 - `apiFetch` (`api/client.ts`) is the **only** network entry for `/api` — it sets the CSRF
-  header, includes credentials, and does single-flight 401 refresh + retry (redirecting to
-  `/login` on failure). Never call `fetch` directly.
+  header and includes credentials. Never call `fetch` directly.
+- **Only `401` means logged out.** Not `403` (that is the permission layer answering "editor
+  access required"), and never a `5xx`, timeout or network rejection — reading those as a lost
+  session is what signed users out during deploys before ADR-003's amendment. A 401 calls the
+  handler `stores/auth` registers via `setSessionExpiredHandler`, which flips the store so
+  `RequireAuth` navigates; transient failures retry once with jitter, then surface to the caller.
+- Retries are **GET-only**, and the reason is echo suppression rather than idempotency: a retried
+  mutation emits a second SSE frame whose `client_mutation_id` was already consumed by the first,
+  so the client would read its own write as someone else's change.
 - All API errors are `ApiError` via `api/http.ts` — `requestVoid(...)` for no-body responses,
   `readError(res, fallback)` elsewhere. **No hand-rolled `res.ok` checks** (review finding #4).
 - Errors surface through the global `toast` store, not by throwing to components; use the

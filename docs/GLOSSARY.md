@@ -73,7 +73,7 @@ under a Postgres transaction-scoped advisory lock, so every worker may schedule 
 executes per tick. Referenced throughout as "the retention reaper".
 
 **Sweep** — One pass of the reaper over one category, each its own function: the **auth-row sweep**
-(expired refresh/verification/reset tokens and invites, plus sessions no live token can name), the
+(expired verification/reset tokens and invites, plus sessions past either of their two clocks), the
 **history sweep** (`activity_events` and `notifications`), the **trash sweep**, and the
 **abandoned-signup sweep**. All four share a single transaction — one failing sweep rolls back the
 whole tick.
@@ -94,9 +94,9 @@ cascade for real, as opposed to the `deleted_at` stamp that put it there. See
 
 **Canonical layout / mobile projection** — The persisted desktop layout is canonical; the mobile single-column view is a read-only derived projection that never writes back. See [ADR-009](adr/ADR-009-canonical-layout-mobile-projection.md).
 
-**First-class session** — One `sessions` row per login, its `sid` in the access JWT, checked every request so revocation is immediate. See [ADR-003](adr/ADR-003-first-class-sessions.md).
+**First-class session** — One `sessions` row per login, and the whole credential: the `session` cookie holds an opaque token whose SHA-256 is the row, resolved on every request so revocation is immediate. There is no access or refresh token beside it. See [ADR-003](adr/ADR-003-first-class-sessions.md).
 
-**Grace window** — The 10-second window in which a rotated refresh token is still accepted, so racing tabs both survive; replay after it is treated as reuse. See [ADR-003](adr/ADR-003-first-class-sessions.md).
+**Idle / absolute window** — The two clocks bounding a session, both enforced server-side. **Idle** (`last_used_at`, 7d) slides as the session is used; **absolute** (`expires_at`, 30d) is fixed at login and never extends, so an actively used session cannot live forever. See [ADR-003](adr/ADR-003-first-class-sessions.md).
 
 **Session-generation counter** — A shared client counter captured at the start of every async store write; a write whose generation has since changed (an auth boundary crossed) is dropped, preventing cross-account leakage. See [ADR-012](adr/ADR-012-session-generation-guard.md).
 

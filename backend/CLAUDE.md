@@ -48,8 +48,13 @@ Everything here is a convention an agent can't safely infer from one file.
   `{dashboard.user_id} ∪ share principal_ids` or other users' open tabs silently go stale.
 - Layout/widget writes need the dashboard row lock (`lock_for_update=True`) **and** a
   `dashboard.version` bump; `PUT /layout` compares client vs. server version (409 on mismatch).
-- JWT embeds `email`, so any route mutating identity fields must re-issue the access cookie
-  (`_set_access_cookie`) — profile and password-change already do.
+- **Auth is one opaque cookie, and identity changes need no cookie work.** The `session` cookie
+  carries no claims — its SHA-256 is a `sessions` row, resolved on every request
+  (`services/sessions.resolve_session`). There is no access token, no refresh token, no
+  `/auth/refresh`. A route mutating identity fields used to have to re-mint the JWT because it
+  embedded `email`; it does not now. `resolve_session` is also the **single writer** of
+  `last_used_at` (throttled) — don't bump it by hand in a route, or the idle clock gets two
+  owners again.
 
 ## The schema is the frontend's contract
 - The frontend's types are **generated** from this app's OpenAPI document (ADR-018), so a shape

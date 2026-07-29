@@ -9,19 +9,24 @@ _Last updated: 2026-07-26_
 ## What's built
 
 **Auth & account**
-- Registration → email verification (required before login) → JWT session in HttpOnly cookies
-  with CSRF double-submit; single-use rotating refresh tokens (7d) + 15-min access tokens.
+- Registration → email verification (required before login) → an opaque session cookie
+  (HttpOnly) with CSRF double-submit. One credential, no access/refresh split.
 - **Email identity is case-insensitive**: addresses are normalized (trim + lowercase) at the API
   boundary and a `lower(email)` functional unique index is the DB guarantee, so casing can't create
   duplicate accounts or block login. Display names are bounded (trimmed, non-empty, ≤100 chars).
-- **Sessions are first-class**: one `sessions` row per login, stable across refresh rotation. The
-  access JWT carries its `sid` and every request checks the session is live, so revocation is
-  immediate. Password change revokes every *other* session and keeps yours; reset and logout
-  revoke accordingly. Refresh rotation consumes atomically with a 10s grace window so racing tabs
-  (which share one cookie and expire together) both survive; a replay after that window is treated
-  as reuse and revokes the session. `/auth/refresh` is CSRF-guarded and rate-limited.
-- Password reset via email; authenticated password change and profile rename (both re-issue the
-  access cookie). Rate limits on all auth endpoints.
+- **Sessions are first-class, and are the entire credential**: one `sessions` row per login
+  holding the SHA-256 of the opaque token in the `session` cookie. Every request resolves that row,
+  so revocation is immediate. Two clocks bound it, both server-side: an **idle** window
+  (`last_used_at`, 7d) slid on each request by the auth dependency, and an **absolute** one
+  (`expires_at`, 30d) fixed at login. Password change revokes every *other* session and keeps
+  yours; reset and logout revoke accordingly.
+- The access/refresh split was removed 2026-07-28 ([ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
+  It bought nothing — the per-request session check already made revocation immediate, so a short
+  token expiry bounded nothing — while costing a mandatory `/auth/refresh` round trip whose
+  failure during a deploy signed users out, and reuse detection that read a *lost response* as
+  theft. Both were observed in production. The trade taken knowingly: no theft detection.
+- Password reset via email; authenticated password change and profile rename. Rate limits on all
+  auth endpoints.
 - **No endpoint reveals whether an account exists.** Login, registration, password reset and
   resend-verification all answer identically for known and unknown addresses, and registration pays
   an Argon2 hash either way so timing doesn't leak what the response won't. Signing up with an
@@ -121,8 +126,9 @@ _Last updated: 2026-07-26_
 - A client whose queue overflows is evicted with a closed sentinel, so its stream ends with a
   `resync` and reconnects — rather than staying connected and silently deaf.
 - A stream rejected with an HTTP error status (`readyState === CLOSED`, which `EventSource`
-  never retries) refreshes the session and reconnects on exponential backoff (1s → 30s cap,
-  indefinitely), redirecting to `/login` only if the refresh itself fails. Because a fresh
+  never retries) reconnects on jittered exponential backoff (1s → 30s cap, indefinitely) and
+  never logs anyone out; every fourth attempt probes `/auth/me`, so a genuinely signed-out tab
+  is discovered without a dead backend being mistaken for one. Because a fresh
   `EventSource` sends no `Last-Event-ID`, that path asks for the resync itself; the browser's
   own auto-retry of a network drop is left alone and resyncs via the header as before.
 - Streams revalidate their session every 30s and end when it is revoked; revocation also drops
@@ -165,8 +171,9 @@ _Last updated: 2026-07-26_
   nothing, so a dependency outage can never look like a crashed process. `GET /api/health/ready` runs
   a bounded `SELECT 1` and returns 503 when the database is unreachable, hung, or the pool is
   exhausted — the container healthcheck uses this one, so a database outage shows as unhealthy.
-- **A scheduled reaper bounds every table that grows on its own.** Expired tokens, invites and idle
-  sessions go once they can no longer affect an auth decision; activity events and notifications —
+- **A scheduled reaper bounds every table that grows on its own.** Expired tokens and invites go,
+  as do sessions past either their idle or absolute window — the same two clocks the request path
+  refuses to authenticate against, so nothing collected here could still have been used; activity events and notifications —
   the only tables that grow with usage rather than user count — are pruned past a 90-day horizon.
   It runs under a Postgres advisory lock, so extra workers can each schedule it and exactly one
   sweeps. Pruning history is safe for SSE because a reconnect carrying any `Last-Event-ID` triggers
@@ -183,8 +190,7 @@ _Last updated: 2026-07-26_
   memory. All of it is config.
 - **Production config fails fast**: `ENVIRONMENT` is a **required** validated enum (a prod deploy that
   forgets it won't boot rather than silently running insecure), and production startup aborts on a
-  weak/placeholder `secret_key` (< 32 chars), a missing `resend_api_key`, or an undeliverable
-  `email_from`. Startup logs the active environment and cookie posture (`INFO` prod / `WARNING`
+  missing `resend_api_key` or an undeliverable `email_from`. Startup logs the active environment and cookie posture (`INFO` prod / `WARNING`
   otherwise).
 - **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
