@@ -155,7 +155,6 @@ def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window
                 elif count_limit is not None and emitted >= count_limit:
                     return
             week_index += 1
-        return
 
     if frequency == "monthly":
         months_added = 0
