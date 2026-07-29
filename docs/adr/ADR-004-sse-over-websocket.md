@@ -25,9 +25,11 @@ to connected clients with bounded per-client queues.
   `Last-Event-ID`.
 - A client whose queue overflows is **evicted with a closed sentinel** so its stream ends and it
   reconnects with a resync — rather than staying connected and silently deaf.
-- An HTTP-error-rejected stream (which `EventSource` never auto-retries) refreshes the session and
-  reconnects on exponential backoff (1s → 30s cap), redirecting to `/login` only if the refresh
-  itself fails.
+- An HTTP-error-rejected stream (which `EventSource` never auto-retries) reconnects on jittered
+  exponential backoff (1s → 30s cap), indefinitely, and **never logs anyone out** — a rejected
+  stream means the server is unhappy, which says nothing about the session. Every fourth attempt
+  probes `/auth/me`, so a genuinely signed-out tab is discovered without a merely-down backend
+  being mistaken for one (amended 2026-07-28; see [ADR-003](ADR-003-first-class-sessions.md)).
 
 ## Consequences
 

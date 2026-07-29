@@ -1,7 +1,7 @@
 # FDR-008: Real-Time Delivery (SSE)
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-28
 
 ## Overview
 
@@ -19,9 +19,10 @@ it is in their FDRs.
 - **Overflow doesn't go silent.** A client whose queue overflows is disconnected with a closed
   sentinel, so it reconnects and resyncs rather than staying connected but deaf.
 - **Robust reconnect.** A network drop uses the browser's built-in retry (resyncing via the header). A
-  stream rejected with an HTTP error — which `EventSource` never retries — refreshes the session and
-  reconnects on exponential backoff (1s → 30s cap, indefinitely), redirecting to `/login` only if the
-  refresh itself fails.
+  stream rejected with an HTTP error — which `EventSource` never retries — reconnects on jittered
+  exponential backoff (1s → 30s cap, indefinitely) and never signs anyone out. Every fourth attempt
+  checks `/auth/me`, so a genuinely ended session is noticed while a merely-unreachable server is
+  not mistaken for one.
 - **Revocation ends the stream.** Streams revalidate their session every 30s and end when it's
   revoked; revocation also drops in-process streams immediately.
 
@@ -44,16 +45,18 @@ and reconnect.
 forcing a resync guarantees it knows it fell behind. See ADR-004.
 **Tradeoff:** A slow consumer gets a full resync rather than backpressure.
 
-### 3. HTTP-error reconnect refreshes the session first
+### 3. HTTP-error reconnect just reconnects, and periodically asks whether the session is alive
 
-**Decision:** A `CLOSED`/HTTP-error stream (never auto-retried by `EventSource`) refreshes the session
-and reconnects on exponential backoff; a fresh `EventSource` (no `Last-Event-ID`) requests the resync
-itself. The browser's own network-drop retry is left alone.
-**Why:** An HTTP-status rejection usually means an auth problem a refresh can fix; distinguishing it
-from a plain network drop avoids both a redirect-to-login on a transient blip and a hot reconnect
-loop. See ADR-004.
-**Tradeoff:** Two reconnect paths (browser-native for drops, app-managed for HTTP errors) to keep
-straight.
+**Decision:** A `CLOSED`/HTTP-error stream (never auto-retried by `EventSource`) reconnects on
+jittered exponential backoff, probing `/auth/me` every fourth attempt; a fresh `EventSource` (no
+`Last-Event-ID`) requests the resync itself. The browser's own network-drop retry is left alone.
+**Why:** This path used to refresh the session first and redirect to `/login` if that failed — which
+meant a backend restart or a proxy 502 signed people out mid-session. A rejected stream says the
+server is unhappy, not that the session is gone. The periodic probe is what still catches a real
+logout, since without a refresh call there is nothing else whose failure would reveal one. Amended
+2026-07-28; see ADR-003.
+**Tradeoff:** A signed-out tab keeps reconnecting until the next probe lands, rather than being
+ejected at once. Jitter is required or every tab retries in lockstep after a restart.
 
 ### 4. Revocation is enforced by a periodic check, dropped immediately as an optimization
 
