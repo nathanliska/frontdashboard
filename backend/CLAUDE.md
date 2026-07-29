@@ -37,13 +37,18 @@ Everything here is a convention an agent can't safely infer from one file.
   exception is `resource_shares.resource_id`, which does cascade, so shares are not swept there at
   all. Adding a child table means adding it to that sweep, or its rows outlive the purge.
 - **`reap_abandoned_signups` is the one sweep that deletes a `User`.** It takes accounts with
-  `email_verified_at IS NULL` past `unverified_retention_days` **that own no content**. Login raises
-  403 while unverified, so an account created since email verification shipped cannot have written
-  anything — but **accounts predating 2026-04-30 can**: that migration added the column nullable
-  without backfilling, so every earlier user reads unverified forever despite being an ordinary
-  logged-in user at the time. The content check is what protects them, and it fired on the first
-  real run against production. It **filters per user** — an earlier version vetoed the whole sweep
-  when any candidate owned content, which let one real account shield every other candidate.
+  `email_verified_at IS NULL` past `unverified_retention_days` **that own no content**, and only
+  those **created on or after `_EMAIL_VERIFICATION_SHIPPED` (2026-04-30)**. That date floor is the
+  real protection, not the content check. `NULL` means two different things: after the gate shipped
+  it means "signed up, never verified"; before it, the column simply did not exist (migration
+  `y2a4c6e8g0i2` added it nullable and never backfilled), so **every pre-gate account reads
+  unverified forever** however ordinary it is. The content check was believed to cover them and does
+  not — a pre-gate user who only ever *viewed* a dashboard shared with them authored nothing,
+  granted nothing and was assigned nothing, and being a share **principal** is explicitly not
+  disqualifying (the sweep deletes those rows). That user was silently deleted until 2026-07-29;
+  both cases are now pinned in `test_retention.py`. It **filters per user** — an earlier version
+  vetoed the whole sweep when any candidate owned content, which let one real account shield every
+  other candidate.
   Candidate ids are resolved to a list up front rather than left as a subquery, because each
   `DELETE` would otherwise re-evaluate it after earlier statements had removed rows it reads.
   Adding a table with a `users` FK means adding it to this sweep too — none of those FKs cascade.

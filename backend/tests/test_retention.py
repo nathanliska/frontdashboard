@@ -20,7 +20,12 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.session import UserSession
 from app.models.share import ResourceShare
 from app.models.user import User
-from app.services.retention import reap_abandoned_signups, reap_expired_auth_rows, reap_expired_history
+from app.services.retention import (
+    _EMAIL_VERIFICATION_SHIPPED,
+    reap_abandoned_signups,
+    reap_expired_auth_rows,
+    reap_expired_history,
+)
 from tests.helpers import make_db_dashboard, make_db_user
 
 
@@ -265,6 +270,62 @@ async def test_having_granted_a_share_disqualifies(db_session):
 
     assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
     assert (await db_session.execute(select(User).where(User.id == granter.id))).scalar_one() is not None
+
+
+async def _make_pre_gate_user(db, *, label: str):
+    """An account from before email verification existed. Anchored to the constant rather than to
+    a day count, so this stays a pre-gate account however long from now the suite runs."""
+    created = _EMAIL_VERIFICATION_SHIPPED - timedelta(days=1)
+    user = User(
+        email=f"{label}-{uuid.uuid4()}@example.com",
+        password_hash="x",
+        display_name=label,
+        email_verified_at=None,  # y2a4c6e8g0i2 added the column nullable and never backfilled
+        created_at=created,
+        updated_at=created,
+    )
+    db.add(user)
+    await db.flush()
+    db.add(Dashboard(user_id=user.id, name="My Dashboard"))
+    await db.flush()
+    return user
+
+
+async def test_an_account_predating_email_verification_is_never_a_candidate(db_session):
+    """NULL means "never verified" only for accounts created after the gate shipped. Before it, the
+    column simply did not exist, so an ordinary user reads unverified forever. This account owns
+    nothing at all, which is the point: nothing but the date floor stands between it and deletion.
+    """
+    legacy = await _make_pre_gate_user(db_session, label="legacy")
+
+    assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
+    assert (await db_session.execute(select(User).where(User.id == legacy.id))).scalar_one_or_none() is not None
+
+
+async def test_a_pre_gate_viewer_survives_though_it_authored_nothing(db_session):
+    """The realistic casualty, and the one the content checks miss entirely. A household member who
+    was shared a dashboard and only ever *read* it authored nothing, granted nothing, and was
+    assigned nothing — every disqualifying check passes them through. Being a share **principal**
+    is explicitly not protective (the sweep deletes those rows), so before the date floor this user
+    was purged along with their access.
+    """
+    legacy = await _make_pre_gate_user(db_session, label="viewer")
+    owner = await make_db_user(db_session, label="owner")
+    shared = await make_db_dashboard(db_session, owner)
+    db_session.add(
+        ResourceShare(
+            resource_type="dashboard",
+            resource_id=shared.id,
+            principal_type="user",
+            principal_id=legacy.id,
+            role="viewer",
+            granted_by=owner.id,
+        )
+    )
+    await db_session.flush()
+
+    assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
+    assert (await db_session.execute(select(User).where(User.id == legacy.id))).scalar_one_or_none() is not None
 
 
 async def test_a_content_owner_does_not_shield_the_other_abandoned_signups(db_session):

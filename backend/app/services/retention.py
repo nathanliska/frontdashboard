@@ -57,6 +57,12 @@ _EXPIRING_TOKEN_TABLES = (
 # one runs it per tick. Never reuse this key for a different advisory lock.
 _REAP_ADVISORY_LOCK_KEY = 0x2026_0738
 
+# When email verification shipped (migration y2a4c6e8g0i2). It added `users.email_verified_at`
+# nullable and did not backfill, so an account older than this reads unverified forever however
+# ordinary it is. Purge candidacy is floored here because only after this date does NULL carry the
+# meaning the sweep acts on.
+_EMAIL_VERIFICATION_SHIPPED = datetime(2026, 4, 30, tzinfo=UTC)
+
 
 async def reap_expired_auth_rows(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
     """Delete inert auth rows. Returns per-table deleted counts. Caller owns the commit."""
@@ -223,22 +229,27 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
     # rows it reads. That happens to stay correct here — only content-free dashboards are deleted,
     # so `content_owners` cannot shrink — but that is a load-bearing argument sitting invisibly
     # between statements, and this is the one sweep that deletes users.
-    candidate_ids = list(
-        (
-            await db.execute(
-                select(User.id).where(
-                    User.email_verified_at.is_(None),
-                    User.created_at < cutoff,
-                    ~disqualifying,
-                )
-            )
-        )
-        .scalars()
-        .all()
+    # NULL means two different things, and conflating them deletes real people. For an account
+    # created after the gate shipped it means "signed up, never verified". For one created before,
+    # it means "the column did not exist yet" — y2a4c6e8g0i2 added it nullable and never backfilled.
+    # Content ownership alone does not separate them: a pre-gate user who only ever *viewed* a
+    # dashboard shared with them authored nothing, granted nothing and was assigned nothing, so
+    # every disqualifying check above passes them straight through to deletion.
+    eligible = (
+        User.email_verified_at.is_(None),
+        User.created_at < cutoff,
+        User.created_at >= _EMAIL_VERIFICATION_SHIPPED,
     )
-    skipped = (
-        await db.execute(select(func.count()).select_from(User).where(User.email_verified_at.is_(None), User.created_at < cutoff, disqualifying))
+
+    candidate_ids = list((await db.execute(select(User.id).where(*eligible, ~disqualifying))).scalars().all())
+    skipped = (await db.execute(select(func.count()).select_from(User).where(*eligible, disqualifying))).scalar_one()
+    predating = (
+        await db.execute(
+            select(func.count()).select_from(User).where(User.email_verified_at.is_(None), User.created_at < _EMAIL_VERIFICATION_SHIPPED)
+        )
     ).scalar_one()
+    if predating:
+        logger.info("reaper: %s account(s) predate email verification and are never purge candidates", predating)
     if skipped:
         # Expected for accounts predating email verification (added 2026-04-30): its migration made
         # the column nullable without backfilling, so every user from before then reads unverified.
