@@ -55,11 +55,8 @@ async def list_notifications(
 ) -> NotificationPageResponse:
     """One page of the caller's notifications (unread first, then read), keyset-paginated.
 
-    The sort key is compound — unread section, then created_at, then id as the total-order
-    tiebreaker (created_at ties across a batch insert). A row can move sections between pages
-    (read on another device mid-scroll); keyset pagination over a mutable key can then repeat
-    it, and the client's existing dedupe-by-id absorbs that rather than this endpoint trying
-    to prevent it.
+    Sorted by section, then created_at, then id — created_at ties across a batch insert. A row
+    read elsewhere mid-scroll changes section and can repeat; the client dedupes by id.
     """
     unread = Notification.read_at.is_(None)
     position = tuple_(Notification.created_at, Notification.id)

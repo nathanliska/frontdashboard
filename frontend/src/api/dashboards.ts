@@ -31,7 +31,7 @@ export type {
 
 import type { DashboardSummary as DashboardSummaryType } from './generated/contract'
 
-// Layout items are generated now (#14): the backend types `layout` as `list[LayoutItem]` and owns
+// Layout items are generated now: the backend types `layout` as `list[LayoutItem]` and owns
 // the write-side bounds. `{i, x, y, w, h}` IS the layout state — react-grid-layout's transient
 // per-item bookkeeping (static, minW, moved…) is dropped by the backend on save and re-derived by
 // the library every render, so nothing here needs to preserve it.

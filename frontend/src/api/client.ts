@@ -1,10 +1,6 @@
-// Both names: production prefixes the cookie, and development cannot (`__Host-` requires Secure
-// over plain HTTP). Branching on `import.meta.env.PROD` instead would make the build mode and the
-// backend's ENVIRONMENT two switches that must agree, and disagreement 403s every mutation.
-//
-// Ordered, not optional. A browser holding a superseded `csrf_token` carries both, and one regex
-// with an optional `(?:__Host-)?` returns whichever the browser listed first — possibly the stale
-// one, which mismatches what the server reads and 403s every mutation, logout included.
+// Both names, because only production can prefix the cookie (`__Host-` requires Secure). Ordered,
+// not optional: a browser holding a superseded `csrf_token` carries both, and one regex with an
+// optional prefix returns whichever came first — the stale one 403s every mutation.
 const CSRF_COOKIE_NAMES = ['__Host-csrf_token', 'csrf_token'] as const
 
 function getCsrfToken(): string {
@@ -24,9 +20,8 @@ const TRANSIENT_STATUS = new Set([500, 502, 503, 504])
 const MAX_ATTEMPTS = 2
 const RETRY_BASE_MS = 300
 
-// Handles for in-flight retry waits. Kept so tests can cancel them: a worker is reused across
-// files, and a setTimeout nobody cleared keeps its closure alive for the rest of the run
-// (frontend/CLAUDE.md).
+// Kept so tests can cancel them: workers are reused across files, and an uncleared setTimeout
+// holds its closure for the rest of the run.
 const pendingRetries = new Set<ReturnType<typeof setTimeout>>()
 
 let onSessionExpired: () => void = () => {}
@@ -75,9 +70,8 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     headers.set('X-CSRF-Token', getCsrfToken())
   }
 
-  // GET only — echo suppression, not idempotency (PATCH/DELETE here are idempotent).
-  // `consumePendingListMutationEcho` deletes the pending `client_mutation_id` on the first SSE
-  // frame, so a retry's second frame reads as someone else's change and triggers a refetch.
+  // GET only — echo suppression, not idempotency: the pending `client_mutation_id` is consumed
+  // by the first SSE frame, so a retry's second frame reads as someone else's change.
   const maxAttempts = MUTATING.has(method) ? 1 : MAX_ATTEMPTS
 
   for (let attempt = 0; ; attempt++) {

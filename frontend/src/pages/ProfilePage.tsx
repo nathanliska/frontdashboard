@@ -21,7 +21,7 @@ export function ProfilePage() {
   const [editingPassword, setEditingPassword] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
-  // Errors live per field so they can be attached to the input that caused them (#27).
+  // Errors live per field so they can be attached to the input that caused them.
   const [profileError, setProfileError] = useState<string | null>(null)
   const [passwordErrors, setPasswordErrors] = useState<{
     current?: string
@@ -160,7 +160,7 @@ export function ProfilePage() {
                 Cancel buttons had to live somewhere, and wherever they went they either shoved the
                 Email column out of alignment or added a row that resized the card on every edit.
                 Labelled locally rather than via `FormField` so the label matches the read view's
-                exactly — the aria wiring is the same either way (see frontend/CLAUDE.md). */}
+                exactly — the aria wiring is the same either way . */}
             <div className="space-y-1">
               <label htmlFor="display-name" className="text-xs text-zinc-500">
                 Display name

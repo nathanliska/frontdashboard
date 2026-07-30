@@ -31,9 +31,8 @@ export function NotificationsPage() {
   const loadActivity = useNotificationsStore((s) => s.loadActivity)
   const loadMoreActivity = useNotificationsStore((s) => s.loadMoreActivity)
 
-  // Guarded exactly as the sidebar panel guards it (`setPanelOpen`): SSE keeps the store current,
-  // so arriving here is not a reason to re-read it, and skipping the fetch preserves any extra
-  // pages "Load more" had appended.
+  // Guarded as the sidebar panel guards it: SSE keeps the store current, and skipping the fetch
+  // preserves any extra pages "Load more" appended.
   const loaded = useNotificationsStore((s) => s.loaded)
   useEffect(() => {
     if (!loaded) void load()

@@ -1,18 +1,9 @@
 /**
- * Dashboard store — manages both the listing page and the active editor.
+ * Dashboard store — the listing page's summaries and the editor's active dashboard.
  *
- * Two logical concerns live here because they share the same data:
- *  • Summaries (DashboardSummary[]) — lightweight cards shown on the /dashboards listing page.
- *    Each summary has id/name/is_favorite and share-related metadata but no widgets or layout.
- *  • Active dashboard (Dashboard | null) — the full record loaded when opening /dashboard/:id.
- *    Includes layout (react-grid-layout items) and widgets array.
- *
- * Layout saves use version-based conflict detection: the client sends the version it loaded,
- * the server rejects with 409 if another save happened in between. The `conflict` flag surfaces
- * this to the UI so the user can reload.
- *
- * Errors are surfaced via the global toast store rather than local component state, keeping
- * components lean — they just call store actions and trust errors will be announced.
+ * Both live here because they share the same data. Layout saves carry the version they loaded and
+ * 409 if another save landed first, which sets `conflict` for the UI to offer a reload. Actions
+ * never throw: errors go to the global toast store.
  */
 
 import { create } from 'zustand'

@@ -64,11 +64,11 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 
 
 async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
-    """Constraint violations that escape route-level handling are concurrency conflicts, not bugs
-    the user caused — every write is schema-validated first, so what reaches the database and
-    fails is two requests disagreeing about current state (finding #26). A 409 tells the client
-    "refetch and retry"; the old generic 500 told it nothing. Logged with the traceback because a
-    site that hits this often enough deserves its own targeted handler (like add_widget's).
+    """Answer an unhandled constraint violation with 409 rather than 500.
+
+    Every write is schema-validated first, so a violation reaching the database means two
+    requests disagreed about current state — a conflict the client can resolve by refetching.
+    Logged with the traceback: a route hitting this often enough deserves its own handler.
     """
     logging.getLogger("app").error("IntegrityError escaped route handling on %s %s", request.method, request.url.path, exc_info=exc)
     return JSONResponse(

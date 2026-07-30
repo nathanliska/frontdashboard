@@ -33,11 +33,10 @@ async def stream_events(
     send_resync: bool,
     revalidate: Callable[[uuid.UUID], Awaitable[bool]],
 ) -> AsyncGenerator[dict, None]:
-    """Yield SSE frames for one connection until it closes, is evicted, or its
-    session is revoked.
+    """Yield SSE frames until the connection closes, is evicted, or its session is revoked.
 
-    Module-level (rather than nested in the route) so tests can drive it directly:
-    httpx's ASGI transport cannot cleanly close an infinite SSE generator.
+    Module-level rather than nested in the route so tests can drive it directly: httpx's ASGI
+    transport cannot cleanly close an infinite SSE generator.
 
     `revalidate` is injected rather than reached for. Tests override get_db to yield
     a savepoint-bound session; a revalidation that opened its own session from
@@ -86,9 +85,11 @@ async def stream_events(
 
 
 async def _revalidate_session(session_id: uuid.UUID) -> bool:
-    """Open a short-lived session per check: the request's DB session must not be
-    pinned for the stream's lifetime (which is why get_current_session_for_stream
-    uses scope="function")."""
+    """Re-check session liveness on its own short-lived database session.
+
+    The request's session must not stay pinned for the stream's lifetime, which is why
+    `get_current_session_for_stream` uses `scope="function"`.
+    """
     async with async_session_factory() as db:
         return await session_is_live(session_id, db)
 

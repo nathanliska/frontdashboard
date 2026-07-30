@@ -11,16 +11,10 @@ from app.models.base import Base
 class UserSession(Base):
     """One row per login, and the *whole* credential (ADR-003).
 
-    `token_hash` is the SHA-256 of the opaque token in the `session` cookie — the raw value is never
-    stored, so a database disclosure yields nothing usable. Nothing sits beside it: every request
-    resolves this row, which is what makes revocation immediate.
+    Every request resolves this row, which is what makes revocation immediate. Two clocks bound
+    it: `last_used_at` slides with use (idle), `expires_at` never moves (absolute).
 
-    Named UserSession, not Session, to avoid colliding with SQLAlchemy's Session.
-
-    Two clocks, because one is not enough (OWASP Session Management):
-      - `last_used_at` — the **idle** bound, slid forward as the session is used.
-      - `expires_at`   — the **absolute** bound, fixed at login and never extended. Without it a
-        session in daily use would slide forever and never expire.
+    Named UserSession to avoid colliding with SQLAlchemy's Session.
     """
 
     __tablename__ = "sessions"

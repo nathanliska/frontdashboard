@@ -312,9 +312,9 @@ async def test_stream_ends_when_revalidation_fails(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.asyncio
 async def test_revalidation_deadline_fires_on_a_busy_stream(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The idle-timeout trap: a stream receiving a steady trickle of events must
-    still revalidate. A check hung off the TimeoutError branch would never run here.
+    """A busy stream must still revalidate its session.
 
+    The idle-timeout trap: a check hung off the TimeoutError branch would never run here.
     _REVALIDATE_EVERY is 30s in production — far longer than any test should run.
     It's shrunk to 0 here so the deadline is always already due, deterministically
     (not dependent on how fast this machine drains 50 already-queued items, which

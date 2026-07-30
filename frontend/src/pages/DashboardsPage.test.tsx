@@ -61,7 +61,7 @@ describe('DashboardsPage', () => {
       </MemoryRouter>,
     )
 
-    // Actions moved into the visible overflow menu (#27). Radix opens on pointerdown.
+    // Actions moved into the visible overflow menu. Radix opens on pointerdown.
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Actions for Primary Dashboard' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit dashboard' }))
 

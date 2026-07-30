@@ -35,7 +35,7 @@ export function NotificationPanel({
   }
 
   return (
-    // Radix Popover (#27): the trigger gets aria-expanded/aria-controls, Escape and outside
+    // Radix Popover: the trigger gets aria-expanded/aria-controls, Escape and outside
     // clicks close (the hand-rolled mousedown listener is gone), and focus returns to the bell.
     // Controlled by the store's panelOpen so SSE/navigation can still close it.
     <Popover.Root
@@ -99,7 +99,7 @@ export function NotificationPanel({
           {/* List */}
           <div className="overflow-y-auto flex-1">
             {loadFailed && notifications.length === 0 ? (
-              // An outage with nothing cached must not render as an empty inbox (#26).
+              // An outage with nothing cached must not render as an empty inbox.
               <div className="flex flex-col items-center gap-2 px-4 py-8">
                 <p className="text-xs text-zinc-500">Couldn&apos;t load notifications.</p>
                 <button

@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
-// jsdom is required, not incidental: the test stubs `document.cookie` via defineProperty, and
-// `client.ts` itself reads `document.cookie` for the CSRF header.
+// jsdom is required, not incidental: both the stub and `client.ts` use `document.cookie`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { __resetApiClientForTests, apiFetch, setSessionExpiredHandler } from './client'
 
-// Stub the cookie getter rather than writing real cookies: keeps each test
-// hermetic (no cookie state leaking between cases) and mirrors how the browser
-// exposes the httponly=False csrf_token cookie to JS.
+// Stubbed rather than writing real cookies, so no cookie state leaks between cases.
 let cookieJar = ''
 
 function stubCookies() {
@@ -80,9 +77,8 @@ describe('apiFetch', () => {
       expect(headerOf(init, 'X-CSRF-Token')).toBe('prefixed-value')
     })
 
-    // Both orderings, because cookie order is the browser's choice: a lookup that treats the
-    // prefix as optional returns whichever name it happened to list first, and sending the stale
-    // one 403s every mutation with "CSRF token invalid", logout included.
+    // Both orderings, because cookie order is the browser's choice — a lookup treating the
+    // prefix as optional would send whichever came first, and the stale one 403s.
     it.each([
       ['stale cookie first', 'csrf_token=stale; __Host-csrf_token=current'],
       ['prefixed cookie first', '__Host-csrf_token=current; csrf_token=stale'],
@@ -153,9 +149,8 @@ describe('apiFetch', () => {
       expect(expired).not.toHaveBeenCalled()
     })
 
-    // 403 is how the permission layer answers "editor access required" and "only the owner can
-    // delete". Reading it as a session failure would sign you out for opening someone else's
-    // dashboard.
+    // 403 is how the permission layer answers "editor access required"; reading it as a session
+    // failure would sign you out for opening someone else's dashboard.
     it('does not log the user out on 403', async () => {
       const expired = vi.fn()
       setSessionExpiredHandler(expired)

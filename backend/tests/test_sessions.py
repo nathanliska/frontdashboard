@@ -54,8 +54,11 @@ async def test_an_unknown_token_resolves_to_nothing(db_session: AsyncSession) ->
 
 
 async def test_a_revoked_session_stops_resolving(db_session: AsyncSession) -> None:
-    """Revocation takes effect on the very next request — the property the whole stateful design
-    exists for, and the one that made short-lived access tokens redundant."""
+    """Revocation takes effect on the very next request.
+
+    The property the stateful design exists for, and what made short-lived access tokens
+    redundant.
+    """
     user = await make_db_user(db_session)
     session, raw = await start_session(user.id, db_session)
 
@@ -110,8 +113,11 @@ async def test_a_soft_deleted_user_stops_resolving(db_session: AsyncSession) -> 
 
 
 async def test_using_a_session_slides_its_idle_clock(db_session: AsyncSession) -> None:
-    """A read-only user must keep their own session alive. `test_any_request_slides_the_session_idle_clock`
-    in test_auth.py covers the same property end to end, through the dependency that commits it."""
+    """A read-only user must keep their own session alive.
+
+    `test_any_request_slides_the_session_idle_clock` covers the same property end to end, through
+    the dependency that commits it.
+    """
     user = await make_db_user(db_session)
     session, _raw = await start_session(user.id, db_session)
     session_id = session.id
@@ -127,9 +133,11 @@ async def test_using_a_session_slides_its_idle_clock(db_session: AsyncSession) -
 
 
 async def test_the_idle_clock_is_not_rewritten_on_every_request(db_session: AsyncSession) -> None:
-    """The throttle. Without it every GET costs an UPDATE, which is the reason sliding expiry is
-    usually skipped entirely — assert the write does *not* happen, or the throttle can rot away
-    unnoticed while every other test still passes."""
+    """The idle-clock throttle.
+
+    Without it every GET costs an UPDATE, which is why sliding expiry is usually skipped
+    entirely. Assert the write does *not* happen, or the throttle can rot away unnoticed.
+    """
     user = await make_db_user(db_session)
     session, _raw = await start_session(user.id, db_session)
     session_id = session.id
@@ -142,9 +150,12 @@ async def test_the_idle_clock_is_not_rewritten_on_every_request(db_session: Asyn
 
 
 async def test_an_open_stream_does_not_keep_a_session_alive(db_session: AsyncSession) -> None:
-    """`session_is_live` is the SSE revalidation check. If it slid the idle clock, a tab left open
-    on a forgotten laptop would renew the session every 30s, forever. `resolve_session` must not
-    slide it either — that is `slide_idle_clock`'s job, and only the auth dependency calls it."""
+    """Revalidating a stream must not renew the session.
+
+    `session_is_live` is the SSE check; if it slid the idle clock, a tab left open on a forgotten
+    laptop would renew forever. Sliding is `slide_idle_clock`'s job, called only by the auth
+    dependency.
+    """
     user = await make_db_user(db_session)
     session, _raw = await start_session(user.id, db_session)
     session_id = session.id  # captured before expire_all() below expires `session` too
@@ -162,8 +173,11 @@ async def test_an_open_stream_does_not_keep_a_session_alive(db_session: AsyncSes
 
 
 async def test_revoking_other_sessions_spares_the_caller(db_session: AsyncSession) -> None:
-    """What lets a password change sign out your other devices without signing out the tab you
-    changed it in."""
+    """Revoking other sessions spares the caller's own.
+
+    What lets a password change sign out your other devices without signing out the tab you
+    changed it in.
+    """
     user = await make_db_user(db_session)
     keep, keep_raw = await start_session(user.id, db_session)
     _other, other_raw = await start_session(user.id, db_session)
@@ -219,8 +233,10 @@ async def test_two_concurrent_reset_confirms_consume_the_token_once(
 async def test_concurrent_logins_get_independent_sessions(
     concurrent_sessions: tuple[AsyncSession, AsyncSession, uuid.UUID],
 ) -> None:
-    """Two devices signing in at once. There is no shared token to race over any more — the
-    property that used to need a grace window is now structural."""
+    """Two devices signing in at once.
+
+    There is no shared token to race over, so the property is structural rather than timed.
+    """
     first, second, user_id = concurrent_sessions
 
     async def login(db: AsyncSession) -> str:
@@ -236,8 +252,10 @@ async def test_concurrent_logins_get_independent_sessions(
 
 
 async def test_the_liveness_predicate_is_shared(db_session: AsyncSession) -> None:
-    """`resolve_session` and `session_is_live` must not drift apart — `_live` is the one predicate
-    both of them ask, so every clock rejects a session through both doors."""
+    """`resolve_session` and `session_is_live` must not drift apart.
+
+    `_live` is the one predicate both ask, so every clock rejects a session through both doors.
+    """
     user = await make_db_user(db_session)
     session, raw = await start_session(user.id, db_session)
     session_id = session.id  # captured before expire_all() below expires `session` too
@@ -253,9 +271,8 @@ async def test_the_liveness_predicate_is_shared(db_session: AsyncSession) -> Non
         resolved = await resolve_session(raw, db_session)
         live = await session_is_live(session_id, db_session)
 
-        # Reported by hand rather than with a plain assert, because a failure here has exactly one
-        # plausible cause left — the UPDATE not being visible to these reads — and diagnosing it
-        # needs the row. Read only on failure, so the passing path is unchanged.
+        # Reported by hand: the one plausible failure left is the UPDATE not being visible to
+        # these reads, and diagnosing that needs the row. Read only on failure.
         if resolved is not None or live:
             row = (await db_session.execute(select(UserSession).where(UserSession.id == session_id))).scalar_one_or_none()
             state = None if row is None else (row.revoked_at, row.expires_at, row.last_used_at)

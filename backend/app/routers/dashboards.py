@@ -203,7 +203,7 @@ async def _list_accessible_dashboard_summaries(
     summaries: list[DashboardSummary] = []
     for dashboard, access_description, is_shared, is_favorite in rows:
         # The WHERE above admits only owned or directly-shared rows, so this cannot 404;
-        # if filter and computation ever disagree, that is a bug worth a loud failure (#18).
+        # if filter and computation ever disagree, that is a bug worth a loud failure.
         role = permissions.effective_role(dashboard.user_id, user.id, shares_by_dashboard.get(dashboard.id, []))
         summaries.append(
             _to_summary(
@@ -535,14 +535,11 @@ async def delete_dashboard(
     client_mutation_id: ClientMutationIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Move a dashboard to the trash (finding #40).
+    """Move a dashboard to the trash.
 
-    This used to be the permanent cascade — one misclick took every child list and event with
-    it. Now it stamps `deleted_at`: the dashboard vanishes from every listing and access path
-    (children included, since they resolve access through it), stays restorable from the
-    owner's trash for `trash_retention_days`, and the reaper runs the real purge after that
-    (`services/retention.reap_expired_trash`). Shares are kept so a restore brings the
-    dashboard back exactly as shared; favorites and home are dropped on the way in.
+    Stamps `deleted_at`, which hides it and its children from every access path until the reaper
+    purges it past `trash_retention_days`. Shares survive so a restore comes back as shared;
+    favorites and home are dropped on the way in.
     """
     dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
     permissions.assert_can_delete(role)
@@ -598,8 +595,7 @@ async def restore_dashboard(
 ) -> DashboardSummary:
     """Bring a trashed dashboard back, shares and children intact.
 
-    Owner-only by construction: the trash is the owner's space, so this loads by ownership
-    rather than through the access door (which deliberately cannot see trashed rows).
+    Loads by ownership, not through the access door — which deliberately cannot see trashed rows.
     """
     result = await db.execute(
         select(Dashboard).where(
@@ -727,15 +723,14 @@ async def add_widget(
     )
     permissions.assert_can_edit(role)
     is_shared_dashboard = bool(shares)
-    # exclude_unset so the stored config holds exactly the keys the caller sent (typed fields the
-    # caller omitted stay absent rather than landing as explicit nulls); extras survive the dump
-    # because every config model is extra="allow".
+    # exclude_unset so omitted fields stay absent rather than landing as explicit nulls; extras
+    # survive because every config model is extra="allow".
     widget_config = body.config.model_dump(exclude_unset=True)
     resource_type: str | None = None
     resource_id: uuid.UUID | None = None
 
-    # Which types bind a resource is a schema fact now: only ListWidgetCreate carries resource
-    # fields, and a resource field on any other variant is a 422 at the boundary (extra="forbid").
+    # A schema fact: only ListWidgetCreate carries resource fields, and they are a 422 on any
+    # other variant (extra="forbid").
     if isinstance(body, ListWidgetCreate):
         resource_type = ResourceType.list.value
         resource_id = body.resource_id
@@ -750,9 +745,7 @@ async def add_widget(
                     detail="Invalid list type",
                 ) from exc
 
-            # GET /lists orders all non-deleted lists, so
-            # the append position must be computed over that same set to land
-            # truly last (mirrors create_list's identical append-order fix).
+            # Computed over the same set GET /lists orders, or the append doesn't land last.
             max_order_result = await db.execute(
                 select(func.max(List.sort_order)).where(
                     List.dashboard_id == dashboard.id,
@@ -793,9 +786,8 @@ async def add_widget(
                     detail="List not found on this dashboard",
                 )
 
-        # By here resource_id is set on both paths (created or bound), and one list maps to at
-        # most one widget per dashboard (uq_dashboard_widgets_resource_binding backs this in the
-        # schema; the explicit check keeps the friendly 409).
+        # One list maps to at most one widget per dashboard. The unique index enforces it; this
+        # check exists for the friendly 409.
         existing_widget_result = await db.execute(
             select(DashboardWidget).where(
                 DashboardWidget.dashboard_id == dashboard.id,
@@ -820,9 +812,8 @@ async def add_widget(
     try:
         await db.flush()
     except IntegrityError as exc:
-        # The friendly pre-check above covers the common case; this closes its race window —
-        # two concurrent adds of the same list both pass the check, and the loser lands on
-        # uq_dashboard_widgets_resource_binding. Same outcome, same message (finding #26).
+        # Closes the pre-check's race window: two concurrent adds both pass it, and the loser
+        # lands here. Same outcome, same message.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="That item is already on this dashboard",
@@ -892,9 +883,8 @@ async def update_widget(
     widget = result.scalar_one_or_none()
     if widget is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Widget not found")
-    # The body can't discriminate itself (the widget's type is on the row), so validate against
-    # that type's config model here. Without this, a stored `{"timezone": 123}` would pass the
-    # write and then fail response validation — a 500 on every later read of the dashboard.
+    # The body can't discriminate itself — the type is on the row. Unvalidated, a stored
+    # `{"timezone": 123}` would 500 every later read of the dashboard.
     config_model = WIDGET_CONFIG_MODELS.get(widget.widget_type)
     if config_model is None:
         # A row this code no longer understands; reads of it already fail. Don't 500 the write too.

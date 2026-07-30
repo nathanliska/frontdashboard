@@ -1,11 +1,7 @@
 """Dashboard invite links.
 
-Sharing works by handing someone a code rather than looking them up in a user directory —
-there is no way to ask this API who exists. Owner-side management (create/list/revoke) is
-dashboard-scoped and needs share-management rights; redemption is keyed by the code itself.
-
-Lives outside routers/dashboards.py deliberately: that module is already oversized (#39), and
-this feature composes public services rather than needing its private helpers.
+Sharing hands someone a code rather than looking them up — there is no way to ask this API who
+exists. Management is dashboard-scoped and needs share rights; redemption is keyed by the code.
 """
 
 import uuid
@@ -123,9 +119,8 @@ async def preview_invite(
 ) -> InvitePreviewResponse:
     """Describe an invite without consuming it.
 
-    Unauthenticated on purpose: the recipient has to see what they are joining before deciding
-    to sign up. Side-effect free on purpose too — link scanners and message previews issue GETs,
-    and a GET that redeemed the invite would burn it before a human ever clicked.
+    Unauthenticated so a recipient can see what they are joining before signing up, and side-
+    effect free because link scanners issue GETs that would otherwise burn the code.
     """
     invite = await load_live_invite(code, db)
     if invite is None:
@@ -155,10 +150,8 @@ async def accept_invite(
 ) -> InviteAcceptResponse:
     """Redeem an invite for the signed-in user, granting the role it carries.
 
-    Two rules, both because the code is single-use. Redemption **decides before it consumes**, so a
-    redeem that changes nothing leaves the code live for its intended recipient. And it never
-    downgrades: a link is an offer of access, not an instruction to reduce it, so someone already at
-    or above the offered role keeps what they have.
+    Both rules follow from the code being single-use: it decides before it consumes, so a no-op
+    redeem leaves the code live, and it never downgrades an existing higher role.
     """
     invite = await load_live_invite(code, db)
     if invite is None:

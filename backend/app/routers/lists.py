@@ -292,12 +292,10 @@ async def list_list_details(
 ) -> list[ListDetailResponse]:
     """Every non-deleted list on one dashboard, each with its active items, in one request.
 
-    Exists for the agenda (finding #17): it needs the due-dated items of every list on the
-    dashboard, and composing that client-side out of GET /lists plus one GET /lists/{id} per
-    list made the request count grow with the dashboard. Three queries total, regardless of
-    how many lists there are.
+    Exists for the agenda: composing it client-side cost one request per list. Three queries
+    total, regardless of how many lists there are.
     """
-    # The canonical parent door (#18): read access suffices, and a trashed dashboard hides
+    # The canonical parent door: read access suffices, and a trashed dashboard hides
     # its child content (404) exactly as the per-list routes do.
     await load_dashboard_access(dashboard_id, current_user, db)
 
@@ -343,9 +341,8 @@ async def list_trash(
 ) -> list[TrashedListSummary]:
     """Trashed lists on dashboards the caller can see, newest first, with their purge deadline.
 
-    Scoped by dashboard access rather than ownership (unlike the dashboard trash): a list belongs
-    to its dashboard, so anyone who can edit the dashboard put it there and can take it back.
-    Lists whose dashboard is itself trashed are excluded — they come back with the dashboard.
+    Scoped by dashboard access, not ownership: whoever can edit the dashboard put it there and
+    can take it back. Lists under a trashed dashboard are excluded — they return with it.
     """
     accessible_dashboard_ids = await list_accessible_dashboard_ids(current_user, db)
     if not accessible_dashboard_ids:
@@ -389,10 +386,8 @@ async def restore_list(
 ) -> ListResponse:
     """Bring a trashed list back to its dashboard.
 
-    The widgets that showed it were unbound on delete and are not recreated — the list returns to
-    the sidebar, and it can be placed on the grid again. Access still runs through the parent
-    dashboard, so a list whose dashboard is itself trashed cannot be restored on its own: restore
-    the dashboard and the list comes back with it.
+    Widgets unbound on delete are not recreated; the list returns to the sidebar. A list under a
+    trashed dashboard cannot be restored alone — restore the dashboard and it comes back with it.
     """
     result = await db.execute(select(List).where(List.id == list_id, List.deleted_at.is_not(None)))
     lst = result.scalar_one_or_none()
@@ -495,9 +490,7 @@ async def delete_list(
     """Move a list to the trash, unbinding the widgets that showed it.
 
     Recoverable via POST /{list_id}/restore until the reaper purges it past
-    `trash_retention_days` — the same contract dashboards have. There is no archive-first gate
-    any more: it existed to make an unrecoverable delete deliberate, and the delete is no longer
-    unrecoverable.
+    `trash_retention_days` — the same contract dashboards have (ADR-007).
     """
     lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     permissions.assert_can_edit(role)
@@ -600,11 +593,8 @@ async def update_item(
         setattr(item, field, getattr(body, field))
     item.updated_by = current_user.id
 
-    # The values are exactly what the client submitted — Pydantic has already
-    # validated and coerced them, and each field is a plain setattr onto the ORM
-    # object, so the stored value is the submitted value. Deriving from the body
-    # avoids touching the (flush-expired) ORM instance, which is what forced the
-    # earlier manual updated_at stamp.
+    # Read off the body, not the ORM object: each field is a plain setattr of an already-validated
+    # value, and the instance is flush-expired.
     changed_values = body.model_dump(mode="json", include=body.model_fields_set)
 
     event_message = await _build_list_event_message(

@@ -7,7 +7,7 @@ import { ROUTES } from '../../../routes'
  * @knipignore Renders the inherited-access ("managed by dashboards") section for a child
  * resource's share panel. Child sharing is dashboard-inherited and the list/event `/shares`
  * endpoints are deliberate 409 stubs, so no screen mounts this yet — intentionally retained
- * scaffolding rather than dead code. See CLAUDE.md "Sharing model".
+ * scaffolding rather than dead code. See AGENTS.md "Sharing model".
  */
 export function DashboardManagedAccessList({
   dashboards,

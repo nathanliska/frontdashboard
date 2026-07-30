@@ -144,11 +144,10 @@ async def revoke_user_sessions(
     *,
     except_session_id: uuid.UUID | None = None,
 ) -> list[uuid.UUID]:
-    """Revoke every live session for a user, optionally sparing one. Returns the revoked ids for
-    the caller to drop post-commit.
+    """Revoke every live session for a user, optionally sparing one.
 
-    `except_session_id` is what lets a password change sign out your other devices without
-    signing out the tab you changed it in.
+    Returns the revoked ids for the caller to drop post-commit. `except_session_id` is what lets
+    a password change sign out your other devices without signing out the tab you changed it in.
     """
     query = update(UserSession).where(
         UserSession.user_id == user_id,

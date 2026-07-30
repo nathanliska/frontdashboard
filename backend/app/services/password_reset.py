@@ -1,7 +1,6 @@
 """Password-reset token consumption.
 
-Separate from the router so the race can be driven directly: it happens below
-HTTP, and the route needs a live email flow to reach.
+Separate from the router so the race can be driven directly, below HTTP.
 """
 
 import uuid
@@ -17,9 +16,8 @@ from app.models.password_reset_token import PasswordResetToken
 async def reset_token_is_live(raw_token: str, db: AsyncSession) -> bool:
     """Whether a token would still be spendable, without spending it.
 
-    Same predicate as `consume_password_reset_token`, so the form a user is shown matches what
-    submitting it will do. Answers only yes/no: the token is 256 bits of urandom, so confirming one
-    exists reveals nothing, while naming its account would turn a guessed link into an oracle.
+    Same predicate as `consume_password_reset_token`, so the form matches what submitting does.
+    Yes/no only — naming the account would turn a guessed link into an oracle.
     """
     result = await db.execute(
         select(PasswordResetToken.id).where(
@@ -34,10 +32,8 @@ async def reset_token_is_live(raw_token: str, db: AsyncSession) -> bool:
 async def consume_password_reset_token(raw_token: str, db: AsyncSession) -> uuid.UUID | None:
     """Atomically spend a reset token. Returns its user_id, or None if unusable.
 
-    The database picks the winner. The read-then-write this replaces let two
-    concurrent confirms both observe an unused token and both reset the password —
-    and the window was wide, because an Argon2 hash (~50-100ms) sat between the
-    read and the commit.
+    The database picks the winner: a read-then-write leaves an Argon2 hash's worth of window
+    (~50-100ms) for two concurrent confirms to both spend the same token.
     """
     now = datetime.now(UTC)
     result = await db.execute(

@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '../../utils/shared/cn'
 
-/** The one modal shell (#27), on Radix Dialog.
+/** The one modal shell, on Radix Dialog.
  *
  * Radix owns the focus trap, scroll lock, Escape, aria-modal wiring and focus restoration on close;
  * this wrapper owns the house style. A hand-rolled overlay does not trap focus, so Tab walks out

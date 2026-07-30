@@ -25,7 +25,7 @@ def rank(role: ShareRole | None) -> int:
 
 
 def is_at_least(role: ShareRole | None, required: ShareRole | None) -> bool:
-    """Does `role` carry at least the authority of `required`?"""
+    """Whether `role` carries at least the authority of `required`."""
     return rank(role) >= rank(required)
 
 
@@ -44,9 +44,11 @@ def effective_role(
     user_id: uuid.UUID,
     shares: list[ResourceShare],
 ) -> ShareRole | None:
-    """The one role computation (#18): owner -> None, else the highest direct user share,
-    else 404. Everything that resolves owner/viewer/editor goes through here — child resources
-    included, since they reach it through their dashboard's shares (`load_dashboard_access`)."""
+    """Resolve a caller's role: owner is None, otherwise the highest direct share, else 404.
+
+    Everything resolving owner/viewer/editor goes through here, child resources included — they
+    reach it through their dashboard's shares.
+    """
     if resource_created_by == user_id:
         return None
 

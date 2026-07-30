@@ -1,6 +1,5 @@
-# Base images are pinned by digest so a rebuild of an old commit produces the same image. Tags
-# move; digests don't. Dependabot's docker ecosystem bumps these weekly — without that, pinning
-# would just freeze the base's security patches in place.
+# Pinned by digest so rebuilding an old commit produces the same image; Dependabot bumps these
+# weekly, without which pinning would just freeze the base's security patches.
 FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS build
 
 WORKDIR /app
@@ -10,9 +9,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest@sha256:df4cae8f3a96d175e2e5f992e59755000
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev --no-cache
 
-# Runtime stage: same base as the builder, so the venv's interpreter symlink and the compiled
-# wheels' ABI still match. The venv is copied to the same absolute path it was created at
-# (/app/.venv) — console scripts embed that path in their shebangs and would break if moved.
+# Same base as the builder, so the venv's interpreter symlink and wheel ABIs still match. It must
+# land at the path it was built at — console scripts embed that in their shebangs.
 FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 
 WORKDIR /app
@@ -23,23 +21,18 @@ COPY alembic/ alembic/
 COPY alembic.ini .
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Runs unprivileged: the process writes nothing to disk, so root buys nothing and costs a
-# container escape being a root escape. Files stay root-owned and world-readable, which is what
-# we want — the app can read them and cannot modify its own code. Port 8000 is unprivileged, so
-# no capability is needed to bind it.
+# Unprivileged: the process writes nothing to disk, so root only makes a container escape worse.
+# Files stay root-owned, so the app can read its code and cannot modify it.
 RUN useradd --system --uid 10001 --no-create-home appuser
 USER appuser
 
 EXPOSE 8000
 
-# Readiness, not liveness: this drives `depends_on: service_healthy`, so it should mean "can serve
-# requests", and a database outage genuinely should show as unhealthy. Safe to gate on a dependency
-# here because plain Docker reports unhealthy without restarting — no restart loop to cause. A 503
-# raises HTTPError, which exits non-zero.
+# Readiness, not liveness: it drives `depends_on: service_healthy`, so a database outage should
+# read as unhealthy. Safe to gate on a dependency because Docker reports it without restarting.
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready')"]
 
-# JSON form naming the shell explicitly, rather than the shell form Docker rewrites for us: `&&` and
-# `${LOG_LEVEL:-info}` need a shell, but the implicit one makes /bin/sh PID 1, so a stop during
-# `alembic upgrade head` is not forwarded. `exec` then hands PID 1 to uvicorn for the serving life.
+# The shell is named explicitly because `&&` and `${LOG_LEVEL:-info}` need one, and the implicit
+# form leaves it PID 1 — a stop mid-migration would go unforwarded. `exec` then hands off uvicorn.
 CMD ["/bin/sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info}"]

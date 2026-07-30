@@ -17,7 +17,7 @@ export type {
 export async function apiGetNotifications(
   cursor?: string | null,
 ): Promise<NotificationPageResponse> {
-  // Keyset-paginated (#22): pass the previous page's next_cursor to walk older history.
+  // Keyset-paginated: pass the previous page's next_cursor to walk older history.
   const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
   const res = await apiFetch(`/api/notifications${q}`)
   if (!res.ok) throw new Error('Failed to load notifications')

@@ -55,7 +55,7 @@ export async function apiGetLists(dashboardId?: string | null): Promise<ListResp
 }
 
 export async function apiGetListDetails(dashboardId: string): Promise<ListDetailResponse[]> {
-  // The agenda's batch fetch (#17): every list on the dashboard with its items, one request.
+  // The agenda's batch fetch: every list on the dashboard with its items, one request.
   // No single-flight map: its only caller is a scopedQuery fetcher, which already dedupes.
   const res = await apiFetch(`/api/lists/details?dashboard_id=${dashboardId}`)
   if (!res.ok) throw new Error('Failed to load lists')

@@ -83,9 +83,8 @@ def _set_auth_cookies(response: Response, session_token: str, csrf_token: str) -
 
 
 def _clear_auth_cookies(response: Response) -> None:
-    # `secure=` matters even to delete: Starlette defaults it to False, and a `__Host-` cookie
-    # without Secure fails the prefix rules, so the browser rejects the deletion and keeps the
-    # cookie. Only production prefixes the names, so only production sees it.
+    # `secure=` matters even to delete: Starlette defaults it False, and a `__Host-` cookie
+    # without Secure fails the prefix rules, so the browser rejects the deletion.
     response.delete_cookie(settings.session_cookie_name, secure=_SECURE)
     response.delete_cookie(settings.csrf_cookie_name, secure=_SECURE)
 
@@ -135,16 +134,11 @@ async def _issue_password_reset(user: User, db: AsyncSession) -> str:
 
 
 async def _create_session(user: User, response: Response, db: AsyncSession) -> None:
-    """Mint a session and set the auth cookies. **The only path to an authenticated session.**
+    """Mint a session and set the auth cookies — the only path to an authenticated session.
 
-    The verification gate lives here rather than only in the callers. `UserSession` is instantiated
-    in exactly one place (`services/sessions.py`), reached only through this helper, so this is the
-    choke point where "unverified accounts cannot act" is decidable — and where a third caller added
-    later cannot quietly skip it. `login` also checks, and must: it needs to answer 403 *before*
-    spending an Argon2 verify, and it distinguishes wrong-password from unverified. `verify_email`
-    sets `email_verified_at` on the line above its call, so it passes on the in-memory value.
-
-    Not an `assert`: those vanish under `python -O`, and this decides whether an account can act.
+    The verification gate lives here, not only in callers, so a later caller cannot skip it.
+    `login` checks too — it must answer 403 before spending an Argon2 verify. Not an `assert`:
+    those vanish under `python -O`, and this decides whether an account can act.
     """
     if user.email_verified_at is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")
@@ -224,9 +218,8 @@ async def register(
 ) -> RegistrationResponse:
     """Create a new user and queue email verification.
 
-    Answers identically whether or not the address already has an account (ADR-011): registration is
-    open to the internet, so a distinguishable response would be a free account-existence oracle for
-    anyone. The address owner still learns of the attempt — by email, which only they can read.
+    Answers identically whether or not the address already has an account (ADR-011). The owner
+    still learns of the attempt — by email, which only they can read.
     """
     # Hash before the existence check so both branches pay the same dominant cost. Skipping the
     # verify on the duplicate path would reopen through timing exactly what the response closes.
@@ -251,8 +244,7 @@ async def register(
         background_tasks.add_task(send_existing_account_email, body.email)
         return RegistrationResponse(email=body.email)
 
-    # Pre-generate the dashboard UUID so we can store it in preferences immediately,
-    # without needing an extra flush to retrieve the auto-generated ID.
+    # Pre-generated so preferences can reference it without a second flush.
     dashboard_id = uuid.uuid4()
     db.add(Dashboard(id=dashboard_id, user_id=user.id, name="My Dashboard"))
     user.preferences = {
@@ -353,8 +345,8 @@ async def check_password_reset_token(
 ) -> PasswordResetTokenStatus:
     """Whether a reset link is still usable, so the page can say so before asking for a password.
 
-    POST rather than GET with a query parameter: the token is a bearer credential and query strings
-    reach access logs. Never consumes — the link stays live for whoever it was sent to.
+    POST, not GET: the token is a bearer credential and query strings reach access logs. Never
+    consumes — the link stays live for whoever it was sent to.
     """
     return PasswordResetTokenStatus(valid=await reset_token_is_live(body.token, db))
 
@@ -416,8 +408,7 @@ async def logout(
 ) -> None:
     """Revoke the current session and clear auth cookies.
 
-    The session comes from the cookie `require_csrf` already authenticated, so it is the
-    session being ended — logout can never revoke somebody else's.
+    The session comes from the already-authenticated cookie, so this can never revoke another's.
     """
     revoked_id = await revoke_session(session.id, db)
     await db.commit()
@@ -442,9 +433,7 @@ async def update_profile(
 ) -> UserResponse:
     """Update editable profile fields for the current user.
 
-    No cookie work left to do here. This used to re-issue the access token because the JWT
-    embedded `email`, so an identity change had to be minted into a new one; the session cookie
-    carries no claims, so there is nothing to keep in sync.
+    No cookie work: the session cookie carries no claims, so an identity change syncs nothing.
     """
     if body.display_name is None:
         raise HTTPException(
@@ -487,11 +476,8 @@ async def change_password(
 ) -> None:
     """Change the current user's password, signing out every other device.
 
-    The calling session is deliberately kept — being logged out of the tab you just changed your
-    password in reads as a failure, not a security measure. Its cookie is left as-is rather than
-    re-minted: session fixation is the reason to rotate an identifier on a credential change, and
-    it cannot arise here because a session only ever comes into existence at login or email
-    verification, never before authentication.
+    The calling session is kept, and its cookie not re-minted: fixation is the reason to rotate
+    on a credential change, and a session only ever exists after authentication.
     """
     if not await verify_password(body.current_password, current_user.password_hash):
         raise HTTPException(

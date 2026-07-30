@@ -373,9 +373,8 @@ describe('useSSE reconnect backoff', () => {
 
     apiFetchMock.mockResolvedValue({ ok: true, status: 200 } as Response)
 
-    // The delay is jittered — `Math.random() * ceiling`. Pinning random to its maximum makes the
-    // delay exactly the ceiling, so the timings asserted below still mean what they say. The
-    // jitter itself is covered by its own test.
+    // Pinning random to its maximum makes the jittered delay exactly the ceiling, so the
+    // timings below mean what they say. Jitter has its own test.
     vi.spyOn(Math, 'random').mockReturnValue(1)
 
     replaceSpy = vi.fn()
@@ -550,9 +549,8 @@ describe('useSSE reconnect backoff', () => {
   })
 
   it('survives the session probe failing, which is exactly when it runs', async () => {
-    // `apiFetch` throws once it exhausts its retries on a network failure, and a backend that is
-    // down is precisely the condition this probe fires under. Unhandled, that rejection surfaces
-    // every fourth reconnect for the whole outage.
+    // `apiFetch` throws once its retries are spent, which is exactly when this probe fires.
+    // Unhandled, that rejection surfaces every fourth reconnect for the whole outage.
     const unhandled = vi.fn()
     window.addEventListener('unhandledrejection', unhandled)
     apiFetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
@@ -594,9 +592,8 @@ describe('useSSE reconnect backoff', () => {
     await failLatest(1000)
     expect(MockEventSource.instances).toHaveLength(2)
 
-    // The server only sends a `resync` frame when it sees a Last-Event-ID header, and a fresh
-    // EventSource never sends one. Events broadcast during the outage are already lost, so the
-    // client must drive the resync itself off `connected` or the caches stay silently wrong.
+    // The server sends `resync` only on a Last-Event-ID header, which a fresh EventSource never
+    // sends — so the client must drive it off `connected` or the caches stay silently wrong.
     act(() => {
       MockEventSource.instances[1].dispatch('connected')
     })

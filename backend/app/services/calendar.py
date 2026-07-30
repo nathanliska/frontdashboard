@@ -31,10 +31,8 @@ def expand_event_occurrences(
     duration = event.ends_at - event.starts_at
     starts = [event.starts_at] if not event.recurrence else list(_iter_recurrence_starts(event, window_start, window_end))
 
-    # An override can retime an occurrence *into* this window from an original start outside it —
-    # "move next Tuesday's meeting to next month". The iterator above walks the window rather than
-    # the series, so that original start is never generated, and overrides are keyed by it: without
-    # this the moved occurrence is missing from every window that does not contain its origin date.
+    # An override can retime an occurrence *into* this window from an original start outside it.
+    # The iterator walks the window, so that start is never generated — but overrides key on it.
     generated = set(starts)
     starts = [*starts, *(start for start in overrides_by_start if start not in generated)]
 
@@ -190,20 +188,10 @@ def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window
 def normalize_all_day_bounds(starts_at: datetime, ends_at: datetime, timezone: str) -> tuple[datetime, datetime]:
     """Snap an all-day event to whole local days.
 
-    `all_day` was a passthrough flag: whatever times the client sent were stored verbatim, so
-    production accumulated "all-day" events starting at 09:00 — 20 of 25 of them. Nothing broke,
-    because the window predicate compares against `ends_at` and that was already local midnight,
-    but the agenda sorts by `starts_at` and so filed them among the timed events instead of at the
-    top of the day. More to the point, the flag did not mean what it says, which is a trap for the
-    next person who trusts it.
-
-    The end is **exclusive** — an event covering one day ends at local midnight on the next. That
-    is the convention the existing rows already follow, so this preserves them rather than shifting
-    everything by a day. A sub-microsecond step back before truncating is what makes it stable:
-    without it, re-normalizing an already-normalized event would extend it by a day each time.
-
-    Conversion goes through the event's own timezone, so a day that is 23 or 25 hours long across a
-    DST boundary still maps to exactly one local day.
+    The end is **exclusive** — one day ends at local midnight on the next, matching existing rows.
+    The sub-microsecond step back before truncating makes it idempotent; without it, re-normalizing
+    extends the event by a day each time. Conversion runs through the event's own timezone, so a
+    23- or 25-hour DST day still maps to exactly one local day.
     """
     tz = ZoneInfo(timezone)
     start_local = starts_at.astimezone(tz)

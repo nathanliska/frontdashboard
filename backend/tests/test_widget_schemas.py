@@ -64,8 +64,10 @@ def test_calendar_widget_accepts_known_view_value() -> None:
 
 
 def test_calendar_widget_accepts_out_of_set_view_value_without_500() -> None:
-    """`view` must be `str`, not a `Literal` — a stored value outside a fixed set
-    would otherwise fail validation (500 on read) instead of just being un-narrowed."""
+    """`view` must be `str`, not a `Literal`.
+
+    A stored value outside a fixed set would otherwise 500 on read instead of being un-narrowed.
+    """
     payload = {
         **_base_fields(),
         "widget_type": "calendar",
@@ -99,9 +101,11 @@ def test_agenda_widget_validates_with_empty_config() -> None:
 
 
 def test_unknown_widget_type_raises_validation_error() -> None:
-    """Documents the closed set: the union has no fallback variant, so a stored
-    widget_type outside {clock, calendar, list, agenda} is a hard validation error
-    rather than being silently accepted."""
+    """The widget_type union is a closed set.
+
+    It has no fallback variant, so an unknown stored type is a hard validation error rather than
+    being silently accepted.
+    """
     payload = {
         **_base_fields(),
         "widget_type": "unknown",
@@ -122,7 +126,7 @@ def test_widget_create_rejects_unknown_type_at_the_schema() -> None:
 
 
 def test_only_the_list_variant_can_carry_resource_fields() -> None:
-    """ "Clock widgets cannot bind a resource" is a schema fact now, not a router check."""
+    """Only the list variant may carry resource fields — a schema fact, not a router check."""
     with pytest.raises(ValidationError):
         create_adapter.validate_python({"widget_type": "clock", "resource_id": str(uuid.uuid4())})
     bound = create_adapter.validate_python({"widget_type": "list", "resource_type": "list", "resource_id": str(uuid.uuid4())})

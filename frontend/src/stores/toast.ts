@@ -1,23 +1,8 @@
 /**
- * Toast notification store
+ * Toast notification store.
  *
- * Architecture:
- * - `useToastStore` is the Zustand store consumed by the <Toaster> component.
- * - `toast` (exported object) provides convenience helpers for use OUTSIDE
- *   React components — e.g. inside Zustand actions, API wrappers, or utilities.
- *   It calls `useToastStore.getState()` directly to bypass the React hook rules.
- *
- * Usage:
- *   // Inside a component
- *   const { toast } = useToastStore()
- *   toast('Saved!', 'success')
- *
- *   // Outside a component (e.g. in a store action)
- *   import { toast } from './toast'
- *   toast.error('Failed to save')
- *
- * Auto-dismiss: toasts disappear after 4 seconds. The user can also dismiss
- * manually via the X button in <Toaster>, which calls `dismiss(id)`.
+ * The exported `toast` object reads `getState()` directly so non-component code — store actions,
+ * API wrappers, utilities — can raise one without violating the hook rules.
  */
 import { create } from 'zustand'
 
@@ -83,8 +68,8 @@ export const useToastStore = create<ToastState>()((set) => ({
 /**
  * Cancel every pending auto-dismiss and empty the store.
  *
- * Only 8 of the suite's 40 test files mock this module, so the rest arm a real 4s timer per toast
- * and then finish in milliseconds. Wired into the global `afterEach` in `test/setup*.ts`.
+ * Most test files don't mock this module, so they arm a real 4s timer per toast and then finish in
+ * milliseconds. Wired into the global `afterEach` in `test/setup*.ts`.
  */
 export function __resetToastStoreForTests(): void {
   for (const timer of dismissTimers.values()) {

@@ -83,12 +83,9 @@ function authenticate() {
 }
 
 /**
- * Items and lists run the same optimistic-reorder protocol over different caches: apply
- * immediately, call the API, roll back on failure, refetch once on a 409 or when a remote payload
- * disagrees with what we hold. These cases are mirrored, so they are stated once and run against
- * both. Behavior that exists on only one side — self-echo suppression and the in-flight-fetch race
- * for items — stays as its own test below, because that is
- * where the two genuinely differ.
+ * Items and lists run the same optimistic-reorder protocol over different caches, so the mirrored
+ * cases are stated once and run against both. Behavior on only one side — self-echo suppression
+ * and the in-flight-fetch race for items — stays as its own test below.
  */
 const REORDER_KINDS = [
   {

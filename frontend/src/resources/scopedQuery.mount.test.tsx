@@ -6,7 +6,7 @@ import { createScopedQuery } from './scopedQuery'
 
 type Scope = { id: string }
 
-/** The eviction invariant that only shows up with a real subscriber (#24).
+/** The eviction invariant that only shows up with a real subscriber.
  *
  * A mounted component reads its entry through `useSyncExternalStore`. Evicting that entry would
  * make the next snapshot build a fresh empty one — the component would blank out and refetch, and
@@ -44,17 +44,12 @@ describe('scopedQuery eviction with a mounted subscriber', () => {
   })
 })
 
-/** Invalidation must not re-walk the cache it is reordering (#24 regression).
+/** Invalidation must not re-walk the cache it is reordering.
  *
- * `fetch` calls `touch`, which deletes and re-inserts an entry to move it to the back of the LRU
- * order — and a Map iterator visits entries inserted during iteration. While `invalidateWhere`
- * walked the live map it therefore met the entry it had just re-inserted on the very next step,
- * refetched it, touched it again, and never terminated: one promise and closure allocated per
- * pass until the heap gave out. Because that loop is *synchronous*, no `testTimeout` could
- * interrupt it — the suite OOMed instead of failing.
- *
- * The predicate is the guard, because it is the only part of the loop a test controls and it runs
- * exactly once per iteration step. A runaway walk fails loudly here instead of hanging CI.
+ * `touch` re-inserts an entry to move it to the back of the LRU order, and a Map iterator visits
+ * entries inserted during iteration — so walking the live map loops forever, synchronously, which
+ * no `testTimeout` can interrupt. The predicate is the guard: it runs once per step, so a runaway
+ * walk fails loudly here instead of OOMing CI.
  */
 describe('scopedQuery invalidation with a mounted subscriber', () => {
   it('refetches a subscribed scope once per invalidation, not once per iteration step', async () => {

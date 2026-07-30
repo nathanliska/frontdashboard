@@ -43,9 +43,14 @@ extend-exclude = ["alembic/versions"]
 force-exclude = true
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
-# B008: FastAPI requires Depends() calls in function signatures — this is intentional
-ignore = ["B008"]
+# D2/D4 enforce PEP 257 docstring shape; D1 is absent, so nothing mandates a docstring exist.
+select = ["E", "F", "I", "UP", "B", "SIM", "D2", "D4"]
+# B008: FastAPI requires Depends() calls in function signatures — this is intentional.
+# D401: predicates and properties read better as noun phrases than forced imperatives.
+ignore = ["B008", "D401"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
 
 [tool.ruff.lint.per-file-ignores]
 "app/services/email_templates.py" = ["E501"]

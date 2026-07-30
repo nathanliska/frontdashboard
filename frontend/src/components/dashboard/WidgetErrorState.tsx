@@ -1,4 +1,4 @@
-/** Shared failure state for widget bodies (#26): says what failed and offers a way out.
+/** Shared failure state for widget bodies: says what failed and offers a way out.
  *
  * Pass `onRetry` for transient failures (network, 5xx) — an error state without an affordance
  * turns an outage into what looks like data loss. Omit it when retrying cannot help (the bound

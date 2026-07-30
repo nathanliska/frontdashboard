@@ -25,7 +25,7 @@ export function DashboardCard({
   const isOwned = currentUserId !== null && dashboard.user_id === currentUserId
   const subtitle = dashboard.access_description ?? (isOwned ? 'Owned by you' : 'Shared with you')
 
-  // Actions live in a visible overflow menu (#27) — the old hover-revealed icon row didn't
+  // Actions live in a visible overflow menu — the old hover-revealed icon row didn't
   // exist on touch. The favorite star stays inline as a state indicator + toggle.
   const menuItems: OverflowMenuItem[] = [
     {

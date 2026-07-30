@@ -30,8 +30,10 @@ def test_development_skips_production_checks() -> None:
 
 
 def test_the_session_windows_are_ordered() -> None:
-    """Idle must be the tighter of the two. Inverted, the absolute bound would be unreachable and
-    a session would once again slide forever — the exact gap ADR-003's amendment closed."""
+    """Idle must be the tighter of the two clocks.
+
+    Inverted, the absolute bound is unreachable and a session slides forever.
+    """
     settings = _make()
     assert 0 < settings.session_idle_days <= settings.session_absolute_days
 

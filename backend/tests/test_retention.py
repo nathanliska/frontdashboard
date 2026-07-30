@@ -77,8 +77,10 @@ async def test_a_session_idle_past_the_window_is_deleted(db_session):
 
 
 async def test_a_session_past_its_absolute_expiry_is_deleted(db_session):
-    """Recently used, so only the absolute clock can condemn it. The old sweep had no way to
-    reach this row at all — it keyed on idleness alone."""
+    """Only the absolute clock can condemn a recently used session.
+
+    A sweep keyed on idleness alone cannot reach this row.
+    """
     now = datetime.now(UTC)
     user = await make_db_user(db_session, label="reap")
     dead = _session(user.id, now, expires_in=-timedelta(seconds=1))
@@ -163,9 +165,8 @@ async def test_history_sweep_leaves_auth_rows_alone(db_session):
     db_session.add(session)
     await db_session.flush()
 
-    # A session far past the *history* horizon is not history — the two sweeps answer different
-    # questions and must not bleed into each other. (`reap_expired_auth_rows` would collect this
-    # one; `reap_expired_history` must not.)
+    # A session past the *history* horizon is not history: `reap_expired_auth_rows` collects
+    # this one, `reap_expired_history` must not.
     await reap_expired_history(db_session, now=now)
 
     assert await db_session.get(UserSession, session.id) is not None
@@ -273,8 +274,11 @@ async def test_having_granted_a_share_disqualifies(db_session):
 
 
 async def _make_pre_gate_user(db, *, label: str):
-    """An account from before email verification existed. Anchored to the constant rather than a
-    day count, so it stays a pre-gate account however long from now the suite runs."""
+    """Build an account from before email verification existed.
+
+    Anchored to the constant rather than a day count, so it stays pre-gate however long from now
+    the suite runs.
+    """
     created = _EMAIL_VERIFICATION_SHIPPED - timedelta(days=1)
     user = User(
         email=f"{label}-{uuid.uuid4()}@example.com",
@@ -292,9 +296,10 @@ async def _make_pre_gate_user(db, *, label: str):
 
 
 async def test_an_account_predating_email_verification_is_never_a_candidate(db_session):
-    """NULL means "never verified" only for accounts created after the gate shipped. Before it, the
-    column simply did not exist, so an ordinary user reads unverified forever. This account owns
-    nothing at all, which is the point: nothing but the date floor stands between it and deletion.
+    """NULL means "never verified" only for accounts created after the gate shipped.
+
+    Before it the column did not exist, so an ordinary user reads unverified forever. This
+    account owns nothing, so only the date floor stands between it and deletion.
     """
     legacy = await _make_pre_gate_user(db_session, label="legacy")
 
@@ -303,9 +308,10 @@ async def test_an_account_predating_email_verification_is_never_a_candidate(db_s
 
 
 async def test_a_pre_gate_viewer_survives_though_it_authored_nothing(db_session):
-    """The realistic casualty the disqualifying checks miss entirely: a household member who was
-    shared a dashboard and only ever *read* it authored nothing, granted nothing and was assigned
-    nothing. Being a share **principal** is not protective — the sweep deletes those rows.
+    """The casualty the disqualifying checks miss entirely.
+
+    A household member shared a dashboard who only ever read it authored nothing, granted nothing
+    and was assigned nothing. Being a share principal is not protective — the sweep deletes those.
     """
     legacy = await _make_pre_gate_user(db_session, label="viewer")
     owner = await make_db_user(db_session, label="owner")
@@ -327,9 +333,10 @@ async def test_a_pre_gate_viewer_survives_though_it_authored_nothing(db_session)
 
 
 async def test_a_content_owner_does_not_shield_the_other_abandoned_signups(db_session):
-    """The disqualification is per user, not a veto over the sweep: one account owning content must
-    not shield the rest. Needs two candidates to see — every other test here uses one, which is why
-    an all-or-nothing check looks correct.
+    """Disqualification is per user, not a veto over the whole sweep.
+
+    One account owning content must not shield the rest. Needs two candidates to see, which is
+    why an all-or-nothing check looks correct everywhere else.
     """
     empty_user, empty_dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
     content_user, content_dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
@@ -356,9 +363,10 @@ async def test_a_content_owner_does_not_shield_the_other_abandoned_signups(db_se
 
 
 async def test_an_unverified_signup_owning_content_is_skipped_not_cascaded(db_session):
-    """The safety guard. Login 403s until verification, so this state should be unreachable —
-    which is exactly why it must fail safe. If the invariant ever slips, the sweep declines to
-    delete rather than cascading through somebody's data.
+    """The sweep fails safe when its invariant slips.
+
+    Login 403s until verification, so this state should be unreachable — and if it ever is
+    reached, the sweep declines to delete rather than cascading through somebody's data.
     """
     user, dashboard = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
     db_session.add(List(dashboard_id=dashboard.id, created_by=user.id, updated_by=user.id, name="Unexpected", list_type="todo"))

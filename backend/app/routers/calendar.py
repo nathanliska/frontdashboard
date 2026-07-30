@@ -192,19 +192,13 @@ async def list_occurrences(
     window_start = window_start.astimezone(UTC)
     window_end = window_end.astimezone(UTC)
 
-    # Only load what could possibly land in the window (#16), so the cost of viewing next week does
-    # not grow with the calendar's whole history. A one-off event is bounded by its own times. A
-    # recurring one is bounded by two facts already in the row — its first occurrence is
-    # `starts_at`, and a rule carrying `until` ends by `until + duration`, read straight out of the
-    # JSONB rather than a denormalized column that could go stale.
-    #
-    # Series with no `until` still load unbounded. A `count`-limited one has an end, but finding it
-    # means expanding the rule — the exact work this predicate exists to avoid.
+    # Load only what could land in the window, so viewing next week doesn't cost the whole history.
+    # A series is bounded by `starts_at` and, when the rule carries `until`, `until + duration`.
+    # Series without `until` still load unbounded — finding a `count` end means expanding the rule.
     series_duration = CalendarEvent.ends_at - CalendarEvent.starts_at
     series_until = cast(CalendarEvent.recurrence["until"].astext, DateTime(timezone=True))
-    # `jsonb_typeof(...) = 'object'` rather than `IS NOT NULL`: a JSONB column can hold the scalar
-    # 'null', which is not SQL NULL and would pass an IS NOT NULL test — read as an unbounded
-    # series, so the window's lower bound would never apply to it (see the model).
+    # `jsonb_typeof` rather than IS NOT NULL: JSONB can hold the scalar 'null', which passes an
+    # IS NOT NULL test and would read as an unbounded series.
     recurring_in_window = and_(
         func.jsonb_typeof(CalendarEvent.recurrence) == "object",
         CalendarEvent.starts_at < window_end,
@@ -221,10 +215,8 @@ async def list_occurrences(
             or_(
                 recurring_in_window,
                 (CalendarEvent.starts_at < window_end) & (CalendarEvent.ends_at > window_start),
-                # An override can move an occurrence outside its event's own times — before
-                # `starts_at` or after `until` — so this stays deliberately unbounded, and it is
-                # what makes the two bounds above safe. It also covers an event that *was*
-                # recurring and still owns override rows written before it was made one-off.
+                # Deliberately unbounded, which is what makes the bounds above safe: an override
+                # can move an occurrence outside its event's own times.
                 has_override,
             ),
         )
@@ -297,9 +289,8 @@ async def update_event(
     if body.all_day is not None:
         event.all_day = body.all_day
     if event.all_day:
-        # After every field is settled, because the snap depends on the event's timezone — which
-        # this same request may have just changed. Also covers the "was timed, now all-day" edit,
-        # not just creation. Turning all_day *off* deliberately leaves the times alone.
+        # After every field is settled: the snap depends on the timezone, which this same request
+        # may have just changed. Turning all_day *off* deliberately leaves the times alone.
         event.starts_at, event.ends_at = normalize_all_day_bounds(event.starts_at, event.ends_at, event.timezone)
     if "recurrence" in body.model_fields_set:
         if body.recurrence and body.recurrence.until and body.recurrence.until <= event.starts_at:
@@ -307,9 +298,8 @@ async def update_event(
         became_one_off = event.recurrence is not None and body.recurrence is None
         event.recurrence = body.recurrence.model_dump(mode="json") if body.recurrence else None
         if became_one_off:
-            # An override identifies one occurrence of a series. With the series gone they
-            # describe nothing, and leaving them stranded means a one-off event carrying
-            # per-occurrence edits that no code path can reach or remove.
+            # An override identifies one occurrence of a series; with the series gone it is an
+            # edit no code path can reach or remove.
             await db.execute(delete(CalendarEventOverride).where(CalendarEventOverride.calendar_event_id == event.id))
     event.updated_by = current_user.id
 

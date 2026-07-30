@@ -46,9 +46,8 @@ export const APP_RESYNC_EVENT = 'frontdashboard:resync'
 const SSE_RECONNECT_BASE_MS = 1000
 export const SSE_RECONNECT_MAX_MS = 30_000
 
-// How often, in reconnect attempts, to ask the server whether the session is still alive.
-// Every attempt would hammer a backend that is merely down; never would leave a logged-out tab
-// retrying forever. Every fourth attempt lands roughly a minute or two into an outage.
+// How often, in reconnect attempts, to ask whether the session is still alive. Every attempt
+// would hammer a backend that is merely down; never leaves a logged-out tab retrying forever.
 export const SSE_AUTH_PROBE_EVERY = 4
 
 // Full jitter: every stream drops on the same backend restart, so without it every tab retries
@@ -63,7 +62,7 @@ type EventRoute = 'list' | 'calendar' | 'dashboard'
 /**
  * Which handler each server event type is delivered to. Typed as a total `Record<EventType, …>`
  * over the generated enum on purpose: an event the backend can emit but nothing listens for
- * never reaches a cache and the UI silently goes stale (frontend/CLAUDE.md), so a new backend
+ * never reaches a cache and the UI silently goes stale, so a new backend
  * EventType is a compile error here rather than a missing update at runtime.
  */
 const EVENT_ROUTES: Record<EventType, EventRoute> = {
@@ -140,17 +139,13 @@ export function useSSE(): void {
     const es = new EventSource('/api/sse', { withCredentials: true })
 
     es.onerror = () => {
-      // EventSource retries transient network drops itself (readyState CONNECTING) — that
-      // covers a dropped link or a server that is down, which fail below HTTP. It does NOT
-      // retry after an HTTP error status: the spec fails the connection and sets CLOSED. So
-      // CLOSED means the server actively rejected us (expired cookie, or a 4xx/5xx bug), and
-      // it is our only signal — the error event carries no status code.
+      // EventSource retries below-HTTP drops itself but not an error status, where the spec
+      // sets CLOSED. So CLOSED means the server rejected us — and the event carries no status.
       if (es.readyState !== EventSource.CLOSED) return
       if (reconnectTimerRef.current !== null) return
 
-      // Back off rather than capping attempts. A cap would leave the app looking live while
-      // receiving nothing, recoverable only by a reload; retrying forever on a widening delay
-      // costs one request per 30s at worst and self-heals whenever the server does.
+      // Back off rather than cap: a cap leaves the app looking live while receiving nothing,
+      // recoverable only by a reload. One request per 30s at worst, and it self-heals.
       const attempt = reconnectAttemptsRef.current
       reconnectAttemptsRef.current += 1
 
@@ -158,17 +153,14 @@ export function useSSE(): void {
         reconnectTimerRef.current = null
         if (cancelled) return
 
-        // Nothing else would ever reveal a dead session, so a logged-out tab would otherwise
-        // retry forever looking connected. `apiFetch` handles the 401; the catch is required
-        // because it *throws* on network failure, which is when this runs.
+        // Nothing else reveals a dead session, so a logged-out tab would retry forever looking
+        // connected. `apiFetch` handles the 401; the catch is for its network-failure throw.
         if (attempt > 0 && attempt % SSE_AUTH_PROBE_EVERY === 0) {
           void apiFetch('/api/auth/me').catch(() => {})
         }
 
-        // A fresh EventSource has an empty last-event-id, so it sends no Last-Event-ID header
-        // and the server will NOT send a resync frame (see _should_resync_on_connect). Unlike
-        // the browser's own auto-retry, this path must therefore ask for the resync itself, or
-        // events broadcast while we were disconnected are lost from the caches for good.
+        // A fresh EventSource sends no Last-Event-ID, so the server sends no resync frame.
+        // This path must ask for one, or events missed while disconnected are lost for good.
         needsResyncRef.current = true
         setReconnectNonce((n) => n + 1)
       }, reconnectDelayMs(attempt))
@@ -186,14 +178,10 @@ export function useSSE(): void {
     function onListEvent(e: MessageEvent<string>) {
       const data = parseFrame(e.data, SseEventSchema)
       if (!data) return
-      // Ask once, here, and tell everyone. The check consumes the pending mutation id, so the
-      // first handler to call it is the only one that ever learns the answer — which is exactly
-      // how the agenda ended up refetching after every checkbox click while the list cache
-      // correctly ignored the same event.
+      // Asked once and passed down: the check consumes the pending mutation id, so whichever
+      // handler called it first would be the only one told the truth.
       const isOwnEcho = consumePendingListMutationEcho(data)
-      // Order is convention, not correctness: the agenda's reminder fetcher asks the server for
-      // the whole batch (#17) and reads no client cache, so these handlers do not depend on each
-      // other's writes landing first.
+      // Order is convention, not correctness — no handler reads another's writes.
       addActivity(data)
       handleListResourceEvent(data, { isOwnEcho })
       handleAgendaResourceEvent(data, { isOwnEcho })

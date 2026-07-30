@@ -71,10 +71,7 @@ class RegistrationResponse(BaseModel):
 class UserPreferences(BaseModel):
     """Typed subset of the free-form User.preferences JSONB column.
 
-    Unknown keys stored in the DB are silently ignored; missing keys default
-    to None. Add new preference fields here as the app grows — the JSONB
-    column is the source of truth, this model just validates the slice we care
-    about at the application level.
+    The column is the source of truth: unknown keys are ignored, missing ones default to None.
     """
 
     home_dashboard_id: str | None = None

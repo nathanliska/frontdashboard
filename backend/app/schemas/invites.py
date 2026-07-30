@@ -30,8 +30,11 @@ class InviteCreatedResponse(InviteResponse):
 
 
 class InvitePreviewResponse(BaseModel):
-    """Shown before redeeming, to an unauthenticated caller. Deliberately minimal: enough to
-    decide whether to accept, nothing more. Holding the code is what grants this."""
+    """What an unauthenticated caller sees before redeeming.
+
+    Deliberately minimal: enough to decide whether to accept, nothing more. Holding the code is
+    what grants this.
+    """
 
     dashboard_name: str
     invited_by: str

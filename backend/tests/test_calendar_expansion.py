@@ -76,7 +76,7 @@ def test_weekly_expands_every_selected_weekday() -> None:
 
 
 def test_weekly_does_not_emit_a_weekday_earlier_in_the_starting_week() -> None:
-    """ "Mondays and Fridays, starting this Wednesday" must not produce that Monday.
+    """A weekly series must not produce occurrences before it began.
 
     Weekly expansion anchors on the Monday of the week containing `starts_at`, so the first
     step generates candidates that precede the event itself. Only the start guard stops them,

@@ -170,9 +170,11 @@ async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> Non
 
 
 async def test_widget_config_updates_are_validated_against_the_widget_type(auth_client: AsyncClient) -> None:
-    """The write is where a bad config must die (#14): the body can't discriminate itself, so the
-    route validates against the stored widget's type. Before this, `{"timezone": 123}` was stored
-    as-is and every later read of the dashboard 500ed on response validation."""
+    """A bad widget config must die at the write.
+
+    The body cannot discriminate itself, so the route validates against the stored widget's type;
+    otherwise `{"timezone": 123}` is stored as-is and 500s every later read.
+    """
     dashboard = await create_dashboard(auth_client, name="Config Guard")
 
     set_csrf(auth_client)
@@ -275,9 +277,11 @@ async def test_delete_moves_to_trash_and_restore_brings_everything_back(auth_cli
 
 
 async def test_reaper_purges_expired_trash_and_lingering_soft_deletes(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """Past the retention window the purge runs the old cascade — including children that were
-    soft-deleted individually and items under them (the FKs have no ON DELETE cascade, so a
-    missed child would make the dashboard delete itself raise)."""
+    """Past the retention window the purge runs the full cascade.
+
+    Children soft-deleted individually go too. The FKs have no ON DELETE cascade, so a missed
+    child makes the dashboard delete itself raise.
+    """
     from app.services.retention import reap_expired_trash
 
     dashboard = await create_dashboard(auth_client, name="Doomed")
@@ -432,10 +436,8 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
         json={"config": {"title": "Pinned Errands"}},
     )
     assert update_resp.status_code == 200
-    # The list widget's response config now has typed (optional) `list_name` /
-    # `list_type` keys; a PATCH that fully replaces the stored config with
-    # `{"title": ...}` (no list_name/list_type) round-trips those as null while
-    # `title` still survives via `extra="allow"`.
+    # A PATCH replacing the whole config round-trips the typed keys as null, while `title`
+    # survives via `extra="allow"`.
     assert update_resp.json()["config"] == {
         "title": "Pinned Errands",
         "list_name": None,
@@ -453,9 +455,10 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
 
 
 async def test_widget_created_list_appends_last_after_reorder(auth_client: AsyncClient) -> None:
-    """A list created via the add-widget 'new list' path must append after
-    existing lists (same append-order bug already fixed for POST /lists) —
-    not inherit sort_order=0, which would tie it for first place."""
+    """A list created through add-widget must append after the existing ones.
+
+    Inheriting sort_order=0 would tie it for first place.
+    """
     dashboard = await create_dashboard(auth_client, name="Widgets")
     lst1 = await create_list(auth_client, dashboard["id"], name="L1")
     lst2 = await create_list(auth_client, dashboard["id"], name="L2")

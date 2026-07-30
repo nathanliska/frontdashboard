@@ -14,7 +14,7 @@ DashboardName = Annotated[
 ]
 
 # The canonical grid every persisted layout is expressed in (ADR-009). The client renders other
-# widths as projections or density changes, never as a different column count (#53).
+# widths as projections or density changes, never as a different column count.
 GRID_COLUMNS = 12
 
 

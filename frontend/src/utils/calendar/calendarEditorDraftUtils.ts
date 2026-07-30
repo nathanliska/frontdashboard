@@ -309,14 +309,9 @@ export function toLocalDateTimeInput(value: string): string {
 /**
  * The PATCH body for an edited event.
  *
- * Lives here, beside `createCalendarEditorDraftFromEvent`, because it is that function's inverse
- * and the pair has to agree about how an empty field round-trips. It was inline in `CalendarPage`
- * and therefore unreachable from a test, which is how it shipped sending `undefined` for a cleared
- * description or location: `JSON.stringify` drops undefined keys, the server reads an absent key
- * as "leave unchanged", and the old value survived every attempt to remove it.
- *
- * `null` is the only way to say "clear this". `timezone` and `all_day` are always sent because the
- * editor always knows them.
+ * Beside `createCalendarEditorDraftFromEvent` because it is that function's inverse, and the pair
+ * has to agree on how an empty field round-trips. `null` is the only way to say "clear this" —
+ * `JSON.stringify` drops `undefined`, which the server reads as "leave unchanged".
  */
 export function buildEventUpdateFromDraft(
   draft: CalendarEditorDraft,

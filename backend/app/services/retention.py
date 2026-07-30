@@ -1,24 +1,8 @@
-"""Retention sweep — removes rows that can no longer affect any decision.
+"""Retention sweep — deletes rows that can no longer affect any decision.
 
-See review finding #38. The industry norm is a scheduled reaper, not cleanup on the
-write path: it sweeps dormant users too, keeps deletion off the latency-sensitive
-login path, and gives a deterministic bound on the oldest row. This module is the
-reaper; `reaper_loop` schedules it from the app lifespan.
-
-Only provably-inert rows are deleted:
-  - expired email-verification / password-reset tokens and dashboard invites
-    (`expires_at < now`)
-  - sessions past their absolute expiry or idle beyond the window — the same two
-    clocks `services/sessions._live` refuses to authenticate against, so nothing
-    deleted here could still have been used.
-
-It also enforces the history horizon. Activity events and notifications are the only
-tables that grow with *usage* rather than with the number of users, so they are the
-only ones that grow without bound. Pruning them is safe for SSE resume: a reconnect
-carrying any `Last-Event-ID` triggers a full resync rather than a replay from this
-table (`_should_resync_on_connect`), so an event_id that no longer exists costs a
-refetch, not a missed update. Notifications reference their originating event without
-a foreign key precisely so the event can be pruned out from under them.
+Only provably-inert rows go: expired tokens and invites, sessions past either clock, and
+activity/notification history past the horizon. Pruning history is safe for SSE resume because
+any `Last-Event-ID` a client sends triggers a full resync rather than a replay.
 """
 
 import asyncio
@@ -52,14 +36,12 @@ _EXPIRING_TOKEN_TABLES = (
     ("dashboard_invites", DashboardInvite),
 )
 
-# Arbitrary stable 64-bit key scoping the cross-process reaper lock. At most one
-# connection holds it, so N app processes can each schedule the sweep and exactly
-# one runs it per tick. Never reuse this key for a different advisory lock.
+# Arbitrary but stable: one connection holds it, so exactly one worker sweeps per tick.
+# Never reuse this key for a different advisory lock.
 _REAP_ADVISORY_LOCK_KEY = 0x2026_0738
 
-# When email verification shipped (migration y2a4c6e8g0i2, which added `email_verified_at` nullable
-# and never backfilled). Purge candidacy is floored here: only after this date does NULL mean
-# "never verified" rather than "the column did not exist yet".
+# When email verification shipped (migration y2a4c6e8g0i2, nullable and never backfilled). Only
+# after this date does a NULL `email_verified_at` mean "never verified".
 _EMAIL_VERIFICATION_SHIPPED = datetime(2026, 4, 30, tzinfo=UTC)
 
 
@@ -72,11 +54,8 @@ async def reap_expired_auth_rows(db: AsyncSession, *, now: datetime | None = Non
         result = cast("CursorResult[Any]", await db.execute(delete(model).where(model.expires_at < now)))
         counts[name] = result.rowcount
 
-    # A session now carries both of its own clocks (ADR-003), so "inert" is decidable from the
-    # row alone: past its absolute expiry, or idle beyond the window. Either way the liveness
-    # predicate in `services/sessions._live` would already refuse it, so nothing is deleted here
-    # that could still authenticate. The old version had to consult `refresh_tokens` to work this
-    # out, and had to keep spent-but-unexpired tokens as reuse evidence — neither exists now.
+    # A session carries both its clocks (ADR-003), so "inert" is decidable from the row alone —
+    # the same predicate `services/sessions._live` already refuses to authenticate against.
     session_result = cast(
         "CursorResult[Any]",
         await db.execute(
@@ -98,10 +77,8 @@ async def reap_expired_history(db: AsyncSession, *, now: datetime | None = None)
     cutoff = now - timedelta(days=settings.history_retention_days)
     counts: dict[str, int] = {}
 
-    # Sequential scans — neither table has an index on created_at alone, which is the right trade
-    # here: four scans a day on tables this sweep keeps bounded, against a write cost on every
-    # event and notification. Notifications go first so an interrupted sweep leaves a dangling
-    # reference rather than a notification whose event has vanished.
+    # Sequential scans, deliberately: four a day beats an index write on every event. Notifications
+    # go first so an interrupted sweep strands a reference rather than orphaning a notification.
     for name, model in (("notifications", Notification), ("activity_events", ActivityEvent)):
         result = cast("CursorResult[Any]", await db.execute(delete(model).where(model.created_at < cutoff)))
         counts[name] = result.rowcount
@@ -110,14 +87,10 @@ async def reap_expired_history(db: AsyncSession, *, now: datetime | None = None)
 
 
 async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
-    """Purge trash past `trash_retention_days` (finding #40). Caller owns the commit.
+    """Purge trash past `trash_retention_days`. Caller owns the commit.
 
-    A purged dashboard takes its widgets, lists (items included), events and share rows with it.
-    Individually-trashed lists, items and events are swept on the same horizon.
-
-    Order matters: children go before dashboards, because their `dashboard_id` FKs have no ON
-    DELETE cascade. Share rows are not swept here at all — `resource_shares.resource_id` does
-    cascade (#19), so they die with the dashboard in the same statement.
+    Children go before dashboards: their `dashboard_id` FKs have no ON DELETE cascade, while
+    `resource_shares.resource_id` does, so share rows need no sweep of their own.
     """
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=settings.trash_retention_days)
@@ -157,30 +130,16 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
 async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
     """Purge unverified signups past `unverified_retention_days`. Caller owns the commit.
 
-    Registration is open to the internet, so abandoned signups accumulate and never leave. This is
-    the one sweep that deletes a *user*, so its safety argument has to be exact:
-
-    - Login raises 403 while `email_verified_at` is NULL, so such an account has never held a
-      session. It cannot have created a list, an event, or a widget — the only row registration
-      makes for it is one empty "My Dashboard".
-    - Nothing is lost that the person could still want. The case-insensitive unique index reserves
-      the address forever, so a mistyped signup locks the real owner out; purging restores it.
-
-    Two guards separate a genuine abandoned signup from an account that merely reads as one: the
-    `_EMAIL_VERIFICATION_SHIPPED` floor and per-user disqualification. Both are load-bearing —
-    see the comments below and `test_retention.py`.
+    Safe because login 403s while `email_verified_at` is NULL, so the account has never held a
+    session and owns nothing but its empty default dashboard. Two guards keep real accounts out:
+    the `_EMAIL_VERIFICATION_SHIPPED` floor and per-user disqualification, both below.
     """
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=settings.unverified_retention_days)
 
-    # Disqualified if the account is referenced *anywhere*, evaluated per user: as a veto over the
-    # whole sweep, one real account shields every other candidate.
-    #
-    # Not "content" in a loose sense — this is every foreign key to `users.id` that the sweep does
-    # not itself delete. None carries an ON DELETE clause, so each one *blocks* the final DELETE,
-    # nullable `list_items.assigned_to` included. Miss one and the sweep doesn't skip a user, it
-    # raises IntegrityError and rolls back every other sweep in the tick (`run_reaper_once` shares
-    # one transaction). They are also the marks of an account that participated at all.
+    # Every foreign key to `users.id` the sweep does not itself delete, evaluated per user. None
+    # carries ON DELETE, so a missing one doesn't skip that user — it raises IntegrityError and
+    # rolls back the whole tick, which shares one transaction.
     disqualifying = or_(
         *(
             select(column).where(column == User.id).exists()
@@ -197,23 +156,20 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
                 ResourceShare.granted_by,
             )
         ),
-        # Widgets carry no author column, so owning a dashboard that holds one is the only way
-        # widget-only content shows up.
+        # Widgets carry no author column, so owning a dashboard holding one is the only signal.
         select(DashboardWidget.id).join(Dashboard, Dashboard.id == DashboardWidget.dashboard_id).where(Dashboard.user_id == User.id).exists(),
     )
 
-    # NULL means two different things, and conflating them deletes real people: after the gate
-    # shipped it means "signed up, never verified"; before it, "the column did not exist yet".
-    # Disqualification alone does not separate them — a pre-gate user who only ever *viewed* a
-    # shared dashboard authored nothing, granted nothing and was assigned nothing.
+    # The floor is load-bearing: disqualification alone can't tell a pre-gate account that only
+    # ever viewed a shared dashboard from an abandoned signup — neither authored anything.
     eligible = (
         User.email_verified_at.is_(None),
         User.created_at < cutoff,
         User.created_at >= _EMAIL_VERIFICATION_SHIPPED,
     )
 
-    # Resolved to a list rather than left as a subquery: every DELETE below would otherwise
-    # re-evaluate it after earlier statements had removed rows it reads.
+    # A list, not a subquery: every DELETE below would otherwise re-evaluate it after earlier
+    # statements had removed rows it reads.
     candidate_ids = list((await db.execute(select(User.id).where(*eligible, ~disqualifying))).scalars().all())
     skipped = (await db.execute(select(func.count()).select_from(User).where(*eligible, disqualifying))).scalar_one()
     predating = (
@@ -230,7 +186,7 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
 
     candidates = candidate_ids
     doomed_dashboards = select(Dashboard.id).where(Dashboard.user_id.in_(candidates)).scalar_subquery()
-    # Ordered by dependency: `resource_shares.resource_id` cascades from dashboards (#19), but
+    # Ordered by dependency: `resource_shares.resource_id` cascades from dashboards, but
     # `principal_id` does not, and the rest have no cascade at all.
     await db.execute(delete(ResourceShare).where(ResourceShare.principal_id.in_(candidates)))
     await db.execute(delete(Notification).where(Notification.user_id.in_(candidates)))
@@ -246,11 +202,9 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
 
 
 async def run_reaper_once() -> dict[str, int] | None:
-    """Acquire the cross-process lock and reap once, or no-op if another worker holds it.
+    """Acquire the cross-process lock and reap once, or None if another worker holds it.
 
-    Uses a transaction-scoped advisory lock: it releases automatically when the
-    transaction ends, so a crash mid-sweep cannot strand it. Returns the deleted
-    counts, or None if the lock was not acquired.
+    The advisory lock is transaction-scoped, so a crash mid-sweep cannot strand it.
     """
     async with async_session_factory() as db, db.begin():
         acquired = (await db.execute(select(func.pg_try_advisory_xact_lock(_REAP_ADVISORY_LOCK_KEY)))).scalar()
@@ -269,8 +223,7 @@ async def run_reaper_once() -> dict[str, int] | None:
 async def reaper_loop() -> None:
     """Run the reaper at startup and every `reaper_interval_hours` thereafter.
 
-    Started as a lifespan task and cancelled on shutdown. A transient failure is
-    logged and retried next tick rather than killing the loop.
+    A lifespan task, cancelled on shutdown; a transient failure is retried next tick.
     """
     interval = settings.reaper_interval_hours * 3600
     while True:

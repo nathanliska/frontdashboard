@@ -159,7 +159,7 @@ describe('ListWidget', () => {
 
   it('offers a retry for outages, and the retry recovers', async () => {
     // A network failure is not access loss: the copy must not claim deletion, and the state
-    // must offer a way out (#26).
+    // must offer a way out.
     apiMocks.apiGetList
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(makeListDetail())
@@ -183,7 +183,7 @@ describe('ListWidget', () => {
 
   it('shows the unavailable state after a forced revalidation loses access', async () => {
     // Access loss is an ApiError 404 at the boundary — a plain Error would be an outage,
-    // which now renders the retryable state instead (#26).
+    // which now renders the retryable state instead.
     apiMocks.apiGetList
       .mockResolvedValueOnce(makeListDetail())
       .mockRejectedValueOnce(new ApiError('Not found', 404))

@@ -20,7 +20,7 @@ export function Toaster() {
 
   // The region stays mounted even when empty: screen readers only announce changes inside an
   // aria-live region that already existed, so conditionally mounting it swallowed every first
-  // toast (#27). role="status" implies aria-live="polite" + aria-atomic.
+  // toast. role="status" implies aria-live="polite" + aria-atomic.
   return (
     <div
       role="status"

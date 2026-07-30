@@ -10,8 +10,10 @@ from app.models.notification import Notification
 
 
 def activity_to_sse_dict(event: ActivityEvent) -> dict:
-    """Convert an ActivityEvent ORM row to the dict format expected by
-    EventSourceResponse (keys: data, event, id)."""
+    """Convert an ActivityEvent row to the dict EventSourceResponse expects.
+
+    Keys: data, event, id.
+    """
     payload = {
         "event_id": event.event_id,
         "event_type": event.event_type,

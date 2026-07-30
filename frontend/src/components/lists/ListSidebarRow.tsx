@@ -46,7 +46,7 @@ export function ListSidebarRow({
   }
 
   async function submitEdit() {
-    // Validated here so the message can be attached to this input rather than toasted (#27).
+    // Validated here so the message can be attached to this input rather than toasted.
     if (!draft.trim()) {
       setError('List name cannot be empty.')
       inputRef.current?.focus()

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export interface ConfirmOptions {
-  /** Label for the confirming button — say what it does ("Archive", "Remove"), never a generic "Delete" (#27). */
+  /** Label for the confirming button — say what it does ("Archive", "Remove"), never a generic "Delete". */
   confirmLabel?: string
   /** danger = red (destructive); default = neutral. */
   tone?: 'danger' | 'default'

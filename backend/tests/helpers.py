@@ -49,8 +49,11 @@ async def make_db_user(db: AsyncSession, *, label: str = "user") -> User:
 
 
 async def make_db_dashboard(db: AsyncSession, owner: User, *, name: str = "Board") -> Dashboard:
-    """ORM-level dashboard for service tests. `resource_shares.resource_id` has a real FK to this
-    table (#19), so a share test cannot invent a dashboard id any more."""
+    """Build an ORM-level dashboard for service tests.
+
+    `resource_shares.resource_id` has a real FK to this table, so a share test cannot invent a
+    dashboard id.
+    """
     dashboard = Dashboard(user_id=owner.id, name=name)
     db.add(dashboard)
     await db.flush()

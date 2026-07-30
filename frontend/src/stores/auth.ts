@@ -143,7 +143,6 @@ function handleSessionExpired(): void {
   useAuthStore.setState({ status: 'unauthenticated', user: null })
 }
 
-// Registered here *and* in `init()`. Module scope alone would make the behaviour depend on
-// `stores/auth` having been imported before the first request — true today by the import graph,
-// but silently and unrecoverably false if that ever changes.
+// Registered here *and* in `init()`: module scope alone would make this depend on `stores/auth`
+// being imported before the first request.
 setSessionExpiredHandler(handleSessionExpired)

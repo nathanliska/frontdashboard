@@ -11,7 +11,7 @@ export interface OverflowMenuItem {
   disabled?: boolean
 }
 
-/** Visible actions menu (#27), on Radix DropdownMenu.
+/** Visible actions menu, on Radix DropdownMenu.
  *
  * Replaces the hover-only icon rows: hover reveals don't exist on touch and are invisible to
  * anyone who doesn't already know to hover. The trigger is always visible with a ≥44px hit

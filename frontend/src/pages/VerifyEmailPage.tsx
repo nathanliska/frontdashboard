@@ -30,9 +30,8 @@ export function VerifyEmailPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Verifying signs you in as whichever account the link belongs to. Auto-running that while
-  // someone is already signed in swaps their identity with no acknowledgement, so a signed-in
-  // visitor has to confirm first. Waits for `loading` to resolve, or the check races the session.
+  // Verifying signs you in as the link's account, so a signed-in visitor confirms first rather
+  // than having their identity swapped silently.
   const needsSwitchConfirmation = Boolean(token) && Boolean(signedInAs) && !confirmedSwitch
 
   useEffect(() => {

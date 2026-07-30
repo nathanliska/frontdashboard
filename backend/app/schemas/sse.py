@@ -14,9 +14,11 @@ from app.models.activity import EventType
 
 
 class ActivitySsePayload(BaseModel):
-    """Only the fields the frontend actually reads off payload; all optional; extra
-    allowed because payloads vary per event_type and we deliberately don't model all
-    24 inner shapes."""
+    """The payload fields the frontend actually reads.
+
+    All optional, and extras are allowed: payload shape varies per event_type, and the inner
+    shapes are deliberately not modelled.
+    """
 
     dashboard_id: str | None = None
     list_id: str | None = None

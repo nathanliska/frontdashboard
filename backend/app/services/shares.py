@@ -1,10 +1,8 @@
 """Shared helpers for resource-share access loading and CRUD.
 
-Only dashboards carry share rows ([ADR-001](../../../docs/adr/ADR-001-per-resource-sharing.md)),
-and since #19 the database says so: `ck_resource_shares_resource_type` pins `resource_type` to
-`'dashboard'`, which is what lets `resource_id` have a real foreign key. The `resource_type`
-arguments below are therefore always `ResourceType.dashboard` — kept as parameters because they are
-genuinely part of the queries' WHERE clauses, not because more types can arrive without a migration.
+Only dashboards carry share rows (ADR-001), and a CHECK constraint says so. The `resource_type`
+arguments below are always `ResourceType.dashboard`; they stay parameters because they are part
+of the queries' WHERE clauses, not because more types can arrive without a migration.
 """
 
 import uuid
@@ -22,12 +20,10 @@ from app.services import permissions
 
 
 def dashboard_audience_user_ids(dashboard: Dashboard, shares: list[ResourceShare]) -> set[uuid.UUID]:
-    """Everyone entitled to an SSE event about this dashboard, or about a list or event bound to it.
+    """Everyone entitled to an SSE event about this dashboard, or a list or event bound to it.
 
-    The owner plus every user principal. Lists and calendar events inherit access from the dashboard
-    (ADR-001), so they share this audience rather than computing their own — broadcasting to too few
-    users is the failure that matters, since the missed tab shows stale data with nothing to
-    indicate it (backend/CLAUDE.md).
+    The owner plus every user principal. Children inherit access (ADR-001), so they share this
+    audience — broadcasting too narrowly leaves a tab stale with nothing to indicate it.
     """
     return {dashboard.user_id} | {share.principal_id for share in shares if share.principal_type == PrincipalType.user}
 
@@ -39,9 +35,8 @@ async def load_dashboard_access(
     *,
     lock_for_update: bool = False,
 ) -> tuple[Dashboard, list[ResourceShare], ShareRole | None]:
-    # Dashboard-scoped resources load parent access through this helper, so a trashed dashboard
-    # hides its child content everywhere at once. Trashed dashboards are invisible through this
-    # door unconditionally; restore has its own owner-only loader (#40).
+    # Every dashboard-scoped resource loads access through here, so trashing hides child content
+    # everywhere at once. Restore has its own owner-only loader.
     dashboard_query = select(Dashboard).where(Dashboard.id == dashboard_id, Dashboard.deleted_at.is_(None))
     if lock_for_update:
         dashboard_query = dashboard_query.with_for_update()
@@ -178,12 +173,8 @@ async def create_share(
 ) -> ResourceShare:
     """Grant, or re-grant at a new role, in one statement.
 
-    This was a read-then-insert, which is a race with itself: two grants of the same target
-    interleaving between the SELECT and the INSERT both decide the row is absent, and the loser
-    surfaces as a bare `IntegrityError` — a 500 for what is a supported operation (finding #19).
-    A single upsert on `uq_resource_shares_target` makes "already shared" the database's problem
-    rather than a window in ours, and keeps the same semantics: an existing grant has its role
-    replaced, an absent one is created.
+    An upsert on `uq_resource_shares_target`, because a read-then-insert races itself: two grants
+    of the same target both find the row absent, and the loser 500s on a bare IntegrityError.
     """
     stmt = (
         pg_insert(ResourceShare)

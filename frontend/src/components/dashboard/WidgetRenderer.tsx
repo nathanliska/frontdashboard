@@ -54,7 +54,7 @@ function WidgetBody({
 
     default:
       // The widget union is generated from the backend contract, so a new widget type lands
-      // here as a type error until it gets a case above (see frontend/CLAUDE.md).
+      // here as a type error until it gets a case above .
       return <UnknownWidget widget={widget} />
   }
 }

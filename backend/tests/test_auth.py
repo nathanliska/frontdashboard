@@ -34,8 +34,10 @@ _PREFERENCES_URL = "/api/auth/preferences"
 
 
 def test_the_session_cookie_is_unguessable() -> None:
-    """Replaces the JWT clock-skew test: there is no signed token to skew any more, and the
-    property that matters for an opaque credential is entropy, not expiry arithmetic."""
+    """Entropy is what matters for an opaque credential.
+
+    There is no signed token to skew, so expiry arithmetic is not the property under test.
+    """
     raw, token_hash = create_opaque_token()
 
     assert len(bytes.fromhex(raw)) == 32
@@ -385,8 +387,10 @@ async def test_check_reports_a_live_reset_token_without_spending_it(db_client: A
 
 
 async def test_check_reports_unusable_reset_tokens(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    """Unknown, expired and already-spent all read the same to the caller — the page shows one
-    message for all three, and distinguishing them would leak which tokens exist."""
+    """Unknown, expired and already-spent all read the same to the caller.
+
+    The page shows one message for all three; distinguishing them would leak which tokens exist.
+    """
     unknown = await db_client.post(_PASSWORD_RESET_CHECK_URL, json={"token": "not-a-real-token"})
     assert unknown.json() == {"valid": False}
 
@@ -417,16 +421,21 @@ async def test_me_authenticated(auth_client: AsyncClient) -> None:
 
 
 async def test_there_is_no_refresh_endpoint(auth_client: AsyncClient) -> None:
-    """The endpoint is gone, not merely unused. Its mandatory 15-minute round trip was the thing
-    a deploy or a proxy 502 landed on, and a client that still called it would be relying on
-    behaviour the server no longer has."""
+    """The refresh endpoint is gone, not merely unused.
+
+    Its mandatory round trip was what a deploy or proxy 502 landed on, so a client still calling
+    it would be relying on behaviour the server no longer has.
+    """
     set_csrf(auth_client)
     assert (await auth_client.post(_REFRESH_URL)).status_code == 404
 
 
 async def test_the_session_cookie_survives_ordinary_use(auth_client: AsyncClient) -> None:
-    """Nothing rotates it. The old client had to keep up with a cookie that changed under it on
-    every refresh; losing that response is what turned an honest client into a "replay"."""
+    """Nothing rotates the session cookie.
+
+    A cookie that changed under the client on every refresh turned a lost response into a
+    "replay".
+    """
     before = auth_client.cookies.get("session")
     assert before is not None
 
@@ -454,9 +463,11 @@ async def test_a_matching_origin_is_accepted(auth_client: AsyncClient) -> None:
 
 
 async def test_a_foreign_origin_is_rejected_even_with_a_valid_token_pair(auth_client: AsyncClient) -> None:
-    """The token pair is deliberately valid here: a cross-site caller that somehow holds it still
-    cannot set `Origin`, which is a forbidden header. This is the check that does not depend on
-    cookie state staying in sync."""
+    """A valid token pair does not rescue a foreign `Origin`.
+
+    `Origin` is a forbidden header, so a cross-site caller cannot set it — which makes this the
+    check that does not depend on cookie state staying in sync.
+    """
     csrf = auth_client.cookies.get(auth_router.settings.csrf_cookie_name)
     assert csrf is not None
     resp = await auth_client.post(
@@ -468,10 +479,11 @@ async def test_a_foreign_origin_is_rejected_even_with_a_valid_token_pair(auth_cl
 
 
 async def test_cors_origins_widens_the_allowlist(auth_client: AsyncClient, monkeypatch) -> None:
-    """The escape hatch for a dev server reached over the LAN (`vite --host`, testing on a phone):
-    the browser then sends its LAN address as `Origin`, which is not `frontend_base_url`. That is
-    the one workflow this check makes harder, and CORS_ORIGINS is how it is widened — pinned here
-    so the documented remedy cannot quietly stop working."""
+    """CORS_ORIGINS widens the allowlist for a dev server reached over the LAN.
+
+    `vite --host` makes the browser send its LAN address as `Origin`, which is not
+    `frontend_base_url`. Pinned here so the documented remedy cannot quietly stop working.
+    """
     lan_origin = "http://192.168.1.50:5173"
     monkeypatch.setattr(dependencies, "_ALLOWED_ORIGINS", frozenset({lan_origin}))
 
@@ -483,9 +495,11 @@ async def test_cors_origins_widens_the_allowlist(auth_client: AsyncClient, monke
 
 
 async def test_a_missing_origin_falls_back_to_the_token_pair(auth_client: AsyncClient) -> None:
-    """Additive, not a replacement. A client that sends no `Origin` must still work if its
-    double-submit is good, or enabling the check would have locked out anyone whose browser omits
-    it — the precise failure this whole area has already produced once."""
+    """The `Origin` check is additive, not a replacement.
+
+    A client sending no `Origin` must still work if its double-submit is good, or enabling the
+    check would lock out anyone whose browser omits the header.
+    """
     csrf = auth_client.cookies.get(auth_router.settings.csrf_cookie_name)
     assert csrf is not None
     resp = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf})
@@ -499,9 +513,11 @@ async def test_a_missing_origin_does_not_excuse_a_bad_token_pair(auth_client: As
 
 
 def test_clearing_prefixed_cookies_keeps_them_secure(monkeypatch) -> None:
-    """A `__Host-` cookie must carry Secure even when the point is to delete it, or the browser
-    rejects the deletion for an invalid prefix and keeps the cookie. The monkeypatch is the only
-    way this file reaches that configuration — only production prefixes the names."""
+    """A `__Host-` cookie must carry Secure even to delete it.
+
+    Without it the browser rejects the deletion for an invalid prefix and keeps the cookie. The
+    monkeypatch is the only way this file reaches that configuration.
+    """
     monkeypatch.setattr(auth_router, "_SECURE", True)
     response = Response()
 
@@ -525,9 +541,11 @@ async def test_logout_wrong_csrf(auth_client: AsyncClient) -> None:
 
 
 async def test_the_session_cookie_is_dead_after_logout(auth_client: AsyncClient) -> None:
-    """Logout revokes the row, so the cookie the client may still be holding is inert. Asserting
-    through a request rather than on the response's Set-Cookie is the point: clearing the cookie
-    is cosmetic, revoking the row is what actually ends the session."""
+    """Logout revokes the row, so a retained cookie is inert.
+
+    Asserted through a request rather than the response's Set-Cookie: clearing the cookie is
+    cosmetic, revoking the row is what ends the session.
+    """
     csrf = auth_client.cookies.get("csrf_token")
     assert csrf is not None
     session_cookie = auth_client.cookies.get("session")
@@ -583,8 +601,11 @@ async def test_profile_and_preferences_reject_empty_or_unknown_patches(auth_clie
 
 
 async def test_any_request_slides_the_session_idle_clock(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """A plain GET, not a mutation: the auth dependency owns the idle clock, so reading is enough
-    to keep a session alive. Bumped per route, a user who merely read would idle out mid-use."""
+    """Reading is enough to keep a session alive.
+
+    The auth dependency owns the idle clock; bumped per route instead, a user who merely read
+    would idle out mid-use.
+    """
     session = (await db_session.execute(select(UserSession))).scalars().one()
     old = datetime.now(UTC) - timedelta(hours=1)
     session.last_used_at = old
@@ -597,12 +618,11 @@ async def test_any_request_slides_the_session_idle_clock(auth_client: AsyncClien
 
 
 async def test_the_idle_slide_is_committed(auth_client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
-    """The test above cannot prove durability: the route shares this test's session, so an
-    uncommitted UPDATE is visible to it either way — it passes with or without the commit.
+    """The slide must be committed, not merely applied.
 
-    The commit is the whole point. A GET route never commits, so without one the slide is rolled
-    back and a read-only user idles out mid-use. Asserting the result proves nothing about how it
-    was produced, so assert the mechanism instead (root CLAUDE.md).
+    The test above cannot prove durability: the route shares this session, so an uncommitted
+    UPDATE is visible either way. A GET route never commits, so without one the slide rolls back
+    and a read-only user idles out mid-use — assert the mechanism, not the result.
     """
     session = (await db_session.execute(select(UserSession))).scalars().one()
     session.last_used_at = datetime.now(UTC) - timedelta(hours=1)
@@ -624,8 +644,10 @@ async def test_the_idle_slide_is_committed(auth_client: AsyncClient, db_session:
 
 
 async def test_a_freshly_used_session_costs_no_write(auth_client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
-    """The other half of the throttle, at request level: back-to-back reads must not each pay for
-    an UPDATE plus a COMMIT."""
+    """The throttle at request level.
+
+    Back-to-back reads must not each pay for an UPDATE plus a COMMIT.
+    """
     commits = 0
     real_commit = db_session.commit
 
@@ -736,8 +758,10 @@ async def test_update_preferences_rejects_inaccessible_favorite_dashboard(auth_c
 
 
 async def test_the_session_cookie_hashes_to_a_real_session_row(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """The cookie is the credential: it carries no claims, so the only thing tying it to an
-    identity is that its hash is stored on a live row."""
+    """The cookie is the whole credential.
+
+    It carries no claims, so the only thing tying it to an identity is its hash on a live row.
+    """
     session = (await db_session.execute(select(UserSession))).scalars().one()
     assert session.revoked_at is None
 
@@ -770,8 +794,7 @@ async def _second_device(email: str = "testuser@example.com", password: str = "t
 
 
 async def test_password_change_revokes_other_sessions_but_not_the_callers(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """The containment users expect from a password change — without signing them
-    out of the tab they are standing in."""
+    """A password change contains the damage without signing you out where you stand."""
     other = await _second_device()
     assert (await other.get(_ME_URL)).status_code == 200
 
@@ -805,8 +828,10 @@ async def test_logout_revokes_only_the_current_session(auth_client: AsyncClient,
 
 
 async def test_logout_revokes_the_calling_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """Logout identifies the session from the cookie that authenticated the request, so it
-    revokes exactly that session and can never no-op."""
+    """Logout revokes exactly the session that authenticated the request.
+
+    It reads the session from that cookie, so it can never no-op.
+    """
     set_csrf(auth_client)
 
     resp = await auth_client.post(_LOGOUT_URL)
@@ -818,8 +843,10 @@ async def test_logout_revokes_the_calling_session(auth_client: AsyncClient, db_s
 
 
 async def test_password_reset_revokes_every_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """The reset flow is unauthenticated — there is no caller session to spare, so
-    unlike a password change this revokes everything."""
+    """A password reset revokes everything.
+
+    The flow is unauthenticated, so unlike a password change there is no caller session to spare.
+    """
     other = await _second_device()
 
     await auth_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "testuser@example.com"})

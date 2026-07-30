@@ -52,9 +52,8 @@ describe('NotificationsPage', () => {
       markAllRead: vi.fn().mockResolvedValue(undefined),
       setPanelOpen: vi.fn(),
       addFromSse: vi.fn(),
-      // The store is module-level and outlives each test, so the activity cache has to be cleared
-      // here — otherwise the next test inherits this one's feed, skips its fetch and still renders,
-      // which looks like a pass (frontend/CLAUDE.md).
+      // The store outlives each test: an uncleared feed lets the next test skip its fetch and
+      // still render, which looks like a pass.
       activity: [],
       activityLoaded: false,
       activityLoading: false,

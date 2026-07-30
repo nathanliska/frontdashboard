@@ -1,7 +1,7 @@
 import type { InputHTMLAttributes, Ref } from 'react'
 import { cn } from '../../utils/shared/cn'
 
-/** A labelled input whose error is attached to the field itself (#27).
+/** A labelled input whose error is attached to the field itself.
  *
  * The label is wired with `htmlFor`, the message owned by the field via `aria-describedby`, and
  * `aria-invalid` marks the control — so a screen reader announces the error when focus lands on the

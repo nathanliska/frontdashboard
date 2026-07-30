@@ -29,10 +29,8 @@ async def _resolve_auth_context(
 ) -> AuthContext:
     """Resolve the session cookie, or 401.
 
-    One indistinguishable answer for every way authentication can fail — no cookie, unknown
-    token, revoked session, idled out, past its absolute expiry, deleted user. The client only
-    ever needs to know "log in again", and a more specific message would tell an attacker
-    probing tokens which of those they hit.
+    One indistinguishable answer for every way authentication can fail: the client only needs
+    "log in again", and a specific message tells a token-prober which case they hit.
     """
     if not session_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -42,9 +40,8 @@ async def _resolve_auth_context(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session is no longer valid")
     session, user = resolved
 
-    # Committing here is safe *because* this is a dependency: it runs before the route body, so
-    # the transaction holds nothing but this one UPDATE. A GET never commits on its own, and
-    # without a commit a user who only reads would never slide their own idle clock.
+    # Safe to commit here *because* this is a dependency: it runs before the route body, so the
+    # transaction holds nothing but this UPDATE — and a reader would otherwise never slide.
     if await slide_idle_clock(session, db):
         await db.commit()
 
@@ -57,9 +54,7 @@ async def get_auth_context(
 ) -> AuthContext:
     """The single query behind every authenticated route.
 
-    FastAPI caches dependencies by callable per request, so the cheap derivations
-    below (`get_current_user`, `get_current_session`) all share this one resolution
-    no matter how many of them a route pulls in.
+    FastAPI caches dependencies per request, so the derivations below share this one resolution.
     """
     return await _resolve_auth_context(session, db)
 
@@ -92,9 +87,8 @@ def _normalize_origin(origin: str) -> str:
     return origin.strip().rstrip("/").lower()
 
 
-# Not branched on environment — a rule only production runs is a rule no test executes. The cost:
-# a dev server reached by LAN address (`vite --host`) sends that address as `Origin`, so it has to
-# be in CORS_ORIGINS or every mutation 403s.
+# Not branched on environment — a rule only production runs is a rule no test executes. So a dev
+# server reached by LAN address (`vite --host`) must have that address in CORS_ORIGINS.
 _ALLOWED_ORIGINS = frozenset(_normalize_origin(origin) for origin in (settings.frontend_base_url, *settings.cors_origins_list))
 
 
@@ -106,10 +100,8 @@ async def require_csrf(
 ) -> None:
     """Origin check plus the double-submit cookie, on every non-GET route.
 
-    `Origin` is a forbidden header, so script cannot set it: a value that isn't ours means a
-    cross-site caller no matter what the cookies say. It is checked *in addition to* the token
-    pair — a request that omits `Origin` still has to satisfy the double-submit — so enabling it
-    cannot lock out a client that would otherwise have worked (ADR-002).
+    `Origin` is a forbidden header, so a foreign value means a cross-site caller whatever the
+    cookies say. Checked *in addition to* the token pair, so it can lock nobody out (ADR-002).
     """
     if origin is not None and _normalize_origin(origin) not in _ALLOWED_ORIGINS:
         # The response stays generic; the log is the only trace of a cross-site attempt, and in

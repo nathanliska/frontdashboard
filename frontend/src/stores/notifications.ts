@@ -15,7 +15,7 @@ let unreadCountPromise: Promise<void> | null = null
 let loadMorePromise: Promise<void> | null = null
 let activityPromise: Promise<void> | null = null
 let activityLoadMorePromise: Promise<void> | null = null
-// The endpoint pages at 50, so a full page means older history may exist (#22).
+// The endpoint pages at 50, so a full page means older history may exist.
 const ACTIVITY_PAGE_SIZE = 50
 // Where the next older page starts. Module-level like the promises: it is request bookkeeping,
 // not render state — hasMore below is the rendered fact.
@@ -26,14 +26,14 @@ interface NotificationsState {
   unreadCount: number
   panelOpen: boolean
   loaded: boolean
-  /** Last load attempt failed and nothing is cached — render a retry state, not "no notifications" (#26). */
+  /** Last load attempt failed and nothing is cached — render a retry state, not "no notifications". */
   loadFailed: boolean
-  /** Older history exists past what is loaded — render a "Load more" affordance (#22). */
+  /** Older history exists past what is loaded — render a "Load more" affordance. */
   hasMore: boolean
   loadingMore: boolean
   /**
    * Activity lives here rather than in the page so switching tabs stops refetching it
-   * (frontend/CLAUDE.md: anything fetched on a page belongs in a store with a loaded flag).
+   * (anything fetched on a page belongs in a store with a loaded flag).
    * Caching it is only safe *because* `addActivityFromSse` keeps it current — a cached feed with
    * no live updates would have traded a redundant GET for a silently stale timeline.
    */
@@ -98,9 +98,8 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
             hasMore: page.next_cursor !== null,
           })
         } catch {
-          // Keep any stale list (better than blanking it), but record the failure: with nothing
-          // cached, an outage otherwise renders as "No notifications" — indistinguishable from
-          // an empty inbox and with no way to retry (#26).
+          // Keep any stale list, but record the failure: with nothing cached, an outage renders
+          // as "No notifications" — indistinguishable from an empty inbox, and unretryable.
           guard.set({ loadFailed: !get().loaded })
         }
       })().finally(() => {
@@ -132,7 +131,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
             }
           })
         } catch {
-          // Keep hasMore so the button stays and the user can retry (#26).
+          // Keep hasMore so the button stays and the user can retry.
           guard.set({ loadingMore: false })
         }
       })().finally(() => {
@@ -228,7 +227,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
             activityHasMore: activity.length === ACTIVITY_PAGE_SIZE,
           })
         } catch {
-          // An outage must render as a failure with a retry, not an empty timeline (#26).
+          // An outage must render as a failure with a retry, not an empty timeline.
           guard.set({ activityFailed: !get().activityLoaded })
         } finally {
           guard.set({ activityLoading: false })
@@ -257,7 +256,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
             }
           })
         } catch {
-          // Keep the button so the user can retry (#26).
+          // Keep the button so the user can retry.
         } finally {
           guard.set({ activityLoadingMore: false })
           activityLoadMorePromise = null

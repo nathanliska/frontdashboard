@@ -189,8 +189,10 @@ async def test_new_list_appends_last_after_reorder(
     auth_client: AsyncClient,
     make_dashboard_with_lists,
 ) -> None:
-    """A list created after a reorder must append after existing lists, not
-    inherit sort_order=0 (which would place it near the top by created_at tiebreak)."""
+    """A list created after a reorder must append, not inherit sort_order=0.
+
+    Inheriting it would place the list near the top by the created_at tiebreak.
+    """
     dash_id, list_ids = await make_dashboard_with_lists(["L1", "L2", "L3"])
     reordered = [list_ids[2], list_ids[0], list_ids[1]]
 

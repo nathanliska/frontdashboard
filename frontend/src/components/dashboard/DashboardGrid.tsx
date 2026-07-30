@@ -89,7 +89,7 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
   // to render at 6, which is not a projection but a remap: react-grid-layout clamps every item
   // whose x + w exceeds cols, and those corrections arrive through onLayoutChange like a user
   // drag — so a single touch on a tablet persisted a 6-column arrangement over the canonical one
-  // (#53). Only density is allowed to vary by width; the grid the layout is expressed in is not.
+  //. Only density is allowed to vary by width; the grid the layout is expressed in is not.
   const cols = isMobile ? 1 : 12
   const presentedLayout = useMemo(
     () => (isMobile ? mobileStackLayout(activeLayout) : activeLayout),

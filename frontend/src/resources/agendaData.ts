@@ -33,9 +33,8 @@ type AgendaScope = {
   dashboardId: string
 }
 
-// Keep mixed-source widgets split at the cache layer so SSE can invalidate only
-// the calendar slice. List reminders are still included on agenda load, but
-// list events are handled by the list resource layer instead of this module.
+// Split at the cache layer so SSE can invalidate the calendar slice alone; list events are
+// handled by the list resource layer.
 const agendaOccurrencesQuery = createScopedQuery<AgendaScope, CalendarOccurrence[]>({
   getKey: (scope) => scope.dashboardId,
   fetcher: fetchAgendaOccurrences,
@@ -162,11 +161,10 @@ export function renameAgendaListEntries(listId: string, listName: string): void 
   )
 }
 
-/** Refetch a dashboard's reminders — the one list mutation whose result we genuinely cannot derive.
+/** Refetch a dashboard's reminders — the one list mutation whose result cannot be derived.
  *
- * Restoring a list returns a summary, not its items, so there is nothing to rebuild its reminders
- * from. This is the sanctioned kind of refetch (the client provably lacks the data), unlike the
- * echo-driven one this module used to do after every checkbox click.
+ * Restoring a list returns a summary, not its items, so there is nothing to rebuild reminders
+ * from. The sanctioned kind of refetch: the client provably lacks the data.
  */
 export function invalidateAgendaReminders(dashboardId: string): void {
   agendaRemindersQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
@@ -199,9 +197,8 @@ async function fetchAgendaOccurrences(scope: AgendaScope): Promise<CalendarOccur
 
 async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
   const todayKey = dateKey(startOfDay(new Date()))
-  // One batch request (#17) — this used to compose summaries + one detail request per list,
-  // growing with the dashboard, and its synchronous read of the summaries cache made handler
-  // order in useSSE load-bearing. The server is authoritative now; no client cache is read.
+  // One batch request rather than one per list, and it reads no client cache — which is what
+  // keeps handler order in useSSE from mattering.
   const details = await apiGetListDetails(scope.dashboardId)
 
   return details.flatMap((detail) =>
@@ -235,11 +232,9 @@ export function useAgendaItems(dashboardId: string | null) {
     [dashboardId],
   )
 
-  // At local midnight the cached fetch window and today/overdue classification go stale. Refetch
-  // this mounted agenda in the background (rather than salting the cache key with the day, which
-  // would leak a new entry every day). A direct fetch, not invalidateWhere: we hold the mounted
-  // scope and want exactly it refreshed, without depending on listener-timing during this render.
-  // The ref skips the mount run — only a real day rollover refetches.
+  // At local midnight the fetch window and today/overdue classification go stale. Refetched
+  // directly rather than salting the cache key with the day, which would leak an entry daily.
+  // The ref skips the mount run, so only a real rollover refetches.
   const dayKey = useLocalDay()
   const previousDay = useRef(dayKey)
   useEffect(() => {
@@ -276,13 +271,9 @@ export function handleAgendaResourceEvent(
     return
   }
 
-  // Our own list mutation already patched this cache through `applyAgendaItemUpdate`, so the echo
-  // has nothing left to tell us. The verdict is decided once by the SSE router and passed in,
-  // because the check that produces it consumes the pending id — whichever handler asked first
-  // would be the only one told the truth, and this one runs second.
-  //
-  // Calendar events are deliberately not covered: occurrence expansion is genuinely server-derived,
-  // so refetching after a calendar mutation is the sanctioned exception.
+  // `applyAgendaItemUpdate` already patched this cache, so our own echo has nothing to add.
+  // Calendar events are excluded on purpose: occurrence expansion is server-derived, so
+  // refetching after a calendar mutation is the sanctioned exception.
   if (isOwnEcho && event.event_type.startsWith('list.')) return
 
   const dashboardId = getDashboardId(event)

@@ -25,9 +25,8 @@ export async function apiGetMe(): Promise<User | null> {
 }
 
 export async function apiLogin(email: string, password: string): Promise<User> {
-  // Plain fetch: login is public, and wrong credentials answer 401 — which apiFetch reads as "the
-  // session is gone" and reports to the session-expired handler. Here that is noise, not a fact:
-  // there was no session to lose. The caller wants the error, so it bypasses that path.
+  // Plain fetch: apiFetch reads the 401 from wrong credentials as a lost session, but there was
+  // no session to lose — and the caller wants the error.
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     credentials: 'include',

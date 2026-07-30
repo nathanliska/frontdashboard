@@ -7,7 +7,7 @@ export interface ScopedQueryState<Data> {
 }
 
 export interface ScopedQueryResult<Data> extends ScopedQueryState<Data> {
-  /** Re-run the fetch for this scope. The affordance behind every "Try again" button (#26). */
+  /** Re-run the fetch for this scope. The affordance behind every "Try again" button. */
   refetch: () => void
 }
 
@@ -32,12 +32,11 @@ type CreateScopedQueryOptions<Scope, Data> = {
   maxCachedScopes?: number
 }
 
-/** Cached scopes kept per query before the coldest are dropped (#24).
+/** Cached scopes kept per query before the coldest are dropped.
  *
- * Entries were never evicted, so a tab left open on the calendar accumulated one entry per window
- * scrolled to, for the life of the session — growth driven by how long someone keeps a tab open
- * rather than by anything bounded. 32 comfortably covers a year of calendar windows plus every
- * dashboard's lists; past that, the oldest unused entries are worth less than the memory.
+ * Unbounded, a tab left open on the calendar grows one entry per window scrolled to. 32 covers a
+ * year of windows plus every dashboard's lists; past that the coldest are worth less than the
+ * memory.
  */
 const DEFAULT_MAX_CACHED_SCOPES = 32
 

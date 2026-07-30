@@ -67,7 +67,7 @@ export function ListWidget({
 
   if (error) {
     // A 404/403 means the list itself is gone or no longer shared — retrying can't change that,
-    // and saying "try again" would mislead. Anything else is an outage the user can retry (#26).
+    // and saying "try again" would mislead. Anything else is an outage the user can retry.
     const gone = error instanceof ApiError && (error.status === 404 || error.status === 403)
     return gone ? (
       <WidgetErrorState

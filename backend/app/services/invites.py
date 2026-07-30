@@ -2,7 +2,7 @@
 
 An invite is a bearer credential: whoever holds the raw code can redeem it. Only its sha256 is
 stored, it is single use, it expires, and the issuer can revoke it. Callers own the commit,
-matching the rest of the mutation choreography (see backend/CLAUDE.md).
+matching the rest of the mutation choreography .
 """
 
 import uuid

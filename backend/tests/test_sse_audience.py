@@ -2,7 +2,7 @@
 
 Narrowing the audience is a silent failure: the missed tab simply stops updating and shows stale
 data with nothing to indicate it. Lists and calendar events inherit this audience, so one miss goes
-stale across all three resource types at once (backend/CLAUDE.md).
+stale across all three resource types at once.
 """
 
 import uuid
@@ -32,8 +32,10 @@ async def test_the_owner_is_always_in_the_audience(db_session) -> None:
 
 
 async def test_shared_users_are_in_the_audience(db_session) -> None:
-    """A shared user must receive the event, or their open tab keeps rendering data the owner has
-    already changed."""
+    """A shared user must receive the event.
+
+    Otherwise their open tab keeps rendering data the owner has already changed.
+    """
     owner = await make_db_user(db_session, label="owner")
     viewer = await make_db_user(db_session, label="viewer")
     editor = await make_db_user(db_session, label="editor")
@@ -45,8 +47,11 @@ async def test_shared_users_are_in_the_audience(db_session) -> None:
 
 
 async def test_a_non_user_principal_is_not_addressed_as_a_user(db_session) -> None:
-    """`principal_id` only names a user when `principal_type` says so. A CHECK constraint pins the
-    column to `'user'` today, so this cannot arise through the API — it pins the filter."""
+    """`principal_id` only names a user when `principal_type` says so.
+
+    A CHECK constraint pins the column to `'user'`, so this cannot arise through the API — the
+    test pins the filter rather than a reachable case.
+    """
     owner = await make_db_user(db_session, label="owner")
     dashboard = await make_db_dashboard(db_session, owner)
 

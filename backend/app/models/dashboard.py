@@ -11,15 +11,13 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 class Dashboard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "dashboards"
-    # Every listing is "my live dashboards, newest first"; user_id lost its index when the
-    # one-per-user unique constraint was dropped, so that query had nothing to use.
+    # Every listing is "my live dashboards, newest first", and user_id has no index of its own.
     __table_args__ = (Index("ix_dashboards_user_deleted_updated", "user_id", "deleted_at", "updated_at"),)
 
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    # Trash (finding #40): set = "moved to trash", invisible everywhere but the owner's trash view,
-    # restorable until the reaper purges it past `trash_retention_days`. The *only* put-away state —
-    # two overlapping "hide this" concepts is one too many to explain (ADR-007).
+    # Trash: invisible everywhere but the owner's trash view, restorable until the reaper purges
+    # it past `trash_retention_days`. The only put-away state there is (ADR-007).
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     layout: Mapped[Any] = mapped_column(JSONB, nullable=False, server_default="[]")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")

@@ -73,11 +73,8 @@ export interface CreateCalendarEventInput {
 }
 
 /**
- * The generated contract, not a hand-written shape. The hand-written one declared
- * `description?: string` and `location?: string`, so `null` was not expressible and clearing
- * either field was impossible to send — the caller could only omit the key, which PATCH reads as
- * "leave unchanged". `recurrence` had already been widened to `| null` for exactly this reason,
- * one field at a time. Generated types make that a compile error instead (ADR-018).
+ * The generated contract, not a hand-written shape: `null` has to be expressible or a cleared
+ * field is unsendable, since PATCH reads an omitted key as "leave unchanged" (ADR-018).
  */
 export type UpdateCalendarEventInput = CalendarEventUpdate
 
