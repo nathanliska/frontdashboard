@@ -36,7 +36,7 @@ export function EditableListName({
 
   async function submitEdit() {
     // Validated here rather than by the caller, so the message can be attached to this input
-    // instead of floating away in a toast (#27).
+    // instead of floating away in a toast.
     if (!draft.trim()) {
       setError('List name cannot be empty.')
       inputRef.current?.focus()
@@ -56,6 +56,7 @@ export function EditableListName({
       <>
         <input
           ref={inputRef}
+          name="list-name"
           value={draft}
           aria-label="List name"
           aria-invalid={error ? true : undefined}

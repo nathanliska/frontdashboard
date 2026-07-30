@@ -184,7 +184,11 @@ export function ListsLayout() {
       <div className="flex flex-col gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0 pl-12 sm:pl-0 min-h-10">
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Lists</h1>
+          {/* Labelled explicitly: without it the accessible name is the selected option, so a
+              screen reader announces the dashboard's name and not what the control does. */}
           <select
+            name="dashboard"
+            aria-label="Dashboard"
             value={effectiveDashboardId ?? ''}
             disabled={dashboardsLoading || dashboards.length === 0}
             onChange={(event) => {

@@ -205,6 +205,8 @@ export function CalendarPage() {
         <div className="flex items-center gap-2 min-w-0 pl-12 sm:pl-0 min-h-10">
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Calendar</h1>
           <select
+            name="dashboard"
+            aria-label="Dashboard"
             value={effectiveActiveDashboardId ?? ''}
             disabled={dashboardsLoading || dashboards.length === 0}
             onChange={(event) => {
@@ -302,7 +304,7 @@ export function CalendarPage() {
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
             </div>
           ) : occurrencesError ? (
-            // A failed window fetch must not render as an eventless month (#26).
+            // A failed window fetch must not render as an eventless month.
             <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-2">
               <p className="text-sm text-zinc-500">Couldn&apos;t load events for this window.</p>
               <button

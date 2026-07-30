@@ -27,8 +27,12 @@ export function AddItemForm({ onAdd }: { onAdd: (text: string) => Promise<void> 
     >
       <Plus size={14} className="text-zinc-600 shrink-0" />
       {/* text-base keeps mobile at 16px; below that iOS (any browser — all WebKit) zooms on focus */}
+      {/* aria-label, not placeholder alone: a placeholder is not a reliable accessible name and
+          disappears once typing starts. `name` also stops the browser flagging an unnamed field. */}
       <input
         ref={inputRef}
+        name="new-item"
+        aria-label="Add item"
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder="Add item…"

@@ -22,7 +22,11 @@ export const ShareAccessRow = memo(function ShareAccessRow({
         <p className="text-sm text-zinc-200 truncate">{item.principal_name}</p>
         <p className="text-xs text-zinc-500">Person</p>
       </div>
+      {/* Names the person: several of these rows sit in one list, and the control's own accessible
+          name would otherwise be just the role, with no indication of whose access it changes. */}
       <select
+        name="role"
+        aria-label={`Access level for ${item.principal_name}`}
         value={item.role}
         onChange={(event) => void onUpdate(item, event.target.value as ShareRole)}
         disabled={busy}

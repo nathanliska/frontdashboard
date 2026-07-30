@@ -109,6 +109,8 @@ export function ListItemRow({
       {editing ? (
         <input
           ref={inputRef}
+          name="item-text"
+          aria-label="Item text"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => void submitEdit()}
