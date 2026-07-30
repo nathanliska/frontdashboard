@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec npx -y chrome-devtools-mcp@latest --headless --isolated --executablePath=\"${CHROME_PATH:-$(ls -d \"$HOME\"/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome 2>/dev/null | head -1)}\""
+      ]
+    }
+  }
+}

@@ -21,7 +21,9 @@ services:
     pull_policy: always
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      CORS_ORIGINS: ""
+      # Empty by default: the Origin allowlist is FRONTEND_BASE_URL plus this, and one host serves
+      # the app. Passed through so a second hostname can be added without editing this file.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       ENVIRONMENT: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}

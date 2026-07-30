@@ -1,0 +1,57 @@
+# Runs the images that actually ship, against a throwaway database, for local verification
+# (`/live-verify`). Not a deploy target: prod uses docker-compose.prod.yml with an external database
+# and external networks.
+#
+# The project name is load-bearing. Without it Compose derives one from the directory, collides with
+# the dev stack's `db` service, and recreates that container — carrying the real `frontdashboard_pgdata`
+# volume in with it. Its own volume below keeps this database unambiguously separate.
+name: frontdashboard-verify
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: frontdashboard
+      POSTGRES_PASSWORD: verify
+      POSTGRES_DB: frontdashboard
+    volumes:
+      - verify-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frontdashboard"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    image: frontdashboard-backend:verify
+    pull_policy: never
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://frontdashboard:verify@db:5432/frontdashboard
+      # production, deliberately: the point is to exercise what ships. Costs the dev mail outbox, so
+      # a verification link cannot be read — accounts are verified with SQL against this database.
+      ENVIRONMENT: production
+      LOG_LEVEL: info
+      FRONTEND_BASE_URL: http://localhost:8080
+      CORS_ORIGINS: ""
+      # Non-empty to satisfy the production config gate; sending will fail, which nothing here needs.
+      RESEND_API_KEY: verify-not-a-real-key
+      EMAIL_FROM: FrontDashboard <noreply@example.com>
+    networks:
+      default:
+        # Caddyfile.prod proxies to this hostname, so the alias is what makes /api reachable.
+        aliases: [frontdashboard-backend]
+
+  frontend:
+    image: frontdashboard-frontend:verify
+    pull_policy: never
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+volumes:
+  verify-pgdata:

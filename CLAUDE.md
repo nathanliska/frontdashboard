@@ -32,6 +32,9 @@ make seed        # seed development data
 make audit       # dependency/security audit checks
 make audit-fix   # apply npm audit fixes (frontend)
 ```
+- **`/live-verify`** runs the real production images against a throwaway database and drives them in
+  a browser — the only check that sees a blank page, a stray refetch, or a serving/caching fault.
+  **`/deploy-verify`** smoke-checks the live site over HTTPS afterwards, read-only.
 - Backend: `uv run ruff check --fix` / `uv run ruff format`. Backend **integration** tests need
   PostgreSQL — either a Docker socket (Testcontainers) or `TEST_DATABASE_URL` pointing at a
   dedicated test database. `make test-unit` (`pytest -m unit`) needs neither.
