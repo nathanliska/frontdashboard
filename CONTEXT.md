@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-07-30_
 
 ## What's built
 
@@ -28,6 +28,11 @@ _Last updated: 2026-07-29_
   theft. Both were observed in production. The trade taken knowingly: no theft detection.
 - Password reset via email; authenticated password change and profile rename. Rate limits on all
   auth endpoints.
+- **A link that changes who you are says so first.** The reset page checks its token before
+  offering a form (`POST /auth/password-reset/check`, which reports validity only and never
+  consumes), so a dead, spent or unknown link says so instead of failing after a password is
+  typed twice; a signed-in visitor is warned the link may not be theirs, without naming its owner.
+  A verification link opened while signed in asks before switching accounts.
 - **No endpoint reveals whether an account exists.** Login, registration, password reset and
   resend-verification all answer identically for known and unknown addresses, and registration pays
   an Argon2 hash either way so timing doesn't leak what the response won't. Signing up with an
@@ -152,11 +157,12 @@ _Last updated: 2026-07-29_
   Multi-field forms mark every failing field at once, so the form is fixed in one pass.
 
 **Performance shape**
-- **The calendar window is a SQL predicate, not a Python filter** (#16): a one-off event is loaded
-  only if its own times overlap the requested window, so viewing a week no longer costs the
-  calendar's whole history. Recurring events still all load — bounding them needs each series'
-  last occurrence persisted, which the rule doesn't give us — but the expander skips ahead to the
-  window for unbounded daily/weekly series, and the window itself is capped at 366 days.
+- **The calendar window is a SQL predicate, not a Python filter**: a one-off event is loaded only
+  if its own times overlap the requested window, and a recurring one only if `starts_at` precedes
+  the window and — where the rule carries `until` — `until + duration` follows it, read straight
+  from the JSONB. A finished or not-yet-started series never reaches Python. Series with a `count`
+  limit and no `until` still load unbounded, since finding their end means expanding the rule. The
+  window itself is capped at 366 days.
 - **Resource caches are bounded** (#24): `createScopedQuery` keeps the 32 most recently fetched
   scopes and evicts the coldest, except entries with a mounted subscriber or a request in flight,
   which are never evicted. Before this, a tab left open on the calendar accumulated one entry per
@@ -164,6 +170,14 @@ _Last updated: 2026-07-29_
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
+- **A failed load is visible rather than blank.** `index.html` is served `no-cache` so it can
+  never ask for bundles a deploy deleted; `/assets/*` sits outside the SPA fallback, so a missing
+  bundle 404s honestly instead of being handed HTML the browser fails to parse as a module, and
+  fingerprinted names cache for a year while the 404 itself is `no-store`. `index.html` also ships
+  static markup inside `#root` that a CSS delay reveals if the script never runs (React deletes it
+  on mount, and the CSP forbids inline script). An unknown URL renders a 404 page that names the
+  path rather than silently redirecting — a truncated reset or invite link is the usual way there.
+  See [ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md).
 - **Both production images run unprivileged** (uid 10001), with base images pinned by digest and a
   `docker` Dependabot ecosystem keeping those pins current. Caddy still binds `:80` — it holds
   `CAP_NET_BIND_SERVICE` on the binary rather than running as root, so the port the tunnel points at
@@ -193,6 +207,10 @@ _Last updated: 2026-07-29_
   forgets it won't boot rather than silently running insecure), and production startup aborts on a
   missing `resend_api_key` or an undeliverable `email_from`. Startup logs the active environment and cookie posture (`INFO` prod / `WARNING`
   otherwise).
+- **Every mutating route is rate-limited**, not just the auth ones: `WRITE_LIMIT` (300/min) is
+  applied per route because slowapi's app-wide limit cannot see through included-router nesting,
+  and `test_rate_limit_coverage.py` fails the build if a route is added without one. Caddy caps
+  request bodies at 1MB. Neither bounds *total* storage — that is #61.
 - **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
@@ -217,8 +235,7 @@ _Last updated: 2026-07-29_
 - **Design-review remediation** (open work tracked in [docs/TODO.md](docs/TODO.md)): the
   security-first phases are done — Phase 1 (security quick wins), Phase 2 (auth/session hardening,
   incl. the 2026-07-17 follow-up security review), and Phase 3 (dashboard correctness) all shipped by
-  2026-07-20. Register enumeration's acceptance rested on near-closed registration and has lapsed now
-  that signup is open — unchanged in behavior, pending re-decision (#55). The durable decisions from
+  2026-07-20. The durable decisions from
   these phases are captured in the [ADRs](docs/adr/INDEX.md) / [FDRs](docs/fdr/INDEX.md). **Phases
   4–6 (data layer/contracts/exposure, infra/CI/ops, UX & cleanup) and the unscheduled backlog
   remain** — see [docs/TODO.md](docs/TODO.md).

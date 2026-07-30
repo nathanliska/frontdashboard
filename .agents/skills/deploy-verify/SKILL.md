@@ -63,7 +63,7 @@ re-raise it as a problem.
 
 ## 4. If a static asset looks stale
 
-Purge the Cloudflare cache first — never rebuild. That is a standing rule in the root `CLAUDE.md`,
+Purge the Cloudflare cache first — never rebuild. That is a standing rule in the root `AGENTS.md`,
 and with `no-cache` now on the document the edge is the only layer that can still hold one.
 
 ## Report

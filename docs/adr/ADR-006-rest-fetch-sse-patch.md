@@ -26,7 +26,7 @@ Every resource does an **initial REST fetch**; **SSE events then patch caches in
   the bookkeeping leaks.
 - **Wiring is two-sided.** A new entity type needs both its event names in `hooks/useSSE.ts` and a
   `handleXResourceEvent` router in `resources/*` — miss either and the UI silently goes stale
-  ([frontend/CLAUDE.md](../../frontend/CLAUDE.md)).
+  ([AGENTS.md](../../AGENTS.md)).
 
 ## Consequences
 

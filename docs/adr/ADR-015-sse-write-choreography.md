@@ -39,4 +39,4 @@ single commit**, so activity events and notifications land in the *same* transac
 - **Audience correctness is manual**: the broadcast set must be computed from owner + share
   principals on every route; it's a load-bearing detail with a silent failure mode (stale tabs).
 - **This ordering is a hard convention, not a helper**: it lives in each route, so it's documented in
-  [backend/CLAUDE.md](../../backend/CLAUDE.md) as "SSE ordering is load-bearing."
+  [AGENTS.md](../../AGENTS.md) as "SSE ordering is load-bearing."

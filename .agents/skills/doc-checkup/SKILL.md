@@ -10,6 +10,8 @@ Audits the repo's agent docs against `git log` and the code. **Reports findings 
 edits; never applies them without explicit user direction.**
 
 The doc system:
+- **[AGENTS.md](../../../AGENTS.md)** — repo-wide agent instructions. The only file of its kind;
+  `CLAUDE.md` is a symlink to it, and there are no per-stack variants.
 - **[CONTEXT.md](../../../CONTEXT.md)** — current-state snapshot across the whole app.
 - **[docs/adr/](../../../docs/adr/)** — Architecture Decision Records (*why* the cross-cutting
   architecture is the way it is). Living; supersede rather than delete.
@@ -31,17 +33,21 @@ The doc system:
 3. **FDR drift** — for each FDR, verify its Behavior + Design Decisions against the code, its access
    notes against `app/models/share.py` / `app/services/permissions.py`, and that cited ADRs exist and
    still apply. Flag stale claims and significant user-facing behavior the FDR omits. Bump
-   **Last reviewed** on any FDR proposed for edit.
+   **Last reviewed** on any FDR proposed for edit, **and the matching row in `docs/fdr/INDEX.md`** —
+   these drift apart silently, since nothing reads the index. Compare every row against its file's
+   header, not just the ones being edited. ADRs date differently on purpose: the file header keeps
+   the *original* decision date with `(amended …)` appended, and the index row shows the latest.
 4. **Glossary** — cross-reference each entry against its cited FDR/ADR; flag dead links, definitions
    contradicted by code, and jargon used across multiple docs but missing an entry.
 5. **TODO.md vs. `git log`** — any backlog item whose work appears shipped in recent commits (should
    be removed)? Any newly-introduced known gap not captured? Do the finding numbers still line up
    with references elsewhere?
-6. **CLAUDE.md facts** — spot-check verifiable claims (framework versions vs. lockfiles, `make`
-   targets vs. Makefile, referenced paths exist) in root + `backend/` + `frontend/` CLAUDE.md. Apply
-   the pruning test: flag lines whose removal would cause no mistakes.
-7. **Link check** — relative doc links in CLAUDE.md, CONTEXT.md, README.md, and the ADR/FDR indexes
-   resolve.
+6. **AGENTS.md facts** — spot-check verifiable claims (framework versions vs. lockfiles, `make`
+   targets vs. Makefile, referenced paths exist). Apply the pruning test: flag lines whose removal
+   would cause no mistakes. Flag any reference to a per-stack `CLAUDE.md`/`AGENTS.md`; those were
+   removed, and their surviving rules belong in the root file's Backend/Frontend Principles.
+7. **Link check** — relative doc links in AGENTS.md, CONTEXT.md, README.md, the skills under
+   `.agents/skills/`, and the ADR/FDR indexes resolve.
 
 ## Output
 

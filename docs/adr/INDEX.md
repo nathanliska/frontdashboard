@@ -33,9 +33,10 @@ feature does*, [CONTEXT.md](../../CONTEXT.md) is the current-state snapshot, and
 | [ADR-010](ADR-010-argon2-off-event-loop.md) | Argon2 password hashing off the event loop | 2026-07-20 |
 | [ADR-011](ADR-011-enumeration-safe-login.md) | Enumeration-safe, constant-work authentication (login + registration) | 2026-07-25 |
 | [ADR-012](ADR-012-session-generation-guard.md) | Session-generation guard for auth-boundary state reset | 2026-07-20 |
-| [ADR-013](ADR-013-rate-limit-cf-connecting-ip.md) | Rate limiting keyed on `CF-Connecting-IP` | 2026-07-20 |
+| [ADR-013](ADR-013-rate-limit-cf-connecting-ip.md) | Rate limiting — per-route limits keyed on `CF-Connecting-IP` | 2026-07-30 |
 | [ADR-014](ADR-014-fail-fast-prod-config.md) | Fail-fast production configuration validation | 2026-07-20 |
 | [ADR-015](ADR-015-sse-write-choreography.md) | SSE write choreography — build before commit, broadcast after | 2026-07-20 |
 | [ADR-016](ADR-016-hand-authored-migrations.md) | Hand-authored Alembic migrations, StrEnum-as-String, schema-via-upgrade | 2026-07-20 |
 | [ADR-017](ADR-017-google-calendar-two-way-sync.md) | Google Calendar two-way sync (per-user OAuth) — *design, not yet implemented* | 2026-07-25 |
 | [ADR-018](ADR-018-generated-validated-contracts.md) | Backend schema is the API contract — generated types, validated boundaries | 2026-07-25 |
+| [ADR-019](ADR-019-static-asset-serving-contract.md) | Static asset serving contract — honest 404s and a revalidated shell | 2026-07-30 |

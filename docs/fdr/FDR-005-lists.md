@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-07-28
+**Last reviewed:** 2026-07-30
 
 ## Overview
 
@@ -19,9 +19,7 @@ master/detail UI and surfaced on dashboards via the list widget ([FDR-003](FDR-0
   no time, no zone — because the agenda's TODAY/OVERDUE split compares it as a string against the
   local day. Set it from a picker on the item row (its own control, not a field inside the text
   editor, which saves on blur and would close before a date could be chosen); the list widget shows
-  it read-only. Only *priority, category and assignee* remain backend-only with no UI. Until the
-  picker existed the column was writable by API alone, so the Agenda widget's TODAY section was
-  permanently empty while this document already claimed due dates were supported.
+  it read-only. Only *priority, category and assignee* remain backend-only with no UI.
 - **Manual order only.** Items keep their manual order; checked items stay in place rather than
   sinking. New items append last.
 - **Drag-and-drop reorder.** Reorder items within a list and lists within the sidebar, via drag
@@ -33,6 +31,11 @@ master/detail UI and surfaced on dashboards via the list widget ([FDR-003](FDR-0
   archive-before-delete gate ([ADR-007](../adr/ADR-007-soft-delete-boundary.md)).
 - **Live updates.** Item checks/updates and reorders from another client patch in place with no
   refetch.
+- **A list you can no longer open says so.** Opening a link to a list that has been trashed, or that
+  the caller has lost access to, renders an explanation and a "Back to lists" button rather than
+  silently redirecting to the index — a bounce with no message reads as the app ignoring the click.
+  The wording covers both causes without distinguishing them, since telling an outsider *which* one
+  applies would confirm the list exists.
 
 ## Design Decisions
 
@@ -50,8 +53,7 @@ contents.
 
 **Decision:** The server renumbers the dashboard's live lists, so a reorder's submitted set must equal
 that set; trashed lists carry no order.
-**Why:** Manual order is a property of the working set. This used to be about excluding *archived*
-lists; with archive gone the rule is simply that trashed rows are not part of any ordering.
+**Why:** Manual order is a property of the working set — trashed rows are not part of any ordering.
 **Tradeoff:** Reordering isn't offered from the Trash view (there is nothing orderable there).
 
 ### 3. Hot list events carry new state; cold events invalidate

@@ -95,7 +95,7 @@ CH=$(ls ~/.cache/puppeteer/chrome/*/chrome-linux64/chrome | head -1)
 Check every time, regardless of what changed:
 
 - **No GET after your own write.** A `POST`/`PATCH`/`DELETE` followed by a `GET` of the same
-  collection is a bug (`frontend/CLAUDE.md`). The mutation response is the truth; caches are patched
+  collection is a bug. The mutation response is the truth; caches are patched
   from it and the SSE echo is suppressed. This has regressed at least four times.
 - **No duplicate requests on mount.** StrictMode double-invokes effects; a page fetching twice means
   a missing single-flight or loaded-flag cache.
@@ -133,7 +133,7 @@ docker compose -f docker-compose.verify.yml down
 docker volume rm frontdashboard-verify_verify-pgdata   # only when a clean database is wanted
 ```
 
-**Never `down -v`** (root `CLAUDE.md`) — remove the verify volume by name, as above. Left in place it
+**Never `down -v`** (root `AGENTS.md`) — remove the verify volume by name, as above. Left in place it
 keeps the account from the last run, which is usually convenient and occasionally confusing.
 
 ## Report

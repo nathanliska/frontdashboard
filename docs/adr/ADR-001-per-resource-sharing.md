@@ -56,7 +56,7 @@ therefore a migration that drops one CHECK and one FK, not a redesign.
   cost is that you can't share a single list independently of its dashboard.
 - **Owner is `role is None`, not a role value**: `permissions.effective_role` returns `None` for the
   creator and raises 404 for no access. Guards must never write `if role:` — that misreads the owner
-  as "no access" ([backend/CLAUDE.md](../../backend/CLAUDE.md)).
+  as "no access" ([AGENTS.md](../../AGENTS.md)).
 - **Trashed-visibility invariant lives in the access helpers**: querying a child table directly
   bypasses the trashed-dashboard filter, so all child access must route through the shares service.
 - **A share row cannot outlive what it names**: the FKs mean a purged dashboard takes its grants

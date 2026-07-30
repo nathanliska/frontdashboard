@@ -1,7 +1,7 @@
 # FDR-007: Notifications & Activity Feed
 
 **Status:** Active
-**Last reviewed:** 2026-07-20
+**Last reviewed:** 2026-07-30
 
 ## Overview
 
@@ -17,6 +17,12 @@ delivery.
 - **Activity feed.** A keyset-paginated log of the caller's *own* events, with noisy event types
   hidden by default.
 - **Sharing triggers notifications.** Share and unshare actions notify the affected users.
+- **Revisiting either surface costs nothing.** Both the inbox and the feed are fetched once and then
+  kept current by SSE, so switching tabs or navigating back re-renders from cache instead of
+  refetching — and any extra pages "Load more" appended survive the return.
+- **A failed load is distinguishable from an empty one.** When a fetch fails with nothing cached,
+  the surface says so and offers a retry rather than rendering "No notifications", which would be
+  indistinguishable from an empty inbox and offer no way forward.
 
 ## Design Decisions
 
@@ -38,6 +44,17 @@ after the commit that created them.
 ADR-015 (build-before-commit, broadcast-after).
 **Tradeoff:** Notification delivery shares the stream's overflow/reconnect behavior with all other
 event types.
+
+### 3. The feed is cached in the store, which is only safe because SSE keeps it current
+
+**Decision:** Activity lives in the notifications store behind a loaded flag, not in the page, and a
+mount does not refetch it. Every mutation frame is also appended to the cached feed as it arrives.
+**Why:** Anything fetched on a page belongs in a store with a loaded flag, or returning to the page
+re-reads what SSE has already delivered. The caching and the live append are one decision, not two:
+a cached feed without the append would trade a redundant GET for a timeline that silently stops at
+page load. `{ force: true }` exists for resync, where frames may have been missed.
+**Tradeoff:** A new event type that skips the append is invisible on the feed until a resync, and the
+staleness would not show up in a test that only asserts the initial render.
 
 ### 3. Activity feed is self-scoped and keyset-paginated, with noise hidden
 

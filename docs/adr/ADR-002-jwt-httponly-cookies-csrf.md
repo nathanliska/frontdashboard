@@ -37,7 +37,7 @@ which the server compares) and **`Origin` verification** against the configured 
   configured through the knob that already exists for it rather than a new one.
 - Every **non-GET** route declares `_csrf: None = Depends(require_csrf)`. CSRF is a *dependency*,
   not middleware — omit it and the route silently accepts cross-site requests
-  ([backend/CLAUDE.md](../../backend/CLAUDE.md)).
+  ([AGENTS.md](../../AGENTS.md)).
 - Cookies are `HttpOnly` (except the CSRF cookie, which must be readable), `Secure` in production,
   `SameSite=Lax`, and carry **no `Domain` attribute**, so they are host-only.
 - In production both cookies are named with the **`__Host-` prefix** (`__Host-session`,
@@ -49,7 +49,7 @@ which the server compares) and **`Origin` verification** against the configured 
   still sends cookies on top-level cross-site GET navigation.
 - The frontend's single network entry point, `apiFetch` (`api/client.ts`), sets the CSRF header and
   includes credentials on every call. Components never call `fetch` directly
-  ([frontend/CLAUDE.md](../../frontend/CLAUDE.md)).
+  ([AGENTS.md](../../AGENTS.md)).
 - No credential is ever placed in `localStorage`.
 
 ## Consequences

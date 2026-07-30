@@ -28,7 +28,7 @@ Use **two layers**:
 Convention: **don't put list/calendar data in a Zustand store**; use `createScopedQuery`. Read state
 reactively with `useStore(selector)` inside components; use `useStore.getState()`/`setState()` in
 store actions, resources, and utils. Cross-store reads/writes (e.g. dashboard store → `useAuthStore`)
-are normal ([frontend/CLAUDE.md](../../frontend/CLAUDE.md)).
+are normal ([AGENTS.md](../../AGENTS.md)).
 
 ## Consequences
 

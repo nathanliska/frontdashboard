@@ -29,7 +29,7 @@ and effort are noted inline where known.
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐ |
-| — | Backlog (unscheduled) | #16◐, #39, #52, #61, #21/#45 (deferred) |
+| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58, #59, #60, #61, #62, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
 
@@ -64,6 +64,8 @@ and effort are noted inline where known.
   of an IPv4 is brute-forceable in seconds, so it would not be an anonymisation at all), and
   `device_name` has no trustworthy source — a parsed User-Agent is a guess, and letting people
   name their own devices is honest but needs the UI anyway. *(Small-Medium)*
+
+- **#62 — A dashboard holding both calendar and agenda widgets fetches occurrences twice (2026-07-30).** Spotted in production logs: one mount issues `GET /api/calendar/events` for the widget's 42-day month grid *and* a second for the agenda's `today → today+8`, same dashboard. **The second is redundant almost always, not occasionally.** The dashboard calendar widget has no paging — `getWidgetWindow(view, today)` anchors to today — so containment is structural rather than a coincidence of which month is open. Measured over 2026-2027 in month view, `[today, today+8]` falls inside the 42-day grid on **723 of 730 days**; the 7 exceptions are month-end dates where the grid stops first (2026-05-31, 2026-08-30/31, 2027-01-31, 2027-05-30/31 …). Day view (`today → today+1`) and week view (`startOfWeek → +7`) are never large enough, and an agenda widget can sit on a dashboard with no calendar widget at all. **Why it is not a one-line fix:** `agendaOccurrencesQuery` and `calendarOccurrencesQuery` are separate `createScopedQuery` instances with separate cache maps, so aligning the window does not merge them — the agenda would have to source occurrences from the calendar resource, request the grid window, and slice locally (it already derives entries through `occurrenceToAgendaItem`). That is defensible, since it shares one resource rather than peeking at a foreign cache, but it moves agenda invalidation onto the calendar resource's SSE path — the exact code where echo suppression and handler ordering have regressed repeatedly, and where asserting on the rendered result proves nothing. It also needs explicit fallbacks for day/week view, the month-end days, and the agenda-without-calendar case. Cost of leaving it: one extra bounded request per mount on dashboards with both widgets — the window predicate (#16) keeps it off the calendar's full history. *(Small-Medium, and the risk is concentrated in the refactor rather than the change)*
 
 ## Deferred — revisit when
 
