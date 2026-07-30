@@ -1,4 +1,10 @@
 :80 {
+	# Cloudflare asks the origin for gzip/br on every request and caches nothing under /api, so
+	# without this each API response crosses the tunnel raw. Never on /api/sse: compressing a live
+	# stream buffers it, which is the one thing this whole file is arranged to prevent.
+	@compressible not path /api/sse
+	encode @compressible zstd gzip
+
 	# SSE: disable buffering so events are streamed immediately
 	handle /api/sse {
 		reverse_proxy frontdashboard-backend:8000 {
