@@ -39,4 +39,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready')"]
 
-CMD alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info}
+# JSON form naming the shell explicitly, rather than the shell form Docker rewrites for us: `&&` and
+# `${LOG_LEVEL:-info}` need a shell, but the implicit one makes /bin/sh PID 1, so a stop during
+# `alembic upgrade head` is not forwarded. `exec` then hands PID 1 to uvicorn for the serving life.
+CMD ["/bin/sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info}"]
