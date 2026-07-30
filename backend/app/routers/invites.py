@@ -39,7 +39,7 @@ from app.services.invites import (
     revoke_invite,
 )
 from app.services.notifications import stage_notification
-from app.services.shares import create_share, get_resource_shares, load_dashboard_access
+from app.services.shares import create_share, dashboard_audience_user_ids, get_resource_shares, load_dashboard_access
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dict
 from app.sse.manager import manager
 
@@ -220,7 +220,7 @@ async def accept_invite(
     shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
     await db.commit()
 
-    recipients = {dashboard.user_id} | {share.principal_id for share in shares}
+    recipients = dashboard_audience_user_ids(dashboard, shares)
     await manager.broadcast(event_message, user_ids=recipients, actor_id=current_user.id)
     await manager.broadcast(notification_message, user_ids={dashboard.user_id}, actor_id=current_user.id)
 
