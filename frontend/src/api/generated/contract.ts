@@ -600,6 +600,16 @@ export const PasswordResetRequest = z.object({
   email: z.string()
 })
 
+export type PasswordResetTokenCheck = z.infer<typeof PasswordResetTokenCheck>
+export const PasswordResetTokenCheck = z.object({
+  token: z.string()
+})
+
+export type PasswordResetTokenStatus = z.infer<typeof PasswordResetTokenStatus>
+export const PasswordResetTokenStatus = z.object({
+  valid: z.boolean()
+})
+
 export type PreferencesUpdate = z.infer<typeof PreferencesUpdate>
 export const PreferencesUpdate = z.object({
   favorite_dashboard_ids: z.union([z.array(z.string()), z.null()]).optional(),

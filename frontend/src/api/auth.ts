@@ -1,5 +1,10 @@
 import { apiFetch } from './client'
-import { RegistrationResponse, type UserPreferences, UserResponse } from './generated/contract'
+import {
+  PasswordResetTokenStatus,
+  RegistrationResponse,
+  type UserPreferences,
+  UserResponse,
+} from './generated/contract'
 import { parseJson, readError } from './http'
 
 export type { RegistrationResponse, UserPreferences } from './generated/contract'
@@ -82,6 +87,16 @@ export async function apiRequestPasswordReset(email: string): Promise<void> {
     body: JSON.stringify({ email }),
   })
   if (!res.ok) throw await readError(res, 'Failed to send password reset email')
+}
+
+export async function apiCheckPasswordResetToken(token: string): Promise<boolean> {
+  const res = await fetch('/api/auth/password-reset/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+  if (!res.ok) throw await readError(res, 'Failed to check reset link')
+  return (await parseJson(res, PasswordResetTokenStatus)).valid
 }
 
 export async function apiConfirmPasswordReset(token: string, new_password: string): Promise<void> {

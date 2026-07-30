@@ -24,6 +24,7 @@ _VERIFY_EMAIL_URL = "/api/auth/verify-email"
 _RESEND_VERIFICATION_URL = "/api/auth/resend-verification"
 _PASSWORD_RESET_REQUEST_URL = "/api/auth/password-reset/request"
 _PASSWORD_RESET_CONFIRM_URL = "/api/auth/password-reset/confirm"
+_PASSWORD_RESET_CHECK_URL = "/api/auth/password-reset/check"
 _REFRESH_URL = "/api/auth/refresh"
 _LOGOUT_URL = "/api/auth/logout"
 _ME_URL = "/api/auth/me"
@@ -359,6 +360,49 @@ async def test_confirm_password_reset_rejects_expired_token(db_client: AsyncClie
 
     assert resp.status_code == 400
     assert resp.json()["detail"] == "Invalid or expired reset link"
+
+
+async def test_check_reports_a_live_reset_token_without_spending_it(db_client: AsyncClient) -> None:
+    """The page asks before it offers a form, so the check must not consume what it reports on."""
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "check-reset@example.com", "password": "oldpassword", "display_name": "Check"},
+    )
+    await db_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "check-reset@example.com"})
+    reset_token = app.state.password_reset_tokens["check-reset@example.com"]
+
+    first = await db_client.post(_PASSWORD_RESET_CHECK_URL, json={"token": reset_token})
+    assert first.status_code == 200
+    assert first.json() == {"valid": True}
+
+    # Still spendable: a check that consumed the token would break the link it just validated.
+    assert (await db_client.post(_PASSWORD_RESET_CHECK_URL, json={"token": reset_token})).json() == {"valid": True}
+    confirm = await db_client.post(
+        _PASSWORD_RESET_CONFIRM_URL,
+        json={"token": reset_token, "new_password": "newpassword123"},
+    )
+    assert confirm.status_code == 204
+
+
+async def test_check_reports_unusable_reset_tokens(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    """Unknown, expired and already-spent all read the same to the caller — the page shows one
+    message for all three, and distinguishing them would leak which tokens exist."""
+    unknown = await db_client.post(_PASSWORD_RESET_CHECK_URL, json={"token": "not-a-real-token"})
+    assert unknown.json() == {"valid": False}
+
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "stale-reset@example.com", "password": "oldpassword", "display_name": "Stale"},
+    )
+    await db_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "stale-reset@example.com"})
+    reset_token = app.state.password_reset_tokens["stale-reset@example.com"]
+
+    result = await db_session.execute(select(PasswordResetToken).where(PasswordResetToken.token_hash == hash_token(reset_token)))
+    record = result.scalar_one()
+    record.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    await db_session.commit()
+
+    assert (await db_client.post(_PASSWORD_RESET_CHECK_URL, json={"token": reset_token})).json() == {"valid": False}
 
 
 async def test_me_requires_auth(client: AsyncClient) -> None:

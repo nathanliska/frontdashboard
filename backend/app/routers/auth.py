@@ -30,6 +30,8 @@ from app.schemas.auth import (
     PasswordChangeRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
+    PasswordResetTokenCheck,
+    PasswordResetTokenStatus,
     PreferencesUpdate,
     ProfileUpdate,
     RegisterRequest,
@@ -39,7 +41,7 @@ from app.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.services.email import send_existing_account_email, send_password_reset_email, send_verification_email
-from app.services.password_reset import consume_password_reset_token
+from app.services.password_reset import consume_password_reset_token, reset_token_is_live
 from app.services.sessions import (
     drop_session_streams,
     revoke_session,
@@ -340,6 +342,21 @@ async def request_password_reset(
         reset_url = await _issue_password_reset(user, db)
         await db.commit()
         background_tasks.add_task(send_password_reset_email, user.email, reset_url)
+
+
+@router.post("/password-reset/check", response_model=PasswordResetTokenStatus)
+@limiter.limit("10/minute")
+async def check_password_reset_token(
+    request: Request,
+    body: PasswordResetTokenCheck,
+    db: AsyncSession = Depends(get_db),
+) -> PasswordResetTokenStatus:
+    """Whether a reset link is still usable, so the page can say so before asking for a password.
+
+    POST rather than GET with a query parameter: the token is a bearer credential and query strings
+    reach access logs. Never consumes — the link stays live for whoever it was sent to.
+    """
+    return PasswordResetTokenStatus(valid=await reset_token_is_live(body.token, db))
 
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
