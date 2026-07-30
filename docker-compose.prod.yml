@@ -5,6 +5,11 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - internal
       - edge
@@ -22,6 +27,11 @@ services:
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
       RESEND_API_KEY: ${RESEND_API_KEY}
       EMAIL_FROM: ${EMAIL_FROM}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - internal
     restart: unless-stopped

@@ -6,10 +6,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FrontDashboard</title>
     <!-- Pre-CSS flash prevention: matches --color-zinc-950 defined in index.css -->
-    <style>html,body,#root{background:#09090b}</style>
+    <style>
+      html,body,#root{background:#09090b}
+      /* Shown only if the bundle never runs — React clears #root on first render, so a successful
+         boot deletes it. Delayed so a slow load doesn't flash it; CSS because CSP forbids inline JS. */
+      #boot-fallback{opacity:0;animation:boot-fallback-in 150ms linear 12s forwards;
+        display:flex;min-height:100vh;flex-direction:column;align-items:center;justify-content:center;
+        gap:12px;padding:24px;text-align:center;
+        font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#d4d4d8}
+      #boot-fallback p{margin:0;font-size:14px}
+      #boot-fallback .hint{color:#71717a;max-width:34rem;line-height:1.5}
+      @keyframes boot-fallback-in{to{opacity:1}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-fallback">
+        <p>FrontDashboard couldn&rsquo;t start.</p>
+        <p class="hint">
+          The page loaded but its script did not. Try reloading; if that doesn&rsquo;t help, check
+          whether an extension, content blocker or network filter is blocking JavaScript for this
+          site.
+        </p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

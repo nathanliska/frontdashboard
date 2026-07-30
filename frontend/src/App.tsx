@@ -1,10 +1,11 @@
 import { lazy, type ReactNode, Suspense, useEffect } from 'react'
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router'
+import { BrowserRouter, Outlet, Route, Routes, useNavigate } from 'react-router'
 import { RequireAuth } from './components/auth/RequireAuth'
 import { AppShell } from './components/layout/AppShell'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { InvitePage } from './pages/InvitePage'
 import { LoginPage } from './pages/LoginPage'
+import { NotFoundPage } from './pages/NotFoundPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
@@ -106,7 +107,7 @@ export default function App() {
               </Route>
             </Route>
 
-            <Route path="*" element={<Navigate to={ROUTES.home} replace />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
       </AuthInit>

@@ -8,14 +8,20 @@
 
 	# API routes
 	handle /api/* {
-		# An oversized body is rejected here rather than after FastAPI has read and parsed it:
-		# field-level max_length validators bound individual strings, nothing bounds the whole
-		# body. 1MB is far above any real payload — the largest is a dashboard layout PUT, a few
-		# KB. Not applied to /api/sse above, which is a long-lived response, not a body.
+		# Field validators cap individual strings; nothing caps the whole body. 1MB is far above any
+		# real payload (the largest is a layout PUT, a few KB). Not on /api/sse — that is a response.
 		request_body {
 			max_size 1MB
 		}
 		reverse_proxy frontdashboard-backend:8000
+	}
+
+	# Outside the SPA fallback on purpose: a missing bundle must 404, not be handed index.html for the
+	# browser to parse as JavaScript. Fingerprinted names never change meaning, so they cache forever.
+	handle /assets/* {
+		root * /srv
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
 	}
 
 	# Static files with SPA fallback
@@ -25,8 +31,21 @@
 		header {
 			Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'"
 			X-Permitted-Cross-Domain-Policies none
+			# index.html names which fingerprints are current, so it must never be held stale.
+			Cache-Control "no-cache"
 		}
 		file_server
+	}
+
+	# Origin failures and missing assets. SPA 404s never reach here — try_files sends unknown paths to
+	# index.html, where React's NotFoundPage answers them.
+	handle_errors {
+		header Content-Type "text/html; charset=utf-8"
+		# Overrides the immutable header a missing /assets path inherits: a year-long 404 would
+		# outlive a rollback that restores the file.
+		header Cache-Control "no-store"
+		header -Server
+		respond `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FrontDashboard is unavailable</title><style>body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#09090b;color:#d4d4d8;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;text-align:center;padding:24px}p{margin:0;font-size:14px}.hint{color:#71717a}</style></head><body><p>FrontDashboard is temporarily unavailable.</p><p class="hint">Error {err.status_code}. This is the server, not your connection — try again in a moment.</p></body></html>` {err.status_code}
 	}
 
 	# Security headers
