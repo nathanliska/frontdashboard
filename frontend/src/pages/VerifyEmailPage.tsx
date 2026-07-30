@@ -16,6 +16,9 @@ export function getVerificationErrorMessage(err: unknown) {
 
 export function VerifyEmailPage() {
   const verifyEmail = useAuthStore((s) => s.verifyEmail)
+  const authStatus = useAuthStore((s) => s.status)
+  const signedInAs = useAuthStore((s) => (s.status === 'authenticated' ? s.user?.email : null))
+  const [confirmedSwitch, setConfirmedSwitch] = useState(false)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
@@ -27,8 +30,13 @@ export function VerifyEmailPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Verifying signs you in as whichever account the link belongs to. Auto-running that while
+  // someone is already signed in swaps their identity with no acknowledgement, so a signed-in
+  // visitor has to confirm first. Waits for `loading` to resolve, or the check races the session.
+  const needsSwitchConfirmation = Boolean(token) && Boolean(signedInAs) && !confirmedSwitch
+
   useEffect(() => {
-    if (!token) return
+    if (!token || authStatus === 'loading' || needsSwitchConfirmation) return
 
     let cancelled = false
     setStatus('verifying')
@@ -49,7 +57,7 @@ export function VerifyEmailPage() {
     return () => {
       cancelled = true
     }
-  }, [navigate, token, verifyEmail])
+  }, [authStatus, navigate, needsSwitchConfirmation, token, verifyEmail])
 
   async function handleResend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -64,6 +72,33 @@ export function VerifyEmailPage() {
     } finally {
       setStatus('idle')
     }
+  }
+
+  if (needsSwitchConfirmation) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-zinc-950">
+        <div className="w-full max-w-sm px-6 text-center">
+          <h1 className="mb-3 text-2xl font-semibold text-zinc-100">Switch accounts?</h1>
+          <p className="mb-8 text-sm text-zinc-400">
+            You are signed in as <span className="text-zinc-200">{signedInAs}</span>. Following this
+            link verifies the account it was sent to and signs you in as that account instead.
+          </p>
+          <button
+            type="button"
+            onClick={() => setConfirmedSwitch(true)}
+            className="w-full rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-white"
+          >
+            Continue
+          </button>
+          <Link
+            to={ROUTES.home}
+            className="mt-6 block text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            Stay signed in as {signedInAs}
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   return (

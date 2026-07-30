@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-07-29
+**Last reviewed:** 2026-07-30
 
 ## Overview
 
@@ -27,9 +27,14 @@ multi-user account model with immediate, per-device session control — not just
 - **Sessions expire two ways.** After 7 days without use (idle), or 30 days after login however
   actively used (absolute). Both are enforced server-side.
 - **Password reset and change.** Reset via emailed link; authenticated users can change their
-  password or rename their profile.
+  password or rename their profile. The reset page checks the link before offering a form, so an
+  expired, spent or unknown one says so instead of failing after the password is typed. The check
+  reports validity only — never whose account it is — and does not consume the token.
+- **Following a link can change who you are, and says so.** A verification link signs you in as the
+  account it was sent to; opening one while already signed in asks first. A reset link sets the
+  password for its own account, which a signed-in visitor is told may not be theirs.
 - **Emails.** Verification and reset emails send in the background via Resend; without an API key the
-  link is logged (how you get tokens in local dev).
+  link is written to `backend/.dev-mail/` (how you get tokens in local dev).
 - **Profile page.** Display name, password change, and home-dashboard preference.
 
 ## Design Decisions

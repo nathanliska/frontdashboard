@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'lucide-react'
 import type { ComponentProps } from 'react'
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import type { ListItem } from '../api/lists'
 import { AddItemForm } from '../components/lists/AddItemForm'
@@ -55,10 +55,6 @@ export function ListDetailPage() {
   const dashboardId = searchParams.get('dashboard_id')
   const indexUrl = `${ROUTES.lists}${dashboardId ? `?dashboard_id=${dashboardId}` : ''}`
 
-  useEffect(() => {
-    if (detailError) navigate(indexUrl, { replace: true })
-  }, [detailError, navigate, indexUrl])
-
   async function handleAddItem(text: string) {
     const trimmedText = text.trim()
     if (!trimmedText) return
@@ -103,7 +99,22 @@ export function ListDetailPage() {
     return (
       <div className="flex-1 flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40">
         {detailError ? (
-          <p className="text-sm text-zinc-600">Could not load this list.</p>
+          // Said rather than silently redirected: a stale bookmark used to bounce to the index with
+          // no explanation, which reads as the app ignoring the click.
+          <div className="flex flex-col items-center gap-3 text-center">
+            <p className="text-sm text-zinc-400">
+              Could not load this list. It may have been moved to the trash, or you may no longer
+              have access to it.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate(indexUrl, { replace: true })}
+              className="flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+            >
+              <ArrowLeft size={14} />
+              Back to lists
+            </button>
+          </div>
         ) : (
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
         )}
