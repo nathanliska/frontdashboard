@@ -73,43 +73,65 @@ let queuedSummariesForceReload = false
 let inFlightTrashLoad: InFlightSummariesLoad | null = null
 let queuedTrashForceReload = false
 let latestDashboardRequest: { id: string; serial: number } | null = null
-let scheduledSummariesRefreshTimer: ReturnType<typeof setTimeout> | null = null
-let scheduledSummariesRefreshPromise: Promise<void> | null = null
-let resolveScheduledSummariesRefresh: (() => void) | null = null
-let rejectScheduledSummariesRefresh: ((error: unknown) => void) | null = null
-
 const DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS = 100
 
-function scheduleSummariesRefresh(run: () => Promise<void>): Promise<void> {
-  if (!scheduledSummariesRefreshPromise) {
-    scheduledSummariesRefreshPromise = new Promise<void>((resolve, reject) => {
-      resolveScheduledSummariesRefresh = resolve
-      rejectScheduledSummariesRefresh = reject
-    })
-  }
-
-  if (scheduledSummariesRefreshTimer) {
-    clearTimeout(scheduledSummariesRefreshTimer)
-  }
-
-  scheduledSummariesRefreshTimer = setTimeout(() => {
-    scheduledSummariesRefreshTimer = null
-
-    const resolve = resolveScheduledSummariesRefresh
-    const reject = rejectScheduledSummariesRefresh
-
-    scheduledSummariesRefreshPromise = null
-    resolveScheduledSummariesRefresh = null
-    rejectScheduledSummariesRefresh = null
-
-    void run().then(
-      () => resolve?.(),
-      (error) => reject?.(error),
-    )
-  }, DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS)
-
-  return scheduledSummariesRefreshPromise
+type DebouncedRefresh = {
+  schedule: (run: () => Promise<void>) => Promise<void>
+  cancel: () => void
 }
+
+/** Coalesce a burst of refresh requests into one call, resolving every caller with its result. */
+function createDebouncedRefresh(delayMs: number): DebouncedRefresh {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let promise: Promise<void> | null = null
+  let resolveOne: (() => void) | null = null
+  let rejectOne: ((error: unknown) => void) | null = null
+
+  return {
+    schedule(run) {
+      if (!promise) {
+        promise = new Promise<void>((resolve, reject) => {
+          resolveOne = resolve
+          rejectOne = reject
+        })
+      }
+      if (timer) clearTimeout(timer)
+
+      timer = setTimeout(() => {
+        timer = null
+        const resolve = resolveOne
+        const reject = rejectOne
+        promise = null
+        resolveOne = null
+        rejectOne = null
+        void run().then(
+          () => resolve?.(),
+          (error) => reject?.(error),
+        )
+      }, delayMs)
+
+      return promise
+    },
+    cancel() {
+      if (timer) clearTimeout(timer)
+      timer = null
+      // Settle any pending promise before dropping the handle, so a caller awaiting it across a
+      // sign-out does not hang forever.
+      resolveOne?.()
+      promise = null
+      resolveOne = null
+      rejectOne = null
+    },
+  }
+}
+
+const summariesRefresh = createDebouncedRefresh(DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS)
+// A widget drag emits one layout event per save; without this each costs every other tab a full
+// dashboard GET.
+const dashboardRefresh = createDebouncedRefresh(DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS)
+
+const scheduleSummariesRefresh = (run: () => Promise<void>) => summariesRefresh.schedule(run)
+const scheduleDashboardRefresh = (run: () => Promise<void>) => dashboardRefresh.schedule(run)
 
 function getEventDashboardId(event: SseEvent): string | null {
   if (event.entity_type === 'dashboard') {
@@ -142,6 +164,42 @@ function isLayoutOnlyDashboardEvent(event: SseEvent): boolean {
     changedFields.length === 1 &&
     changedFields[0] === 'layout'
   )
+}
+
+/**
+ * Apply a widget-config change in place, returning whether it was handled.
+ *
+ * `dashboard.version` is deliberately untouched: only layout writes bump it, and it is what
+ * `PUT /layout` compares to detect a concurrent edit. Writing it here would let a stale layout
+ * save claim to be current. `changed_fields` being exactly `['widgets']` is what identifies a
+ * config-only write — add and delete both carry `'layout'`.
+ */
+function applyWidgetConfigPatch(
+  set: (updater: (state: DashboardState) => Partial<DashboardState> | DashboardState) => void,
+  event: SseEvent,
+): boolean {
+  const changedFields = getDashboardEventChangedFields(event)
+  if (changedFields.length !== 1 || changedFields[0] !== 'widgets') return false
+
+  const widgetId = event.payload.widget_id
+  const config = event.payload.config
+  if (!widgetId || !config) return false
+
+  let patched = false
+  set((state) => {
+    if (!state.dashboard) return state
+    if (!state.dashboard.widgets.some((widget) => widget.id === widgetId)) return state
+    patched = true
+    return {
+      dashboard: {
+        ...state.dashboard,
+        widgets: state.dashboard.widgets.map((widget) =>
+          widget.id === widgetId ? { ...widget, config } : widget,
+        ),
+      },
+    }
+  })
+  return patched
 }
 
 function canSkipDashboardSummaryReload(event: SseEvent): boolean {
@@ -812,12 +870,19 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           return
         }
 
+        if (applyWidgetConfigPatch(set, event)) {
+          await summariesRefreshPromise
+          return
+        }
+
         await Promise.all([
           summariesRefreshPromise,
-          get().loadDashboard(activeDashboardId, {
-            background: true,
-            surfaceAccessLoss: shouldSurfaceAccessLoss,
-          }),
+          scheduleDashboardRefresh(() =>
+            get().loadDashboard(activeDashboardId, {
+              background: true,
+              surfaceAccessLoss: shouldSurfaceAccessLoss,
+            }),
+          ),
         ])
         return
       }
@@ -872,12 +937,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
 
 export function resetDashboardData(): void {
   bumpSessionGeneration()
-  if (scheduledSummariesRefreshTimer) {
-    clearTimeout(scheduledSummariesRefreshTimer)
-  }
-  // Settle any pending debounce promise before dropping the handles, so a caller
-  // awaiting it (handleDashboardEvent) doesn't hang forever across the boundary.
-  resolveScheduledSummariesRefresh?.()
+  summariesRefresh.cancel()
+  dashboardRefresh.cancel()
   inFlightDashboardLoad = null
   inFlightSummariesLoad = null
   inFlightTrashLoad = null
@@ -886,10 +947,6 @@ export function resetDashboardData(): void {
   pendingLayoutSave = null
   queuedSummariesForceReload = false
   latestDashboardRequest = null
-  scheduledSummariesRefreshTimer = null
-  scheduledSummariesRefreshPromise = null
-  resolveScheduledSummariesRefresh = null
-  rejectScheduledSummariesRefresh = null
   resetPendingDashboardMutations()
   useDashboardStore.setState({
     summaries: [],

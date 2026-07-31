@@ -910,6 +910,9 @@ async def update_widget(
         payload={
             "widget_id": str(widget.id),
             "widget_type": widget.widget_type,
+            # Lets other tabs patch the widget instead of reloading the dashboard. Safe only
+            # because a config write bumps no version — layout writes, which do, are excluded.
+            "config": widget.config,
             "changed_fields": ["widgets"],
         },
         client_mutation_id=client_mutation_id,

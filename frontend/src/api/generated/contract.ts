@@ -42,11 +42,13 @@ export const ActivitySsePayload = z.intersection(
   z.object({
     changed_fields: z.union([z.array(z.string()), z.null()]).optional(),
     client_mutation_id: z.union([z.string(), z.null()]).optional(),
+    config: z.union([z.record(z.unknown()), z.null()]).optional(),
     dashboard_id: z.union([z.string(), z.null()]).optional(),
     item_ids: z.union([z.array(z.string()), z.null()]).optional(),
     list_id: z.union([z.string(), z.null()]).optional(),
     list_ids: z.union([z.array(z.string()), z.null()]).optional(),
-    values: z.union([z.record(z.unknown()), z.null()]).optional()
+    values: z.union([z.record(z.unknown()), z.null()]).optional(),
+    widget_id: z.union([z.string(), z.null()]).optional()
   }),
   z.object({})
 )

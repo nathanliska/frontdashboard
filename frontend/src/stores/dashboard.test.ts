@@ -1287,4 +1287,107 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().conflict).toBe(false)
     expect(useDashboardStore.getState().dashboard).toEqual(updatedDashboard)
   })
+
+  it("patches a widget's config from someone else's event without reloading the dashboard", async () => {
+    useDashboardStore.setState({
+      summariesLoaded: false,
+      dashboard: makeDashboard({
+        version: 4,
+        widgets: [
+          {
+            id: 'widget-1',
+            dashboard_id: 'dash-1',
+            widget_type: 'calendar',
+            widget_version: 1,
+            config: { view: 'month' },
+            resource_type: null,
+            resource_id: null,
+            created_at: '2026-04-05T00:00:00Z',
+            updated_at: '2026-04-05T00:00:00Z',
+          },
+        ],
+      }),
+    })
+
+    await useDashboardStore.getState().handleDashboardEvent(
+      makeSseEvent({
+        actor_id: 'someone-else',
+        entity_version: 4,
+        payload: {
+          dashboard_id: 'dash-1',
+          widget_id: 'widget-1',
+          config: { view: 'week' },
+          changed_fields: ['widgets'],
+        },
+      }),
+    )
+
+    // Asserting the config is right would pass whether it was patched or refetched, so the load
+    // count is the real assertion here.
+    expect(apiGetDashboard).not.toHaveBeenCalled()
+    expect(useDashboardStore.getState().dashboard?.widgets[0].config).toEqual({ view: 'week' })
+    // Untouched on purpose: only layout writes move the version, and PUT /layout compares it to
+    // detect a concurrent edit. Advancing it here would let a stale layout save look current.
+    expect(useDashboardStore.getState().dashboard?.version).toBe(4)
+  })
+
+  it('reloads rather than patching when a widget event also changed the layout', async () => {
+    apiGetDashboard.mockResolvedValue(makeDashboard({ version: 5 }))
+    useDashboardStore.setState({
+      summariesLoaded: false,
+      dashboard: makeDashboard({
+        version: 4,
+        widgets: [
+          {
+            id: 'widget-1',
+            dashboard_id: 'dash-1',
+            widget_type: 'calendar',
+            widget_version: 1,
+            config: { view: 'month' },
+            resource_type: null,
+            resource_id: null,
+            created_at: '2026-04-05T00:00:00Z',
+            updated_at: '2026-04-05T00:00:00Z',
+          },
+        ],
+      }),
+    })
+
+    await useDashboardStore.getState().handleDashboardEvent(
+      makeSseEvent({
+        actor_id: 'someone-else',
+        entity_version: 5,
+        payload: {
+          dashboard_id: 'dash-1',
+          widget_id: 'widget-1',
+          config: { view: 'week' },
+          changed_fields: ['widgets', 'layout'],
+        },
+      }),
+    )
+
+    expect(apiGetDashboard).toHaveBeenCalledTimes(1)
+  })
+
+  it('collapses a burst of layout events into a single dashboard reload', async () => {
+    apiGetDashboard.mockResolvedValue(makeDashboard({ version: 9 }))
+    useDashboardStore.setState({
+      summariesLoaded: false,
+      dashboard: makeDashboard({ version: 1 }),
+    })
+
+    await Promise.all(
+      [2, 3, 4, 5].map((version) =>
+        useDashboardStore.getState().handleDashboardEvent(
+          makeSseEvent({
+            actor_id: 'someone-else',
+            entity_version: version,
+            payload: { dashboard_id: 'dash-1', changed_fields: ['layout', 'widgets'] },
+          }),
+        ),
+      ),
+    )
+
+    expect(apiGetDashboard).toHaveBeenCalledTimes(1)
+  })
 })
