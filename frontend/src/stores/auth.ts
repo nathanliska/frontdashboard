@@ -13,9 +13,7 @@ import {
   type UserPreferences,
 } from '../api/auth'
 import { setSessionExpiredHandler } from '../api/client'
-import { resetAgendaData } from '../resources/agendaData'
-import { resetCalendarData } from '../resources/calendarData'
-import { resetListData } from '../resources/listData'
+import { resetAllResourceData } from '../resources/resetRegistry'
 import { useConfirmStore } from './confirm'
 import { resetDashboardData } from './dashboard'
 import { useNotificationsStore } from './notifications'
@@ -27,9 +25,10 @@ let authInitPromise: Promise<void> | null = null
 function resetSessionData(): void {
   useConfirmStore.getState().reset()
   useNotificationsStore.getState().reset()
-  resetAgendaData()
-  resetCalendarData()
-  resetListData()
+  // Resource caches register their own reset when they load, so a cache that was never loaded
+  // holds nothing to clear and one added later needs no edit here.
+  resetAllResourceData()
+  // Last: it bumps the session generation that guards in-flight callbacks.
   resetDashboardData()
 }
 

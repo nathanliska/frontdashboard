@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { CalendarOccurrence } from '../api/calendar'
-import { apiListOccurrences } from '../api/calendar'
 import { apiGetListDetails, type ListItem, type ListSummary } from '../api/lists'
 import { useLocalDay } from '../hooks/useLocalDay'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { addDays, dateKey, startOfDay } from '../utils/calendar/calendarUtils'
 
+import { resetOccurrences, useOccurrences } from './occurrenceStore'
+import { registerResourceReset } from './resetRegistry'
 import { createScopedQuery, type ScopedQueryState } from './scopedQuery'
 
 export type AgendaItem =
@@ -32,14 +33,6 @@ export type AgendaItem =
 type AgendaScope = {
   dashboardId: string
 }
-
-// Split at the cache layer so SSE can invalidate the calendar slice alone; list events are
-// handled by the list resource layer.
-const agendaOccurrencesQuery = createScopedQuery<AgendaScope, CalendarOccurrence[]>({
-  getKey: (scope) => scope.dashboardId,
-  fetcher: fetchAgendaOccurrences,
-  fallbackErrorMessage: 'Failed to load agenda.',
-})
 
 const agendaRemindersQuery = createScopedQuery<AgendaScope, AgendaItem[]>({
   getKey: (scope) => scope.dashboardId,
@@ -184,17 +177,6 @@ export function removeAgendaItemsForList(listId: string): void {
   )
 }
 
-async function fetchAgendaOccurrences(scope: AgendaScope): Promise<CalendarOccurrence[]> {
-  const today = startOfDay(new Date())
-  const windowEnd = addDays(today, 8)
-
-  return apiListOccurrences({
-    windowStart: today.toISOString(),
-    windowEnd: windowEnd.toISOString(),
-    dashboardId: scope.dashboardId,
-  })
-}
-
 async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
   const todayKey = dateKey(startOfDay(new Date()))
   // One batch request rather than one per list, and it reads no client cache — which is what
@@ -209,20 +191,22 @@ async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
 }
 
 function mergeAgendaState(
-  occurrencesState: ScopedQueryState<CalendarOccurrence[]>,
+  occurrences: CalendarOccurrence[] | null,
   remindersState: ScopedQueryState<AgendaItem[]>,
+  occurrencesLoading: boolean,
+  occurrencesError: Error | null,
 ): ScopedQueryState<AgendaItem[]> {
   const data =
-    occurrencesState.data && remindersState.data
-      ? [...remindersState.data, ...occurrencesState.data.map(occurrenceToAgendaItem)].sort(
+    occurrences && remindersState.data
+      ? [...remindersState.data, ...occurrences.map(occurrenceToAgendaItem)].sort(
           compareAgendaItems,
         )
       : null
 
   return {
     data,
-    loading: occurrencesState.loading || remindersState.loading,
-    error: occurrencesState.error ?? remindersState.error,
+    loading: occurrencesLoading || remindersState.loading,
+    error: occurrencesError ?? remindersState.error,
   }
 }
 
@@ -232,32 +216,41 @@ export function useAgendaItems(dashboardId: string | null) {
     [dashboardId],
   )
 
-  // At local midnight the fetch window and today/overdue classification go stale. Refetched
-  // directly rather than salting the cache key with the day, which would leak an entry daily.
-  // The ref skips the mount run, so only a real rollover refetches.
+  // At local midnight the window and the today/overdue classification both go stale. The window is
+  // derived from dayKey so the occurrence store refetches on its own; reminders classify at fetch
+  // time, so they still need the explicit nudge. The ref skips the mount run.
   const dayKey = useLocalDay()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dayKey re-runs `new Date()` at the local-day rollover — an intentional trigger dep, not used inside.
+  const agendaWindow = useMemo(() => {
+    const today = startOfDay(new Date())
+    return { start: today.toISOString(), end: addDays(today, 8).toISOString() }
+  }, [dayKey])
   const previousDay = useRef(dayKey)
   useEffect(() => {
     if (previousDay.current === dayKey) return
     previousDay.current = dayKey
     if (!scope) return
-    void agendaOccurrencesQuery.fetch(scope, { background: true }).catch(() => undefined)
     void agendaRemindersQuery.fetch(scope, { background: true }).catch(() => undefined)
   }, [dayKey, scope])
 
-  const occurrencesState = agendaOccurrencesQuery.useQuery(scope)
+  const occurrences = useOccurrences(dashboardId, agendaWindow.start, agendaWindow.end)
   const remindersState = agendaRemindersQuery.useQuery(scope)
 
   return useMemo(
     () => ({
-      ...mergeAgendaState(occurrencesState, remindersState),
+      ...mergeAgendaState(
+        occurrences.loaded ? occurrences.data : null,
+        remindersState,
+        occurrences.loading,
+        occurrences.error,
+      ),
       // Retry both halves: either one failing surfaces as the merged error.
       refetch: () => {
-        occurrencesState.refetch()
+        occurrences.refetch()
         remindersState.refetch()
       },
     }),
-    [occurrencesState, remindersState],
+    [occurrences, remindersState],
   )
 }
 
@@ -266,7 +259,6 @@ export function handleAgendaResourceEvent(
   { isOwnEcho = false }: { isOwnEcho?: boolean } = {},
 ): void {
   if (event.event_type === 'resync') {
-    agendaOccurrencesQuery.invalidateWhere(() => true)
     agendaRemindersQuery.invalidateWhere(() => true)
     return
   }
@@ -285,16 +277,15 @@ export function handleAgendaResourceEvent(
     }
   }
 
-  if (event.event_type.startsWith('calendar.')) {
-    invalidateMatching((predicate) => agendaOccurrencesQuery.invalidateWhere(predicate))
-  }
-
+  // Calendar events reach the shared occurrence store through handleCalendarResourceEvent.
   if (event.event_type.startsWith('list.')) {
     invalidateMatching((predicate) => agendaRemindersQuery.invalidateWhere(predicate))
   }
 }
 
 export function resetAgendaData(): void {
-  agendaOccurrencesQuery.reset()
   agendaRemindersQuery.reset()
+  resetOccurrences()
 }
+
+registerResourceReset(resetAgendaData)

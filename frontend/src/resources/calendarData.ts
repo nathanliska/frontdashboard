@@ -1,35 +1,21 @@
-import { useMemo } from 'react'
 import {
   apiCreateEvent,
   apiDeleteEvent,
   apiGetEvent,
-  apiListOccurrences,
   apiUpdateEvent,
   type CalendarEvent,
-  type CalendarOccurrence,
   type CreateCalendarEventInput,
   type UpdateCalendarEventInput,
 } from '../api/calendar'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { toast } from '../stores/toast'
-import { createScopedQuery } from './scopedQuery'
-
-type CalendarOccurrencesScope = {
-  windowStart: string
-  windowEnd: string
-  dashboardId: string | null
-}
-
-const calendarOccurrencesQuery = createScopedQuery<CalendarOccurrencesScope, CalendarOccurrence[]>({
-  getKey: (scope) => `${scope.dashboardId ?? 'personal'}:${scope.windowStart}:${scope.windowEnd}`,
-  fetcher: (scope) =>
-    apiListOccurrences({
-      windowStart: scope.windowStart,
-      windowEnd: scope.windowEnd,
-      dashboardId: scope.dashboardId,
-    }),
-  fallbackErrorMessage: 'Failed to load calendar events.',
-})
+import {
+  invalidateAllOccurrences,
+  invalidateOccurrences,
+  resetOccurrences,
+  useOccurrences,
+} from './occurrenceStore'
+import { registerResourceReset } from './resetRegistry'
 
 const calendarEventDetails = new Map<string, CalendarEvent>()
 const calendarEventRequests = new Map<string, Promise<CalendarEvent>>()
@@ -39,7 +25,7 @@ function getDashboardId(event: SseEvent): string | null {
 }
 
 function invalidateDashboardOccurrences(dashboardId: string | null): void {
-  calendarOccurrencesQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
+  invalidateOccurrences(dashboardId)
 }
 
 function invalidateCalendarEvent(eventId: string | null): void {
@@ -53,12 +39,7 @@ export function useCalendarOccurrences(
   windowEnd: string | null,
   dashboardId: string | null,
 ) {
-  const scope = useMemo<CalendarOccurrencesScope | null>(() => {
-    if (!windowStart || !windowEnd) return null
-    return { windowStart, windowEnd, dashboardId }
-  }, [dashboardId, windowEnd, windowStart])
-
-  return calendarOccurrencesQuery.useQuery(scope)
+  return useOccurrences(dashboardId, windowStart, windowEnd)
 }
 
 export async function createCalendarEvent(input: CreateCalendarEventInput): Promise<CalendarEvent> {
@@ -139,7 +120,7 @@ export async function deleteCalendarEvent(
 
 export function handleCalendarResourceEvent(event: ResourceEvent): void {
   if (event.event_type === 'resync') {
-    calendarOccurrencesQuery.invalidateWhere(() => true)
+    invalidateAllOccurrences()
     calendarEventDetails.clear()
     calendarEventRequests.clear()
     return
@@ -152,7 +133,9 @@ export function handleCalendarResourceEvent(event: ResourceEvent): void {
 }
 
 export function resetCalendarData(): void {
-  calendarOccurrencesQuery.reset()
+  resetOccurrences()
   calendarEventDetails.clear()
   calendarEventRequests.clear()
 }
+
+registerResourceReset(resetCalendarData)

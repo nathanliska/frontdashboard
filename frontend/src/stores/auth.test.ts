@@ -1,16 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User } from '../api/auth'
+import { registerResourceReset } from '../resources/resetRegistry'
 import { useAuthStore } from './auth'
 import { confirm } from './confirm'
 import { bumpSessionGeneration } from './sessionGeneration'
 
-const { resetCalendarData } = vi.hoisted(() => ({
-  resetCalendarData: vi.fn(),
-}))
-
-const { resetListData } = vi.hoisted(() => ({
-  resetListData: vi.fn(),
-}))
+// Registered through the reset registry, exactly as a real resource cache registers itself, so
+// this asserts sign-out clears whatever registered rather than a hard-coded list of functions.
+const { registeredReset } = vi.hoisted(() => ({ registeredReset: vi.fn() }))
 
 const { resetDashboardData } = vi.hoisted(() => ({ resetDashboardData: vi.fn() }))
 vi.mock('./dashboard', () => ({ resetDashboardData }))
@@ -56,14 +53,6 @@ vi.mock('../api/auth', () => ({
   apiUpdateProfile,
 }))
 
-vi.mock('../resources/calendarData', () => ({
-  resetCalendarData,
-}))
-
-vi.mock('../resources/listData', () => ({
-  resetListData,
-}))
-
 vi.mock('./toast', async () => (await import('../test/toast')).toastMock({ error: toastError }))
 
 const user: User = {
@@ -76,6 +65,7 @@ const user: User = {
 describe('useAuthStore', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    registerResourceReset(registeredReset)
     vi.stubGlobal('fetch', vi.fn())
     useAuthStore.setState({ status: 'loading', user: null })
   })
@@ -106,8 +96,7 @@ describe('useAuthStore', () => {
 
     expect(useAuthStore.getState().status).toBe('unauthenticated')
     expect(useAuthStore.getState().user).toBeNull()
-    expect(resetCalendarData).toHaveBeenCalledTimes(1)
-    expect(resetListData).toHaveBeenCalledTimes(1)
+    expect(registeredReset).toHaveBeenCalledTimes(1)
   })
 
   it('updates auth state on login and logout', async () => {
@@ -117,14 +106,12 @@ describe('useAuthStore', () => {
     await useAuthStore.getState().login('user@example.com', 'password123')
     expect(useAuthStore.getState().status).toBe('authenticated')
     expect(useAuthStore.getState().user).toEqual(user)
-    expect(resetCalendarData).toHaveBeenCalledTimes(1)
-    expect(resetListData).toHaveBeenCalledTimes(1)
+    expect(registeredReset).toHaveBeenCalledTimes(1)
 
     await useAuthStore.getState().logout()
     expect(useAuthStore.getState().status).toBe('unauthenticated')
     expect(useAuthStore.getState().user).toBeNull()
-    expect(resetCalendarData).toHaveBeenCalledTimes(2)
-    expect(resetListData).toHaveBeenCalledTimes(2)
+    expect(registeredReset).toHaveBeenCalledTimes(2)
   })
 
   it('resets dashboard state on logout', async () => {

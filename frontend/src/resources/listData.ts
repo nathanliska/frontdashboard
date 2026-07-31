@@ -35,6 +35,7 @@ import {
   removeAgendaItemsForList,
   renameAgendaListEntries,
 } from './agendaData'
+import { registerResourceReset } from './resetRegistry'
 import { createScopedQuery } from './scopedQuery'
 
 type ListSummariesScope = {
@@ -541,6 +542,8 @@ export function resetListData(): void {
   listSummariesQuery.reset()
   listDetailQuery.reset()
 }
+
+registerResourceReset(resetListData)
 
 export function __resetListDataForTests(): void {
   resetListData()

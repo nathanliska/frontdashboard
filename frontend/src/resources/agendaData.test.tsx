@@ -6,6 +6,7 @@ import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
 import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
 import { handleAgendaResourceEvent, resetAgendaData, useAgendaItems } from './agendaData'
+import { handleCalendarResourceEvent } from './calendarData'
 import {
   __resetListDataForTests,
   __seedListDetailForTests,
@@ -57,12 +58,17 @@ vi.mock('../api/lists', () => ({
 
 vi.mock('../stores/toast', async () => (await import('../test/toast')).toastMock())
 
+// Relative to now: the agenda window is today..+8d, and the occurrence cache filters what it
+// returns to the requested window, so a fixed date would fall outside it once the date passes.
+const SOON = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+const SOON_END = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString()
+
 function makeOccurrence(overrides: Partial<CalendarOccurrence> = {}): CalendarOccurrence {
   return {
     event_id: 'event-1',
-    occurrence_start: '2026-05-05T14:00:00Z',
-    occurrence_end: '2026-05-05T15:00:00Z',
-    original_start: '2026-05-05T14:00:00Z',
+    occurrence_start: SOON,
+    occurrence_end: SOON_END,
+    original_start: SOON,
     title: 'Launch review',
     description: null,
     location: null,
@@ -173,7 +179,10 @@ describe('agendaData', () => {
     expect(apiListOccurrences).toHaveBeenCalledTimes(1)
     expect(apiGetListDetails).toHaveBeenCalledTimes(1)
 
+    // Both handlers, as useSSE routes it: occurrences live in the shared store that
+    // handleCalendarResourceEvent owns, while the agenda handler covers reminders.
     act(() => {
+      handleCalendarResourceEvent(makeCalendarUpdatedEvent())
       handleAgendaResourceEvent(makeCalendarUpdatedEvent())
     })
 
