@@ -154,8 +154,8 @@ make audit       # dependency/security audit checks
   router in `resources/*`. Miss either and the UI silently goes stale.
 - The echo check consumes, so ask once at the router and pass the verdict down. Suppressing an
   echo obliges you to patch whatever the refetch would have refreshed.
-- Any new resource cache needs a `resetXData()` wired into `stores/auth.ts`, or stale data leaks
-  across accounts.
+- A new resource cache calls `registerResourceReset(...)` at module scope, beside the cache it
+  clears. `stores/auth.ts` calls the registry, not each reset by name.
 - Only `401` means logged out. Not `403`, which is the permission layer, and never a `5xx`,
   timeout or network rejection.
 - `apiFetch` is the only network entry for `/api`; every success body goes through

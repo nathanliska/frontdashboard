@@ -10,10 +10,10 @@ decisions they established are captured in the [ADRs](adr/INDEX.md) / [FDRs](fdr
 
 **Scale:** ~100 users, a few concurrent, one Compose stack, one backend worker. Operational machinery
 that only pays off at fleet scale stays deferred — prefer the fix that deletes lines over the one that
-adds a subsystem. (One worker is not a limitation to route around: SSE fan-out is process-local, so
-adding workers *breaks* delivery until #45 lands. The ceilings that actually bind first are the DB
-pool (`db_pool_size` + `db_max_overflow`, 10 connections) and the Argon2 limiter
-(`argon2_max_concurrency`, 4) — both config, both raisable without new machinery.)
+adds a subsystem. (`WEB_CONCURRENCY` is the knob and stays at 1: SSE fan-out is process-local, so adding workers
+*breaks* delivery until #45 lands, and the app warns at startup if it is raised. The ceilings that
+actually bind first are the DB pool (`db_pool_size` + `db_max_overflow`, 10 connections) and the
+Argon2 limiter (`argon2_max_concurrency`, 4) — both config, both raisable without new machinery.)
 
 **Exposure:** public internet, registration open to anyone with a verifiable email. Abuse,
 enumeration and data-privacy findings therefore do **not** get the small-deployment discount — any
@@ -29,7 +29,7 @@ and effort are noted inline where known.
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33, #35, #34, #20◐ |
-| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58, #59, #60, #61, #62, #21/#45 (deferred) |
+| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58, #59, #60, #61, #21/#45 (deferred) |
 
 ◐ = partially done; the line below states the remaining scope.
 
@@ -65,7 +65,6 @@ and effort are noted inline where known.
   `device_name` has no trustworthy source — a parsed User-Agent is a guess, and letting people
   name their own devices is honest but needs the UI anyway. *(Small-Medium)*
 
-- **#62 — A dashboard holding both calendar and agenda widgets fetches occurrences twice (2026-07-30).** Spotted in production logs: one mount issues `GET /api/calendar/events` for the widget's 42-day month grid *and* a second for the agenda's `today → today+8`, same dashboard. **The second is redundant almost always, not occasionally.** The dashboard calendar widget has no paging — `getWidgetWindow(view, today)` anchors to today — so containment is structural rather than a coincidence of which month is open. Measured over 2026-2027 in month view, `[today, today+8]` falls inside the 42-day grid on **723 of 730 days**; the 7 exceptions are month-end dates where the grid stops first (2026-05-31, 2026-08-30/31, 2027-01-31, 2027-05-30/31 …). Day view (`today → today+1`) and week view (`startOfWeek → +7`) are never large enough, and an agenda widget can sit on a dashboard with no calendar widget at all. **Why it is not a one-line fix:** `agendaOccurrencesQuery` and `calendarOccurrencesQuery` are separate `createScopedQuery` instances with separate cache maps, so aligning the window does not merge them — the agenda would have to source occurrences from the calendar resource, request the grid window, and slice locally (it already derives entries through `occurrenceToAgendaItem`). That is defensible, since it shares one resource rather than peeking at a foreign cache, but it moves agenda invalidation onto the calendar resource's SSE path — the exact code where echo suppression and handler ordering have regressed repeatedly, and where asserting on the rendered result proves nothing. It also needs explicit fallbacks for day/week view, the month-end days, and the agenda-without-calendar case. Cost of leaving it: one extra bounded request per mount on dashboards with both widgets — the window predicate (#16) keeps it off the calendar's full history. *(Small-Medium, and the risk is concentrated in the refactor rather than the change)*
 
 ## Deferred — revisit when
 
@@ -92,8 +91,24 @@ weight, so the reasoning survives and nothing here has to be re-derived later.
   ~14.5 kB gzip of the main chunk (376 kB / 109 kB gzip, up from 311 kB). Revisit if bundle size
   ever outweighs the guarantee — generating types without a runtime is a one-flag change
   ([ADR-018](adr/ADR-018-generated-validated-contracts.md)).
-- **Multi-worker / horizontal scale** — see #21/#45. Needs an SSE backplane first; the DB pool and
-  Argon2 limiter are the ceilings that bind before process count does, and both are settings.
+- **Multi-worker / horizontal scale** — see #21/#45. `WEB_CONCURRENCY` is now the knob and defaults
+  to 1; raising it logs a warning, because SSE clients and rate-limit counters are both per-process.
+  A shared fan-out and a shared limit store (Redis serves both; slowapi cannot use Postgres) are
+  what unblock it. Measured headroom on one worker: ~150-250 req/s with no failures at 50 concurrent
+  and ~10 ms per request, against a real load of a few per second — so this is readiness, not need.
+  Running `compose up --scale backend=N` additionally needs `container_name` dropped from the
+  backend service and Caddy moved to a dynamic A-record upstream with `lb_policy`.
+
+- **SSE replay from the activity log** — `activity_events` is already an append-only log with a
+  BIGSERIAL `event_id` documented as the SSE Last-Event-ID, indexed and kept 90 days, but
+  `_should_resync_on_connect` checks only that the header *exists* and then fires a blanket resync
+  that refetches every cache. Replaying `event_id > :last` would make delivery at-least-once, turn
+  `_QUEUE_MAX` eviction into a bounded catch-up, and remove the reload storm every deploy causes on
+  every connected tab. Worth doing at one worker; it is not scale work. Two constraints: the
+  audience must be recomputed at replay time via `list_accessible_dashboard_ids` (a share revoked
+  while disconnected must not become replayable), and no index fits
+  `event_id > :last AND dashboard_id IN (…)` — bound the replay and fall back to resync rather than
+  add an expression index the reaper's design deliberately avoids.
 
 ## Accepted risks / won't-do
 

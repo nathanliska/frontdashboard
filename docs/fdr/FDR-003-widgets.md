@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-07-26
+**Last reviewed:** 2026-07-31
 
 ## Overview
 
@@ -59,6 +59,19 @@ yesterday's agenda after midnight until manually refreshed. See [FDR-006](FDR-00
 item-reorder drag. Reordering is available in the full Lists UI instead. See
 [FDR-005](FDR-005-lists.md).
 **Tradeoff:** Item reorder isn't available from the dashboard tile.
+
+### 5. A widget config change patches other tabs rather than reloading them
+
+**Decision:** `PATCH /dashboards/{id}/widgets/{wid}` broadcasts the new config, and other viewers
+patch that widget in place. The patch deliberately leaves `dashboard.version` alone.
+**Why:** Toggling a calendar widget between week and month is a cheap action that cost every other
+viewer a full dashboard GET. Only layout writes move the version, and `PUT /layout` compares it to
+detect a concurrent edit — advancing it from a config event would let a stale layout save claim to
+be current.
+**Tradeoff:** The discriminator is `changed_fields` being exactly `['widgets']`, since add and
+delete both carry `'layout'`; a future write that touches widgets *and* the version must not reuse
+that shape. Events that still reload are debounced, so a widget drag costs one GET per tab rather
+than one per event.
 
 ## Access
 

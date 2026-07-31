@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-07-28
+**Last reviewed:** 2026-07-31
 
 ## Overview
 
@@ -70,13 +70,28 @@ unbounded `has_override` clause mean something rather than load rows the expande
 ### 3. Day-dependent views refresh at local midnight via `useLocalDay()`
 
 **Decision:** A shared `useLocalDay()` hook re-renders at the next local midnight and on
-visibility/focus; the calendar widget and page re-derive "today" from it, and the agenda widget
-background-refetches on a day rollover.
+visibility/focus; the calendar widget and page re-derive "today" from it, and the agenda derives its
+window from it — so the occurrence store reloads on rollover on its own, while reminders, which
+classify overdue/today at fetch time, still background-refetch explicitly.
 **Why:** The app targets always-on wall displays, where a naive "today" computed once at mount goes
 stale overnight. See CONTEXT.md.
 **Tradeoff:** Day-dependent UI carries a time-tick dependency; midnight/DST edge cases need care.
 
-### 4. Everything is soft-deleted
+### 4. Occurrences are cached by covered interval, not by request window
+
+**Decision:** One occurrence store per dashboard records which time ranges it has loaded and fetches
+only the gaps; every reader — calendar page, calendar widget, agenda widget — subscribes to it and
+filters to its own window. Windows requested in the same tick are coalesced into one span.
+**Why:** A cache keyed on the request window makes two overlapping windows two unrelated entries, so
+the same days were fetched two or three times per mount — measured at 723 of 730 days redundant
+between the agenda's `today → today+8` and the widget's 42-day grid, which contains it structurally
+because the widget cannot be paged.
+**Tradeoff:** Readers no longer own their data, so invalidation has to know which windows are on
+screen — mounted windows are registered as well as fetched, or an SSE event would clear coverage
+that nothing reloads. Retained coverage is capped at 366 days (the backend's own window ceiling),
+dropping ranges furthest from what is displayed.
+
+### 5. Everything is soft-deleted
 
 **Decision:** `CalendarEvent` carries `deleted_at`, filtered in every query.
 **Why:** Calendar entries are durable user data worth a recovery path. See ADR-007.

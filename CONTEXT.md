@@ -167,9 +167,31 @@ _Last updated: 2026-07-30_
   scopes and evicts the coldest, except entries with a mounted subscriber or a request in flight,
   which are never evicted. Before this, a tab left open on the calendar accumulated one entry per
   window scrolled to until logout.
+- **Occurrences are cached by interval, not by request window.** One store per dashboard tracks
+  which time ranges it has loaded and fetches only the gaps, so the calendar page, the calendar
+  widget and the agenda widget share one copy of any day they all show — where previously each
+  kept its own entry and refetched the overlap. Windows asked for in the same tick are coalesced
+  into a single request, which is what a dashboard does when its widgets mount together. Coverage
+  is capped at 366 days, dropping the ranges furthest from what is on screen.
+- **Widget config changes patch instead of reloading.** A `dashboard.updated` event whose
+  `changed_fields` is exactly `['widgets']` carries the new config, so other viewers patch that
+  widget in place — without touching `dashboard.version`, which only layout writes move and which
+  `PUT /layout` compares to detect a concurrent edit. Reloads that do still happen are debounced,
+  so dragging several widgets costs each other tab one GET rather than one per event.
+- **Sign-out resets are self-registering.** Resource caches register their own reset as they load,
+  and `stores/auth.ts` calls one `resetAllResourceData()`, so a cache added later cannot be left
+  out of the account boundary — a cache that never loaded holds nothing to clear.
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
+- **The worker count is a knob, set to 1.** `WEB_CONCURRENCY` drives uvicorn's `--workers`; at 1 it
+  takes the single-process path, so the default is unchanged. Raising it is not yet safe — SSE
+  clients and rate-limit counters both live in process memory — and the app logs a warning at
+  startup saying so. Migrations stay in the container command, where `alembic/env.py`'s
+  session-scoped advisory lock already serialises replicas starting together.
+- **The frontend waits for the backend to start, not to be healthy.** Caddy resolves its upstream
+  per request, so container start is enough; waiting on health stalled every restart and served
+  nothing meanwhile, instead of the shell plus a 502 on `/api`.
 - **A failed load is visible rather than blank.** `index.html` is served `no-cache` so it can
   never ask for bundles a deploy deleted; `/assets/*` sits outside the SPA fallback, so a missing
   bundle 404s honestly instead of being handed HTML the browser fails to parse as a module, and
