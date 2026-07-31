@@ -26,10 +26,12 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
   (FastAPI/Python) + `frontend/` (React/TypeScript).
 - **Do not infer the deployment posture from the domain.** The product is household-shaped; the
   deployment is not private. One instance is public on the internet with registration open to
-  anyone holding a verifiable email, ~100 users and a few concurrent, on a single backend worker.
-- Scale-driven work (metrics stacks, multi-worker, fleet tooling) stays deferred. Abuse,
-  enumeration and data-privacy findings get no small-deployment discount — "only a logged-in user
-  can reach it" is not a mitigation when anyone can sign up.
+  anyone holding a verifiable email, ~100 users and a few concurrent, on one backend worker today.
+- **Scaling readiness is wanted, in both directions.** Adding workers or replicas should be a
+  config change, not a rewrite — so shared state, fan-out and limits belong on that footing even
+  while `WEB_CONCURRENCY` stays at 1. Don't propose deferring this work.
+- Abuse, enumeration and data-privacy findings get no small-deployment discount — "only a logged-in
+  user can reach it" is not a mitigation when anyone can sign up.
 
 ## Prime Directives
 
@@ -45,9 +47,10 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
   reader knows the language. Don't restate the types — argument and return shapes are in the
   signature — but do record invariants, lifecycle behavior, and what a call raises when a caller
   must handle it.
+- **Hard cap: three lines per comment.** Being a genuine *why* is no exemption — length is its own
+  rule. Longer means the rationale belongs in an ADR/FDR: write it there and link it.
 - Keep change history out of comments. No "this used to…", no finding or ticket numbers. Durable
-  rationale belongs in the ADR/FDR; how a change came about belongs in the commit body. A comment
-  that needs a paragraph is usually an ADR that was never written.
+  rationale belongs in the ADR/FDR; how a change came about belongs in the commit body.
 - Keep tests and documentation up to date when changing behavior.
 - Run verification that would actually catch a regression in the area touched, and never claim
   full verification when only a partial signal was run.
