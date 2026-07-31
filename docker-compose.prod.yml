@@ -2,9 +2,11 @@ services:
   frontend:
     container_name: frontdashboard-frontend
     image: heatslinger/frontdashboard-frontend:${TAG:-latest}
+    # Started, not healthy: Caddy resolves the upstream per request, so it only needs DNS. Waiting
+    # on health stalls every restart and serves nothing meanwhile, instead of shell plus a 502.
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     logging:
       driver: json-file
       options:
@@ -26,6 +28,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       ENVIRONMENT: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Raising this needs the shared SSE fan-out and rate-limit store.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
       RESEND_API_KEY: ${RESEND_API_KEY}
       EMAIL_FROM: ${EMAIL_FROM}

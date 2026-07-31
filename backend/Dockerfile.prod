@@ -33,6 +33,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready')"]
 
-# The shell is named explicitly because `&&` and `${LOG_LEVEL:-info}` need one, and the implicit
-# form leaves it PID 1 — a stop mid-migration would go unforwarded. `exec` then hands off uvicorn.
-CMD ["/bin/sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info}"]
+# Migrations stay here: alembic/env.py holds a session-scoped advisory lock, so replicas starting
+# together serialize instead of racing. The named shell is for `&&` and the `${VAR:-default}`
+# expansions; `exec` leaves uvicorn as PID 1 so a stop reaches it.
+CMD ["/bin/sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info} --workers ${WEB_CONCURRENCY:-1}"]

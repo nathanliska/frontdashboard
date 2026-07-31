@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
@@ -32,6 +33,14 @@ def _configure_app_logging() -> None:
 _configure_app_logging()
 
 
+def _worker_count() -> int:
+    """Read uvicorn's worker count, which the process itself is never told."""
+    try:
+        return int(os.environ.get("WEB_CONCURRENCY", "1"))
+    except ValueError:
+        return 1
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger = logging.getLogger("app")
@@ -42,6 +51,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "Starting: environment=%s (Secure cookies OFF, production validation skipped)",
             settings.environment.value,
         )
+    # SSE clients and rate-limit counters both live in process memory, so a second worker gets its
+    # own copy of each: users stop seeing each other's events, and limits multiply by worker count.
+    if _worker_count() > 1:
+        logger.warning("WEB_CONCURRENCY=%d: SSE fan-out and rate limits are per-worker", _worker_count())
     reaper_task: asyncio.Task[None] | None = None
     if settings.reaper_enabled:
         reaper_task = asyncio.create_task(reaper_loop())
