@@ -95,6 +95,21 @@ replayed — the tab stays stale for that one event until its next resync. Today
 resync has no such hole. Closing it means ordering the stream id by commit, which is the
 prerequisite for replaying event bodies rather than merely detecting a gap.
 
+### 6. Streams are recycled on a jittered lifetime cap
+
+**Decision:** A stream closes itself after ~30 minutes plus up to 10% jitter, ending with no
+`resync` frame so the client reconnects and its mark decides what it missed.
+
+**Why:** A connection severed without a close handshake is never reported as disconnected — the
+proxy holds the upstream open, so the server's writes keep succeeding and sse-starlette's 25s ping
+never errors. Such a stream stayed registered indefinitely, counted among the open clients and
+enqueued to by every broadcast. Recycling bounds that to one lifetime. The cap is affordable only
+because of §5: a reconnect that missed nothing costs one index probe instead of a refetch of every
+cache, so deliberately forcing reconnects stopped being expensive.
+
+**Tradeoff:** Every client reconnects roughly twice an hour whether it needs to or not. Jitter
+keeps them from expiring in lockstep, which would rebuild the herd the cap exists to prevent.
+
 ## Access
 
 Every stream authenticates via the user's session (ADR-002/ADR-003); a user receives only events for

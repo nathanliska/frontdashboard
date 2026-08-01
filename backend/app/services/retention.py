@@ -13,6 +13,7 @@ from typing import Any, cast
 from sqlalchemy import CursorResult, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import metrics
 from app.config import settings
 from app.database import async_session_factory
 from app.models.activity import ActivityEvent
@@ -229,6 +230,11 @@ async def reaper_loop() -> None:
     while True:
         try:
             await run_reaper_once()
+            metrics.increment(metrics.REAPER_SWEEPS)
+            # A stalled sweep is otherwise silent: nothing else reveals that history stopped
+            # being pruned until the tables are already large.
+            metrics.set_gauge(metrics.REAPER_LAST_SUCCESS, int(datetime.now(UTC).timestamp()))
         except Exception:
+            metrics.increment(metrics.REAPER_FAILURES)
             logger.exception("reaper: sweep failed; retrying next interval")
         await asyncio.sleep(interval)

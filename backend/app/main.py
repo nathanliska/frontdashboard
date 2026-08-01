@@ -5,17 +5,20 @@ import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import IntegrityError
 
+from app import metrics
 from app.api import api_router
 from app.config import Environment, settings
 from app.database import engine
 from app.limiter import limiter
+from app.middleware import ResponseStatusMiddleware
+from app.routers.metrics import router as metrics_router
 from app.services.retention import reaper_loop
 
 
@@ -73,7 +76,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(title="FrontDashboard", lifespan=lifespan)
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty: ignore[invalid-argument-type]
+
+
+def count_rate_limited(request: Request, exc: Exception) -> Response:
+    """Count a rejection, then answer with slowapi's own response.
+
+    Wrapped rather than replaced: the 429 body and Retry-After stay slowapi's to define.
+    """
+    metrics.increment(metrics.RATE_LIMITED)
+    return _rate_limit_exceeded_handler(request, exc)  # ty: ignore[invalid-argument-type]
+
+
+app.add_exception_handler(RateLimitExceeded, count_rate_limited)
 
 
 async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
@@ -92,6 +106,8 @@ async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONR
 
 app.add_exception_handler(IntegrityError, handle_integrity_error)  # ty: ignore[invalid-argument-type]
 
+app.add_middleware(ResponseStatusMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -101,3 +117,6 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+# Outside api_router's /api prefix deliberately — see routers/metrics.py for why that is the
+# access control.
+app.include_router(metrics_router)

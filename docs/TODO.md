@@ -71,9 +71,10 @@ and effort are noted inline where known.
 Capabilities deliberately not built yet. Listed with the condition that would make them worth the
 weight, so the reasoning survives and nothing here has to be re-derived later.
 
-- **Metrics, tracing, structured logging** — when one worker stops being enough, or when a problem
-  survives a session of reading logs by hand. Today it would mean running a metrics stack to observe
-  a few concurrent users.
+- **Tracing and structured logging** — when a problem survives a session of reading logs by hand.
+  Counters shipped (`/metrics`, see CONTEXT.md) because decisions about worker count, pool size and
+  whether reconnect marks help were being made from reasoning rather than measurement; per-request
+  tracing is a different weight and still answers no question being asked.
 - **SBOM + release signing** — when there are external contributors, redistribution, or a compliance ask.
 - **Dependency/SAST/secret/image scanning in CI** — when the app stores anything beyond calendars,
   lists and dashboards, or when contributors outnumber one. Dependabot + `npm audit` cover the

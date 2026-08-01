@@ -14,6 +14,8 @@ import contextlib
 import uuid
 from dataclasses import dataclass, field
 
+from app import metrics
+
 _QUEUE_MAX = 256
 
 # Pushed onto a client's queue when it is evicted for falling too far behind.
@@ -40,6 +42,16 @@ class _Client:
 class SseManager:
     def __init__(self) -> None:
         self._clients: list[_Client] = []
+
+    @property
+    def client_count(self) -> int:
+        """Open streams on this worker. Read by metrics, which must not reach into _clients."""
+        return len(self._clients)
+
+    @property
+    def max_queue_depth(self) -> int:
+        """Deepest queue across open streams — backpressure, visible before it becomes eviction."""
+        return max((client.queue.qsize() for client in self._clients), default=0)
 
     def connect(self, user_id: uuid.UUID, *, session_id: uuid.UUID) -> _Client:
         """Register a new SSE connection and return its client handle."""
@@ -98,6 +110,7 @@ class SseManager:
                 with contextlib.suppress(asyncio.QueueFull):
                     client.queue.put_nowait(CLOSED_SENTINEL)
                 self.disconnect(client)
+                metrics.increment(metrics.SSE_EVICTIONS)
 
 
 # Module-level singleton used by routers (Step 12 wires this up)

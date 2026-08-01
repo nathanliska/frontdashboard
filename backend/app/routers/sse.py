@@ -1,6 +1,7 @@
 """SSE endpoint — single multiplexed stream per authenticated user."""
 
 import asyncio
+import random
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
+from app import metrics
 from app.auth.dependencies import get_current_session_for_stream, get_current_user_for_stream
 from app.database import async_session_factory
 from app.models.session import UserSession
@@ -21,6 +23,17 @@ from app.sse.manager import CLOSED_SENTINEL, REVOKED_SENTINEL, _Client, manager
 router = APIRouter(prefix="/sse", tags=["sse"])
 
 _REVALIDATE_EVERY = timedelta(seconds=30)
+
+# A connection severed without a close handshake is never reported as disconnected — the proxy
+# holds the upstream open, so writes keep succeeding and the stream would occupy a slot forever.
+# Closing on a schedule bounds that; the client's mark makes the reconnect cost nothing.
+_MAX_STREAM_LIFETIME = timedelta(minutes=30)
+
+
+def _stream_deadline(lifetime: timedelta) -> datetime:
+    """When to close this stream, spread so streams opened together don't all expire together."""
+    jitter = random.uniform(0, lifetime.total_seconds() * 0.1)
+    return datetime.now(UTC) + lifetime + timedelta(seconds=jitter)
 
 
 def _parse_watermark(raw: str | None) -> int | None:
@@ -62,6 +75,7 @@ async def stream_events(
     send_resync: bool,
     revalidate: Callable[[uuid.UUID], Awaitable[bool]],
     watermark: int | None = None,
+    max_lifetime: timedelta = _MAX_STREAM_LIFETIME,
 ) -> AsyncGenerator[dict, None]:
     """Yield SSE frames until the connection closes, is evicted, or its session is revoked.
 
@@ -76,6 +90,7 @@ async def stream_events(
     nothing like the cause.
     """
     next_check = datetime.now(UTC) + _REVALIDATE_EVERY
+    expires_at = _stream_deadline(max_lifetime)
     try:
         yield connected_dict(watermark)
 
@@ -83,6 +98,12 @@ async def stream_events(
             yield resync_dict()
 
         while True:
+            # No resync frame: the client reconnects and its mark decides, so a healthy stream
+            # being recycled costs one index probe rather than a refetch of every cache.
+            if datetime.now(UTC) >= expires_at:
+                metrics.increment(metrics.SSE_EXPIRIES)
+                return
+
             # Checked on BOTH branches below, before anything else. The 5s wait_for
             # is an idle timeout, not a heartbeat: a busy client never times out, so
             # a check hung off TimeoutError would never run for the clients that
@@ -100,8 +121,8 @@ async def stream_events(
                 continue
 
             if msg is CLOSED_SENTINEL:
-                # Evicted for falling behind: tell the client to resync and end the
-                # response. EventSource reconnects and re-syncs from Last-Event-ID.
+                # Evicted for falling behind: tell the client to resync and end the response.
+                # Its mark is stale by definition here, so the resync is sent unconditionally.
                 yield resync_dict()
                 return
 
@@ -138,6 +159,10 @@ async def sse_stream(
     """
     watermark = _parse_watermark(last_event_id or request.headers.get("last-event-id"))
     send_resync, head = await _connect_state(watermark)
+    # Counted together: the ratio is what says whether marks are sparing anyone a refetch.
+    metrics.increment(metrics.SSE_CONNECTS)
+    if send_resync:
+        metrics.increment(metrics.SSE_RESYNCS)
     client = manager.connect(current_user.id, session_id=current_session.id)
     return EventSourceResponse(
         stream_events(

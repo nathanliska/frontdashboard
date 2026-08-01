@@ -185,6 +185,18 @@ _Last updated: 2026-07-30_
 
 **Infra / tooling**
 - Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
+- **Metrics at `/metrics`, in Prometheus exposition format, deliberately outside `/api`.** That
+  placement *is* the access control: Caddy proxies only `/api/*`, so a public `/metrics` request
+  falls through to the SPA and gets `index.html` — verified, zero series in the body — and the prod
+  backend publishes no port, leaving the Docker network as the only route in.
+  Series: SSE connects / resyncs / evictions / lifetime expiries, open streams and deepest queue,
+  4xx and 5xx responses, rate-limit rejections, retention sweeps plus the unix time of the last
+  successful one, and DB pool checked-out / size / overflow. Status counting is pure-ASGI
+  middleware, never `BaseHTTPMiddleware`, which reads a streaming response to completion and would
+  buffer SSE. Counters are per process, so with `WEB_CONCURRENCY > 1` a scraper sums across targets.
+  Nothing scrapes it yet; a Prometheus container joined to the `internal` network reaches it at
+  `frontdashboard-backend:8000/metrics`. The connects-to-resyncs ratio is what says whether
+  reconnect marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads.
 - **The worker count is a knob, set to 1.** `WEB_CONCURRENCY` drives uvicorn's `--workers`; at 1 it
   takes the single-process path, so the default is unchanged. Raising it is not yet safe — SSE
   clients and rate-limit counters both live in process memory — and the app logs a warning at
