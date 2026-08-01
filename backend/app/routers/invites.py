@@ -36,8 +36,8 @@ from app.services.invites import (
 )
 from app.services.notifications import stage_notification
 from app.services.shares import create_share, dashboard_audience_user_ids, get_resource_shares, load_dashboard_access
+from app.sse.choreography import Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dict
-from app.sse.manager import manager
 
 router = APIRouter(tags=["invites"])
 
@@ -207,14 +207,18 @@ async def accept_invite(
         entity_version=dashboard.version,
         payload={"dashboard_id": str(dashboard.id), "changed_fields": ["shares"]},
     )
-    # Built before the commit, broadcast after — the ordering the rest of the app relies on.
     event_message = await build_activity_sse_dict(db, event)
     notification_message = await build_notification_sse_dict(db, notification)
     shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    await db.commit()
 
-    recipients = dashboard_audience_user_ids(dashboard, shares)
-    await manager.broadcast(event_message, user_ids=recipients, actor_id=current_user.id)
-    await manager.broadcast(notification_message, user_ids={dashboard.user_id}, actor_id=current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[
+            Fanout(event_message, dashboard_audience_user_ids(dashboard, shares)),
+            # The owner alone: redemption is their notification, not the whole audience's.
+            Fanout(notification_message, {dashboard.user_id}),
+        ],
+    )
 
     return InviteAcceptResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name, role=role)

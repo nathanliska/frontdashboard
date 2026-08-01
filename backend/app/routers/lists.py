@@ -35,24 +35,16 @@ from app.services.shares import (
     list_accessible_dashboard_ids,
     load_dashboard_access,
 )
+from app.sse.choreography import Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict
-from app.sse.manager import manager
 
 router = APIRouter(prefix="/lists", tags=["lists"])
 ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id", max_length=128)]
 
 
-async def _broadcast_dashboard_event(
-    message: dict,
-    dashboard: Dashboard,
-    shares: list[ResourceShare],
-    actor_id: uuid.UUID,
-) -> None:
-    await manager.broadcast(
-        message,
-        user_ids=dashboard_audience_user_ids(dashboard, shares),
-        actor_id=actor_id,
-    )
+def _dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
+    """Address a frame to everyone who can see the dashboard, owner included."""
+    return Fanout(message, dashboard_audience_user_ids(dashboard, shares))
 
 
 async def _build_list_event_message(
@@ -191,8 +183,11 @@ async def create_list(
         payload={"name": lst.name, "list_type": str(lst.list_type)},
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     return await _mutated_list_response(db, lst, 0)
 
 
@@ -279,8 +274,11 @@ async def reorder_lists(
         },
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
 
 
 # Declared before /{list_id} so the static segment wins (same pattern as PUT /order).
@@ -410,8 +408,11 @@ async def restore_list(
         payload={"name": lst.name, "restored": True},
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == lst.id, ListItem.deleted_at.is_(None)))
     return await _mutated_list_response(db, lst, count_result.scalar_one())
 
@@ -471,8 +472,11 @@ async def update_list(
         payload={"name": lst.name},
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)))
     return await _mutated_list_response(db, lst, count_result.scalar_one())
 
@@ -507,8 +511,11 @@ async def delete_list(
         client_mutation_id=client_mutation_id,
     )
     lst.deleted_at = datetime.now(UTC)
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
 
 
 @router.post("/{list_id}/items", status_code=status.HTTP_201_CREATED, response_model=ListItemResponse)
@@ -557,8 +564,11 @@ async def create_item(
         payload={"text": item.text, "list_id": str(list_id), "list_name": lst.name},
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     return await _item_response(db, item)
 
 
@@ -613,8 +623,11 @@ async def update_item(
         },
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     return await _item_response(db, item)
 
 
@@ -655,8 +668,11 @@ async def delete_item(
         client_mutation_id=client_mutation_id,
     )
     item.deleted_at = datetime.now(UTC)
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
 
 
 @router.put("/{list_id}/items/order", status_code=status.HTTP_204_NO_CONTENT)
@@ -699,8 +715,11 @@ async def reorder_items(
         },
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
 
 
 @router.get("/{list_id}/shares", response_model=ResourceAccessResponse)

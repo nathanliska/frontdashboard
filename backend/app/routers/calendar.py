@@ -30,23 +30,15 @@ from app.services.shares import (
     list_accessible_dashboard_ids,
     load_dashboard_access,
 )
+from app.sse.choreography import Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict
-from app.sse.manager import manager
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 
-async def _broadcast_dashboard_event(
-    message: dict,
-    dashboard: Dashboard,
-    shares: list[ResourceShare],
-    actor_id: uuid.UUID,
-) -> None:
-    await manager.broadcast(
-        message,
-        user_ids=dashboard_audience_user_ids(dashboard, shares),
-        actor_id=actor_id,
-    )
+def _dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
+    """Address a frame to everyone who can see the dashboard, owner included."""
+    return Fanout(message, dashboard_audience_user_ids(dashboard, shares))
 
 
 async def _get_event_access(
@@ -157,9 +149,12 @@ async def create_event(
         payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)},
     )
     event_message = await build_activity_sse_dict(db, activity)
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     await db.refresh(event)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     return _event_response(event)
 
 
@@ -313,9 +308,12 @@ async def update_event(
         payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)},
     )
     event_message = await build_activity_sse_dict(db, activity)
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     await db.refresh(event)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     return _event_response(event)
 
 
@@ -371,9 +369,12 @@ async def update_occurrence(
         payload={"title": event.title, "occurrence_start": body.occurrence_start.astimezone(UTC).isoformat(), "dashboard_id": str(dashboard.id)},
     )
     event_message = await build_activity_sse_dict(db, activity)
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     await db.refresh(override)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
 
     occurrence = expand_event_occurrences(
         event,
@@ -414,8 +415,11 @@ async def delete_event(
     event.deleted_at = datetime.now(UTC)
     event.updated_by = current_user.id
     event_message = await build_activity_sse_dict(db, activity)
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
 
 
 @router.get("/events/{event_id}/shares", response_model=ResourceAccessResponse)

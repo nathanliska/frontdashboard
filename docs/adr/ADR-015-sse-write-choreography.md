@@ -22,7 +22,10 @@ Fix the choreography for every mutating route:
 
 1. **Build the event dict *before* commit** (`app/sse/events.py` — flush/refresh), while the ORM
    objects are live and attributes are populated.
-2. **`manager.broadcast(...)` *after* commit**, so subscribers only ever see committed state.
+2. **Commit and fan out through `sse/choreography.py`**, which commits and then broadcasts, so
+   subscribers only ever see committed state. Routes hand it prepared `Fanout`s and never reach for
+   `manager.broadcast` themselves; `test_sse_choreography_coverage.py` fails the build on a router
+   that does.
 3. **Broadcast to `{dashboard.user_id} ∪ share principal_ids`** (the owner plus everyone the resource
    is shared with) — miss a principal and their open tab silently goes stale.
 
@@ -38,5 +41,7 @@ single commit**, so activity events and notifications land in the *same* transac
   a mutation and its audit/notification records commit or roll back together — no orphaned events.
 - **Audience correctness is manual**: the broadcast set must be computed from owner + share
   principals on every route; it's a load-bearing detail with a silent failure mode (stale tabs).
-- **This ordering is a hard convention, not a helper**: it lives in each route, so it's documented in
-  [AGENTS.md](../../AGENTS.md) as "SSE ordering is load-bearing."
+- **The ordering is now structural, not a convention**: it lives in one function rather than at every
+  mutating route, and a test rejects any router that bypasses it. Building the payload before the
+  commit and choosing the audience remain the route's job, so those two stay conventions — the seam
+  narrows what can silently go wrong, it does not eliminate it.

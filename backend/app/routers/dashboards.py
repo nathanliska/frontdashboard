@@ -48,8 +48,8 @@ from app.services.shares import (
     load_dashboard_access,
     resolve_share_responses,
 )
+from app.sse.choreography import Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
-from app.sse.manager import manager
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id", max_length=128)]
@@ -261,19 +261,9 @@ async def _remove_dashboard_from_user_preferences(
         user.preferences = remove_dashboard_from_preferences(user.preferences, dashboard.id)
 
 
-async def _broadcast_dashboard_event(
-    message: dict,
-    dashboard: Dashboard,
-    shares: list[ResourceShare],
-    actor_id: uuid.UUID,
-) -> None:
-    user_ids = dashboard_audience_user_ids(dashboard, shares)
-
-    await manager.broadcast(
-        message,
-        user_ids=user_ids,
-        actor_id=actor_id,
-    )
+def _dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
+    """Address a frame to everyone who can see the dashboard, owner included."""
+    return Fanout(message, dashboard_audience_user_ids(dashboard, shares))
 
 
 async def _build_dashboard_event_message(
@@ -417,13 +407,9 @@ async def _build_dashboard_share_notification_messages(
     return [(user_id, message) for (user_id, _notification), message in zip(notifications, messages, strict=True)]
 
 
-async def _broadcast_notification_messages(
-    messages: list[tuple[uuid.UUID, dict]],
-    *,
-    actor_id: uuid.UUID,
-) -> None:
-    for user_id, message in messages:
-        await manager.broadcast(message, user_ids={user_id}, actor_id=actor_id)
+def _notification_fanouts(messages: list[tuple[uuid.UUID, dict]]) -> list[Fanout]:
+    """One frame per recipient: a notification is addressed, not fanned out to the audience."""
+    return [Fanout(message, {user_id}) for user_id, message in messages]
 
 
 @router.get("", response_model=list[DashboardSummary])
@@ -470,10 +456,12 @@ async def create_dashboard(
         payload={"name": dashboard.name},
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
+    )
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
-    await _broadcast_notification_messages(notification_messages, actor_id=current_user.id)
     return _to_summary(
         dashboard,
         "Owned by you",
@@ -510,9 +498,12 @@ async def update_dashboard_meta(
         },
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
     access_description = "Owned by you" if dashboard.user_id == current_user.id else "Shared directly with you"
     return _to_summary(
@@ -553,8 +544,11 @@ async def delete_dashboard(
         payload={"name": dashboard.name},
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
 
 
 # Declared before GET /{dashboard_id} so the static segment wins (same pattern as /default).
@@ -618,9 +612,12 @@ async def restore_dashboard(
         payload={"changed_fields": ["restored"]},
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     return _to_summary(
         dashboard,
         "Owned by you",
@@ -687,9 +684,12 @@ async def update_layout(
         payload={"version": dashboard.version, "changed_fields": ["layout"]},
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     widgets = await _load_widgets(dashboard.id, db)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
     return _to_response(
@@ -845,9 +845,12 @@ async def add_widget(
         },
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     await db.refresh(dashboard)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     widgets = await _load_widgets(dashboard.id, db)
     return _to_response(
         dashboard,
@@ -917,9 +920,12 @@ async def update_widget(
         },
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
     await db.refresh(widget)
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
     return WidgetResponseAdapter.validate_python(widget)
 
 
@@ -969,8 +975,11 @@ async def delete_widget(
         },
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
 
 
 @router.get("/{dashboard_id}/shares", response_model=list[ShareResponse])
@@ -1033,9 +1042,11 @@ async def add_dashboard_share(
         ),
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, current_shares, current_user.id)
-    await _broadcast_notification_messages(notification_messages, actor_id=current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, current_shares), *_notification_fanouts(notification_messages)],
+    )
     return (await resolve_share_responses([share], db))[0]
 
 
@@ -1079,10 +1090,12 @@ async def update_dashboard_share(
         payload=_dashboard_share_event_payload(dashboard, share, action="updated"),
         client_mutation_id=client_mutation_id,
     )
-    await db.commit()
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, current_shares), *_notification_fanouts(notification_messages)],
+    )
     await db.refresh(share)
-    await _broadcast_dashboard_event(event_message, dashboard, current_shares, current_user.id)
-    await _broadcast_notification_messages(notification_messages, actor_id=current_user.id)
     return (await resolve_share_responses([share], db))[0]
 
 
@@ -1127,6 +1140,8 @@ async def delete_dashboard_share(
         if shared_user is not None:
             shared_user.preferences = remove_dashboard_from_preferences(shared_user.preferences, dashboard.id)
     await db.delete(share)
-    await db.commit()
-    await _broadcast_dashboard_event(event_message, dashboard, shares, current_user.id)
-    await _broadcast_notification_messages(notification_messages, actor_id=current_user.id)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
+    )

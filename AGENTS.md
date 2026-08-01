@@ -130,8 +130,9 @@ make audit       # dependency/security audit checks
   the creator and raises 404 for no access; never write `if role:` guards.
 - Child resources reach access through `load_dashboard_access` / `list_accessible_dashboard_ids`,
   which filter trashed dashboards. Querying a child table directly breaks that invariant.
-- SSE ordering is load-bearing: build the event dict *before* commit, broadcast *after*, and send
-  it to `dashboard_audience_user_ids(...)` or other users' tabs go silently stale.
+- SSE ordering is load-bearing. Commit and fan out through `commit_and_broadcast(...)`, never
+  `manager.broadcast` directly — `test_sse_choreography_coverage.py` fails the build on that. Still
+  yours: build the event dict *before* the call, and address it with `dashboard_audience_user_ids(...)`.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single commit.
 - Layout and widget writes need the dashboard row lock and a `dashboard.version` bump;
   `PUT /layout` compares client against server version and 409s on mismatch.
