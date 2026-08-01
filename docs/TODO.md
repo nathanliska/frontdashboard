@@ -112,6 +112,14 @@ weight, so the reasoning survives and nothing here has to be re-derived later.
   commits — replaying by it inherits the gap FDR-008 §5 records, which wants a commit-ordered
   stream id first.
 
+- **#63 — `test_the_liveness_predicate_is_shared` failed once, unreproduced (Low).** One full-suite
+  run had `resolve_session` treat a session as expired while `session_is_live` still called it live,
+  at the `session_idle_days + 1s` boundary. Did not recur across three isolated runs, three file
+  runs and four full runs. Both paths take their own `datetime.now(UTC)` and splat the same `_live`
+  predicate, so a transaction-clock skew was ruled out; the mechanism is unknown. Worth a fixed
+  clock injected into `_live` rather than two independent `now()` reads, which would make the
+  question unaskable. *(Small)*
+
 ## Accepted risks / won't-do
 
 - *(none open — register enumeration was closed by #55 rather than accepted; registration now

@@ -101,8 +101,17 @@ Check every time, regardless of what changed:
   a missing single-flight or loaded-flag cache.
 - **The page actually rendered.** A blank `#root` with no failed request means the bundle never ran.
   The static fallback in `index.html` should say so after 12s.
-- **Console is clean** apart from the known Cloudflare beacon CSP violation, which only appears
-  behind Cloudflare and so should *not* appear here.
+- **Console is clean** apart from two expected entries: the Cloudflare beacon CSP violation, which
+  only appears behind Cloudflare and so should *not* appear here, and a `409 (Conflict)` on
+  `PUT /layout` if you exercised a concurrent edit — the browser logs the response, the app resolves
+  it (FDR-002 §1), and the user sees nothing.
+
+**Driving a drag.** react-grid-layout and dnd-kit both ignore a bare `dispatchEvent`. A `MouseEvent`
+needs `cancelable: true`, `view: window` and `buttons: 1`, and the moves need a `requestAnimationFrame`
+between them; without all of that the item never gets `react-draggable-dragging` and no save fires,
+which reads exactly like a broken feature. dnd-kit's keyboard path announces into the
+`aria-live` region — useful to confirm pickup, though driving the *move* step this way has not been
+made to work. Prefer asserting on the network log over the rendered position.
 
 ## 4. Check the serving contract
 

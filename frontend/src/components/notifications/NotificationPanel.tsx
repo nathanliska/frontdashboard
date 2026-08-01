@@ -90,6 +90,7 @@ export function NotificationPanel({
                 type="button"
                 onClick={() => setPanelOpen(false)}
                 className="text-zinc-600 hover:text-zinc-300 transition-colors"
+                aria-label="Close notifications"
               >
                 <X size={14} />
               </button>
