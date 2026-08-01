@@ -15,8 +15,9 @@ from app.database import async_session_factory
 from app.models.session import UserSession
 from app.models.user import User
 from app.schemas.sse import AnySseEvent
-from app.services.activity import current_event_id
+from app.services.activity import current_event_id, entity_types_changed_since
 from app.services.sessions import session_is_live
+from app.services.shares import list_accessible_dashboard_ids
 from app.sse.events import connected_dict, resync_dict
 from app.sse.manager import CLOSED_SENTINEL, REVOKED_SENTINEL, _Client, manager
 
@@ -57,16 +58,22 @@ def _resync_needed(watermark: int | None, head: int | None) -> bool:
     return head is not None and head > watermark
 
 
-async def _connect_state(watermark: int | None) -> tuple[bool, int | None]:
-    """Resolve the resync decision and the log's head together.
+async def _connect_state(watermark: int | None, user: User) -> tuple[bool, int | None, set[str] | None]:
+    """Resolve the resync decision, the log's head, and what kinds of thing changed.
 
     Its own short-lived session: the request's would stay pinned for the stream's lifetime.
-    Deliberately unfiltered by audience — "nothing happened at all" already proves nothing was
-    missed, and the bare head is one index scan that discloses no other user's activity.
+    The head is read unfiltered — "nothing happened at all" proves nothing was missed and
+    discloses no one's activity — but the scopes are filtered to dashboards this user can see,
+    because naming what changed would otherwise report other households' activity.
     """
     async with async_session_factory() as db:
         head = await current_event_id(db)
-    return _resync_needed(watermark, head), head
+        needed = _resync_needed(watermark, head)
+        if not needed or watermark is None:
+            return needed, head, None
+        visible = await list_accessible_dashboard_ids(user, db)
+        scopes = await entity_types_changed_since(db, watermark, set(visible))
+    return needed, head, scopes
 
 
 async def stream_events(
@@ -76,6 +83,7 @@ async def stream_events(
     revalidate: Callable[[uuid.UUID], Awaitable[bool]],
     watermark: int | None = None,
     max_lifetime: timedelta = _MAX_STREAM_LIFETIME,
+    resync_scopes: set[str] | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Yield SSE frames until the connection closes, is evicted, or its session is revoked.
 
@@ -95,7 +103,7 @@ async def stream_events(
         yield connected_dict(watermark)
 
         if send_resync:
-            yield resync_dict()
+            yield resync_dict(resync_scopes)
 
         while True:
             # No resync frame: the client reconnects and its mark decides, so a healthy stream
@@ -158,7 +166,7 @@ async def sse_stream(
     the query parameter is the mark that normally arrives; the header is honoured as a fallback.
     """
     watermark = _parse_watermark(last_event_id or request.headers.get("last-event-id"))
-    send_resync, head = await _connect_state(watermark)
+    send_resync, head, scopes = await _connect_state(watermark, current_user)
     # Counted together: the ratio is what says whether marks are sparing anyone a refetch.
     metrics.increment(metrics.SSE_CONNECTS)
     if send_resync:
@@ -170,6 +178,7 @@ async def sse_stream(
             send_resync=send_resync,
             revalidate=_revalidate_session,
             watermark=head,
+            resync_scopes=scopes,
         ),
         ping=25,
     )

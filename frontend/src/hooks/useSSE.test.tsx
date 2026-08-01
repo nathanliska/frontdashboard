@@ -645,6 +645,43 @@ describe('useSSE reconnect backoff', () => {
     expect(MockEventSource.instances[1].url).toBe('/api/sse?last_event_id=77')
   })
 
+  it('narrows a scoped resync to the handlers the named scopes reach', async () => {
+    render(<TestHarness />)
+
+    act(() => {
+      MockEventSource.instances[0].dispatch(
+        'resync',
+        JSON.stringify({ reason: 'refresh_required', scopes: ['calendar_event'] }),
+      )
+    })
+
+    // The assertion that matters is the absence: a full resync would refetch lists too, and
+    // asserting the calendar ended up correct would pass either way.
+    expect(handleCalendarResourceEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'resync' }),
+    )
+    expect(handleListResourceEvent).not.toHaveBeenCalled()
+    expect(useDashboardStore.getState().handleDashboardEvent).not.toHaveBeenCalled()
+  })
+
+  it('widens to a full resync when a scope this build does not know arrives', async () => {
+    render(<TestHarness />)
+
+    act(() => {
+      MockEventSource.instances[0].dispatch(
+        'resync',
+        JSON.stringify({ reason: 'refresh_required', scopes: ['something_new'] }),
+      )
+    })
+
+    // A backend that learned to log a new entity type must not be able to silently skip a cache.
+    expect(handleListResourceEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'resync' }),
+    )
+    expect(handleCalendarResourceEvent).toHaveBeenCalled()
+    expect(useDashboardStore.getState().handleDashboardEvent).toHaveBeenCalled()
+  })
+
   it('still resyncs when the server answers a mark with a resync frame', async () => {
     render(<TestHarness />)
     act(() => {

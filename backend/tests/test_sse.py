@@ -14,6 +14,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import EventType
+from app.services.activity import current_event_id
 from app.sse.events import connected_dict
 from app.sse.manager import _QUEUE_MAX, CLOSED_SENTINEL, REVOKED_SENTINEL, SseManager
 from tests.helpers import register_user, set_csrf
@@ -248,6 +249,62 @@ def test_parse_watermark(raw: str | None, expected: int | None) -> None:
     from app.routers.sse import _parse_watermark
 
     assert _parse_watermark(raw) == expected
+
+
+def test_resync_dict_omits_scopes_when_they_are_unknown() -> None:
+    """Absent scopes must read as "refetch everything", never as "nothing changed"."""
+    from app.sse.events import resync_dict
+
+    assert "scopes" not in json.loads(resync_dict()["data"])
+    assert json.loads(resync_dict(set())["data"])["scopes"] == []
+
+
+@pytest.mark.asyncio
+async def test_changed_scopes_exclude_dashboards_the_user_cannot_see(db_session: AsyncSession) -> None:
+    """Naming what changed must not report activity on someone else's dashboard."""
+    from app.services.activity import entity_types_changed_since, log_event
+
+    mine, theirs = uuid.uuid4(), uuid.uuid4()
+    before = await current_event_id(db_session) or 0
+
+    for entity_type, dashboard_id in (("list", mine), ("calendar_event", theirs)):
+        log_event(
+            db_session,
+            event_type=EventType.list_created,
+            actor_id=uuid.uuid4(),
+            actor_display_name="Tester",
+            entity_type=entity_type,
+            entity_id=uuid.uuid4(),
+            payload={"dashboard_id": str(dashboard_id)},
+        )
+    await db_session.flush()
+
+    assert await entity_types_changed_since(db_session, before, {mine}) == {"list"}
+    assert await entity_types_changed_since(db_session, before, {theirs}) == {"calendar_event"}
+    assert await entity_types_changed_since(db_session, before, set()) == set()
+
+
+@pytest.mark.asyncio
+async def test_changed_scopes_give_up_past_the_cap(db_session: AsyncSession) -> None:
+    """Past the bound the honest answer is None — unknown — which resyncs everything."""
+    from app.services.activity import entity_types_changed_since, log_event
+
+    dashboard_id = uuid.uuid4()
+    before = await current_event_id(db_session) or 0
+    for _ in range(4):
+        log_event(
+            db_session,
+            event_type=EventType.list_created,
+            actor_id=uuid.uuid4(),
+            actor_display_name="Tester",
+            entity_type="list",
+            entity_id=uuid.uuid4(),
+            payload={"dashboard_id": str(dashboard_id)},
+        )
+    await db_session.flush()
+
+    assert await entity_types_changed_since(db_session, before, {dashboard_id}, limit=3) is None
+    assert await entity_types_changed_since(db_session, before, {dashboard_id}, limit=10) == {"list"}
 
 
 @pytest.mark.asyncio

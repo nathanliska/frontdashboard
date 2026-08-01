@@ -7,6 +7,7 @@ import {
   ConnectedSseEvent,
   type EventType,
   NotificationSseEvent,
+  ResyncSseEvent,
 } from '../api/generated/contract'
 import { handleAgendaResourceEvent } from '../resources/agendaData'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
@@ -87,6 +88,31 @@ const EVENT_ROUTES: Record<EventType, EventRoute> = {
   'dashboard.share_added': 'dashboard',
   'dashboard.share_updated': 'dashboard',
   'dashboard.share_removed': 'dashboard',
+}
+
+/** Which resource handlers a changed entity type invalidates. */
+const RESYNC_TARGETS: Record<string, readonly EventRoute[]> = {
+  list: ['list'],
+  list_item: ['list'],
+  calendar_event: ['calendar'],
+  dashboard: ['dashboard'],
+}
+
+/**
+ * Resolve a scoped resync to the handlers it has to reach.
+ *
+ * Null for absent scopes *and* for an entity type this build doesn't know: a server that learned
+ * to log something new must widen the refetch, not silently skip it.
+ */
+function resyncRoutes(scopes: string[] | null | undefined): Set<EventRoute> | null {
+  if (!scopes) return null
+  const routes = new Set<EventRoute>()
+  for (const scope of scopes) {
+    const targets = RESYNC_TARGETS[scope]
+    if (!targets) return null
+    for (const target of targets) routes.add(target)
+  }
+  return routes
 }
 
 /**
@@ -237,11 +263,16 @@ export function useSSE(): void {
       void handleDashboardEvent(data)
     }
 
-    function onResync() {
-      handleListResourceEvent(RESYNC_SIGNAL)
-      handleCalendarResourceEvent(RESYNC_SIGNAL)
-      handleAgendaResourceEvent(RESYNC_SIGNAL)
-      void handleDashboardEvent(RESYNC_SIGNAL)
+    function onResync(e?: MessageEvent<string>) {
+      // Agenda merges list reminders with calendar occurrences, so either scope reaches it.
+      const routes = e ? resyncRoutes(parseFrame(e.data, ResyncSseEvent)?.scopes) : null
+      const wants = (route: EventRoute) => routes === null || routes.has(route)
+
+      if (wants('list')) handleListResourceEvent(RESYNC_SIGNAL)
+      if (wants('calendar')) handleCalendarResourceEvent(RESYNC_SIGNAL)
+      if (wants('list') || wants('calendar')) handleAgendaResourceEvent(RESYNC_SIGNAL)
+      if (wants('dashboard')) void handleDashboardEvent(RESYNC_SIGNAL)
+      // Unconditional: notifications are not activity events, so no scope can rule them out.
       void loadUnreadCount()
       const { panelOpen, activityLoaded, loadActivity } = useNotificationsStore.getState()
       if (panelOpen || window.location.pathname === '/notifications') {

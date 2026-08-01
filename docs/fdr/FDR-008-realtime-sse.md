@@ -1,7 +1,7 @@
 # FDR-008: Real-Time Delivery (SSE)
 
 **Status:** Active
-**Last reviewed:** 2026-07-31
+**Last reviewed:** 2026-08-01
 
 ## Overview
 
@@ -17,6 +17,9 @@ it is in their FDRs.
 - **Priming and resync.** The stream opens with a `connected` event carrying the activity log's
   current high-water mark. The client remembers that mark, advances it past every activity frame,
   and hands it back on reconnect; the server resyncs only if the log has moved past it.
+- **A resync says what changed.** When one is needed, the frame names the kinds of thing that
+  changed on dashboards the client can see, so it refetches only those caches rather than all of
+  them. An unknown or absent scope widens back to refetching everything.
 - **Overflow doesn't go silent.** A client whose queue overflows is disconnected with a closed
   sentinel, so it reconnects and resyncs rather than staying connected but deaf.
 - **Robust reconnect.** A network drop uses the browser's built-in retry (resyncing via the header). A
@@ -109,6 +112,27 @@ cache, so deliberately forcing reconnects stopped being expensive.
 
 **Tradeoff:** Every client reconnects roughly twice an hour whether it needs to or not. Jitter
 keeps them from expiring in lockstep, which would rebuild the herd the cap exists to prevent.
+
+### 7. A resync names what changed, so the client refetches only that
+
+**Decision:** When a reconnect does need a resync, the frame carries `scopes` — the distinct
+`entity_type`s logged since the client's mark, on dashboards it can currently see. The client maps
+those to resource handlers and refetches only those. Absent `scopes`, or a scope this build does
+not recognise, means refetch everything.
+
+**Why:** A resync is the expensive path — six requests on a dashboard — and it fires exactly when
+something genuinely changed. Naming the kind of change turns "refetch everything you hold" into
+"refetch lists". It costs one bounded scan the reconnect was already making, and needs neither
+event bodies nor commit-ordered ids, which is what made replay expensive.
+
+Unlike the head comparison, this **is** audience-filtered: "something happened somewhere" reveals
+nothing, but "a calendar event changed" would report another household's activity. Filtering uses
+`list_accessible_dashboard_ids`, so a dashboard shared and then revoked stops being named.
+
+**Tradeoff:** The scan is capped (500 events); past it the honest answer is "unknown", which means
+a full resync — the same answer as before this existed. Unknown scopes widen rather than narrow, so
+a backend that learns to log a new entity type cannot silently skip a cache in an older client.
+Notifications stay unconditional: they are not activity events, so no scope can rule them out.
 
 ## Access
 

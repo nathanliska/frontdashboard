@@ -676,7 +676,10 @@ export const ResourceAccessResponse = z.object({
 
 export type ResyncSseEvent = z.infer<typeof ResyncSseEvent>
 export const ResyncSseEvent = z.object({
-  reason: z.string()
+  reason: z.string(),
+  scopes: z
+    .union([z.union([z.array(z.string()), z.null()]), z.undefined()])
+    .optional()
 })
 
 export type ShareUpdate = z.infer<typeof ShareUpdate>

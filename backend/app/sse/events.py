@@ -61,10 +61,18 @@ def connected_dict(last_event_id: int | None = None) -> dict:
     return frame
 
 
-def resync_dict() -> dict:
+def resync_dict(scopes: set[str] | None = None) -> dict:
+    """Tell a client to refetch, narrowed to the kinds of thing that actually changed.
+
+    `scopes` of None means "unknown, refetch everything" — the honest answer when the client
+    offered no mark or more changed than the reconnect query is willing to read.
+    """
+    data: dict = {"reason": "refresh_required"}
+    if scopes is not None:
+        data["scopes"] = sorted(scopes)
     return {
         "event": "resync",
-        "data": json.dumps({"reason": "refresh_required"}),
+        "data": json.dumps(data),
     }
 
 

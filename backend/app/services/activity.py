@@ -38,6 +38,35 @@ def log_event(
     return event
 
 
+async def entity_types_changed_since(
+    db: AsyncSession,
+    last_event_id: int,
+    visible_dashboard_ids: set[uuid.UUID],
+    *,
+    limit: int = 500,
+) -> set[str] | None:
+    """Return which kinds of thing changed on visible dashboards since the mark.
+
+    None means "more than `limit` events happened", so the answer is unknown and the caller must
+    fall back to resyncing everything. The scan is bounded rather than indexed on purpose: an
+    expression index on the payload would tax every write to serve reconnects.
+    """
+    rows = (
+        await db.execute(
+            select(ActivityEvent.entity_type, ActivityEvent.payload)
+            .where(ActivityEvent.event_id > last_event_id)
+            .order_by(ActivityEvent.event_id)
+            .limit(limit + 1)
+        )
+    ).all()
+
+    if len(rows) > limit:
+        return None
+
+    visible = {str(dashboard_id) for dashboard_id in visible_dashboard_ids}
+    return {entity_type for entity_type, payload in rows if (payload or {}).get("dashboard_id") in visible}
+
+
 async def current_event_id(db: AsyncSession) -> int | None:
     """Return the log's high-water mark, or None when nothing has been logged yet.
 

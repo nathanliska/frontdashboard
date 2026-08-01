@@ -128,7 +128,9 @@ _Last updated: 2026-07-30_
 - One multiplexed `EventSource('/api/sse')` per user; in-memory manager with bounded queues,
   `connected` priming event carrying the activity log's high-water mark. A reconnect hands that
   mark back as `?last_event_id=`, and the server resyncs only if the log moved past it — so a
-  deploy, during which no write can happen, costs no refetch at all. Frontend routes events to
+  deploy, during which no write can happen, costs no refetch at all. When a resync *is* needed the
+  frame names which entity types changed on dashboards the client can see, so it refetches only
+  those caches; an unknown or absent scope widens back to all of them. Frontend routes events to
   Zustand stores / scoped-query resource caches with client-mutation-id echo suppression.
 - A client whose queue overflows is evicted with a closed sentinel, so its stream ends with a
   `resync` and reconnects — rather than staying connected and silently deaf.

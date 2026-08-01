@@ -72,6 +72,9 @@ class ConnectedSseEvent(BaseModel):
 
 class ResyncSseEvent(BaseModel):
     reason: str
+    # Entity types that changed on dashboards the client can see. Absent means "unknown, refetch
+    # everything" — no mark was offered, or more changed than the reconnect query will read.
+    scopes: list[str] | None = None
 
 
 # Union used purely to register all frame models into OpenAPI components.
