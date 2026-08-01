@@ -8,10 +8,9 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
-    # Bounded so a request burst can't open connections without limit — Postgres pays several MiB
-    # per backend, and this app runs a single worker, so the ceiling here is the ceiling full stop.
-    # Requests past it wait pool_timeout and then fail, which is the behaviour we want: a fast
-    # error beats an unbounded queue.
+    # Bounded so a burst can't open connections without limit — Postgres pays several MiB each, and
+    # every WEB_CONCURRENCY worker gets its own pool, so N x (size + overflow) must fit under the
+    # server's max_connections, shared with whatever else uses that instance. Past it: wait, then fail.
     pool_size=settings.db_pool_size,
     max_overflow=settings.db_max_overflow,
     pool_timeout=settings.db_pool_timeout_seconds,
