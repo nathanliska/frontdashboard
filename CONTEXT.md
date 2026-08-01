@@ -62,8 +62,9 @@ _Last updated: 2026-07-30_
   lists/events) to the owner's trash, restorable for 30 days with the deadline shown; the retention
   reaper then purges the full cascade. Restore brings shares and children back intact. **Archive was
   removed (2026-07-27)** — trash is the only put-away state, for dashboards and lists alike.
-- Editor: react-grid-layout drag/resize, saves with optimistic version → 409 conflict banner +
-  reload resolution; settings modal (rename/share).
+- Editor: react-grid-layout drag/resize, saves with optimistic version. A 409 is resolved in the
+  client — re-read, replay the drag onto the server's layout, retry once — and only a second one
+  raises the conflict banner offering a reload; settings modal (rename/share).
 - **The persisted layout is canonical; the mobile view is a derived projection.** Below 640px the
   grid renders a computed one-column stack, and layout events are ignored there (and on read-only
   dashboards), so the projection can never overwrite the desktop arrangement. Editable mobile

@@ -492,27 +492,59 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().dashboard?.version).toBe(3)
   })
 
-  it('stops the drain and drops pending work on a real conflict (#11)', async () => {
-    const resolvers: ((v: { conflict: true }) => void)[] = []
-    apiUpdateLayout.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolvers.push(resolve)
-        }),
+  it('rebases onto the other editor and retries once, without a banner', async () => {
+    apiUpdateLayout
+      .mockResolvedValueOnce({ conflict: true })
+      .mockResolvedValueOnce({ conflict: false, dashboard: makeDashboard({ version: 6 }) })
+    // The other editor bumped the version and added a widget this client has never seen.
+    apiGetDashboard.mockResolvedValue(
+      makeDashboard({
+        version: 5,
+        layout: [
+          { i: 'w1', x: 0, y: 0, w: 4, h: 3 },
+          { i: 'w2', x: 4, y: 0, w: 4, h: 3 },
+        ],
+      }),
     )
     useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
 
-    const savePromise = useDashboardStore
-      .getState()
-      .saveLayout([{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }])
-    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
-    void useDashboardStore.getState().saveLayout([{ i: 'w1', x: 2, y: 0, w: 4, h: 3 }])
+    await useDashboardStore.getState().saveLayout([{ i: 'w1', x: 6, y: 2, w: 4, h: 3 }])
 
-    resolvers[0]({ conflict: true })
-    await savePromise
+    // Asserting the call, not the resulting layout: a user who hit reload would also end up
+    // correct, so only the retry itself distinguishes this from the old banner.
+    expect(apiUpdateLayout).toHaveBeenCalledTimes(2)
+    const [, retriedLayout, retriedVersion] = apiUpdateLayout.mock.calls[1]
+    expect(retriedVersion).toBe(5)
+    expect(retriedLayout).toContainEqual({ i: 'w1', x: 6, y: 2, w: 4, h: 3 })
+    // Posting our own array wholesale would have stripped w2 — PUT /layout replaces the blob.
+    expect(retriedLayout).toContainEqual({ i: 'w2', x: 4, y: 0, w: 4, h: 3 })
+    expect(useDashboardStore.getState().conflict).toBe(false)
+  })
 
+  it('shows the banner only once the retry is beaten too (#11)', async () => {
+    apiUpdateLayout.mockResolvedValue({ conflict: true })
+    apiGetDashboard.mockResolvedValue(makeDashboard({ version: 5 }))
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
+
+    await useDashboardStore.getState().saveLayout([{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }])
+
+    expect(apiUpdateLayout).toHaveBeenCalledTimes(2)
     expect(useDashboardStore.getState().conflict).toBe(true)
-    expect(apiUpdateLayout).toHaveBeenCalledTimes(1) // pending dropped, never sent
+    // The rebase still leaves the client on the server's version, so the reload the banner offers
+    // is about the layout it lost, not about being stuck one version behind forever.
+    expect(useDashboardStore.getState().dashboard?.version).toBe(5)
+  })
+
+  it('falls back to the banner when the rebase read fails', async () => {
+    apiUpdateLayout.mockResolvedValue({ conflict: true })
+    apiGetDashboard.mockRejectedValue(new Error('offline'))
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
+
+    await useDashboardStore.getState().saveLayout([{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }])
+
+    // No blind retry: without the server's version the retry would 409 again by construction.
+    expect(apiUpdateLayout).toHaveBeenCalledTimes(1)
+    expect(useDashboardStore.getState().conflict).toBe(true)
   })
 
   it('drops the layout save when the session resets mid-flight (#11)', async () => {

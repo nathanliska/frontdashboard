@@ -1,9 +1,9 @@
 /**
  * Dashboard store — the listing page's summaries and the editor's active dashboard.
  *
- * Both live here because they share the same data. Layout saves carry the version they loaded and
- * 409 if another save landed first, which sets `conflict` for the UI to offer a reload. Actions
- * never throw: errors go to the global toast store.
+ * Both live here because they share the same data. Layout saves carry the version they loaded; a
+ * 409 is rebased onto the server's layout and retried once, and only a second one sets `conflict`
+ * for the UI to offer a reload. Actions never throw: errors go to the global toast store.
  */
 
 import { create } from 'zustand'
@@ -68,7 +68,8 @@ let inFlightSummariesLoad: InFlightSummariesLoad | null = null
 // latest wins). Drag/resize would otherwise fire unsequenced saves that all send the same base
 // version, so the second 409s against the user's own first save.
 let layoutSaveInFlight = false
-let pendingLayoutSave: { dashboardId: string; layout: LayoutItem[] } | null = null
+type PendingLayoutSave = { dashboardId: string; layout: LayoutItem[]; retried?: boolean }
+let pendingLayoutSave: PendingLayoutSave | null = null
 let queuedSummariesForceReload = false
 let inFlightTrashLoad: InFlightSummariesLoad | null = null
 let queuedTrashForceReload = false
@@ -325,6 +326,35 @@ function beginDashboardRequest(id: string): number {
 
 function isLatestDashboardRequest(id: string, serial: number): boolean {
   return latestDashboardRequest?.id === id && latestDashboardRequest.serial === serial
+}
+
+/**
+ * Re-read the dashboard a conflicting save was based on, and replay this drag on top of it.
+ *
+ * A merge rather than a replacement: `PUT /layout` stores the array wholesale and never checks it
+ * against the widget set, so posting our own stale array would strip the entry for a widget the
+ * other editor just added. Their entries survive; ours win where both moved the same widget.
+ * Returns null when the re-read fails, which falls back to the conflict banner.
+ */
+async function rebaseLayout(
+  dashboardId: string,
+  layout: LayoutItem[],
+): Promise<{ layout: LayoutItem[]; version: number } | null> {
+  let server: Dashboard
+  try {
+    server = await apiGetDashboard(dashboardId)
+  } catch {
+    return null
+  }
+
+  const ours = new Map(layout.map((item) => [item.i, item]))
+  const merged = (server.layout ?? []).map((item: LayoutItem) => ours.get(item.i) ?? item)
+  const known = new Set((server.layout ?? []).map((item: LayoutItem) => item.i))
+  // Widgets the server knows nothing about are ours to add — the other editor cannot have
+  // positioned them, and dropping them would lose the placement this drag just made.
+  for (const item of layout) if (!known.has(item.i)) merged.push(item)
+
+  return { layout: merged, version: server.version }
 }
 
 export interface DashboardState {
@@ -676,7 +706,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       try {
         while (pendingLayoutSave) {
           if (!guard.isCurrent()) return
-          const pending = pendingLayoutSave
+          const pending: PendingLayoutSave = pendingLayoutSave
           pendingLayoutSave = null
 
           const current = get().dashboard
@@ -695,12 +725,32 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
               return
             }
             if (result.conflict) {
-              // Another editor saved between our load and this PUT. Surface the conflict banner
-              // and drop coalesced work — the user resolves by reloading.
               forgetPendingDashboardMutation(clientMutationId)
-              pendingLayoutSave = null
-              guard.set({ conflict: true })
-              return
+              if (pending.retried) {
+                // Beaten twice by a live co-editor. Stop rather than fight them for the grid.
+                pendingLayoutSave = null
+                guard.set({ conflict: true })
+                return
+              }
+
+              const merged = await rebaseLayout(current.id, pending.layout)
+              if (!guard.isCurrent()) return
+              if (!merged) {
+                pendingLayoutSave = null
+                guard.set({ conflict: true })
+                return
+              }
+              guard.set((s) => ({
+                dashboard: s.dashboard ? { ...s.dashboard, version: merged.version } : s.dashboard,
+              }))
+              // A drag that landed while the PUT was open already supersedes this one, and starts
+              // with its own retry budget.
+              pendingLayoutSave ??= {
+                dashboardId: pending.dashboardId,
+                layout: merged.layout,
+                retried: true,
+              }
+              continue
             }
             guard.set((s) => ({
               dashboard: {

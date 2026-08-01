@@ -33,10 +33,18 @@ sharing is [FDR-004](FDR-004-sharing-and-access.md).
 ### 1. Layout concurrency uses a version integer (OCC)
 
 **Decision:** Each dashboard has a `version` integer; `PUT /layout` compares client vs. server
-version and returns 409 on mismatch, surfaced as a banner (never thrown).
+version and returns 409 on mismatch (never thrown). The client resolves the first 409 itself —
+re-read the dashboard, replay the drag onto the server's layout, retry once — and only shows the
+banner if that retry is beaten too.
 **Why:** Detects a genuine two-editor conflict without pessimistically locking the whole editing
-session. See ADR-008.
-**Tradeoff:** Conflicts resolve by reloading the winner's layout, not by merging.
+session. See ADR-008, which stands: the version still does its job, the user just no longer has to
+resolve it by hand. The banner fired more widely than "two people dragging" suggests — widget add
+and delete bump the version too, so another user adding a widget made your next drag conflict.
+**Tradeoff:** The replay is a merge: the server's layout is the base and this client's items are
+overlaid by widget id, because `PUT /layout` replaces the array wholesale and never checks it
+against the widget set — posting our own stale array would strip a widget the other editor just
+added. Two people dragging the *same* widget still means one of them loses, which is the right
+answer for a position. A failed re-read falls back to the banner rather than retrying blind.
 
 ### 2. Rapid saves are serialized and coalesced
 

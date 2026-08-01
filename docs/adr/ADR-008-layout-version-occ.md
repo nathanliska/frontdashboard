@@ -23,16 +23,23 @@ control:
 - On the client, layout saves are **serialized and coalesced**: one PUT in flight plus one
   latest-pending layout, each send re-reading the version the previous save returned. A 409 therefore
   means a *real* other-editor conflict, never self-contention.
-- A 409 sets `conflict: true` (a banner), it does **not** throw; resolution reloads the current
-  layout.
+- A 409 never throws. The client resolves the first one itself — re-read the dashboard, overlay this
+  drag onto the server's layout by widget id, retry once — and sets `conflict: true` (a banner) only
+  if the retry is beaten too, or if the re-read fails.
 
 ## Consequences
 
-- **Concurrent editors get a clear conflict signal instead of silent loss**: the last writer doesn't
-  win by accident; the loser sees a banner and reloads.
+- **Concurrent editors don't lose work silently**: the check still catches every stale write. What
+  changed is who resolves it — the client replays its drag onto the winner's layout and retries, so
+  the banner is reserved for someone genuinely being outpaced twice. It fired far more widely
+  before, because widget add and delete bump the version too: another user adding a widget anywhere
+  made your next drag conflict.
 - **Self-conflicts are engineered out client-side**: serialize-plus-coalesce guarantees rapid
   drag/resize can't 409 against itself or install a stale layout — so every 409 is meaningful.
 - **The version is load-bearing, not decorative**: any layout/widget write must bump it under the row
   lock, or the OCC check goes blind.
-- **Resolution is reload, not merge**: conflicts are resolved by reloading the winner's layout, not
-  by three-way merging grids — simpler and adequate for the rare true-conflict case.
+- **The retry merges; the banner still doesn't**: the rebase overlays this client's items onto the
+  server's layout by widget id, which it must — `PUT /layout` replaces the array wholesale and never
+  checks it against the widget set, so posting a stale array would strip a widget the other editor
+  just added. Two clients moving the *same* widget still resolve last-write-wins, and the twice-beaten
+  case still resolves by reload. No three-way merge of grid geometry.
