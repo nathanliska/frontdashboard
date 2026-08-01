@@ -110,7 +110,7 @@ class SseManager:
                 with contextlib.suppress(asyncio.QueueFull):
                     client.queue.put_nowait(CLOSED_SENTINEL)
                 self.disconnect(client)
-                metrics.increment(metrics.SSE_EVICTIONS)
+                metrics.SSE_EVICTIONS.inc()
 
 
 # Module-level singleton used by routers (Step 12 wires this up)

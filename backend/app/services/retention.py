@@ -230,11 +230,11 @@ async def reaper_loop() -> None:
     while True:
         try:
             await run_reaper_once()
-            metrics.increment(metrics.REAPER_SWEEPS)
+            metrics.REAPER_SWEEPS.inc()
             # A stalled sweep is otherwise silent: nothing else reveals that history stopped
             # being pruned until the tables are already large.
-            metrics.set_gauge(metrics.REAPER_LAST_SUCCESS, int(datetime.now(UTC).timestamp()))
+            metrics.REAPER_LAST_SUCCESS.set(datetime.now(UTC).timestamp())
         except Exception:
-            metrics.increment(metrics.REAPER_FAILURES)
+            metrics.REAPER_FAILURES.inc()
             logger.exception("reaper: sweep failed; retrying next interval")
         await asyncio.sleep(interval)

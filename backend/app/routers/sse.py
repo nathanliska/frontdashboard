@@ -109,7 +109,7 @@ async def stream_events(
             # No resync frame: the client reconnects and its mark decides, so a healthy stream
             # being recycled costs one index probe rather than a refetch of every cache.
             if datetime.now(UTC) >= expires_at:
-                metrics.increment(metrics.SSE_EXPIRIES)
+                metrics.SSE_EXPIRIES.inc()
                 return
 
             # Checked on BOTH branches below, before anything else. The 5s wait_for
@@ -168,9 +168,9 @@ async def sse_stream(
     watermark = _parse_watermark(last_event_id or request.headers.get("last-event-id"))
     send_resync, head, scopes = await _connect_state(watermark, current_user)
     # Counted together: the ratio is what says whether marks are sparing anyone a refetch.
-    metrics.increment(metrics.SSE_CONNECTS)
+    metrics.SSE_CONNECTS.inc()
     if send_resync:
-        metrics.increment(metrics.SSE_RESYNCS)
+        metrics.SSE_RESYNCS.inc()
     client = manager.connect(current_user.id, session_id=current_session.id)
     return EventSourceResponse(
         stream_events(

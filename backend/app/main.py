@@ -83,7 +83,7 @@ def count_rate_limited(request: Request, exc: Exception) -> Response:
 
     Wrapped rather than replaced: the 429 body and Retry-After stay slowapi's to define.
     """
-    metrics.increment(metrics.RATE_LIMITED)
+    metrics.RATE_LIMITED.inc()
     return _rate_limit_exceeded_handler(request, exc)  # ty: ignore[invalid-argument-type]
 
 

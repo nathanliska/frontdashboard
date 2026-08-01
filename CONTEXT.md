@@ -191,11 +191,13 @@ _Last updated: 2026-07-30_
   placement *is* the access control: Caddy proxies only `/api/*`, so a public `/metrics` request
   falls through to the SPA and gets `index.html` — verified, zero series in the body — and the prod
   backend publishes no port, leaving the Docker network as the only route in.
-  Series: SSE connects / resyncs / evictions / lifetime expiries, open streams and deepest queue,
-  4xx and 5xx responses, rate-limit rejections, retention sweeps plus the unix time of the last
-  successful one, and DB pool checked-out / size / overflow. Status counting is pure-ASGI
-  middleware, never `BaseHTTPMiddleware`, which reads a streaming response to completion and would
-  buffer SSE. Counters are per process, so with `WEB_CONCURRENCY > 1` a scraper sums across targets.
+  Built on `prometheus_client`, so the exposition, the label handling and the multiprocess path
+  are the library's rather than ours. Series: SSE connects / resyncs / evictions / lifetime
+  expiries, open streams and deepest queue, retention sweeps plus the unix time of the last
+  successful one, rate-limit rejections, DB pool checked-out / size / overflow / limit, and
+  `http_responses_total{method,route,status_class}` — labelled by route *template*, never the raw
+  path, so a scanner cannot mint a series per URL. Status counting is pure-ASGI middleware, never
+  `BaseHTTPMiddleware`, which reads a streaming response to completion and would buffer SSE.
   Nothing scrapes it yet; a Prometheus container joined to the `internal` network reaches it at
   `frontdashboard-backend:8000/metrics`. The connects-to-resyncs ratio is what says whether
   reconnect marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads.

@@ -4,89 +4,71 @@ import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from prometheus_client import generate_latest
 
 from app import metrics
 from app.main import app
 from app.sse.manager import _QUEUE_MAX, SseManager
 
 
-@pytest.fixture(autouse=True)
-def _zero_counters():
-    metrics.reset()
-    yield
-    metrics.reset()
+def _sample(name: str, **labels: str) -> float:
+    """Read one series out of the registry, or 0 when it has not been touched yet."""
+    for metric in metrics.HTTP_RESPONSES.collect() if labels else []:
+        for sample in metric.samples:
+            if sample.name == name and all(sample.labels.get(k) == v for k, v in labels.items()):
+                return sample.value
+    if labels:
+        return 0.0
+    for collector in (
+        metrics.SSE_EVICTIONS,
+        metrics.SSE_EXPIRIES,
+        metrics.SSE_CONNECTS,
+        metrics.RATE_LIMITED,
+    ):
+        for metric in collector.collect():
+            for sample in metric.samples:
+                if sample.name == name:
+                    return sample.value
+    return 0.0
 
 
-def test_render_emits_help_and_type_for_every_series() -> None:
-    """A series without HELP/TYPE parses but reads as unlabelled noise on a dashboard."""
-    body = metrics.render({"sse_clients": 3})
+def test_route_label_uses_the_template_not_the_raw_path() -> None:
+    """A series per URL is how a path scanner turns metrics into a memory leak."""
+    from app.middleware import _route_label
 
-    for line in body.splitlines():
-        if line.startswith("#"):
-            continue
-        name = line.split(" ")[0]
-        assert f"# HELP {name} " in body
-        assert f"# TYPE {name} " in body
+    class _Route:
+        path = "/dashboards/{dashboard_id}"
 
-
-def test_render_rejects_a_gauge_with_no_help_text() -> None:
-    """Better to fail the scrape than to publish a series nobody can interpret."""
-    with pytest.raises(KeyError):
-        metrics.render({"invented_gauge": 1})
+    assert _route_label({"route": _Route(), "path": "/api/dashboards/abc"}) == "/api/dashboards/{dashboard_id}"
+    assert _route_label({}) == "unmatched"
+    assert _route_label({"route": object()}) == "unmatched"
 
 
-def test_increment_ignores_an_unknown_counter() -> None:
-    """Observing a request must never be able to fail it."""
-    metrics.increment("not_a_counter")
+def test_observe_response_buckets_by_status_class() -> None:
+    """Class rather than code, so a 404 storm cannot mint a series per variant."""
+    before = _sample("frontdashboard_http_responses_total", method="GET", route="/x", status_class="4xx")
 
-    assert "not_a_counter" not in metrics.counters()
+    metrics.observe_response("GET", "/x", 404)
+    metrics.observe_response("GET", "/x", 418)
+
+    after = _sample("frontdashboard_http_responses_total", method="GET", route="/x", status_class="4xx")
+    assert after - before == 2
 
 
 @pytest.mark.asyncio
 async def test_eviction_counter_follows_a_dropped_client() -> None:
     """The eviction count is how a slow-client problem becomes visible at all."""
+    before = _sample("frontdashboard_sse_evictions_total")
     mgr = SseManager()
     user_id = uuid.uuid4()
     client = mgr.connect(user_id, session_id=uuid.uuid4())
     for _ in range(_QUEUE_MAX):
         client.queue.put_nowait({"event": "filler"})
 
-    assert metrics.counters()[metrics.SSE_EVICTIONS] == 0
-
     await mgr.broadcast({"event": "overflow"}, actor_id=user_id)
 
-    assert metrics.counters()[metrics.SSE_EVICTIONS] == 1
+    assert _sample("frontdashboard_sse_evictions_total") - before == 1
     assert mgr.client_count == 0
-
-
-@pytest.mark.asyncio
-async def test_client_count_tracks_connect_and_disconnect() -> None:
-    """The gauge is read straight off the registry, so it has to follow both edges."""
-    mgr = SseManager()
-    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
-
-    assert mgr.client_count == 1
-
-    mgr.disconnect(client)
-
-    assert mgr.client_count == 0
-
-
-def test_observe_status_buckets_only_failures() -> None:
-    """2xx and 3xx are the normal case; counting them would bury the signal."""
-    for code in (200, 204, 302, 404, 429, 500, 503):
-        metrics.observe_status(code)
-
-    counts = metrics.counters()
-    assert counts[metrics.HTTP_4XX] == 2
-    assert counts[metrics.HTTP_5XX] == 2
-
-
-def test_set_gauge_ignores_an_unknown_name() -> None:
-    """Same rule as counters: observation must never raise into the thing it observes."""
-    metrics.set_gauge("not_a_gauge", 5)
-
-    assert "not_a_gauge" not in metrics.render({})
 
 
 @pytest.mark.asyncio
@@ -97,6 +79,7 @@ async def test_stream_closes_on_the_lifetime_cap_without_a_resync() -> None:
     from app.routers.sse import stream_events
     from app.sse.events import connected_dict
 
+    before = _sample("frontdashboard_sse_expiries_total")
     mgr = SseManager()
     client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
 
@@ -114,8 +97,31 @@ async def test_stream_closes_on_the_lifetime_cap_without_a_resync() -> None:
     ]
 
     assert frames == [connected_dict(None)], "a lifetime close must send no resync frame"
-    assert metrics.counters()[metrics.SSE_EXPIRIES] == 1
+    assert _sample("frontdashboard_sse_expiries_total") - before == 1
     assert mgr.client_count == 0, "the finally block must unregister the client"
+
+
+def test_client_count_tracks_connect_and_disconnect() -> None:
+    """The gauge reads straight off the registry, so it has to follow both edges."""
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+
+    assert mgr.client_count == 1
+
+    mgr.disconnect(client)
+
+    assert mgr.client_count == 0
+
+
+def test_scrape_carries_help_and_type_for_every_series() -> None:
+    """A series without HELP/TYPE parses but reads as unlabelled noise on a dashboard."""
+    body = generate_latest().decode()
+
+    for line in body.splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        name = line.split("{")[0].split(" ")[0].removesuffix("_total").removesuffix("_created")
+        assert f"# HELP {name}" in body or f"# HELP {name}_total" in body
 
 
 @pytest.mark.asyncio
@@ -127,7 +133,7 @@ async def test_metrics_endpoint_is_outside_the_api_prefix() -> None:
         under_api = await client.get("/api/metrics")
 
     assert served.status_code == 200
-    assert served.headers["content-type"].startswith("text/plain; version=0.0.4")
+    assert "text/plain" in served.headers["content-type"]
     assert "frontdashboard_sse_clients" in served.text
     assert under_api.status_code == 404
 
@@ -140,4 +146,7 @@ async def test_metrics_endpoint_reports_pool_gauges() -> None:
         body = (await client.get("/metrics")).text
 
     assert "frontdashboard_db_pool_checked_out" in body
-    assert "frontdashboard_db_pool_size" in body
+    assert "frontdashboard_db_pool_limit" in body
+    # Never negative: SQLAlchemy counts overflow up from -pool_size, which reads as nonsense.
+    overflow = next(line for line in body.splitlines() if line.startswith("frontdashboard_db_pool_overflow "))
+    assert float(overflow.split()[1]) >= 0

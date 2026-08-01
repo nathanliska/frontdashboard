@@ -21,6 +21,7 @@ dependencies = [
     "sse-starlette>=3.4.5",
     "pydantic-settings>=2.14.2",
     "anyio>=4.13.0",
+    "prometheus-client>=0.26.0",
 ]
 
 [dependency-groups]
