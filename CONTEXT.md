@@ -126,17 +126,18 @@ _Last updated: 2026-07-30_
 
 **Real-time (SSE)**
 - One multiplexed `EventSource('/api/sse')` per user; in-memory manager with bounded queues,
-  `connected` priming event, `resync` on reconnect with `Last-Event-ID`. Frontend routes
-  events to Zustand stores / scoped-query resource caches with client-mutation-id echo
-  suppression.
+  `connected` priming event carrying the activity log's high-water mark. A reconnect hands that
+  mark back as `?last_event_id=`, and the server resyncs only if the log moved past it — so a
+  deploy, during which no write can happen, costs no refetch at all. Frontend routes events to
+  Zustand stores / scoped-query resource caches with client-mutation-id echo suppression.
 - A client whose queue overflows is evicted with a closed sentinel, so its stream ends with a
   `resync` and reconnects — rather than staying connected and silently deaf.
 - A stream rejected with an HTTP error status (`readyState === CLOSED`, which `EventSource`
   never retries) reconnects on jittered exponential backoff (1s → 30s cap, indefinitely) and
   never logs anyone out; every fourth attempt probes `/auth/me`, so a genuinely signed-out tab
-  is discovered without a dead backend being mistaken for one. Because a fresh
-  `EventSource` sends no `Last-Event-ID`, that path asks for the resync itself; the browser's
-  own auto-retry of a network drop is left alone and resyncs via the header as before.
+  is discovered without a dead backend being mistaken for one. That path reconnects with its
+  mark on the query string, since a fresh `EventSource` sends no `Last-Event-ID` header; a tab
+  holding no mark still asks for the resync itself. The browser's own auto-retry is left alone.
 - Streams revalidate their session every 30s and end when it is revoked; revocation also drops
   them in-process immediately (the drop is a latency optimisation, not the guarantee — the periodic
   check is worker-agnostic and holds without it). Closes #8's authorization half: a revoked session
@@ -213,8 +214,8 @@ _Last updated: 2026-07-30_
   refuses to authenticate against, so nothing collected here could still have been used; activity events and notifications —
   the only tables that grow with usage rather than user count — are pruned past a 90-day horizon.
   It runs under a Postgres advisory lock, so extra workers can each schedule it and exactly one
-  sweeps. Pruning history is safe for SSE because a reconnect carrying any `Last-Event-ID` triggers
-  a resync rather than a replay. It also purges **unverified signups past 30 days** — registration is
+  sweeps. Pruning history is safe for SSE because a reconnect is answered with a resync rather than
+  a replay; the mark it carries is only compared against the log's head, never read from history. It also purges **unverified signups past 30 days** — registration is
   open to the internet, so abandoned ones accumulate; login 403s until an address is verified, so
   such an account holds no content, and purging it frees an email the unique index would otherwise
   reserve forever. Accounts that **do** own content are excluded **per user** rather than vetoing

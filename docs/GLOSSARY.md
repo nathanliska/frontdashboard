@@ -120,7 +120,9 @@ cascade for real, as opposed to the `deleted_at` stamp that put it there. See
 
 **Broadcast audience** — The set an SSE event goes to: `{dashboard.user_id} ∪ share principal_ids`. Miss a principal and their tab goes stale. See [ADR-015](adr/ADR-015-sse-write-choreography.md).
 
-**Resync** — The catch-up an SSE client requests on reconnect via `Last-Event-ID` (or unconditionally on a fresh `EventSource`). See [FDR-008](fdr/FDR-008-realtime-sse.md).
+**Resync** — The catch-up an SSE client performs when it may have missed events: a refetch of every cache it holds. Requested by the server when the log has moved past the client's mark, or by the client itself when it holds no mark. See [FDR-008](fdr/FDR-008-realtime-sse.md).
+
+**Mark (high-water mark)** — The highest `activity_events.event_id` a tab has been sent, primed by the `connected` frame and handed back as `?last_event_id=` on reconnect. What lets a reconnect prove it missed nothing instead of assuming it did. See [FDR-008](fdr/FDR-008-realtime-sse.md).
 
 **Closed sentinel** — The marker used to evict an overflowing SSE client so its stream ends and it reconnects with a resync instead of going silently deaf. See [ADR-004](adr/ADR-004-sse-over-websocket.md).
 

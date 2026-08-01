@@ -254,7 +254,12 @@ export const ClockWidgetResponse = z.object({
 })
 
 export type ConnectedSseEvent = z.infer<typeof ConnectedSseEvent>
-export const ConnectedSseEvent = z.intersection(z.object({}), z.object({}))
+export const ConnectedSseEvent = z.intersection(
+  z.object({
+    last_event_id: z.union([z.number(), z.null()]).optional()
+  }),
+  z.object({})
+)
 
 export type PrincipalType = z.infer<typeof PrincipalType>
 export const PrincipalType = z.literal('user')

@@ -13,7 +13,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.routers.sse import _should_resync_on_connect
+from app.models.activity import EventType
 from app.sse.events import connected_dict
 from app.sse.manager import _QUEUE_MAX, CLOSED_SENTINEL, REVOKED_SENTINEL, SseManager
 from tests.helpers import register_user, set_csrf
@@ -133,12 +133,11 @@ async def test_manager_multiple_connections_same_user() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_reconnect_with_last_event_id_resyncs() -> None:
-    assert _should_resync_on_connect("123") is True
+def test_initial_connect_without_a_mark_skips_resync() -> None:
+    """A first connect follows the components' own fetches; resyncing would double every one."""
+    from app.routers.sse import _resync_needed
 
-
-def test_initial_connect_without_last_event_id_skips_resync() -> None:
-    assert _should_resync_on_connect(None) is False
+    assert _resync_needed(None, 123) is False
 
 
 # ---------------------------------------------------------------------------
@@ -201,15 +200,77 @@ def test_resync_dict_has_correct_event_type() -> None:
     assert data["reason"] == "refresh_required"
 
 
-def test_connected_dict_primes_last_event_id() -> None:
-    """Verify the lightweight connect event carries a stable SSE id."""
+def test_connected_dict_primes_the_log_head() -> None:
+    """The connect frame must hand over a usable mark, not a sentinel."""
     from app.sse.events import connected_dict
 
-    msg = connected_dict()
+    msg = connected_dict(41)
     assert msg["event"] == "connected"
-    assert msg["id"] == "connected"
-    data = json.loads(msg["data"])
-    assert data == {}
+    # A non-numeric id here is what used to force a resync on every reconnect of an idle tab:
+    # the client had nothing to offer the server but a string.
+    assert msg["id"] == "41"
+    assert json.loads(msg["data"]) == {"last_event_id": 41}
+
+
+def test_connected_dict_omits_the_id_on_an_empty_log() -> None:
+    """Nothing has been logged, so there is no mark to claim."""
+    from app.sse.events import connected_dict
+
+    msg = connected_dict(None)
+    assert "id" not in msg
+    assert json.loads(msg["data"]) == {"last_event_id": None}
+
+
+@pytest.mark.parametrize(
+    ("watermark", "head", "expected"),
+    [
+        (None, 7, False),
+        (None, None, False),
+        (7, 7, False),
+        (7, 9, True),
+        (9, 7, False),
+        (7, None, False),
+    ],
+)
+def test_resync_needed(watermark: int | None, head: int | None, expected: bool) -> None:
+    """A mark the log has not moved past is proof the client missed nothing."""
+    from app.routers.sse import _resync_needed
+
+    assert _resync_needed(watermark, head) is expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("41", 41), ("connected", None), (None, None), ("", None), ("nope", None)],
+)
+def test_parse_watermark(raw: str | None, expected: int | None) -> None:
+    """Anything unparseable has to read as absent, which resyncs rather than skipping events."""
+    from app.routers.sse import _parse_watermark
+
+    assert _parse_watermark(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_current_event_id_tracks_the_newest_committed_row(db_session: AsyncSession) -> None:
+    """The head must follow the log, since it is what every reconnect is judged against."""
+    from app.services.activity import current_event_id, log_event
+
+    before = await current_event_id(db_session)
+
+    log_event(
+        db_session,
+        event_type=EventType.list_created,
+        actor_id=uuid.uuid4(),
+        actor_display_name="Tester",
+        entity_type="list",
+        entity_id=uuid.uuid4(),
+        payload={"dashboard_id": str(uuid.uuid4())},
+    )
+    await db_session.flush()
+
+    after = await current_event_id(db_session)
+    assert after is not None
+    assert before is None or after > before
 
 
 @pytest.mark.asyncio
@@ -236,7 +297,7 @@ async def test_stream_ends_with_resync_on_close_sentinel() -> None:
 
 @pytest.mark.asyncio
 async def test_stream_sends_resync_first_on_reconnect() -> None:
-    """send_resync=True (Last-Event-ID present) replays a resync up front."""
+    """send_resync=True puts the resync ahead of any live frame, so nothing is applied over it."""
     from app.routers.sse import stream_events
 
     mgr = SseManager()

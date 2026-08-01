@@ -4,6 +4,7 @@ import { apiFetch } from '../api/client'
 import {
   ActivitySseEvent,
   ActivitySsePayload,
+  ConnectedSseEvent,
   type EventType,
   NotificationSseEvent,
 } from '../api/generated/contract'
@@ -130,13 +131,20 @@ export function useSSE(): void {
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const needsResyncRef = useRef(false)
+  // Highest activity id this tab has been sent. Handed back on reconnect so the server can say
+  // whether anything happened meanwhile — a resync costs a refetch of every cache the tab holds.
+  const watermarkRef = useRef<number | null>(null)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reconnectNonce is bumped to force teardown/recreate of the EventSource; it's never read in the effect body.
   useEffect(() => {
     if (!userId) return
 
     let cancelled = false
-    const es = new EventSource('/api/sse', { withCredentials: true })
+    // Only a reconnect can have missed anything, and only a known mark lets the server rule it
+    // out; without both, the resync decision stays here and stays pessimistic.
+    const serverDecidesResync = needsResyncRef.current && watermarkRef.current !== null
+    const url = serverDecidesResync ? `/api/sse?last_event_id=${watermarkRef.current}` : '/api/sse'
+    const es = new EventSource(url, { withCredentials: true })
 
     es.onerror = () => {
       // EventSource retries below-HTTP drops itself but not an error status, where the spec
@@ -159,24 +167,38 @@ export function useSSE(): void {
           void apiFetch('/api/auth/me').catch(() => {})
         }
 
-        // A fresh EventSource sends no Last-Event-ID, so the server sends no resync frame.
-        // This path must ask for one, or events missed while disconnected are lost for good.
+        // Flags the next connect as a reconnect: it either offers its mark and lets the server
+        // rule a gap out, or has none and resyncs regardless. Events missed here are lost for good.
         needsResyncRef.current = true
         setReconnectNonce((n) => n + 1)
       }, reconnectDelayMs(attempt))
     }
 
-    function onConnected() {
+    function onConnected(e: MessageEvent<string>) {
       reconnectAttemptsRef.current = 0
-      if (needsResyncRef.current) {
-        needsResyncRef.current = false
-        onResync()
-      }
+      const frame = parseFrame(e.data, ConnectedSseEvent)
+      const head = frame?.last_event_id
+      if (typeof head === 'number') watermarkRef.current = head
+      if (!needsResyncRef.current) return
+      needsResyncRef.current = false
+      // When the server was given a mark it answers with a resync frame or with nothing, and
+      // its silence is the answer. Resyncing here too would refetch everything regardless.
+      if (!serverDecidesResync) onResync()
     }
     es.addEventListener('connected', onConnected)
 
-    function onListEvent(e: MessageEvent<string>) {
+    // Every activity frame moves the mark, whichever handler it is bound for, so the parse and
+    // the bookkeeping stay together rather than being repeated per route.
+    function readActivityFrame(e: MessageEvent<string>): SseEvent | null {
       const data = parseFrame(e.data, SseEventSchema)
+      if (data && data.event_id > (watermarkRef.current ?? 0)) {
+        watermarkRef.current = data.event_id
+      }
+      return data
+    }
+
+    function onListEvent(e: MessageEvent<string>) {
+      const data = readActivityFrame(e)
       if (!data) return
       // Asked once and passed down: the check consumes the pending mutation id, so whichever
       // handler called it first would be the only one told the truth.
@@ -191,7 +213,7 @@ export function useSSE(): void {
     }
 
     function onCalendarEvent(e: MessageEvent<string>) {
-      const data = parseFrame(e.data, SseEventSchema)
+      const data = readActivityFrame(e)
       if (!data) return
       addActivity(data)
       handleCalendarResourceEvent(data)
@@ -209,7 +231,7 @@ export function useSSE(): void {
     }
 
     function onDashboardEvent(e: MessageEvent<string>) {
-      const data = parseFrame(e.data, SseEventSchema)
+      const data = readActivityFrame(e)
       if (!data) return
       addActivity(data)
       void handleDashboardEvent(data)

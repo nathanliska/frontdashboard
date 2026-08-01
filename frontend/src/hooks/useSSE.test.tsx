@@ -586,16 +586,75 @@ describe('useSSE reconnect backoff', () => {
     expect(MockEventSource.instances).toHaveLength(2)
   })
 
-  it('resyncs after a reconnect, because the fresh EventSource sends no Last-Event-ID', async () => {
+  it('resyncs after a reconnect when it has no mark to offer', async () => {
     render(<TestHarness />)
 
     await failLatest(1000)
     expect(MockEventSource.instances).toHaveLength(2)
 
-    // The server sends `resync` only on a Last-Event-ID header, which a fresh EventSource never
-    // sends — so the client must drive it off `connected` or the caches stay silently wrong.
+    // No mark means no way for the server to rule out a gap, so the client stays pessimistic
+    // and drives the resync itself — the behaviour every reconnect had before marks existed.
     act(() => {
       MockEventSource.instances[1].dispatch('connected')
+    })
+
+    expect(MockEventSource.instances[1].url).toBe('/api/sse')
+    expect(handleListResourceEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'resync' }),
+    )
+  })
+
+  it('hands its mark back on reconnect and lets the server rule out a resync', async () => {
+    render(<TestHarness />)
+    act(() => {
+      MockEventSource.instances[0].dispatch('connected', '{"last_event_id":41}')
+    })
+
+    await failLatest(1000)
+    act(() => {
+      MockEventSource.instances[1].dispatch('connected', '{"last_event_id":41}')
+    })
+
+    // The assertion that matters is the absence: the server saw the mark, found nothing past it,
+    // and sent no resync frame. Asserting the caches hold the right data would pass either way.
+    expect(MockEventSource.instances[1].url).toBe('/api/sse?last_event_id=41')
+    expect(handleListResourceEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'resync' }),
+    )
+  })
+
+  it('advances its mark past every activity frame, whichever handler the frame is for', async () => {
+    render(<TestHarness />)
+    act(() => {
+      MockEventSource.instances[0].dispatch('connected', '{"last_event_id":41}')
+      // A calendar frame, so this also proves the mark is not tracked per route.
+      latestStream().dispatch(
+        'calendar.event.updated',
+        frame({
+          event_id: 77,
+          event_type: 'calendar.event.updated',
+          entity_type: 'calendar_event',
+          entity_id: 'e1',
+          payload: {},
+        }),
+      )
+    })
+
+    await failLatest(1000)
+
+    expect(MockEventSource.instances[1].url).toBe('/api/sse?last_event_id=77')
+  })
+
+  it('still resyncs when the server answers a mark with a resync frame', async () => {
+    render(<TestHarness />)
+    act(() => {
+      MockEventSource.instances[0].dispatch('connected', '{"last_event_id":41}')
+    })
+
+    await failLatest(1000)
+    act(() => {
+      MockEventSource.instances[1].dispatch('connected', '{"last_event_id":90}')
+      MockEventSource.instances[1].dispatch('resync')
     })
 
     expect(handleListResourceEvent).toHaveBeenCalledWith(

@@ -13,6 +13,7 @@ from app.database import async_session_factory
 from app.models.session import UserSession
 from app.models.user import User
 from app.schemas.sse import AnySseEvent
+from app.services.activity import current_event_id
 from app.services.sessions import session_is_live
 from app.sse.events import connected_dict, resync_dict
 from app.sse.manager import CLOSED_SENTINEL, REVOKED_SENTINEL, _Client, manager
@@ -22,9 +23,37 @@ router = APIRouter(prefix="/sse", tags=["sse"])
 _REVALIDATE_EVERY = timedelta(seconds=30)
 
 
-def _should_resync_on_connect(last_event_id: str | None) -> bool:
-    """Any Last-Event-ID means the browser is reconnecting an existing stream."""
-    return last_event_id is not None
+def _parse_watermark(raw: str | None) -> int | None:
+    """Read a client's high-water mark, treating anything unparseable as absent."""
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _resync_needed(watermark: int | None, head: int | None) -> bool:
+    """Decide whether a connecting client has to refetch everything.
+
+    A mark the log has moved past is the only thing that earns a resync. No mark means either a
+    first connect, which has nothing to catch up on, or a reconnect the client resyncs itself.
+    """
+    if watermark is None:
+        return False
+    return head is not None and head > watermark
+
+
+async def _connect_state(watermark: int | None) -> tuple[bool, int | None]:
+    """Resolve the resync decision and the log's head together.
+
+    Its own short-lived session: the request's would stay pinned for the stream's lifetime.
+    Deliberately unfiltered by audience — "nothing happened at all" already proves nothing was
+    missed, and the bare head is one index scan that discloses no other user's activity.
+    """
+    async with async_session_factory() as db:
+        head = await current_event_id(db)
+    return _resync_needed(watermark, head), head
 
 
 async def stream_events(
@@ -32,6 +61,7 @@ async def stream_events(
     *,
     send_resync: bool,
     revalidate: Callable[[uuid.UUID], Awaitable[bool]],
+    watermark: int | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Yield SSE frames until the connection closes, is evicted, or its session is revoked.
 
@@ -47,7 +77,7 @@ async def stream_events(
     """
     next_check = datetime.now(UTC) + _REVALIDATE_EVERY
     try:
-        yield connected_dict()
+        yield connected_dict(watermark)
 
         if send_resync:
             yield resync_dict()
@@ -97,13 +127,24 @@ async def _revalidate_session(session_id: uuid.UUID) -> bool:
 @router.get("", responses={200: {"model": AnySseEvent, "content": {"text/event-stream": {}}}})
 async def sse_stream(
     request: Request,
+    last_event_id: str | None = None,
     current_user: User = Depends(get_current_user_for_stream),
     current_session: UserSession = Depends(get_current_session_for_stream),
 ) -> EventSourceResponse:
-    """Open an SSE stream for the authenticated user."""
-    send_resync = _should_resync_on_connect(request.headers.get("last-event-id"))
+    """Open an SSE stream for the authenticated user.
+
+    The client reconnects by opening a fresh EventSource, which sends no Last-Event-ID header, so
+    the query parameter is the mark that normally arrives; the header is honoured as a fallback.
+    """
+    watermark = _parse_watermark(last_event_id or request.headers.get("last-event-id"))
+    send_resync, head = await _connect_state(watermark)
     client = manager.connect(current_user.id, session_id=current_session.id)
     return EventSourceResponse(
-        stream_events(client, send_resync=send_resync, revalidate=_revalidate_session),
+        stream_events(
+            client,
+            send_resync=send_resync,
+            revalidate=_revalidate_session,
+            watermark=head,
+        ),
         ping=25,
     )

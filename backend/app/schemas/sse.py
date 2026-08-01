@@ -64,7 +64,10 @@ class NotificationSseEvent(BaseModel):
 
 
 class ConnectedSseEvent(BaseModel):
-    model_config = ConfigDict(extra="allow")  # data is {}
+    model_config = ConfigDict(extra="allow")
+
+    # Null only on a log that has never been written to.
+    last_event_id: int | None = None
 
 
 class ResyncSseEvent(BaseModel):

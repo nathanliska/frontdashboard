@@ -7,6 +7,7 @@ transaction as the mutation that triggered it.
 
 import uuid
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent, EventType
@@ -35,3 +36,12 @@ def log_event(
     )
     db.add(event)
     return event
+
+
+async def current_event_id(db: AsyncSession) -> int | None:
+    """Return the log's high-water mark, or None when nothing has been logged yet.
+
+    Uncommitted rows are invisible, so this is the newest event any client could have been sent.
+    `event_id` is indexed, so the aggregate resolves to a single-row index scan.
+    """
+    return await db.scalar(select(func.max(ActivityEvent.event_id)))

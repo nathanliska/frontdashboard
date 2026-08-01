@@ -46,13 +46,19 @@ async def build_activity_sse_dict(db: AsyncSession, event: ActivityEvent) -> dic
     return activity_to_sse_dict(event)
 
 
-def connected_dict() -> dict:
-    """Prime EventSource with a Last-Event-ID even before domain events arrive."""
-    return {
-        "id": "connected",
+def connected_dict(last_event_id: int | None = None) -> dict:
+    """Prime the client with the activity log's high-water mark.
+
+    The mark is the frame's own id as well as its data: a client that goes on to see no domain
+    event still knows where it came in, and can ask on reconnect whether it missed anything.
+    """
+    frame = {
         "event": "connected",
-        "data": json.dumps({}),
+        "data": json.dumps({"last_event_id": last_event_id}),
     }
+    if last_event_id is not None:
+        frame["id"] = str(last_event_id)
+    return frame
 
 
 def resync_dict() -> dict:

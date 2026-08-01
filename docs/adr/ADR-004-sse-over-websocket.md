@@ -39,8 +39,9 @@ harmless:
   `routers/sse.py` reads a client queue. Nothing outside `sse/manager.py` may write to one. A
   "quick" direct queue write from a router would work perfectly on one worker and be invisible until
   the day there are two.
-- **Resync is ordering-free.** `_should_resync_on_connect` treats *any* `Last-Event-ID` as "refetch
-  everything"; it never replays `activity_events` from that id. So delivery needs to be
+- **Resync is ordering-free.** A reconnect's mark is compared against the log's head to decide
+  *whether* to resync; a resync is still "refetch everything" and never replays `activity_events`
+  from that id. So delivery needs to be
   at-least-once and nothing more — a duplicated or reordered message costs a redundant refetch, not
   a divergence. Making reconnect replay from the event log instead would buy some bandwidth and
   spend that guarantee.

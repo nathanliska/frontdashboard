@@ -1,8 +1,8 @@
 """Retention sweep — deletes rows that can no longer affect any decision.
 
 Only provably-inert rows go: expired tokens and invites, sessions past either clock, and
-activity/notification history past the horizon. Pruning history is safe for SSE resume because
-any `Last-Event-ID` a client sends triggers a full resync rather than a replay.
+activity/notification history past the horizon. Pruning history is safe for SSE resume: a client's
+mark is only compared against the log's head, so a reconnect resyncs and never reads history.
 """
 
 import asyncio

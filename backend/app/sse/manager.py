@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 _QUEUE_MAX = 256
 
 # Pushed onto a client's queue when it is evicted for falling too far behind.
-# The stream generator ends the response on this, so the browser's EventSource
-# reconnects and the Last-Event-ID -> resync path restores consistency.
+# The stream generator ends the response on this, so the client reconnects and the resync it is
+# sent restores consistency — its mark is stale by definition once events have been dropped.
 CLOSED_SENTINEL = object()
 
 # Pushed onto a client's queue when its session is revoked. Distinct from

@@ -1,7 +1,7 @@
 # FDR-008: Real-Time Delivery (SSE)
 
 **Status:** Active
-**Last reviewed:** 2026-07-28
+**Last reviewed:** 2026-07-31
 
 ## Overview
 
@@ -14,8 +14,9 @@ it is in their FDRs.
 ## Behavior
 
 - **One connection per user.** A single `EventSource('/api/sse')` multiplexes all event types.
-- **Priming and resync.** The stream opens with a `connected` event; on reconnect it asks for a
-  `resync` using `Last-Event-ID` so the client catches up on what it missed.
+- **Priming and resync.** The stream opens with a `connected` event carrying the activity log's
+  current high-water mark. The client remembers that mark, advances it past every activity frame,
+  and hands it back on reconnect; the server resyncs only if the log has moved past it.
 - **Overflow doesn't go silent.** A client whose queue overflows is disconnected with a closed
   sentinel, so it reconnects and resyncs rather than staying connected but deaf.
 - **Robust reconnect.** A network drop uses the browser's built-in retry (resyncing via the header). A
@@ -70,6 +71,29 @@ revocation is guaranteed within 30s regardless of process topology. See ADR-003.
 authorization half.
 **Tradeoff:** Up to a 30s window before a revoked session's stream closes if the immediate drop
 doesn't apply (e.g. a different worker).
+
+### 5. A reconnect proves it missed nothing rather than assuming it did
+
+**Decision:** `connected` carries `last_event_id` — `max(activity_events.event_id)`. The client
+tracks that mark across the session and passes it as `?last_event_id=` when reconnecting; the server
+sends `resync` only when the head has moved past it. A client with no mark still resyncs itself, so
+the pessimistic path is intact.
+
+**Why:** A resync costs a refetch of every cache the tab holds — six requests each on a dashboard —
+and reconnects are common: every deploy, every network blip, every laptop wake. Because all writes
+go through the backend, a restart produces no events at all, so the mark provably rules out a gap
+and the reconnect costs nothing. The probe is deliberately unfiltered by audience: "nothing happened
+to anyone" already proves nothing was missed, it resolves to a single index scan, and it discloses
+no other user's activity. The query parameter carries the mark because the client reconnects by
+opening a *fresh* `EventSource`, which sends no `Last-Event-ID` header; the header is still honoured
+as a fallback.
+
+**Tradeoff:** `event_id` comes from a sequence read at flush, before the transaction commits, so it
+orders assignments rather than commits. An event assigned a lower id but committed after the
+client's last-seen event, while that client was disconnected, sits below the mark and is not
+replayed — the tab stays stale for that one event until its next resync. Today's unconditional
+resync has no such hole. Closing it means ordering the stream id by commit, which is the
+prerequisite for replaying event bodies rather than merely detecting a gap.
 
 ## Access
 
