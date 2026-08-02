@@ -35,7 +35,7 @@ function resetSessionData(): void {
 interface AuthState {
   status: 'loading' | 'authenticated' | 'unauthenticated'
   user: User | null
-  init: () => Promise<void>
+  init: (bootReady?: Promise<void>) => Promise<void>
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, displayName: string) => Promise<RegistrationResponse>
   verifyEmail: (token: string) => Promise<void>
@@ -49,7 +49,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   status: 'loading',
   user: null,
 
-  async init() {
+  async init(bootReady?: Promise<void>) {
     if (get().status !== 'loading') return
     if (authInitPromise) return authInitPromise
 
@@ -57,7 +57,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     authInitPromise = (async () => {
       // One question, one answer. There is no silent-refresh step any more: the session cookie
       // either resolves to a live row or it does not, so /me is the whole of the check.
-      const user = await apiGetMe()
+      // bootReady (the route chunk preload) rides along so answering doesn't just trade the
+      // boot screen for a suspense fallback; it never rejects and caps its own wait.
+      const [user] = await Promise.all([apiGetMe(), bootReady])
       if (user) {
         set({ status: 'authenticated', user })
         return

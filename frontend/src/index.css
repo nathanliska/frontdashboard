@@ -16,3 +16,16 @@ body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Both loading indicators: invisible for the first beat, so a boot or fetch that finishes
+   fast never flashes a spinner. The page background is already the app's own. */
+.loading-appear {
+  opacity: 0;
+  animation: loading-appear 150ms linear 250ms forwards;
+}
+
+@keyframes loading-appear {
+  to {
+    opacity: 1;
+  }
+}

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router'
 import { AddWidgetModal } from '../components/dashboard/AddWidgetModal'
 import { DashboardGrid } from '../components/dashboard/DashboardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
+import { LoadingBlock } from '../components/ui/Spinner'
 import { ROUTES } from '../routes'
 import { useDashboardStore } from '../stores/dashboard'
 
@@ -45,11 +46,7 @@ export function DashboardEditorPage() {
   }, [dashboard?.can_edit])
 
   if (loading && !dashboard) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
-      </div>
-    )
+    return <LoadingBlock />
   }
 
   if (loadError) {

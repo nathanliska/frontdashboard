@@ -1,7 +1,8 @@
-import { lazy, type ReactNode, Suspense, useEffect } from 'react'
+import { type ReactNode, Suspense, useEffect } from 'react'
 import { BrowserRouter, Outlet, Route, Routes, useNavigate } from 'react-router'
 import { RequireAuth } from './components/auth/RequireAuth'
 import { AppShell } from './components/layout/AppShell'
+import { LoadingBlock, LoadingScreen } from './components/ui/Spinner'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { InvitePage } from './pages/InvitePage'
 import { LoginPage } from './pages/LoginPage'
@@ -9,43 +10,24 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
+import { pages, preloadRouteChunks } from './routePreload'
 import { ROUTES } from './routes'
 import { useAuthStore } from './stores/auth'
 
-const CalendarPage = lazy(() =>
-  import('./pages/CalendarPage').then((module) => ({ default: module.CalendarPage })),
-)
-const DashboardEditorPage = lazy(() =>
-  import('./pages/DashboardEditorPage').then((module) => ({ default: module.DashboardEditorPage })),
-)
-const DashboardsPage = lazy(() =>
-  import('./pages/DashboardsPage').then((module) => ({ default: module.DashboardsPage })),
-)
-const ListDetailPage = lazy(() =>
-  import('./pages/ListDetailPage').then((module) => ({ default: module.ListDetailPage })),
-)
-const ListsLayout = lazy(() =>
-  import('./pages/ListsLayout').then((module) => ({ default: module.ListsLayout })),
-)
-const NotificationsPage = lazy(() =>
-  import('./pages/NotificationsPage').then((module) => ({ default: module.NotificationsPage })),
-)
-const ProfilePage = lazy(() =>
-  import('./pages/ProfilePage').then((module) => ({ default: module.ProfilePage })),
-)
-
-function RouteFallback() {
-  return (
-    <div className="flex h-64 items-center justify-center">
-      <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
-    </div>
-  )
-}
+const CalendarPage = pages.CalendarPage.Component
+const DashboardEditorPage = pages.DashboardEditorPage.Component
+const DashboardsPage = pages.DashboardsPage.Component
+const ListDetailPage = pages.ListDetailPage.Component
+const ListsLayout = pages.ListsLayout.Component
+const NotificationsPage = pages.NotificationsPage.Component
+const ProfilePage = pages.ProfilePage.Component
 
 function AuthInit({ children }: { children: ReactNode }) {
   const init = useAuthStore((s) => s.init)
   useEffect(() => {
-    void init()
+    // The route's chunk downloads while /auth/me is in flight, and init holds the boot
+    // screen until both are in hand — so the first route render never suspends.
+    void init(preloadRouteChunks(window.location.pathname))
   }, [init])
   return <>{children}</>
 }
@@ -64,18 +46,16 @@ function DefaultDashboardRedirect() {
     navigate(homeId ? ROUTES.dashboard(homeId) : ROUTES.dashboards, { replace: true })
   }, [user, navigate])
 
-  return (
-    <div className="flex items-center justify-center h-64">
-      <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
-    </div>
-  )
+  return <LoadingBlock label="Opening your dashboard" />
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthInit>
-        <Suspense fallback={<RouteFallback />}>
+        {/* Every lazy route is behind RequireAuth and suspends at the boundary inside AppShell.
+            This one only catches a lazy public route, should one ever be added. */}
+        <Suspense fallback={<LoadingScreen label="Loading" />}>
           <Routes>
             {/* Public */}
             <Route path={ROUTES.login} element={<LoginPage />} />
@@ -91,7 +71,11 @@ export default function App() {
               <Route
                 element={
                   <AppShell>
-                    <Outlet />
+                    {/* Inside the shell, so a chunk still downloading fills the content area
+                        instead of replacing the whole screen and moving the spinner. */}
+                    <Suspense fallback={<LoadingBlock />}>
+                      <Outlet />
+                    </Suspense>
                   </AppShell>
                 }
               >

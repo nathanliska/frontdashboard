@@ -5,6 +5,7 @@ import type { DashboardSummary, TrashedDashboard } from '../api/dashboards'
 import { CreateDashboardModal } from '../components/dashboard/CreateDashboardModal'
 import { DashboardCardGrid } from '../components/dashboard/DashboardCardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
+import { LoadingBlock } from '../components/ui/Spinner'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 import { confirm } from '../stores/confirm'
@@ -108,11 +109,7 @@ export function DashboardsPage() {
   }
 
   if (summariesLoading && summaries.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" />
-      </div>
-    )
+    return <LoadingBlock />
   }
 
   return (

@@ -1,20 +1,13 @@
 import { Navigate, Outlet } from 'react-router'
 import { ROUTES } from '../../routes'
 import { useAuthStore } from '../../stores/auth'
+import { LoadingScreen } from '../ui/Spinner'
 
 export function RequireAuth() {
   const status = useAuthStore((s) => s.status)
 
   if (status === 'loading') {
-    return (
-      <div
-        className="flex h-screen items-center justify-center bg-zinc-950"
-        role="status"
-        aria-label="Loading authentication"
-      >
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300" />
-      </div>
-    )
+    return <LoadingScreen label="Loading authentication" />
   }
 
   if (status === 'unauthenticated') {
