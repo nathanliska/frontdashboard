@@ -1,6 +1,7 @@
 """ASGI middleware."""
 
 from collections.abc import Awaitable, Callable
+from time import perf_counter
 from typing import Any
 
 from app import metrics
@@ -10,6 +11,12 @@ Scope = dict[str, Any]
 Message = dict[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
+
+# Prometheus reports its own scrape health as `up` and `scrape_duration_seconds`, so counting the
+# scrape here answers nothing and grows on a fixed interval until it dwarfs real traffic.
+# `/api/health/ready` is deliberately *not* here: Caddy proxies it publicly, so its volume is a
+# signal about the outside world rather than about the container.
+_UNCOUNTED_ROUTES = frozenset({"/metrics"})
 
 
 class ResponseStatusMiddleware:
@@ -30,9 +37,18 @@ class ResponseStatusMiddleware:
             await self.app(scope, receive, send)
             return
 
+        started = perf_counter()
+
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":
-                metrics.observe_response(scope.get("method", ""), _route_label(scope), message["status"])
+                route = _route_label(scope)
+                if route not in _UNCOUNTED_ROUTES:
+                    metrics.observe_response(
+                        scope.get("method", ""),
+                        route,
+                        message["status"],
+                        seconds=perf_counter() - started,
+                    )
             await send(message)
 
         await self.app(scope, receive, send_wrapper)

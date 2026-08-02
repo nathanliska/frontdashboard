@@ -5,6 +5,7 @@ import random
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 
 from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
@@ -99,6 +100,8 @@ async def stream_events(
     """
     next_check = datetime.now(UTC) + _REVALIDATE_EVERY
     expires_at = _stream_deadline(max_lifetime)
+    # Monotonic: a stream outlives any wall-clock adjustment the host might make under it.
+    opened_at = monotonic()
     try:
         yield connected_dict(watermark)
 
@@ -138,8 +141,10 @@ async def stream_events(
                 # Session revoked. End with no resync — the client must re-auth.
                 return
 
+            metrics.SSE_EVENTS_SENT.inc()
             yield msg
     finally:
+        metrics.SSE_STREAM_SECONDS.observe(monotonic() - opened_at)
         client.manager.disconnect(client)
 
 

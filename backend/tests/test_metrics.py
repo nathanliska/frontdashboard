@@ -4,10 +4,12 @@ import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from prometheus_client import generate_latest
+from prometheus_client import Histogram, generate_latest
 
 from app import metrics
 from app.main import app
+from app.metrics import _PREFIX
+from app.routers.sse import stream_events
 from app.sse.manager import _QUEUE_MAX, SseManager
 
 
@@ -23,6 +25,7 @@ def _sample(name: str, **labels: str) -> float:
         metrics.SSE_EVICTIONS,
         metrics.SSE_EXPIRIES,
         metrics.SSE_CONNECTS,
+        metrics.SSE_EVENTS_SENT,
         metrics.RATE_LIMITED,
     ):
         for metric in collector.collect():
@@ -30,6 +33,16 @@ def _sample(name: str, **labels: str) -> float:
                 if sample.name == name:
                     return sample.value
     return 0.0
+
+
+def _route_total(route: str) -> float:
+    """Every response counted for one route, whatever the status class."""
+    total = 0.0
+    for metric in metrics.HTTP_RESPONSES.collect():
+        for sample in metric.samples:
+            if sample.name == "frontdashboard_http_responses_total" and sample.labels.get("route") == route:
+                total += sample.value
+    return total
 
 
 def test_route_label_uses_the_template_not_the_raw_path() -> None:
@@ -129,6 +142,100 @@ def test_scrape_carries_help_and_type_for_every_series() -> None:
         for suffix in _SERIES_SUFFIXES:
             name = name.removesuffix(suffix)
         assert f"# HELP {name}" in body or f"# HELP {name}_total" in body
+
+
+def _hist_count(histogram: Histogram, **labels: str) -> float:
+    """The `_count` sample of a histogram, for one label set."""
+    for metric in histogram.collect():
+        for sample in metric.samples:
+            if sample.name.endswith("_count") and all(sample.labels.get(k) == v for k, v in labels.items()):
+                return sample.value
+    return 0.0
+
+
+@pytest.mark.asyncio
+async def test_request_duration_is_timed_to_the_response_start() -> None:
+    """Timed at the headers, not the last byte — otherwise one SSE stream skews every quantile."""
+    before = _hist_count(metrics.HTTP_REQUEST_SECONDS, route="/api/health/ready")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.get("/api/health/ready")
+
+    assert _hist_count(metrics.HTTP_REQUEST_SECONDS, route="/api/health/ready") - before == 1
+
+
+def test_request_duration_is_not_labelled_by_method() -> None:
+    """Every label multiplies by the bucket count; route is what a slow-endpoint hunt needs."""
+    assert set(metrics.HTTP_REQUEST_SECONDS._labelnames) == {"route"}
+
+
+@pytest.mark.asyncio
+async def test_delivered_frames_are_counted_but_sentinels_are_not() -> None:
+    """Sentinels end the stream rather than reaching the client — counting them would inflate fan-out."""
+    from app.sse.manager import CLOSED_SENTINEL
+
+    before = _sample("frontdashboard_sse_events_sent_total")
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+    client.queue.put_nowait({"event": "real"})
+    client.queue.put_nowait(CLOSED_SENTINEL)
+
+    async def always_live(_session_id: uuid.UUID) -> bool:
+        return True
+
+    frames = [f async for f in stream_events(client, send_resync=False, revalidate=always_live)]
+
+    assert len(frames) == 3, "connected, the real frame, then the eviction resync"
+    assert _sample("frontdashboard_sse_events_sent_total") - before == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_lifetime_is_observed_however_the_stream_ends() -> None:
+    """Connect counts cannot tell twenty healthy streams from twenty flapping ones; this can."""
+    from datetime import timedelta
+
+    before = _hist_count(metrics.SSE_STREAM_SECONDS)
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+
+    async def always_live(_session_id: uuid.UUID) -> bool:
+        return True
+
+    # The lifetime cap path, which returns rather than falling out of the loop.
+    [f async for f in stream_events(client, send_resync=False, revalidate=always_live, max_lifetime=timedelta(0))]
+
+    assert _hist_count(metrics.SSE_STREAM_SECONDS) - before == 1, "the finally block must observe on every exit"
+
+
+def test_no_created_series_are_published() -> None:
+    """`_created` gauges are a third of the series and answer nothing — assert they stay gone."""
+    body = generate_latest().decode()
+
+    ours = [line.split("{")[0].split(" ")[0] for line in body.splitlines() if line.startswith(_PREFIX)]
+
+    assert ours, "no frontdashboard series in the scrape — this assertion would pass vacuously"
+    assert not [n for n in ours if n.endswith("_created")], "disable_created_metrics() is not taking effect"
+
+
+@pytest.mark.asyncio
+async def test_the_scrape_does_not_count_itself() -> None:
+    """Prometheus reports scrape health as `up`; counting it here only outgrows real traffic."""
+    before = _sample("frontdashboard_http_responses_total", method="GET", route="/metrics", status_class="2xx")
+
+    health_before = _route_total("/api/health/ready")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.get("/metrics")).status_code == 200
+        # Whatever it answers without a database, it must still be counted.
+        await client.get("/api/health/ready")
+
+    after = _sample("frontdashboard_http_responses_total", method="GET", route="/metrics", status_class="2xx")
+    assert after == before, "/metrics counted itself"
+
+    # The public health endpoint stays counted: Caddy proxies it, so its volume is a real signal.
+    assert _route_total("/api/health/ready") - health_before == 1
 
 
 @pytest.mark.asyncio
