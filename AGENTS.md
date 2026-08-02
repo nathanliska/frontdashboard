@@ -126,6 +126,9 @@ make audit       # dependency/security audit checks
   middleware, and slowapi's app-wide limit cannot see through included-router nesting — so both
   are per route, and `test_rate_limit_coverage.py` fails the build on a missing limit. Beware that
   same nesting in any audit over `app.routes`, which passes having checked nothing.
+- Reject an authentication attempt with `raise auth_failure(...)`, never a bare `HTTPException`:
+  building the 401/403 and counting it are one call, and `test_auth_failure_coverage.py` fails the
+  build on a bare raise in the auth layer. Authorization refusals are a different thing and stay out.
 - `role is None` means **owner**, not "no access". `permissions.effective_role` returns `None` for
   the creator and raises 404 for no access; never write `if role:` guards.
 - Child resources reach access through `load_dashboard_access` / `list_accessible_dashboard_ids`,

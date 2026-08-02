@@ -4,6 +4,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
 
 from app.config import settings
+from app.metrics import ARGON2_SECONDS
 
 _ph = PasswordHasher()
 
@@ -15,7 +16,7 @@ _DUMMY_HASH = _ph.hash("frontdashboard-login-timing-equalizer")
 # One shared limiter bounds peak concurrent Argon2 work (each op ~64 MiB, and parallelism=4
 # already saturates a few cores at low N). When full, further auth requests queue instead of
 # stalling the event loop (finding #13).
-_argon2_limiter = anyio.CapacityLimiter(settings.argon2_max_concurrency)
+argon2_limiter = anyio.CapacityLimiter(settings.argon2_max_concurrency)
 
 
 def _hash(password: str) -> str:
@@ -31,8 +32,10 @@ def _verify(password: str, hashed: str) -> bool:
 
 
 async def hash_password(password: str) -> str:
-    return await run_sync(_hash, password, limiter=_argon2_limiter)
+    with ARGON2_SECONDS.labels(operation="hash").time():
+        return await run_sync(_hash, password, limiter=argon2_limiter)
 
 
 async def verify_password(password: str, hashed: str) -> bool:
-    return await run_sync(_verify, password, hashed, limiter=_argon2_limiter)
+    with ARGON2_SECONDS.labels(operation="verify").time():
+        return await run_sync(_verify, password, hashed, limiter=argon2_limiter)

@@ -13,6 +13,7 @@ from app.auth.dependencies import (
     get_current_user,
     require_csrf,
 )
+from app.auth.failures import auth_failure
 from app.auth.hashing import _DUMMY_HASH, hash_password, verify_password
 from app.auth.tokens import create_opaque_token, hash_token
 from app.config import Environment, settings
@@ -52,6 +53,11 @@ from app.services.sessions import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# One wording per flow whatever the cause: a token-prober learns nothing from which branch
+# rejected them, while the metric label records the branch for us.
+_VERIFY_DETAIL = "Invalid or expired verification link"
+_RESET_DETAIL = "Invalid or expired reset link"
 
 _SECURE = settings.environment == Environment.production
 
@@ -141,7 +147,12 @@ async def _create_session(user: User, response: Response, db: AsyncSession) -> N
     those vanish under `python -O`, and this decides whether an account can act.
     """
     if user.email_verified_at is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")
+        raise auth_failure(
+            "session",
+            "unverified_email",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required",
+        )
 
     _session, raw_token = await start_session(user.id, db)
     _set_auth_cookies(response, raw_token, generate_csrf_token())
@@ -277,22 +288,24 @@ async def verify_email(
     )
     token = result.scalar_one_or_none()
     if not token:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+        raise auth_failure("email_verify", "invalid_token", status_code=status.HTTP_400_BAD_REQUEST, detail=_VERIFY_DETAIL)
 
     user_result = await db.execute(select(User).where(User.id == token.user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+        raise auth_failure("email_verify", "unknown_user", status_code=status.HTTP_400_BAD_REQUEST, detail=_VERIFY_DETAIL)
 
     if token.used_at is not None:
         if user.email_verified_at == token.used_at:
             # Replay of the link that already verified this user — never mint a new session.
-            raise HTTPException(
+            raise auth_failure(
+                "email_verify",
+                "already_verified",
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email already verified. Please sign in.",
             )
         # Token was superseded (e.g. a newer link was requested) without verifying it.
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+        raise auth_failure("email_verify", "superseded_token", status_code=status.HTTP_400_BAD_REQUEST, detail=_VERIFY_DETAIL)
 
     token.used_at = now
     user.email_verified_at = now
@@ -361,12 +374,12 @@ async def confirm_password_reset(
     """Consume a reset token and replace the user's password."""
     token_user_id = await consume_password_reset_token(body.token, db)
     if token_user_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+        raise auth_failure("password_reset", "invalid_token", status_code=status.HTTP_400_BAD_REQUEST, detail=_RESET_DETAIL)
 
     user_result = await db.execute(select(User).where(User.id == token_user_id, User.deleted_at.is_(None)))
     user = user_result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+        raise auth_failure("password_reset", "unknown_user", status_code=status.HTTP_400_BAD_REQUEST, detail=_RESET_DETAIL)
 
     user.password_hash = await hash_password(body.new_password)
     revoked_ids = await revoke_user_sessions(user.id, db)
@@ -388,9 +401,19 @@ async def login(
     password_hash = user.password_hash if user else _DUMMY_HASH
     password_ok = await verify_password(body.password, password_hash)
     if not user or not password_ok:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise auth_failure(
+            "login",
+            "unknown_user" if user is None else "bad_password",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
     if user.email_verified_at is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")
+        raise auth_failure(
+            "login",
+            "unverified_email",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required",
+        )
 
     await _create_session(user, response, db)
     await db.commit()
@@ -480,7 +503,9 @@ async def change_password(
     on a credential change, and a session only ever exists after authentication.
     """
     if not await verify_password(body.current_password, current_user.password_hash):
-        raise HTTPException(
+        raise auth_failure(
+            "password_change",
+            "bad_password",
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Current password is incorrect",
         )

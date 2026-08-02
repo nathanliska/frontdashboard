@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import metrics
 from app.auth import dependencies
 from app.auth.hashing import _DUMMY_HASH
 from app.auth.tokens import create_opaque_token, hash_token
@@ -935,3 +936,44 @@ async def test_create_session_refuses_an_unverified_user(db_session: AsyncSessio
     assert excinfo.value.status_code == 403
     sessions = await db_session.execute(select(func.count()).select_from(UserSession).where(UserSession.user_id == user.id))
     assert sessions.scalar_one() == 0
+
+
+def _auth_failures(operation: str, reason: str) -> float:
+    """Read one AUTH_FAILURES series, or 0 before anything has touched it."""
+    for metric in metrics.AUTH_FAILURES.collect():
+        for sample in metric.samples:
+            if sample.name != "frontdashboard_auth_failures_total":
+                continue
+            if sample.labels.get("operation") == operation and sample.labels.get("reason") == reason:
+                return sample.value
+    return 0.0
+
+
+async def test_login_failures_are_counted_by_cause_the_response_will_not_reveal(auth_client: AsyncClient) -> None:
+    """Credential stuffing and a targeted attack are one 4xx count and two different metric series.
+
+    The pair of assertions is the design: the reply stays enumeration-safe (ADR-011) while the
+    counter, which no stranger can scrape, keeps the distinction an operator needs.
+    """
+    unknown_before = _auth_failures("login", "unknown_user")
+    bad_password_before = _auth_failures("login", "bad_password")
+
+    stranger = await auth_client.post(_LOGIN_URL, json={"email": "nobody@example.com", "password": "testpassword123"})
+    wrong_password = await auth_client.post(_LOGIN_URL, json={"email": "testuser@example.com", "password": "not-the-password"})
+
+    assert stranger.status_code == 401
+    assert wrong_password.status_code == 401
+    assert stranger.json()["detail"] == wrong_password.json()["detail"], "the response must not distinguish what the metric does"
+
+    assert _auth_failures("login", "unknown_user") - unknown_before == 1
+    assert _auth_failures("login", "bad_password") - bad_password_before == 1
+
+
+async def test_csrf_rejections_are_attributed_to_csrf(auth_client: AsyncClient) -> None:
+    """In http_responses_total these land on whichever route was targeted; here they name the cause."""
+    before = _auth_failures("csrf", "token_missing")
+
+    resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "No CSRF"})
+
+    assert resp.status_code == 403
+    assert _auth_failures("csrf", "token_missing") - before == 1

@@ -3,9 +3,10 @@ import secrets
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Cookie, Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.failures import auth_failure
 from app.config import settings
 from app.database import get_db
 from app.models.session import UserSession
@@ -33,11 +34,21 @@ async def _resolve_auth_context(
     "log in again", and a specific message tells a token-prober which case they hit.
     """
     if not session_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        raise auth_failure(
+            "session",
+            "no_cookie",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
 
     resolved = await resolve_session(session_token, db)
     if resolved is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session is no longer valid")
+        raise auth_failure(
+            "session",
+            "not_resolvable",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session is no longer valid",
+        )
     session, user = resolved
 
     # Safe to commit here *because* this is a dependency: it runs before the route body, so the
@@ -107,8 +118,23 @@ async def require_csrf(
         # The response stays generic; the log is the only trace of a cross-site attempt, and in
         # development the difference between "403" and "your LAN address is not in CORS_ORIGINS".
         logger.warning("Rejected a state-changing request from origin %r", origin)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-origin request rejected")
+        raise auth_failure(
+            "csrf",
+            "origin_rejected",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cross-origin request rejected",
+        )
     if not csrf_token or not x_csrf_token:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token missing")
+        raise auth_failure(
+            "csrf",
+            "token_missing",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF token missing",
+        )
     if not secrets.compare_digest(csrf_token, x_csrf_token):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token invalid")
+        raise auth_failure(
+            "csrf",
+            "token_mismatch",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF token invalid",
+        )

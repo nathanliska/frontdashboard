@@ -202,6 +202,23 @@ _Last updated: 2026-07-30_
   Nothing scrapes it yet; a Prometheus container joined to the `internal` network reaches it at
   `frontdashboard-backend:8000/metrics`. The connects-to-resyncs ratio is what says whether
   reconnect marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads.
+- **Rejected auth attempts are counted by cause**, as `auth_failures_total{operation,reason}` —
+  both labels closed enumerations, so cardinality is bounded. It exists because `status_class`
+  collapses 401 and 403 into one `4xx` series, which makes "wrong password" and "unverified email,
+  check your inbox" indistinguishable: one is a security signal, the other a support one. Splitting
+  `unknown_user` from `bad_password` separates credential stuffing against a harvested list from a
+  targeted attack on accounts that exist — the distinction [ADR-011](docs/adr/ADR-011-enumeration-safe-login.md)
+  deliberately hides from the *response*, safe here only because the counts are aggregate and
+  `/metrics` is unreachable from outside. Failing goes through `auth_failure(...)`, which builds
+  the exception and counts it in one call; `test_auth_failure_coverage.py` fails the build on a
+  bare 401/403 raised anywhere in the auth layer. Expect `session`/`no_cookie` to dominate — every
+  logged-out tab mints one, so it is a baseline, not an alert.
+- **Argon2 saturation is visible as both a level and a distribution.** `argon2_in_flight`,
+  `argon2_waiting` and `argon2_limit` read straight off the capacity limiter at scrape time, so
+  occupancy is a ratio rather than a number needing `argon2_max_concurrency` remembered. The gauges
+  alone would lie by omission — saturation is bursty and a 15s scrape lands between bursts — so
+  `argon2_seconds{operation}` histograms every hash and verify including its wait for a slot. The
+  hash cost is near-constant, which makes everything above the p50 floor queueing.
 - **The worker count is a knob, set to 1.** `WEB_CONCURRENCY` drives uvicorn's `--workers`; at 1 it
   takes the single-process path, so the default is unchanged. Raising it is not yet safe — SSE
   clients and rate-limit counters both live in process memory — and the app logs a warning at

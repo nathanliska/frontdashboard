@@ -113,6 +113,11 @@ def test_client_count_tracks_connect_and_disconnect() -> None:
     assert mgr.client_count == 0
 
 
+# A histogram publishes _bucket/_sum/_count alongside the name it declares HELP under, so the
+# suffix list has to cover every type in the registry or this passes by not recognising one.
+_SERIES_SUFFIXES = ("_total", "_created", "_bucket", "_sum", "_count")
+
+
 def test_scrape_carries_help_and_type_for_every_series() -> None:
     """A series without HELP/TYPE parses but reads as unlabelled noise on a dashboard."""
     body = generate_latest().decode()
@@ -120,7 +125,9 @@ def test_scrape_carries_help_and_type_for_every_series() -> None:
     for line in body.splitlines():
         if line.startswith("#") or not line.strip():
             continue
-        name = line.split("{")[0].split(" ")[0].removesuffix("_total").removesuffix("_created")
+        name = line.split("{")[0].split(" ")[0]
+        for suffix in _SERIES_SUFFIXES:
+            name = name.removesuffix(suffix)
         assert f"# HELP {name}" in body or f"# HELP {name}_total" in body
 
 
@@ -150,3 +157,37 @@ async def test_metrics_endpoint_reports_pool_gauges() -> None:
     # Never negative: SQLAlchemy counts overflow up from -pool_size, which reads as nonsense.
     overflow = next(line for line in body.splitlines() if line.startswith("frontdashboard_db_pool_overflow "))
     assert float(overflow.split()[1]) >= 0
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint_reports_argon2_saturation() -> None:
+    """Saturation has to be a ratio, so the ceiling is published alongside the occupancy."""
+    from app.config import settings
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        body = (await client.get("/metrics")).text
+
+    limit = next(line for line in body.splitlines() if line.startswith("frontdashboard_argon2_limit "))
+    assert float(limit.split()[1]) == settings.argon2_max_concurrency
+    for gauge in ("frontdashboard_argon2_in_flight", "frontdashboard_argon2_waiting"):
+        assert next(line for line in body.splitlines() if line.startswith(f"{gauge} "))
+
+
+@pytest.mark.asyncio
+async def test_argon2_latency_is_observed_per_operation() -> None:
+    """The histogram is what survives sampling — a scrape lands between saturation bursts."""
+    from app.auth.hashing import _DUMMY_HASH, verify_password
+
+    def _count() -> float:
+        for metric in metrics.ARGON2_SECONDS.collect():
+            for sample in metric.samples:
+                if sample.name == "frontdashboard_argon2_seconds_count" and sample.labels.get("operation") == "verify":
+                    return sample.value
+        return 0.0
+
+    before = _count()
+
+    assert await verify_password("not-the-equalizer-password", _DUMMY_HASH) is False
+
+    assert _count() - before == 1, "a verify must be timed whether or not the password matched"

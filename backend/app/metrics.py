@@ -11,7 +11,7 @@ and it needs `PROMETHEUS_MULTIPROC_DIR` plus explicit gauge aggregation.
 
 from collections.abc import Callable
 
-from prometheus_client import Counter, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 _PREFIX = "frontdashboard_"
 
@@ -34,6 +34,24 @@ HTTP_RESPONSES = Counter(
 REAPER_LAST_SUCCESS = Gauge(
     f"{_PREFIX}reaper_last_success_unixtime",
     "Unix time of the last completed retention sweep; staleness means the sweep died.",
+)
+
+# `reason` splits unknown_user from bad_password, which is the distinction the login timing
+# equalizer deliberately hides. Safe only while both hold: the counts are aggregate, so no single
+# address is ever resolvable, and `/metrics` sits outside `/api` where Caddy cannot route to it.
+AUTH_FAILURES = Counter(
+    f"{_PREFIX}auth_failures",
+    "Rejected authentication attempts, by surface and cause.",
+    ["operation", "reason"],
+)
+
+# An Argon2 hash costs a near-constant ~50-100ms, so the spread above that floor is queueing for
+# the concurrency limiter. A gauge alone would miss it — saturation is bursty and scrapes are not.
+ARGON2_SECONDS = Histogram(
+    f"{_PREFIX}argon2_seconds",
+    "Argon2 operation latency, including time queued for a limiter slot.",
+    ["operation"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
 )
 
 

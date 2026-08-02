@@ -12,6 +12,7 @@ from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app import metrics
+from app.auth.hashing import argon2_limiter
 from app.config import settings
 from app.database import engine
 from app.sse.manager import manager
@@ -52,6 +53,13 @@ metrics.register_gauge(
     "Hard ceiling on connections: pool_size + max_overflow.",
     lambda: settings.db_pool_size + settings.db_max_overflow,
 )
+metrics.register_gauge("argon2_in_flight", "Argon2 operations hashing right now.", lambda: argon2_limiter.borrowed_tokens)
+metrics.register_gauge(
+    "argon2_waiting",
+    "Auth requests queued for an Argon2 slot; non-zero means logins are waiting on CPU.",
+    lambda: argon2_limiter.statistics().tasks_waiting,
+)
+metrics.register_gauge("argon2_limit", "Concurrent Argon2 ceiling, so saturation is a ratio.", lambda: argon2_limiter.total_tokens)
 
 
 @router.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
