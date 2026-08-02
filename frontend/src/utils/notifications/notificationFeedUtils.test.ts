@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { ActivityEvent } from '../../api/notifications'
-import { formatActivityEvent } from './notificationFeedUtils'
+import type { ActivityEvent, Notification } from '../../api/notifications'
+import { ROUTES } from '../../routes'
+import {
+  formatActivityEvent,
+  getNotificationDestination,
+  getNotificationTypeLabel,
+} from './notificationFeedUtils'
 
 function activityEvent(eventType: string, payload: Record<string, unknown> = {}): ActivityEvent {
   return {
@@ -65,5 +70,41 @@ describe('formatActivityEvent', () => {
     ],
   ])('formats %s with user-facing copy', (eventType, payload, badge, summary) => {
     expect(formatActivityEvent(activityEvent(eventType, payload))).toEqual({ badge, summary })
+  })
+})
+
+describe('getNotificationDestination', () => {
+  function notification(type: string, referenceId: string | null = 'dash-1'): Notification {
+    return {
+      id: 'n-1',
+      type,
+      title: 'Title',
+      body: 'Body',
+      read_at: null,
+      reference_type: referenceId === null ? null : 'dashboard',
+      reference_id: referenceId,
+      created_at: '2026-08-01T00:00:00.000Z',
+    }
+  }
+
+  // Both name a dashboard the reader can no longer open, so following reference_id would 404.
+  it.each(['dashboard.share_removed', 'dashboard.deleted'])(
+    'sends %s to the dashboard index rather than the unreachable dashboard',
+    (type) => {
+      expect(getNotificationDestination(notification(type))).toBe(ROUTES.dashboards)
+    },
+  )
+
+  it('still deep-links a notification whose dashboard is reachable', () => {
+    expect(getNotificationDestination(notification('dashboard.share_added'))).toBe(
+      ROUTES.dashboard('dash-1'),
+    )
+  })
+})
+
+describe('getNotificationTypeLabel', () => {
+  it('names the trashed-dashboard type instead of falling back', () => {
+    expect(getNotificationTypeLabel('dashboard.deleted')).toBe('Dashboard deleted')
+    expect(getNotificationTypeLabel('something.unknown')).toBe('Notification')
   })
 })

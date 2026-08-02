@@ -29,13 +29,19 @@ export function getNotificationTypeLabel(type: string): string {
       return 'Access updated'
     case 'dashboard.share_removed':
       return 'Access removed'
+    case 'dashboard.deleted':
+      return 'Dashboard deleted'
     default:
       return 'Notification'
   }
 }
 
+// Both types name a dashboard the reader can no longer open, so they route to the index rather
+// than to a reference_id that now 404s.
+const UNREACHABLE_REFERENCE_TYPES = new Set(['dashboard.share_removed', 'dashboard.deleted'])
+
 export function getNotificationDestination(notification: Notification): string | null {
-  if (notification.type === 'dashboard.share_removed') {
+  if (UNREACHABLE_REFERENCE_TYPES.has(notification.type)) {
     return ROUTES.dashboards
   }
   if (notification.reference_type === 'dashboard' && notification.reference_id) {

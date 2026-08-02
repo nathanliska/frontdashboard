@@ -688,6 +688,46 @@ async def test_dashboard_share_mutations_emit_activity_events(
         await shared_user.__aexit__(None, None, None)
 
 
+async def test_trashing_a_shared_dashboard_notifies_the_people_who_lose_access(
+    auth_client: AsyncClient,
+) -> None:
+    """Trashing hides the dashboard from everyone it was shared with.
+
+    The SSE frame reaches only whoever is connected at that instant; the stored notification is
+    what everyone else sees on their next visit.
+    """
+    dashboard = await create_dashboard(auth_client, name="Doomed Board")
+
+    shared_user = await register_client("dashboard-trash-notify@example.com", display_name="Shared User")
+    try:
+        shared_user_me = await current_user(shared_user)
+        set_csrf(auth_client)
+        add_share_resp = await auth_client.post(
+            f"/api/dashboards/{dashboard['id']}/shares",
+            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "editor"},
+        )
+        assert add_share_resp.status_code == 201
+
+        set_csrf(auth_client)
+        delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
+        assert delete_resp.status_code == 204
+
+        # The access loss the notification is explaining.
+        assert (await shared_user.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
+
+        shared_items = (await shared_user.get("/api/notifications")).json()["items"]
+        trashed = [n for n in shared_items if n["type"] == "dashboard.deleted"]
+        assert len(trashed) == 1
+        assert trashed[0]["reference_id"] == dashboard["id"]
+        assert "Doomed Board" in trashed[0]["body"]
+
+        # The actor already knows; notifying the deleter would be noise.
+        owner_items = (await auth_client.get("/api/notifications")).json()["items"]
+        assert [n for n in owner_items if n["type"] == "dashboard.deleted"] == []
+    finally:
+        await shared_user.__aexit__(None, None, None)
+
+
 async def test_dashboard_mutations_emit_activity_events(
     auth_client: AsyncClient,
     db_session: AsyncSession,

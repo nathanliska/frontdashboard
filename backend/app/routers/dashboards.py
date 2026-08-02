@@ -393,7 +393,43 @@ def _collect_dashboard_share_notifications(
     return notifications
 
 
-async def _build_dashboard_share_notification_messages(
+def _collect_dashboard_access_notifications(
+    db: AsyncSession,
+    *,
+    dashboard: Dashboard,
+    shares: list[ResourceShare],
+    current_user: User,
+    event_type: EventType,
+    title: str,
+    body: str,
+) -> list[tuple[uuid.UUID, Notification]]:
+    """Stage one notification per shared user for a change to whether the dashboard exists at all.
+
+    The SSE frame reaches only whoever is connected; the stored row is what everyone else sees on
+    their next visit, which is the whole point when the dashboard has just stopped being reachable.
+    """
+    notifications: list[tuple[uuid.UUID, Notification]] = []
+    for share in shares:
+        if share.principal_type != PrincipalType.user or share.principal_id == current_user.id:
+            continue
+        notifications.append(
+            (
+                share.principal_id,
+                stage_notification(
+                    db,
+                    user_id=share.principal_id,
+                    type=event_type.value,
+                    title=title,
+                    body=body,
+                    reference_type="dashboard",
+                    reference_id=dashboard.id,
+                ),
+            )
+        )
+    return notifications
+
+
+async def _build_notification_messages(
     db: AsyncSession,
     notifications: list[tuple[uuid.UUID, Notification]],
 ) -> list[tuple[uuid.UUID, dict]]:
@@ -438,7 +474,7 @@ async def create_dashboard(
     await db.flush()
     await insert_shares(ResourceType.dashboard, dashboard.id, body.shares, current_user.id, db)
     shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    notification_messages = await _build_dashboard_share_notification_messages(
+    notification_messages = await _build_notification_messages(
         db,
         _collect_dashboard_share_notifications(
             db,
@@ -536,6 +572,18 @@ async def delete_dashboard(
     permissions.assert_can_delete(role)
     dashboard.deleted_at = datetime.now(UTC)
     await _remove_dashboard_from_user_preferences(dashboard, shares, db)
+    notification_messages = await _build_notification_messages(
+        db,
+        _collect_dashboard_access_notifications(
+            db,
+            dashboard=dashboard,
+            shares=shares,
+            current_user=current_user,
+            event_type=EventType.dashboard_deleted,
+            title="Dashboard deleted",
+            body=f'{current_user.display_name} deleted "{dashboard.name}". It is no longer available to you.',
+        ),
+    )
     event_message = await _build_dashboard_event_message(
         db,
         event_type=EventType.dashboard_deleted,
@@ -547,7 +595,7 @@ async def delete_dashboard(
     await commit_and_broadcast(
         db,
         actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
     )
 
 
@@ -1020,7 +1068,7 @@ async def add_dashboard_share(
     share = await create_share(ResourceType.dashboard, dashboard_id, body, current_user.id, db)
     action = "updated" if existing_share is not None else "added"
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    notification_messages = await _build_dashboard_share_notification_messages(
+    notification_messages = await _build_notification_messages(
         db,
         _collect_dashboard_share_notifications(
             db,
@@ -1072,7 +1120,7 @@ async def update_dashboard_share(
         return (await resolve_share_responses([share], db))[0]
     share.role = body.role
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    notification_messages = await _build_dashboard_share_notification_messages(
+    notification_messages = await _build_notification_messages(
         db,
         _collect_dashboard_share_notifications(
             db,
@@ -1116,7 +1164,7 @@ async def delete_dashboard_share(
     share = await get_resource_share(ResourceType.dashboard, dashboard_id, share_id, db)
     if share is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
-    notification_messages = await _build_dashboard_share_notification_messages(
+    notification_messages = await _build_notification_messages(
         db,
         _collect_dashboard_share_notifications(
             db,

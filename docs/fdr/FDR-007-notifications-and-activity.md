@@ -1,7 +1,7 @@
 # FDR-007: Notifications & Activity Feed
 
 **Status:** Active
-**Last reviewed:** 2026-07-30
+**Last reviewed:** 2026-08-01
 
 ## Overview
 
@@ -16,7 +16,8 @@ delivery.
   live via SSE.
 - **Activity feed.** A keyset-paginated log of the caller's *own* events, with noisy event types
   hidden by default.
-- **Sharing triggers notifications.** Share and unshare actions notify the affected users.
+- **Losing access triggers a notification.** Share and unshare actions notify the affected users, and
+  so does trashing a dashboard other people can see — see decision 5.
 - **Revisiting either surface costs nothing.** Both the inbox and the feed are fetched once and then
   kept current by SSE, so switching tabs or navigating back re-renders from cache instead of
   refetching — and any extra pages "Load more" appended survive the return.
@@ -56,13 +57,26 @@ page load. `{ force: true }` exists for resync, where frames may have been misse
 **Tradeoff:** A new event type that skips the append is invisible on the feed until a resync, and the
 staleness would not show up in a test that only asserts the initial render.
 
-### 3. Activity feed is self-scoped and keyset-paginated, with noise hidden
+### 4. Activity feed is self-scoped and keyset-paginated, with noise hidden
 
 **Decision:** The feed shows only the caller's own events, paginated by keyset, hiding noisy event
 types by default.
 **Why:** Keyset pagination is stable under inserts; scoping to self keeps it a personal audit trail
 rather than a firehose; hiding noisy types keeps it readable.
 **Tradeoff:** It's not a cross-user or admin audit view; that would be a separate surface.
+
+### 5. Trashing a shared dashboard notifies the people who lose access
+
+**Decision:** `DELETE /dashboards/{id}` stages a `dashboard.deleted` notification for every user
+principal on the dashboard except the actor, alongside the SSE frame it already broadcast.
+**Why:** Trashing stamps `deleted_at`, which `load_dashboard_access` filters, so everyone it was
+shared with starts getting a bare 404 — with their bound widgets falling back to a generic "may have
+been deleted". The SSE frame reaches only whoever is connected at that instant; the stored row is
+what a returning user sees. It matters more than a missing courtesy because the reaper eventually
+purges the cascade, **including lists and events those users authored themselves**.
+**Tradeoff:** The notification explains the loss but cannot undo it — restore is owner-only, so a
+shared user still has no route back. Whether they should be warned again *before* the purge, rather
+than only at the moment of trashing, is open ([#58](../TODO.md)).
 
 ## Access
 
