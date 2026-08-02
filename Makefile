@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down logs test test-unit lint typecheck format audit audit-fix migrate seed hooks contracts help
+.PHONY: dev-up dev-down logs test test-unit lint typecheck format audit audit-fix migrate seed hooks contracts restore-rehearsal help
 
 help:
 	@echo ""
@@ -16,6 +16,7 @@ help:
 	@echo "  make seed      Seed development data"
 	@echo "  make hooks     Install pre-commit hooks (via uv)"
 	@echo "  make contracts Regenerate the frontend API contract from the backend schema"
+	@echo "  make restore-rehearsal DUMP=<file>   Prove a database dump actually restores"
 	@echo ""
 
 # Git hooks
@@ -72,6 +73,13 @@ migrate:
 
 seed:
 	@echo "TODO: implement in step 8"
+
+# Prove a dump restores into a schema this code can run against. See docs/runbooks/database-restore.md
+restore-rehearsal:
+ifndef DUMP
+	$(error usage: make restore-rehearsal DUMP=/path/to/dump.sql.gz)
+endif
+	@scripts/restore-rehearsal.sh "$(DUMP)"
 
 # API contract — regenerate the frontend zod contract from the live backend schema
 contracts:
