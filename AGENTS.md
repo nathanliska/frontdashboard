@@ -16,6 +16,8 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 - [docs/GLOSSARY.md](docs/GLOSSARY.md) — canonical vocabulary (UI / Product / Access / Backend).
 - [docs/TODO.md](docs/TODO.md) — the open remediation backlog; findings keep their numbers. Closed
   work lives in git history.
+- [docs/runbooks/](docs/runbooks/) — operational procedures for the day something is broken. Prose
+  aimed at a person under pressure, not architecture; the *why* still belongs in an ADR/FDR.
 - `.agents/skills/**` — workflow skills. Use them when the task names one or clearly matches one,
   especially `live-verify`, `deploy-verify`, and `doc-checkup`.
 
