@@ -278,7 +278,9 @@ async def _build_dashboard_event_message(
     entity_version: int | None = None,
     client_mutation_id: str | None = None,
 ) -> dict:
-    event_payload = {"dashboard_id": str(dashboard.id), **(payload or {})}
+    # Name every dashboard event after its dashboard: the feed renders "You rearranged widgets on
+    # X", and a layout or widget write has no other reason to carry the name.
+    event_payload = {"dashboard_id": str(dashboard.id), "name": dashboard.name, **(payload or {})}
     if client_mutation_id is not None:
         event_payload["client_mutation_id"] = client_mutation_id
     activity = log_event(
@@ -889,6 +891,9 @@ async def add_widget(
             "widget_type": widget.widget_type,
             "resource_type": widget.resource_type,
             "resource_id": str(widget.resource_id) if widget.resource_id else None,
+            # Add and remove are the same event type with the same changed_fields, so the feed
+            # cannot tell them apart without this.
+            "widget_action": "added",
             "changed_fields": ["widgets", "layout"],
         },
         client_mutation_id=client_mutation_id,
@@ -1019,6 +1024,7 @@ async def delete_widget(
         payload={
             "widget_id": str(widget.id),
             "widget_type": widget.widget_type,
+            "widget_action": "removed",
             "changed_fields": ["widgets", "layout"],
         },
         client_mutation_id=client_mutation_id,

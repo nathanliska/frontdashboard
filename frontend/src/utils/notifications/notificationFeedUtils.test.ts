@@ -5,9 +5,15 @@ import {
   formatActivityEvent,
   getNotificationDestination,
   getNotificationTypeLabel,
+  groupActivityEvents,
+  isOwnFeedActivity,
 } from './notificationFeedUtils'
 
-function activityEvent(eventType: string, payload: Record<string, unknown> = {}): ActivityEvent {
+function activityEvent(
+  eventType: string,
+  payload: Record<string, unknown> = {},
+  overrides: Partial<ActivityEvent> = {},
+): ActivityEvent {
   return {
     event_id: 1,
     event_type: eventType,
@@ -17,7 +23,20 @@ function activityEvent(eventType: string, payload: Record<string, unknown> = {})
     actor_display_name: 'Example User',
     payload,
     created_at: '2026-07-17T18:51:34.000Z',
+    ...overrides,
   }
+}
+
+function layoutEvent(
+  eventId: number,
+  dashboardId = 'dash-1',
+  createdAt = '2026-07-17T18:51:34.000Z',
+): ActivityEvent {
+  return activityEvent(
+    'dashboard.updated',
+    { name: 'Home', changed_fields: ['layout'] },
+    { event_id: eventId, entity_id: dashboardId, created_at: createdAt },
+  )
 }
 
 describe('formatActivityEvent', () => {
@@ -33,6 +52,64 @@ describe('formatActivityEvent', () => {
       { name: 'Roadmap', changed_fields: ['restored'] },
       'Dashboard',
       'You restored "Roadmap" from the trash.',
+    ],
+    [
+      'dashboard.updated',
+      { name: 'Roadmap', changed_fields: ['layout'] },
+      'Dashboard',
+      'You rearranged widgets on "Roadmap".',
+    ],
+    [
+      'dashboard.updated',
+      {
+        name: 'Roadmap',
+        changed_fields: ['widgets', 'layout'],
+        widget_action: 'added',
+        widget_type: 'agenda',
+      },
+      'Dashboard',
+      'You added an Agenda widget to "Roadmap".',
+    ],
+    [
+      'dashboard.updated',
+      {
+        name: 'Roadmap',
+        changed_fields: ['widgets', 'layout'],
+        widget_action: 'removed',
+        widget_type: 'list',
+      },
+      'Dashboard',
+      'You removed a List widget from "Roadmap".',
+    ],
+    [
+      'dashboard.updated',
+      { name: 'Roadmap', changed_fields: ['widgets'], widget_type: 'clock' },
+      'Dashboard',
+      'You reconfigured a Clock widget on "Roadmap".',
+    ],
+    [
+      'dashboard.updated',
+      { changed_fields: ['widgets'], widget_type: 'something-new' },
+      'Dashboard',
+      'You reconfigured a widget on a dashboard.',
+    ],
+    [
+      'dashboard.share_added',
+      { dashboard_name: 'Kitchen', role: 'editor' },
+      'Sharing',
+      'You granted editor access to "Kitchen".',
+    ],
+    [
+      'dashboard.share_added',
+      { dashboard_name: 'Kitchen', role: 'editor', share_action: 'joined' },
+      'Sharing',
+      'You joined "Kitchen" as editor.',
+    ],
+    [
+      'calendar.event.occurrence.updated',
+      { title: 'Dentist' },
+      'Calendar',
+      'You updated the occurrence of "Dentist".',
     ],
     ['list.reordered', { dashboard_name: 'Home' }, 'List', 'You reordered lists in "Home".'],
     ['list.reordered', {}, 'List', 'You reordered your lists.'],
@@ -70,6 +147,106 @@ describe('formatActivityEvent', () => {
     ],
   ])('formats %s with user-facing copy', (eventType, payload, badge, summary) => {
     expect(formatActivityEvent(activityEvent(eventType, payload))).toEqual({ badge, summary })
+  })
+
+  it('names which occurrence of a series was touched', () => {
+    const { summary } = formatActivityEvent(
+      activityEvent('calendar.event.occurrence.cancelled', {
+        title: 'Dentist',
+        occurrence_start: '2026-08-05T09:00:00.000Z',
+      }),
+    )
+
+    // Asserted by shape, not by exact text: the date is rendered in the reader's own locale and
+    // timezone, neither of which the test runner pins.
+    expect(summary).toMatch(/^You cancelled the .+ occurrence of "Dentist"\.$/)
+    expect(summary).not.toBe('You cancelled the occurrence of "Dentist".')
+  })
+
+  it('reads a retired event type back as English rather than printing its identifier', () => {
+    // Archive is gone but its rows survive — `event_type` is a plain string column.
+    expect(formatActivityEvent(activityEvent('list.archived', { name: 'Chores' }))).toEqual({
+      badge: 'Activity',
+      summary: 'List archived.',
+    })
+  })
+})
+
+describe('groupActivityEvents', () => {
+  it('collapses a run of layout churn on one dashboard into a single counted row', () => {
+    const groups = groupActivityEvents([layoutEvent(5), layoutEvent(4), layoutEvent(3)])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].count).toBe(3)
+    // Newest-first feed, so the run is dated by the newest event in it.
+    expect(groups[0].event.event_id).toBe(5)
+  })
+
+  it('does not merge across an unrelated event, or across dashboards', () => {
+    const groups = groupActivityEvents([
+      layoutEvent(6),
+      activityEvent('list.created', { name: 'Chores' }, { event_id: 5 }),
+      layoutEvent(4),
+      layoutEvent(3, 'dash-2'),
+    ])
+
+    expect(groups.map((group) => [group.event.event_id, group.count])).toEqual([
+      [6, 1],
+      [5, 1],
+      [4, 1],
+      [3, 1],
+    ])
+  })
+
+  it('does not merge two sittings days apart into one row dated by the newer', () => {
+    const groups = groupActivityEvents([
+      layoutEvent(2, 'dash-1', '2026-07-17T18:51:34.000Z'),
+      layoutEvent(1, 'dash-1', '2026-07-13T09:00:00.000Z'),
+    ])
+
+    expect(groups.map((group) => [group.event.event_id, group.count])).toEqual([
+      [2, 1],
+      [1, 1],
+    ])
+  })
+
+  it('starts a new row rather than hiding an event behind an unparseable timestamp', () => {
+    const groups = groupActivityEvents([
+      layoutEvent(2, 'dash-1', 'not-a-date'),
+      layoutEvent(1, 'dash-1', 'not-a-date'),
+    ])
+
+    expect(groups).toHaveLength(2)
+  })
+
+  it('leaves a decision someone made twice as two rows', () => {
+    const added = (eventId: number) =>
+      activityEvent(
+        'dashboard.updated',
+        { name: 'Home', changed_fields: ['widgets', 'layout'], widget_action: 'added' },
+        { event_id: eventId },
+      )
+
+    expect(groupActivityEvents([added(2), added(1)])).toHaveLength(2)
+  })
+})
+
+describe('isOwnFeedActivity', () => {
+  it('keeps the reader’s own visible events', () => {
+    expect(isOwnFeedActivity(layoutEvent(1), 'user-1')).toBe(true)
+  })
+
+  it('drops a co-editor’s event, which the feed would render as "You…"', () => {
+    expect(isOwnFeedActivity(layoutEvent(1), 'user-2')).toBe(false)
+  })
+
+  it('drops a type the endpoint hides, which would vanish on the next reload', () => {
+    const checked = activityEvent('list.item.checked', { values: { checked: true } })
+    expect(isOwnFeedActivity(checked, 'user-1')).toBe(false)
+  })
+
+  it('drops everything when nobody is signed in', () => {
+    expect(isOwnFeedActivity(layoutEvent(1), null)).toBe(false)
   })
 })
 

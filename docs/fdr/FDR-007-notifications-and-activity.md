@@ -1,7 +1,7 @@
 # FDR-007: Notifications & Activity Feed
 
 **Status:** Active
-**Last reviewed:** 2026-08-01
+**Last reviewed:** 2026-08-03
 
 ## Overview
 
@@ -14,8 +14,17 @@ delivery.
 
 - **Notification inbox.** Unread-first, with mark-one-read and mark-all-read. New notifications arrive
   live via SSE.
-- **Activity feed.** A keyset-paginated log of the caller's *own* events, with noisy event types
-  hidden by default.
+- **Activity feed.** A keyset-paginated log of the caller's *own* events, filterable by category or
+  by a single event type, with checkbox churn hidden from the unfiltered view.
+- **What the feed shows, a reload also shows.** Live entries are gated on the same rule the endpoint
+  serves, so nothing appears that a refresh would then take away — see decision 3.
+- **Repeated churn reads as one entry.** A run of adjacent widget moves on the same dashboard
+  renders as a single row with a count, rather than one row per drag.
+- **Entries name what they touched.** Every event carries the name of its subject, so the generic
+  "a dashboard" / "a list" fallbacks are for historic rows rather than anything written now.
+  Redeeming an invite reads as *joining* — the actor gained access rather than granting it, which is
+  the same event type seen from the other side. A retired event type reads back as English rather
+  than printing its identifier, since old rows outlive the code that wrote them.
 - **Losing access triggers a notification.** Share and unshare actions notify the affected users, and
   so does trashing a dashboard other people can see — see decision 5.
 - **Revisiting either surface costs nothing.** Both the inbox and the feed are fetched once and then
@@ -46,24 +55,38 @@ ADR-015 (build-before-commit, broadcast-after).
 **Tradeoff:** Notification delivery shares the stream's overflow/reconnect behavior with all other
 event types.
 
-### 3. The feed is cached in the store, which is only safe because SSE keeps it current
+### 3. The feed is cached in the store, and a live append must answer the same query the endpoint does
 
 **Decision:** Activity lives in the notifications store behind a loaded flag, not in the page, and a
-mount does not refetch it. Every mutation frame is also appended to the cached feed as it arrives.
+mount does not refetch it. Mutation frames are appended to the cached feed as they arrive, but only
+those `GET /api/activity` would itself return: `isOwnFeedActivity` re-implements the endpoint's
+predicate — actor, hidden types, active filter — and is the single gate on the append.
 **Why:** Anything fetched on a page belongs in a store with a loaded flag, or returning to the page
 re-reads what SSE has already delivered. The caching and the live append are one decision, not two:
 a cached feed without the append would trade a redundant GET for a timeline that silently stops at
-page load. `{ force: true }` exists for resync, where frames may have been missed.
-**Tradeoff:** A new event type that skips the append is invisible on the feed until a resync, and the
-staleness would not show up in a test that only asserts the initial render.
+page load. But an *unfiltered* append is worse than none, because frames fan out to the whole
+dashboard audience while the feed is self-scoped — so a co-editor's change rendered as "You…", and a
+type the endpoint hides appeared and then vanished at the next load, which reads as data loss.
+**Tradeoff:** One predicate is maintained on both sides of the wire and they can drift; the hidden
+set is pinned across languages by `test_activity.py`, the rest is not. A new event type that skips
+the append is invisible until a resync, and that staleness would not show up in a test that only
+asserts the initial render.
 
-### 4. Activity feed is self-scoped and keyset-paginated, with noise hidden
+### 4. Activity feed is self-scoped and keyset-paginated, filterable, and collapses churn
 
-**Decision:** The feed shows only the caller's own events, paginated by keyset, hiding noisy event
-types by default.
-**Why:** Keyset pagination is stable under inserts; scoping to self keeps it a personal audit trail
-rather than a firehose; hiding noisy types keeps it readable.
-**Tradeoff:** It's not a cross-user or admin audit view; that would be a separate surface.
+**Decision:** The feed shows only the caller's own events, paginated by keyset. Everything is
+readable back: the unfiltered view hides only `list.item.checked`, and naming any event type —
+which the filter does per category or per type — overrides that. Adjacent layout-only dashboard
+events on the same dashboard collapse into one counted row.
+**Why:** Keyset pagination is stable under inserts, and scoping to self keeps it a personal audit
+trail rather than a firehose. Readability was previously bought by dropping whole classes of event
+from the *read* path, which made the feed disagree with its own log — a widget move was recorded,
+pushed live, and then gone. Collapsing buys the same readability in the presentation layer, where
+being wrong costs a merged row rather than a missing one, and filtering serves the case hiding was
+really aiming at: finding one kind of thing.
+**Tradeoff:** A tidying session still costs one row per drag underneath, so a collapsed run split
+across a page boundary shows as two rows. It's not a cross-user or admin audit view; that would be a
+separate surface.
 
 ### 5. Trashing a shared dashboard notifies the people who lose access
 

@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent, EventType
+from app.routers.notifications import FEED_HIDDEN_EVENT_TYPES
 from app.services.activity import log_event
 from app.services.notifications import stage_notification
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
@@ -26,13 +27,31 @@ from tests.helpers import CSRF, create_dashboard, create_list, create_list_item,
 # ---------------------------------------------------------------------------
 
 
+_FEED_UTILS_PATH = Path(__file__).parents[2] / "frontend/src/utils/notifications/notificationFeedUtils.ts"
+
+
 def test_all_activity_event_types_have_frontend_presentations() -> None:
-    formatter_path = Path(__file__).parents[2] / "frontend/src/utils/notifications/notificationFeedUtils.ts"
-    formatter_source = formatter_path.read_text().split("export function formatActivityEvent", 1)[1]
+    formatter_source = _FEED_UTILS_PATH.read_text().split("export function formatActivityEvent", 1)[1]
     formatter_source = formatter_source.split("default:", 1)[0]
     mapped_event_types = set(re.findall(r"case '([^']+)':", formatter_source))
 
     assert mapped_event_types == {event_type.value for event_type in EventType}
+
+
+def test_all_activity_event_types_are_reachable_in_the_filter() -> None:
+    """A type with no filter label is one the Activity tab can never be narrowed to."""
+    labels = _FEED_UTILS_PATH.read_text().split("const ACTIVITY_TYPE_LABELS", 1)[1].split("}", 1)[0]
+    labelled_event_types = set(re.findall(r"'([^']+)':", labels))
+
+    assert labelled_event_types == {event_type.value for event_type in EventType}
+
+
+def test_hidden_event_types_match_the_frontend() -> None:
+    """The two hidden sets must agree, or a type shows live and vanishes on reload (or never shows)."""
+    declaration = _FEED_UTILS_PATH.read_text().split("export const FEED_HIDDEN_EVENT_TYPES", 1)[1].split("\n\n", 1)[0]
+    frontend_hidden = set(re.findall(r"'([^']+)'", declaration))
+
+    assert frontend_hidden == {hidden.value for hidden in FEED_HIDDEN_EVENT_TYPES}
 
 
 async def _make_list(client: AsyncClient, dashboard_id: str, **kwargs) -> dict:
@@ -205,6 +224,106 @@ async def test_list_item_deleted_event(db_client: AsyncClient, db_session: Async
     assert str(event.entity_id) == item["id"]
     assert event.payload["text"] == "Milk"
     assert event.payload["list_name"] == "My List"
+
+
+# ---------------------------------------------------------------------------
+# Dashboard events
+# ---------------------------------------------------------------------------
+
+
+async def test_dashboard_layout_and_widget_activity_survives_a_reload(auth_client: AsyncClient) -> None:
+    """A widget move must be readable back from the feed, not only pushed once over SSE.
+
+    The rows were always written; the read path filtered them out, so the entry the SSE append
+    put on screen disappeared at the next load. Asserts on the endpoint for that reason.
+    """
+    dashboard = await create_dashboard(auth_client, name="Board")
+
+    set_csrf(auth_client)
+    add_resp = await auth_client.post(
+        f"/api/dashboards/{dashboard['id']}/widgets",
+        json={"widget_type": "clock", "config": {}},
+    )
+    assert add_resp.status_code == 201
+    added = add_resp.json()
+    widget_id = added["widgets"][0]["id"]
+
+    set_csrf(auth_client)
+    layout_resp = await auth_client.put(
+        f"/api/dashboards/{dashboard['id']}/layout",
+        json={"layout": [{"i": widget_id, "x": 2, "y": 1, "w": 2, "h": 2}], "version": added["version"]},
+    )
+    assert layout_resp.status_code == 200
+
+    set_csrf(auth_client)
+    delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}")
+    assert delete_resp.status_code == 204
+
+    feed = (await auth_client.get("/api/activity")).json()
+    updates = [event for event in feed if event["event_type"] == "dashboard.updated"]
+    assert [event["payload"]["changed_fields"] for event in updates] == [
+        ["widgets", "layout"],
+        ["layout"],
+        ["widgets", "layout"],
+    ]
+    # Newest first: the removal, the move, then the add.
+    assert [event["payload"].get("widget_action") for event in updates] == ["removed", None, "added"]
+    # Without the name the feed can only say "a dashboard".
+    assert {event["payload"]["name"] for event in updates} == {"Board"}
+    assert {event["payload"]["widget_type"] for event in updates if "widget_type" in event["payload"]} == {"clock"}
+
+
+async def test_restore_names_the_dashboard_it_brought_back(auth_client: AsyncClient) -> None:
+    """Restore staged only `changed_fields`, so the feed could only say "a dashboard"."""
+    dashboard = await create_dashboard(auth_client, name="Kitchen")
+
+    set_csrf(auth_client)
+    assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
+    set_csrf(auth_client)
+    assert (await auth_client.post(f"/api/dashboards/{dashboard['id']}/restore")).status_code == 200
+
+    feed = (await auth_client.get("/api/activity")).json()
+    restored = next(event for event in feed if event["payload"].get("changed_fields") == ["restored"])
+    assert restored["payload"]["name"] == "Kitchen"
+
+
+async def test_hidden_event_types_stay_out_of_the_feed_unless_asked_for(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client, name="Board")
+    lst = await create_list(auth_client, dashboard["id"], name="Chores")
+    item = await create_list_item(auth_client, lst["id"], text="Vacuum")
+
+    set_csrf(auth_client)
+    check_resp = await auth_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"checked": True})
+    assert check_resp.status_code == 200
+
+    feed = (await auth_client.get("/api/activity")).json()
+    assert "list.item.checked" not in [event["event_type"] for event in feed]
+
+    asked_for = (await auth_client.get("/api/activity", params={"event_type": "list.item.checked"})).json()
+    assert [event["event_type"] for event in asked_for] == ["list.item.checked"]
+
+
+async def test_activity_narrows_to_every_named_event_type(auth_client: AsyncClient) -> None:
+    """A category filter sends its whole group, so one request must answer with all of them."""
+    dashboard = await create_dashboard(auth_client, name="Board")
+    lst = await create_list(auth_client, dashboard["id"], name="Chores")
+    await create_list_item(auth_client, lst["id"], text="Vacuum")
+
+    resp = await auth_client.get(
+        "/api/activity",
+        params=[("event_type", "list.created"), ("event_type", "dashboard.created")],
+    )
+    assert resp.status_code == 200
+    assert [event["event_type"] for event in resp.json()] == ["list.created", "dashboard.created"]
+
+
+async def test_activity_rejects_an_absurd_number_of_filters(auth_client: AsyncClient) -> None:
+    resp = await auth_client.get(
+        "/api/activity",
+        params=[("event_type", f"made.up.{n}") for n in range(41)],
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Too many event_type filters"
 
 
 @pytest.mark.asyncio

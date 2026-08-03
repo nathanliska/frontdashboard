@@ -42,11 +42,12 @@ export async function apiMarkAllRead(): Promise<void> {
 }
 
 export async function apiGetActivity(params?: {
-  event_type?: string
+  /** Repeated, not comma-joined: the endpoint reads `event_type` as a list. Empty asks for the default view. */
+  eventTypes?: readonly string[]
   before_event_id?: number
 }): Promise<ActivityEventResponse[]> {
   const q = new URLSearchParams()
-  if (params?.event_type) q.set('event_type', params.event_type)
+  for (const eventType of params?.eventTypes ?? []) q.append('event_type', eventType)
   if (params?.before_event_id != null) q.set('before_event_id', String(params.before_event_id))
   const res = await apiFetch(`/api/activity${q.size ? `?${q}` : ''}`)
   if (!res.ok) throw new Error('Failed to load activity')

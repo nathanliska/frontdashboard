@@ -338,6 +338,74 @@ describe('useSSE', () => {
       )
     })
   })
+
+  describe('activity feed appends', () => {
+    function layoutFrame(actorId: string, eventId: number): string {
+      return frame({
+        event_id: eventId,
+        actor_id: actorId,
+        event_type: 'dashboard.updated',
+        entity_id: 'dash-1',
+        entity_type: 'dashboard',
+        payload: { dashboard_id: 'dash-1', name: 'Home', changed_fields: ['layout'] },
+      })
+    }
+
+    beforeEach(() => {
+      useNotificationsStore.setState({ activity: [], activityLoaded: true })
+    })
+
+    it('appends a widget move the endpoint would also serve back', async () => {
+      render(<TestHarness />)
+
+      act(() => {
+        MockEventSource.instances[0].dispatch('dashboard.updated', layoutFrame('user-1', 7))
+      })
+
+      await waitFor(() => {
+        expect(useNotificationsStore.getState().activity.map((e) => e.event_id)).toEqual([7])
+      })
+      // `name` is not in the generated payload model. If the contract stripped it, the live row
+      // would read "You rearranged widgets on a dashboard" until a reload replaced it.
+      expect(useNotificationsStore.getState().activity[0].payload.name).toBe('Home')
+    })
+
+    it('drops a co-editor’s frame rather than showing it as the reader’s own until reload', async () => {
+      render(<TestHarness />)
+
+      act(() => {
+        MockEventSource.instances[0].dispatch('dashboard.updated', layoutFrame('user-2', 8))
+      })
+
+      await waitFor(() => {
+        expect(useDashboardStore.getState().handleDashboardEvent).toHaveBeenCalled()
+      })
+      expect(useNotificationsStore.getState().activity).toEqual([])
+    })
+
+    it('drops an event type the endpoint hides, which a reload would take away again', async () => {
+      render(<TestHarness />)
+
+      act(() => {
+        MockEventSource.instances[0].dispatch(
+          'list.item.checked',
+          frame({
+            event_id: 9,
+            actor_id: 'user-1',
+            event_type: 'list.item.checked',
+            entity_id: 'item-1',
+            entity_type: 'list_item',
+            payload: { dashboard_id: 'dash-1', list_id: 'list-1', values: { checked: true } },
+          }),
+        )
+      })
+
+      await waitFor(() => {
+        expect(handleListResourceEvent).toHaveBeenCalled()
+      })
+      expect(useNotificationsStore.getState().activity).toEqual([])
+    })
+  })
 })
 
 describe('useSSE reconnect backoff', () => {

@@ -8,6 +8,11 @@ import {
   apiMarkRead,
   type Notification,
 } from '../api/notifications'
+import {
+  ACTIVITY_FILTER_ALL,
+  eventTypesForActivityFilter,
+  isOwnFeedActivity,
+} from '../utils/notifications/notificationFeedUtils'
 import { bumpSessionGeneration, currentSessionGeneration } from './sessionGeneration'
 
 let notificationsPromise: Promise<void> | null = null
@@ -15,6 +20,8 @@ let unreadCountPromise: Promise<void> | null = null
 let loadMorePromise: Promise<void> | null = null
 let activityPromise: Promise<void> | null = null
 let activityLoadMorePromise: Promise<void> | null = null
+// Which feed request is the live one. Only it may write state; see `loadActivity`.
+let activityRequestToken = 0
 // The endpoint pages at 50, so a full page means older history may exist.
 const ACTIVITY_PAGE_SIZE = 50
 // Where the next older page starts. Module-level like the promises: it is request bookkeeping,
@@ -43,6 +50,8 @@ interface NotificationsState {
   activityFailed: boolean
   activityHasMore: boolean
   activityLoadingMore: boolean
+  /** Which `ACTIVITY_FILTERS` option the feed is narrowed to; the cached feed is only its rows. */
+  activityFilter: string
   load: () => Promise<void>
   loadMore: () => Promise<void>
   loadUnreadCount: () => Promise<void>
@@ -52,7 +61,8 @@ interface NotificationsState {
   addFromSse: (notif: Notification) => void
   loadActivity: (options?: { force?: boolean }) => Promise<void>
   loadMoreActivity: () => Promise<void>
-  addActivityFromSse: (event: ActivityEvent) => void
+  setActivityFilter: (filterId: string) => void
+  addActivityFromSse: (event: ActivityEvent, viewerId: string | null) => void
   reset: () => void
 }
 
@@ -80,6 +90,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
     activityFailed: false,
     activityHasMore: false,
     activityLoadingMore: false,
+    activityFilter: ACTIVITY_FILTER_ALL,
 
     async load() {
       if (notificationsPromise) return notificationsPromise
@@ -215,11 +226,19 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
       if (!options?.force && get().activityLoaded) return
       if (activityPromise) return activityPromise
 
+      const filterId = get().activityFilter
+      // Changing the filter abandons the request in flight. Everything below is gated on still
+      // being the newest, or a superseded response clears the live one's spinner and promise
+      // guard — a flash of "no activity" over a fetch that hasn't landed.
+      const token = ++activityRequestToken
       activityPromise = (async () => {
         const guard = sessionGuard()
         guard.set({ activityLoading: true })
         try {
-          const activity = await apiGetActivity()
+          const activity = await apiGetActivity({
+            eventTypes: eventTypesForActivityFilter(filterId),
+          })
+          if (token !== activityRequestToken) return
           guard.set({
             activity,
             activityLoaded: true,
@@ -228,10 +247,13 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
           })
         } catch {
           // An outage must render as a failure with a retry, not an empty timeline.
+          if (token !== activityRequestToken) return
           guard.set({ activityFailed: !get().activityLoaded })
         } finally {
-          guard.set({ activityLoading: false })
-          activityPromise = null
+          if (token === activityRequestToken) {
+            guard.set({ activityLoading: false })
+            activityPromise = null
+          }
         }
       })()
       return activityPromise
@@ -243,11 +265,16 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
       const oldest = activity[activity.length - 1]
       if (!oldest || activityLoadingMore) return
 
+      const filterId = get().activityFilter
       activityLoadMorePromise = (async () => {
         const guard = sessionGuard()
         guard.set({ activityLoadingMore: true })
         try {
-          const older = await apiGetActivity({ before_event_id: oldest.event_id })
+          const older = await apiGetActivity({
+            eventTypes: eventTypesForActivityFilter(filterId),
+            before_event_id: oldest.event_id,
+          })
+          if (get().activityFilter !== filterId) return
           guard.set((s) => {
             const known = new Set(s.activity.map((e) => e.event_id))
             return {
@@ -265,10 +292,22 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
       return activityLoadMorePromise
     },
 
-    addActivityFromSse(event) {
+    setActivityFilter(filterId) {
+      if (get().activityFilter === filterId) return
+      // Drop the cached page rather than leave the other filter's rows on screen behind a
+      // spinner, and null the in-flight guard so the reload below isn't handed the old request.
+      activityPromise = null
+      set({ activityFilter: filterId, activity: [], activityLoaded: false, activityHasMore: false })
+      void get().loadActivity()
+    },
+
+    addActivityFromSse(event, viewerId) {
       // Only meaningful once the feed has been read; prepending onto an unloaded list would
       // render a timeline of exactly the events that happened to arrive while the tab was open.
       if (!get().activityLoaded) return
+      // The one gate on live appends: a frame the endpoint would not serve back is a row the
+      // next load silently removes.
+      if (!isOwnFeedActivity(event, viewerId, get().activityFilter)) return
       set((s) => {
         if (s.activity.some((existing) => existing.event_id === event.event_id)) return s
         return { activity: [event, ...s.activity] }
@@ -282,6 +321,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
       loadMorePromise = null
       activityPromise = null
       activityLoadMorePromise = null
+      activityRequestToken += 1
       nextCursor = null
       set({
         notifications: [],
@@ -297,6 +337,7 @@ export const useNotificationsStore = create<NotificationsState>()((set, get) => 
         activityFailed: false,
         activityHasMore: false,
         activityLoadingMore: false,
+        activityFilter: ACTIVITY_FILTER_ALL,
       })
     },
   }

@@ -148,8 +148,8 @@ export function useSSE(): void {
   const handleDashboardEvent = useDashboardStore((s) => s.handleDashboardEvent)
   const handleDashboardContentEvent = useDashboardStore((s) => s.handleContentEvent)
   const addNotification = useNotificationsStore((s) => s.addFromSse)
-  // Every mutation frame is also an activity-feed entry. Without this the cached feed would refresh
-  // only on a resync, so the tab would show a timeline that stopped at page load.
+  // Mutation frames are also feed entries — the store decides which, since only it knows the
+  // filter. Without this the cached feed would refresh only on a resync and stop at page load.
   const addActivity = useNotificationsStore((s) => s.addActivityFromSse)
   const loadNotifications = useNotificationsStore((s) => s.load)
   const loadUnreadCount = useNotificationsStore((s) => s.loadUnreadCount)
@@ -230,7 +230,7 @@ export function useSSE(): void {
       // handler called it first would be the only one told the truth.
       const isOwnEcho = consumePendingListMutationEcho(data)
       // Order is convention, not correctness — no handler reads another's writes.
-      addActivity(data)
+      addActivity(data, userId)
       handleListResourceEvent(data, { isOwnEcho })
       handleAgendaResourceEvent(data, { isOwnEcho })
       // Not echo-gated: it only patches in memory (removing a deleted list's widget) and never
@@ -241,7 +241,7 @@ export function useSSE(): void {
     function onCalendarEvent(e: MessageEvent<string>) {
       const data = readActivityFrame(e)
       if (!data) return
-      addActivity(data)
+      addActivity(data, userId)
       handleCalendarResourceEvent(data)
       handleAgendaResourceEvent(data)
     }
@@ -259,7 +259,7 @@ export function useSSE(): void {
     function onDashboardEvent(e: MessageEvent<string>) {
       const data = readActivityFrame(e)
       if (!data) return
-      addActivity(data)
+      addActivity(data, userId)
       void handleDashboardEvent(data)
     }
 

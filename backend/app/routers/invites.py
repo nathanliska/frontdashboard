@@ -205,7 +205,15 @@ async def accept_invite(
         entity_type="dashboard",
         entity_id=dashboard.id,
         entity_version=dashboard.version,
-        payload={"dashboard_id": str(dashboard.id), "changed_fields": ["shares"]},
+        # `joined` because the actor here received access rather than granting it — the same event
+        # type reads from the opposite side in their own feed.
+        payload={
+            "dashboard_id": str(dashboard.id),
+            "dashboard_name": dashboard.name,
+            "role": str(role),
+            "share_action": "joined",
+            "changed_fields": ["shares"],
+        },
     )
     event_message = await build_activity_sse_dict(db, event)
     notification_message = await build_notification_sse_dict(db, notification)

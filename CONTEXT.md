@@ -123,7 +123,10 @@ _Last updated: 2026-07-30_
 
 **Notifications & activity**
 - In-app inbox (unread-first, mark one/all read) with live SSE push; activity feed of the
-  caller's own events, keyset-paginated, hiding noisy event types by default.
+  caller's own events, keyset-paginated, filterable by category or event type. Everything logged is
+  readable back — the unfiltered view hides only checkbox ticks, and asking for a type shows it.
+  Live SSE appends are gated on the same predicate the endpoint serves, so nothing shows that a
+  refresh would take away; adjacent widget moves on one dashboard collapse into a single counted row.
 
 **Real-time (SSE)**
 - One multiplexed `EventSource('/api/sse')` per user; in-memory manager with bounded queues,

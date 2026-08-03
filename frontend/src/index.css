@@ -12,6 +12,12 @@ body,
   background-color: var(--color-zinc-950);
 }
 
+/* The app has no light mode, and the browser draws select popups and scrollbars itself — without
+   this they come out white in an otherwise dark UI. */
+:root {
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;

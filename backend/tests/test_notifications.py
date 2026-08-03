@@ -213,7 +213,7 @@ async def test_dashboard_share_notifications_and_activity_filtering(
         assert "list.created" in event_types
         assert "list.item.created" in event_types
         dashboard_updates = [event for event in activity if event["event_type"] == "dashboard.updated"]
-        assert [event["payload"]["changed_fields"] for event in dashboard_updates] == [["name"]]
+        assert [event["payload"]["changed_fields"] for event in dashboard_updates] == [["layout"], ["name"]]
         assert "list.item.checked" not in event_types
 
         notification_rows = (

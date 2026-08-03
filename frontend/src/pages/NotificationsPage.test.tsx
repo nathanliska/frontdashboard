@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiGetActivity } from '../api/notifications'
 import { useNotificationsStore } from '../stores/notifications'
+import { ACTIVITY_FILTER_ALL } from '../utils/notifications/notificationFeedUtils'
 import { NotificationsPage } from './NotificationsPage'
 
 vi.mock('../api/notifications', async () => {
@@ -60,6 +61,7 @@ describe('NotificationsPage', () => {
       activityFailed: false,
       activityHasMore: false,
       activityLoadingMore: false,
+      activityFilter: ACTIVITY_FILTER_ALL,
     })
   })
 
@@ -109,6 +111,48 @@ describe('NotificationsPage', () => {
     await screen.findByText('You granted viewer access to "Roadmap".')
 
     expect(mockedApiGetActivity).toHaveBeenCalledTimes(1)
+  })
+
+  it('narrows the feed to the chosen category and refetches for it', async () => {
+    mockedApiGetActivity.mockResolvedValue(ACTIVITY_PAGE)
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /^activity$/i }))
+    await screen.findByText('You granted viewer access to "Roadmap".')
+
+    mockedApiGetActivity.mockResolvedValue([])
+    fireEvent.change(screen.getByLabelText('Filter activity'), { target: { value: 'calendar' } })
+
+    await screen.findByText('No activity of this kind yet.')
+    expect(mockedApiGetActivity).toHaveBeenLastCalledWith({
+      eventTypes: [
+        'calendar.event.created',
+        'calendar.event.updated',
+        'calendar.event.deleted',
+        'calendar.event.occurrence.updated',
+        'calendar.event.occurrence.cancelled',
+      ],
+    })
+  })
+
+  it('renders a run of widget moves as one counted row', async () => {
+    const layoutEvent = (eventId: number) => ({
+      event_id: eventId,
+      event_type: 'dashboard.updated',
+      entity_type: 'dashboard',
+      entity_id: 'dash-1',
+      actor_id: 'user-1',
+      actor_display_name: 'Example User',
+      payload: { dashboard_id: 'dash-1', name: 'Roadmap', changed_fields: ['layout'] },
+      created_at: '2026-04-06T12:00:00.000Z',
+    })
+    mockedApiGetActivity.mockResolvedValue([layoutEvent(3), layoutEvent(2), layoutEvent(1)])
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /^activity$/i }))
+
+    expect(await screen.findAllByText('You rearranged widgets on "Roadmap".')).toHaveLength(1)
+    expect(screen.getByText('×3')).toBeInTheDocument()
   })
 
   it('refetches when the caller forces it, which is how a resync recovers', async () => {

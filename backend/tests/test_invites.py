@@ -40,6 +40,26 @@ async def test_invite_round_trip_grants_the_carried_role(auth_client: AsyncClien
     await invitee.aclose()
 
 
+async def test_accepting_records_activity_the_feed_can_name(auth_client: AsyncClient) -> None:
+    """The accepter's own feed has to say what they joined, and that they joined rather than granted."""
+    dashboard = await create_dashboard(auth_client, name="Kitchen")
+    invite = await _create_invite(auth_client, dashboard["id"], "editor")
+
+    invitee = await register_client("invitee-activity@example.com")
+    try:
+        set_csrf(invitee)
+        assert (await invitee.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
+
+        feed = (await invitee.get("/api/activity")).json()
+        joined = next(event for event in feed if event["event_type"] == "dashboard.share_added")
+        assert joined["payload"]["dashboard_name"] == "Kitchen"
+        assert joined["payload"]["role"] == "editor"
+        # Without this the same event type reads as "You granted … access", which inverts the actor.
+        assert joined["payload"]["share_action"] == "joined"
+    finally:
+        await invitee.aclose()
+
+
 async def test_preview_does_not_consume_the_invite(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"])

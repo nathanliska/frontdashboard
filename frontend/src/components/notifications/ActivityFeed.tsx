@@ -1,5 +1,9 @@
 import type { ActivityEvent } from '../../api/notifications'
-import { formatActivityEvent } from '../../utils/notifications/notificationFeedUtils'
+import {
+  type ActivityGroup,
+  formatActivityEvent,
+  groupActivityEvents,
+} from '../../utils/notifications/notificationFeedUtils'
 
 type ActivityFeedProps = {
   activity: ActivityEvent[]
@@ -26,14 +30,15 @@ export function ActivityFeed({
 
   return (
     <div className="space-y-1">
-      {activity.map((event) => (
-        <ActivityFeedItem key={event.event_id} event={event} />
+      {groupActivityEvents(activity).map((group) => (
+        <ActivityFeedItem key={group.event.event_id} group={group} />
       ))}
     </div>
   )
 }
 
-export function ActivityFeedItem({ event }: { event: ActivityEvent }) {
+export function ActivityFeedItem({ group }: { group: ActivityGroup }) {
+  const { event, count } = group
   const presentation = formatActivityEvent(event)
 
   return (
@@ -43,6 +48,14 @@ export function ActivityFeedItem({ event }: { event: ActivityEvent }) {
           <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded-full">
             {presentation.badge}
           </span>
+          {count > 1 && (
+            <span
+              className="text-[10px] text-zinc-500 tabular-nums"
+              title={`${count} times in a row`}
+            >
+              ×{count}
+            </span>
+          )}
         </div>
         <p className="text-sm text-zinc-200 mt-2">{presentation.summary}</p>
         {presentation.detail && (

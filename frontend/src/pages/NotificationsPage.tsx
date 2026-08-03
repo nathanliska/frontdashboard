@@ -3,9 +3,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Notification } from '../api/notifications'
 import { ActivityFeed } from '../components/notifications/ActivityFeed'
+import { ActivityFilterSelect } from '../components/notifications/ActivityFilterSelect'
 import { NotificationFeed } from '../components/notifications/NotificationFeed'
 import { useNotificationsStore } from '../stores/notifications'
-import { getNotificationDestination } from '../utils/notifications/notificationFeedUtils'
+import {
+  ACTIVITY_FILTER_ALL,
+  getNotificationDestination,
+} from '../utils/notifications/notificationFeedUtils'
 import { cn } from '../utils/shared/cn'
 
 type Tab = 'notifications' | 'activity'
@@ -30,6 +34,8 @@ export function NotificationsPage() {
   const activityLoadingMore = useNotificationsStore((s) => s.activityLoadingMore)
   const loadActivity = useNotificationsStore((s) => s.loadActivity)
   const loadMoreActivity = useNotificationsStore((s) => s.loadMoreActivity)
+  const activityFilter = useNotificationsStore((s) => s.activityFilter)
+  const setActivityFilter = useNotificationsStore((s) => s.setActivityFilter)
 
   // Guarded as the sidebar panel guards it: SSE keeps the store current, and skipping the fetch
   // preserves any extra pages "Load more" appended.
@@ -114,14 +120,25 @@ export function NotificationsPage() {
           )
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2">
-              <p className="text-xs text-zinc-500">Activity now shows your own timeline.</p>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+              <p className="min-w-0 text-xs text-zinc-500 truncate">
+                Activity now shows your own timeline.
+              </p>
+              <ActivityFilterSelect value={activityFilter} onChange={setActivityFilter} />
             </div>
             {activityFailed && !activityLoading ? (
               <RetryState message="Couldn't load activity." onRetry={() => void loadActivity()} />
             ) : (
               <>
-                <ActivityFeed activity={activity} loading={activityLoading} />
+                <ActivityFeed
+                  activity={activity}
+                  loading={activityLoading}
+                  emptyMessage={
+                    activityFilter === ACTIVITY_FILTER_ALL
+                      ? 'No activity yet.'
+                      : 'No activity of this kind yet.'
+                  }
+                />
                 {activityHasMore && !activityLoading && (
                   <LoadMoreButton
                     loading={activityLoadingMore}

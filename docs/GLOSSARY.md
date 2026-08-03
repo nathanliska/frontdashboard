@@ -49,7 +49,7 @@ in the abstract) are not defined here.
 
 **Notification** — An in-app inbox message about something affecting the user (a share, an access change). See [FDR-007](fdr/FDR-007-notifications-and-activity.md).
 
-**Activity feed** — A keyset-paginated, self-scoped log of the caller's own actions, noisy types hidden by default. See [FDR-007](fdr/FDR-007-notifications-and-activity.md).
+**Activity feed** — A keyset-paginated, self-scoped log of the caller's own actions, filterable by category or event type; only checkbox ticks are hidden from the unfiltered view. See [FDR-007](fdr/FDR-007-notifications-and-activity.md).
 
 ## Access
 

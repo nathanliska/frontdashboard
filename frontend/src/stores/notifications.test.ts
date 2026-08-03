@@ -1,21 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Notification } from '../api/notifications'
 
-const { apiGetNotifications, apiGetUnreadCount, apiMarkAllRead, apiMarkRead } = vi.hoisted(() => ({
-  apiGetNotifications: vi.fn(),
-  apiGetUnreadCount: vi.fn(),
-  apiMarkAllRead: vi.fn(),
-  apiMarkRead: vi.fn(),
-}))
+const { apiGetActivity, apiGetNotifications, apiGetUnreadCount, apiMarkAllRead, apiMarkRead } =
+  vi.hoisted(() => ({
+    apiGetActivity: vi.fn(),
+    apiGetNotifications: vi.fn(),
+    apiGetUnreadCount: vi.fn(),
+    apiMarkAllRead: vi.fn(),
+    apiMarkRead: vi.fn(),
+  }))
 vi.mock('../api/notifications', () => ({
+  apiGetActivity,
   apiGetNotifications,
   apiGetUnreadCount,
   apiMarkAllRead,
   apiMarkRead,
 }))
 
+import type { ActivityEvent } from '../api/notifications'
 import { useNotificationsStore } from './notifications'
 import { bumpSessionGeneration } from './sessionGeneration'
+
+const VIEWER_ID = 'user-1'
+
+function activityEvent(eventId: number, eventType: string): ActivityEvent {
+  return {
+    event_id: eventId,
+    event_type: eventType,
+    entity_type: 'list',
+    entity_id: 'entity-1',
+    actor_id: VIEWER_ID,
+    actor_display_name: 'Example User',
+    payload: {},
+    created_at: '2026-08-02T00:00:00Z',
+  }
+}
 
 const NOTIF_A: Notification = { id: 'a', read_at: null } as Notification
 const READ_NOTIF_A: Notification = {
@@ -193,5 +212,94 @@ describe('notification pagination (#22)', () => {
     expect(state.hasMore).toBe(true) // retryable, not a dead end (#26)
     expect(state.loadingMore).toBe(false)
     expect(state.notifications).toEqual([NOTIF_A])
+  })
+})
+
+describe('activity feed filtering', () => {
+  it('asks the endpoint for every type in the chosen category', async () => {
+    apiGetActivity.mockResolvedValue([])
+    useNotificationsStore.getState().setActivityFilter('lists')
+    await vi.waitFor(() => expect(apiGetActivity).toHaveBeenCalled())
+
+    expect(apiGetActivity).toHaveBeenCalledWith({
+      eventTypes: ['list.created', 'list.updated', 'list.deleted', 'list.reordered'],
+    })
+  })
+
+  it('keeps the filter when paging older history', async () => {
+    apiGetActivity.mockResolvedValue([activityEvent(9, 'list.created')])
+    useNotificationsStore.getState().setActivityFilter('lists')
+    await vi.waitFor(() => expect(useNotificationsStore.getState().activityLoaded).toBe(true))
+
+    await useNotificationsStore.getState().loadMoreActivity()
+
+    expect(apiGetActivity).toHaveBeenLastCalledWith({
+      eventTypes: ['list.created', 'list.updated', 'list.deleted', 'list.reordered'],
+      before_event_id: 9,
+    })
+  })
+
+  it('discards a page that answers a filter the user has already moved off', async () => {
+    let resolveLists!: (events: ActivityEvent[]) => void
+    apiGetActivity.mockReturnValueOnce(
+      new Promise<ActivityEvent[]>((r) => {
+        resolveLists = r
+      }),
+    )
+    useNotificationsStore.getState().setActivityFilter('lists')
+
+    apiGetActivity.mockResolvedValueOnce([activityEvent(2, 'calendar.event.created')])
+    useNotificationsStore.getState().setActivityFilter('calendar')
+    await vi.waitFor(() => expect(useNotificationsStore.getState().activityLoaded).toBe(true))
+
+    resolveLists([activityEvent(1, 'list.created')])
+    await vi.waitFor(() => expect(apiGetActivity).toHaveBeenCalledTimes(2))
+
+    expect(useNotificationsStore.getState().activity.map((e) => e.event_id)).toEqual([2])
+  })
+
+  it('keeps the spinner up when a superseded request lands first', async () => {
+    let resolveLists!: (events: ActivityEvent[]) => void
+    apiGetActivity.mockReturnValueOnce(
+      new Promise<ActivityEvent[]>((r) => {
+        resolveLists = r
+      }),
+    )
+    useNotificationsStore.getState().setActivityFilter('lists')
+
+    apiGetActivity.mockReturnValueOnce(new Promise<ActivityEvent[]>(() => {}))
+    useNotificationsStore.getState().setActivityFilter('calendar')
+
+    resolveLists([])
+    await vi.waitFor(() => expect(apiGetActivity).toHaveBeenCalledTimes(2))
+
+    // The abandoned request must not clear flags the live one owns, or the feed renders its
+    // empty state over a fetch that hasn't landed.
+    expect(useNotificationsStore.getState().activityLoading).toBe(true)
+    expect(useNotificationsStore.getState().activityLoaded).toBe(false)
+  })
+
+  it('appends a live event the active filter asked for, hidden-by-default or not', async () => {
+    apiGetActivity.mockResolvedValue([])
+    useNotificationsStore.getState().setActivityFilter('list-items')
+    await vi.waitFor(() => expect(useNotificationsStore.getState().activityLoaded).toBe(true))
+
+    // Hidden from the default view, but naming its category is asking to see it — as the
+    // endpoint would, so the row has to survive a reload.
+    useNotificationsStore
+      .getState()
+      .addActivityFromSse(activityEvent(3, 'list.item.checked'), VIEWER_ID)
+
+    expect(useNotificationsStore.getState().activity.map((e) => e.event_id)).toEqual([3])
+  })
+
+  it('drops a live event outside the active filter rather than showing it until reload', async () => {
+    apiGetActivity.mockResolvedValue([])
+    useNotificationsStore.getState().setActivityFilter('calendar')
+    await vi.waitFor(() => expect(useNotificationsStore.getState().activityLoaded).toBe(true))
+
+    useNotificationsStore.getState().addActivityFromSse(activityEvent(4, 'list.created'), VIEWER_ID)
+
+    expect(useNotificationsStore.getState().activity).toEqual([])
   })
 })

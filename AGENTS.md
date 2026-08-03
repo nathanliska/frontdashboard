@@ -161,6 +161,12 @@ make audit       # dependency/security audit checks
   router in `resources/*`. Miss either and the UI silently goes stale.
 - The echo check consumes, so ask once at the router and pass the verdict down. Suppressing an
   echo obliges you to patch whatever the refetch would have refreshed.
+- A new activity event type needs a `formatActivityEvent` case **and** an `ACTIVITY_TYPE_LABELS`
+  entry, or it renders as a raw string and is unreachable in the feed's filter;
+  `test_activity.py` fails the build on either.
+- `isOwnFeedActivity` is the only gate on live activity appends, and must keep answering exactly
+  what `GET /api/activity` would — actor, hidden types, active filter. A frame it admits that the
+  endpoint would not serve back is a row the next reload silently deletes.
 - A new resource cache calls `registerResourceReset(...)` at module scope, beside the cache it
   clears. `stores/auth.ts` calls the registry, not each reset by name.
 - Only `401` means logged out. Not `403`, which is the permission layer, and never a `5xx`,
