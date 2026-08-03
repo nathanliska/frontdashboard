@@ -1,61 +1,53 @@
 # Observability
 
-Dashboards, alert rules and the notes for the Prometheus host they read from. Everything here is
-hand-synced — the repo never reaches the deployment host.
+Dashboards, alert rules, and notes for the Prometheus host they read from.
 
 ## Dashboards
-
-Two dashboards, deliberately split:
 
 - **`frontdashboard-overview.json`** (uid `frontdashboard`) — is the app healthy for the people
   using it? Liveness, restarts, the two SLIs, request rate, errors, latency, auth failures.
 - **`frontdashboard-internals.json`** (uid `frontdashboard-internals`) — why it looks that way.
   Pool, Argon2, SSE, process resources.
 
-Eighteen panels on one page is a scanning problem at exactly the moment you cannot afford one. The
-overview answers *whether* something is wrong; internals answers *where*. They cross-link through a
-shared `frontdashboard` tag, so each lists the other in its top-right dropdown.
+Split because twenty panels on one page is a scanning problem at the moment you can least afford
+one. The overview answers *whether*; internals answers *where*. A shared `frontdashboard` tag
+cross-links them in each one's top-right dropdown.
 
-Neither file carries an `__inputs` block. They use a `datasource` template variable instead, so the
-panels bind to whichever Prometheus is picked at import time and can be repointed afterwards.
+Neither carries an `__inputs` block — a `datasource` variable instead, so panels bind to whichever
+Prometheus is picked at import and can be repointed later.
 
 ## Loading these into Grafana
 
-Both by hand, from the browser. No token, no API, nothing written to the deployment host.
+By hand, from the browser. No token, nothing written to the deployment host.
 
-**Dashboards first** — *Dashboards → New → Import*, paste the JSON, pick the Prometheus data
-source. Re-importing the same file updates the existing dashboard rather than adding a second; the
-`uid` inside the JSON is what matches them up. Do these before the rules, which link to their panels
-by id.
+**Dashboards first**, since the rules link to their panels by id: *Dashboards → New → Import*, paste
+the JSON, pick the data source. The `uid` in the file matches an existing dashboard, so a re-import
+updates rather than duplicates.
 
-**Alert rules** — *Alerting → Alert rules → Import rules → Prometheus YAML file*, upload
-`alerts.yml`, then choose the FrontDashboard folder and the Prometheus data source. Grafana
-converts each rule into a Grafana-managed one, which is the whole reason this file is in Prometheus
-format: Grafana's own provisioning format can be exported but not imported, so it can only be
-loaded as a file inside the container — on the NAS, where the repo cannot reach.
+**Then the rules**: *Alerting → Alert rules → Import rules → Prometheus YAML file*, upload
+`alerts.yml`, choose the FrontDashboard folder and the data source.
 
-Conversion preserves Prometheus semantics, so a query returning nothing leaves the rule Normal
-rather than raising No Data. That matters here: most of these expressions return an empty result
-whenever the thing they watch is healthy.
+Three things worth knowing about that import:
 
-Imported rules stay **editable in the UI**, unlike file-provisioned ones. Try a threshold in the
-browser if that is easier, then write the value back here.
+- **Prometheus format is the only one that works.** Grafana's own provisioning format exports but
+  never imports; it can only be mounted as a file inside the container, on the NAS.
+- **No-data semantics survive the conversion** — an empty result leaves a rule Normal rather than
+  raising No Data. Most of these expressions return nothing whenever things are healthy.
+- **Re-importing updates in place.** Each rule pins `__grafana_alert_rule_uid__`. Deletion is still
+  manual: dropping a rule here leaves it firing in Grafana with nothing left to explain it.
 
-**Re-importing updates in place** — every rule pins its identity with a
-`__grafana_alert_rule_uid__` label, so the second import edits the same fifteen rules instead of
-creating fifteen more. Deletion is still manual: dropping a rule from this file does not remove it
-from Grafana, and it will keep firing with nothing left here to explain it.
+Imported rules stay editable in the UI, unlike file-provisioned ones — try a threshold in the
+browser, then write it back here.
 
-**Contact points are not in this repo.** They hold a webhook URL or an SMTP password: create one in
-*Alerting → Contact points*, then route `severity = critical` to it in *Notification policies*.
-That is six of the fifteen rules; the rest stay visible and silent, because fifteen notifications is
-how alerting starts being ignored.
+**Contact points are not in this repo**; they hold a webhook URL or an SMTP password. Create one in
+*Alerting → Contact points* and route `severity = critical` to it under *Notification policies*.
+That is six of the fifteen — the rest stay visible and silent, because fifteen notifications is how
+alerting starts being ignored.
 
 ## Editing
 
-Change the files here, not the browser. Every query in all three is validated against a live
-Prometheus before commit — a panel that renders "No data" because of a typo looks identical to one
-whose metric legitimately has no samples yet, so the check is not optional.
+Change the files here, not the browser, and validate every query against a live Prometheus first. A
+panel reading "No data" from a typo is indistinguishable from one whose metric has no samples yet.
 
 ## The Prometheus side
 
@@ -86,8 +78,8 @@ scrape_configs:
         replacement: blackbox-exporter:9115
 ```
 
-The probe must leave the host and come back through Cloudflare. Pointing it at an internal address
-would test the one path that is already covered.
+The probe has to leave the host and come back through Cloudflare; an internal address would test the
+one path already covered.
 
 ### Cap the disk, not just the age
 
@@ -99,14 +91,13 @@ template:
 --storage.tsdb.retention.size=5GB
 ```
 
-Whichever limit is reached first wins, so this only ever acts as a floor under the disk.
+Whichever limit is hit first wins, so this only ever acts as a floor under the disk.
 
 ### Close the UI back up
 
-`web.config.file` is empty, so `:9090` serves every metric plus 15 days of history to anything on
-the LAN with no authentication. That is the same connection-count and activity-volume data that
-[`routers/metrics.py`](../backend/app/routers/metrics.py) deliberately keeps off `/api`, so leaving
-it open contradicts the reasoning that put it there.
+`web.config.file` is empty, so `:9090` serves every metric and 15 days of history to anything on the
+LAN, unauthenticated. That is the same data [`routers/metrics.py`](../backend/app/routers/metrics.py)
+deliberately keeps off `/api`.
 
 ```yaml
 # web-config.yml — then add --web.config.file=/etc/prometheus/web-config.yml

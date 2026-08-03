@@ -124,7 +124,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Deploys count here too, so a low number is normal. A crash loop is caught by the BackendRestartLoop rule, which looks at restarts per hour rather than per day.",
+      "description": "Deploys count here too, so a low number is normal. BackendRestartLoop watches the per-hour rate.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -191,7 +191,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Share of requests that began responding within 500ms. Health checks excluded \u2014 they are a constant poll, not user traffic. Six hours because a shorter window holds too few requests.",
+      "description": "Requests that began responding within 500ms, health checks excluded. Six hours because a shorter window holds too few.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -323,7 +323,7 @@
       "id": 5,
       "type": "stat",
       "title": "SSE clients",
-      "description": "Streams open right now. A gauge, so the raw value is the answer.",
+      "description": "Streams open right now.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -443,7 +443,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Request rate by route",
-      "description": "Counters are monotonic, so this is rate() not the raw total. Scrape and healthcheck traffic filtered out.",
+      "description": "Scrape and health-check traffic filtered out.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -657,7 +657,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "Auth failures by cause",
-      "description": "session/no_cookie is background noise \u2014 an expired session or a bot hitting /api. Drawn unfilled so a real login failure is not buried under it; a no_cookie spike still matters.",
+      "description": "session/no_cookie is background noise \u2014 an expired session or a bot hitting /api. A spike in it still matters.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

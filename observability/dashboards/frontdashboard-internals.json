@@ -41,7 +41,7 @@
       "id": 1,
       "type": "stat",
       "title": "DB pool peak (1h)",
-      "description": "Peak across the window's samples, rather than the value at one scrape. Still blind to a burst that opens and closes between scrapes \u2014 the gauge is read at scrape time and nothing records the interval's true high-water mark.",
+      "description": "Peak occupancy against the ceiling. The gauge carries its own high-water mark, so a burst between scrapes still counts.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -177,7 +177,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Latency includes time queued for a limiter slot, so a p95 well above the ~34ms floor is queueing. 'queued' is the direct saturation read, on the right axis.",
+      "description": "Latency includes time queued for a limiter slot, so a p95 well above the ~34ms floor is contention, not slow hashing.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -344,7 +344,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "DB pool",
-      "description": "Summed across replicas, which is the number that must stay under Postgres max_connections \u2014 each replica carries its own pool_size + max_overflow.",
+      "description": "Summed across replicas \u2014 this is the number that must stay under Postgres max_connections.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -517,7 +517,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "SSE connects vs resyncs",
-      "description": "Resyncs should stay far below connects. Evictions rising is finding #52 showing up in practice. Shown as count per hour: at this traffic a 5-minute rate is zero almost always.",
+      "description": "Resyncs should stay far below connects. Per hour rather than per second: at this traffic a 5-minute rate is almost always zero.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -622,7 +622,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "SSE stream lifetime (p50 / p95)",
-      "description": "Healthy streams sit near the 30-minute cap. A collapse toward zero is clients flapping \u2014 which connect counts alone cannot distinguish from healthy traffic.",
+      "description": "Healthy streams sit near the 30-minute cap. A collapse toward zero is clients flapping.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -705,7 +705,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Events delivered & backpressure",
-      "description": "Delivery is the point of the whole SSE system and nothing else measures it. Queue depth is backpressure before it becomes an eviction.",
+      "description": "Frames actually delivered, and the queue depth that precedes an eviction.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -788,7 +788,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "Background failures",
-      "description": "Things that fail where no request ever 5xxs for them. An email send happens after its response has gone, so this is the only place it shows.",
+      "description": "Failures no request ever 5xxs for \u2014 an email send happens after its response has gone.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -897,7 +897,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Resident memory trend is the leak signal for a process holding SSE streams open for half an hour at a time. CPU is on the right axis, in cores.",
+      "description": "Memory trend is the leak signal for a process holding streams open for half an hour. CPU on the right axis, in cores.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1009,7 +1009,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Descriptors should track open streams. Climbing while clients hold flat is a stream that was never closed \u2014 the failure that shows here first and nowhere else.",
+      "description": "Descriptors should track open streams. Climbing while clients hold flat is a stream that was never closed.",
       "gridPos": {
         "h": 8,
         "w": 12,
