@@ -9,8 +9,8 @@ engine = create_async_engine(
     echo=False,
     pool_pre_ping=True,
     # Bounded so a burst can't open connections without limit — Postgres pays several MiB each, and
-    # every WEB_CONCURRENCY worker gets its own pool, so N x (size + overflow) must fit under the
-    # server's max_connections, shared with whatever else uses that instance. Past it: wait, then fail.
+    # every replica gets its own pool, so N x (size + overflow) must fit under the server's
+    # max_connections, shared with whatever else uses that instance. Past it: wait, then fail.
     pool_size=settings.db_pool_size,
     max_overflow=settings.db_max_overflow,
     pool_timeout=settings.db_pool_timeout_seconds,

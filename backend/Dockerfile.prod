@@ -36,4 +36,6 @@ HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
 # Migrations stay here: alembic/env.py holds a session-scoped advisory lock, so replicas starting
 # together serialize instead of racing. The named shell is for `&&` and the `${VAR:-default}`
 # expansions; `exec` leaves uvicorn as PID 1 so a stop reaches it.
-CMD ["/bin/sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info} --workers ${WEB_CONCURRENCY:-1}"]
+# No `--workers`: forked workers share one socket, so a scrape reaches whichever accepts it and
+# every counter reads as resetting. Scale with replicas, which Prometheus sums across targets.
+CMD ["/bin/sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level ${LOG_LEVEL:-info}"]

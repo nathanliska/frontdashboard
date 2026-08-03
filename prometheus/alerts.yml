@@ -1,0 +1,170 @@
+# Alert expressions for the frontdashboard instance, tracked beside the dashboards that show
+# the same metrics. Prometheus evaluates these but routes nothing; see README.md for how to
+# be told rather than have to look.
+groups:
+  - name: frontdashboard-availability
+    interval: 30s
+    rules:
+      - alert: BackendDown
+        expr: min(up{job="frontdashboard"}) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend is not answering scrapes"
+          description: "Prometheus cannot reach /metrics. Check `docker logs frontdashboard-backend`."
+
+      - alert: BackendRestartLoop
+        # A deploy is one restart. Repeated restarts inside an hour is a crash loop, which
+        # `up` reads as healthy the entire time it is happening.
+        expr: max(changes(process_start_time_seconds{job="frontdashboard"}[1h])) > 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend has restarted {{ $value }} times in an hour"
+          description: "Crash loop. See docs/runbooks/rollback.md."
+
+      - alert: ServerErrors
+        # `for` stays under the rate window: a lone 5xx holds the rate up for five minutes, so
+        # waiting five would fire or not depending on scrape phase.
+        expr: sum(rate(frontdashboard_http_responses_total{status_class="5xx"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend is serving 5xx responses"
+          description: "{{ $value | printf \"%.3f\" }} req/s failing. Check the request-rate panel for the route."
+
+  # Latency is a user-visible symptom, so it belongs beside the error rules rather than with the
+  # saturation ones below. Two shapes because one window cannot serve both traffic levels.
+  - name: frontdashboard-latency
+    interval: 1m
+    rules:
+      - alert: SlowRequests
+        # A count, not a ratio: at roughly one request per half hour a single slow one would read
+        # as 0% good, so the textbook ratio alert is unusable here. 2.5 is a real bucket edge.
+        expr: >-
+          sum(increase(frontdashboard_http_request_seconds_count{route!="/api/health/ready"}[1h]))
+          - sum(increase(frontdashboard_http_request_seconds_bucket{le="2.5",route!="/api/health/ready"}[1h]))
+          > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | printf \"%.0f\" }} request(s) took over 2.5s in the last hour"
+          description: "Check the request-latency panel for the route, then the pool and Argon2 panels."
+
+      - alert: LatencyObjectiveBreached
+        # The ratio form, over a window long enough to hold ~100 requests, and guarded so it stays
+        # silent below 50 — under that a couple of slow requests are noise, not a trend.
+        expr: >-
+          (
+            sum(rate(frontdashboard_http_request_seconds_bucket{le="0.5",route!="/api/health/ready"}[6h]))
+            / sum(rate(frontdashboard_http_request_seconds_count{route!="/api/health/ready"}[6h]))
+          ) < 0.95
+          and
+          sum(increase(frontdashboard_http_request_seconds_count{route!="/api/health/ready"}[6h])) > 50
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Under 95% of requests served in 500ms over 6h"
+          description: "Sustained degradation rather than a spike. Nothing is down; users are waiting."
+
+  - name: frontdashboard-retention
+    interval: 1m
+    rules:
+      - alert: RetentionSweepStale
+        # Sweeps run four times a day; 26h means several consecutive ticks died silently.
+        expr: time() - max(frontdashboard_reaper_last_success_unixtime) > 93600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No retention sweep has completed in over 26 hours"
+          description: "Trashed dashboards are not being purged and the 30-day promise is slipping."
+
+      - alert: ReaperFailing
+        expr: sum(increase(frontdashboard_reaper_failures_total[1h])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Retention sweep raised and is retrying"
+          description: "A failed sweep rolls back the whole tick — often a table added without a matching cascade."
+
+  - name: frontdashboard-saturation
+    interval: 1m
+    rules:
+      - alert: DatabasePoolSaturated
+        expr: sum(max_over_time(frontdashboard_db_pool_checked_out[5m])) / sum(frontdashboard_db_pool_limit) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Connection pool over 80% of its ceiling"
+          description: "Requests will start waiting on db_pool_timeout_seconds and then failing."
+
+      - alert: Argon2Queueing
+        # Not `argon2_waiting`: read at scrape time, so a queue that drains between scrapes is
+        # invisible. The histogram counts the wait; ~34ms is the hash alone.
+        expr: histogram_quantile(0.95, sum by (le) (rate(frontdashboard_argon2_seconds_bucket[10m]))) > 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Logins are queued behind the Argon2 concurrency limit"
+
+      - alert: SSEClientsEvicted
+        expr: sum(increase(frontdashboard_sse_evictions_total[1h])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "SSE clients dropped for falling behind their queue"
+          description: "Backpressure became eviction. Those clients lost real-time until they reconnected."
+
+  # An alert on a series that does not exist stays quiet forever, so a target that was never wired
+  # up looks exactly like a healthy one. These watch for the absence itself.
+  - name: frontdashboard-monitoring-health
+    interval: 1m
+    rules:
+      - alert: BackendTargetMissing
+        expr: absent(up{job="frontdashboard"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No scrape target for the backend"
+          description: "Every frontdashboard alert is blind until this is fixed."
+
+      - alert: PublicProbeMissing
+        expr: absent(probe_success{job="blackbox-public"})
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nothing is probing the public site"
+          description: "SiteDown and CertificateExpiringSoon cannot fire. See prometheus/README.md."
+
+  # Requires blackbox_exporter and the scrape job in README.md. Everything above watches the
+  # inside of the box; this is the only group that sees what a user sees.
+  - name: frontdashboard-public
+    interval: 30s
+    rules:
+      - alert: SiteDown
+        expr: probe_success{job="blackbox-public"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} is not answering from the public internet"
+          description: "The backend can be healthy while this fires: Caddy, the frontend container, or Cloudflare."
+
+      - alert: CertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox-public"} - time() < 7 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "TLS certificate for {{ $labels.instance }} expires in under 7 days"

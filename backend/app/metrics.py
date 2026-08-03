@@ -4,9 +4,9 @@ A leaf module on purpose — it imports nothing from the app, so the subsystems 
 import it without a cycle. Gauges whose value is only knowable at scrape time are registered with
 a callback rather than pushed, so nothing has to remember to update them.
 
-Counters live in this process. With `WEB_CONCURRENCY > 1` each worker keeps its own and a scraper
-sums across targets; the library's multiprocess mode is the alternative if that stops being enough,
-and it needs `PROMETHEUS_MULTIPROC_DIR` plus explicit gauge aggregation.
+Counters live in this process, so scale comes from replicas — each is its own scrape target. Forked
+workers share one socket and cannot be, and multiprocess mode reports 0 for the `set_function`
+gauges `register_gauge` builds; `docs/TODO.md` carries the reasoning.
 """
 
 from collections.abc import Callable

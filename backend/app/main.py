@@ -36,8 +36,8 @@ def _configure_app_logging() -> None:
 _configure_app_logging()
 
 
-def _worker_count() -> int:
-    """Read uvicorn's worker count, which the process itself is never told."""
+def _requested_worker_count() -> int:
+    """Read the worker count someone asked for, which is not the one uvicorn runs."""
     try:
         return int(os.environ.get("WEB_CONCURRENCY", "1"))
     except ValueError:
@@ -54,10 +54,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "Starting: environment=%s (Secure cookies OFF, production validation skipped)",
             settings.environment.value,
         )
-    # SSE clients and rate-limit counters both live in process memory, so a second worker gets its
-    # own copy of each: users stop seeing each other's events, and limits multiply by worker count.
-    if _worker_count() > 1:
-        logger.warning("WEB_CONCURRENCY=%d: SSE fan-out and rate limits are per-worker", _worker_count())
+    # Nothing acts on this; scale comes from replicas. Warned rather than dropped, so asking for
+    # workers is not a silent no-op.
+    if _requested_worker_count() > 1:
+        logger.warning(
+            "WEB_CONCURRENCY=%d is ignored; this container runs one worker. Scale with replicas.",
+            _requested_worker_count(),
+        )
     reaper_task: asyncio.Task[None] | None = None
     if settings.reaper_enabled:
         reaper_task = asyncio.create_task(reaper_loop())

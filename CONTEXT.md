@@ -199,9 +199,14 @@ _Last updated: 2026-07-30_
   `http_responses_total{method,route,status_class}` — labelled by route *template*, never the raw
   path, so a scanner cannot mint a series per URL. Status counting is pure-ASGI middleware, never
   `BaseHTTPMiddleware`, which reads a streaming response to completion and would buffer SSE.
-  Nothing scrapes it yet; a Prometheus container joined to the `internal` network reaches it at
-  `frontdashboard-backend:8000/metrics`. The connects-to-resyncs ratio is what says whether
-  reconnect marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads.
+  A Prometheus container joined to the `internal` network scrapes it every 15s at
+  `frontdashboard-backend:8000/metrics`. Two Grafana dashboards live in [`grafana/`](grafana/) —
+  an overview carrying the availability and latency SLIs, and an internals board for pool, hashing
+  and stream detail — with alert expressions in [`prometheus/`](prometheus/). Both are hand-synced
+  to the deployment host, and `test_observability_coverage.py` fails the build if either names a
+  metric the code no longer registers. The connects-to-resyncs ratio is what says whether reconnect
+  marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads, with the
+  sampling caveat in #64.
 - **Rejected auth attempts are counted by cause**, as `auth_failures_total{operation,reason}` —
   both labels closed enumerations, so cardinality is bounded. It exists because `status_class`
   collapses 401 and 403 into one `4xx` series, which makes "wrong password" and "unverified email,
@@ -219,11 +224,12 @@ _Last updated: 2026-07-30_
   alone would lie by omission — saturation is bursty and a 15s scrape lands between bursts — so
   `argon2_seconds{operation}` histograms every hash and verify including its wait for a slot. The
   hash cost is near-constant, which makes everything above the p50 floor queueing.
-- **The worker count is a knob, set to 1.** `WEB_CONCURRENCY` drives uvicorn's `--workers`; at 1 it
-  takes the single-process path, so the default is unchanged. Raising it is not yet safe — SSE
-  clients and rate-limit counters both live in process memory — and the app logs a warning at
-  startup saying so. Migrations stay in the container command, where `alembic/env.py`'s
-  session-scoped advisory lock already serialises replicas starting together.
+- **Scale is by replica; the container runs one worker.** Forked workers share a listening socket,
+  so one `/metrics` scrape reaches an arbitrary one and every counter reads as resetting — a replica
+  is its own scrape target and has no such problem. `WEB_CONCURRENCY` is therefore inert and only
+  logs a warning. A second process of either kind is not yet safe regardless: SSE clients and
+  rate-limit counters both live in process memory. Migrations stay in the container command, where
+  `alembic/env.py`'s session-scoped advisory lock already serialises replicas starting together.
 - **The frontend waits for the backend to start, not to be healthy.** Caddy resolves its upstream
   per request, so container start is enough; waiting on health stalled every restart and served
   nothing meanwhile, instead of the shell plus a 502 on `/api`.

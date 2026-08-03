@@ -28,7 +28,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       ENVIRONMENT: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # Raising this needs the shared SSE fan-out and rate-limit store.
+      # Inert — the container runs one worker. Passed through so raising it warns rather than
+      # quietly doing nothing; scaling by replica also needs `container_name` dropped above.
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
       RESEND_API_KEY: ${RESEND_API_KEY}

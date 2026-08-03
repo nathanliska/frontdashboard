@@ -29,9 +29,10 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 - **Do not infer the deployment posture from the domain.** The product is household-shaped; the
   deployment is not private. One instance is public on the internet with registration open to
   anyone holding a verifiable email, ~100 users and a few concurrent, on one backend worker today.
-- **Scaling readiness is wanted, in both directions.** Adding workers or replicas should be a
-  config change, not a rewrite — so shared state, fan-out and limits belong on that footing even
-  while `WEB_CONCURRENCY` stays at 1. Don't propose deferring this work.
+- **Scaling readiness is wanted, in both directions.** Adding a replica should be a config change,
+  not a rewrite — so shared state, fan-out and limits belong on that footing even while the stack
+  runs one. Replicas are the axis, not uvicorn workers, which break metrics collection outright.
+  Don't propose deferring this work.
 - Abuse, enumeration and data-privacy findings get no small-deployment discount — "only a logged-in
   user can reach it" is not a mitigation when anyone can sign up.
 

@@ -34,7 +34,8 @@ services:
       # a verification link cannot be read — accounts are verified with SQL against this database.
       ENVIRONMENT: production
       LOG_LEVEL: info
-      # Set to 2+ to exercise cross-worker SSE fan-out, which a single worker cannot show.
+      # Inert — the container runs one worker. Cross-process SSE fan-out is exercised with
+      # `compose up --scale backend=2`, which no service here pins a container_name against.
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       FRONTEND_BASE_URL: http://localhost:8080
       CORS_ORIGINS: ""

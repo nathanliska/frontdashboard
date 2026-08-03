@@ -1,0 +1,19 @@
+# Grafana dashboard provider. Copied to the deployment host alongside the JSON files it points at;
+# the repo never reaches that host, so this is a reference copy — see ../../README.md.
+
+apiVersion: 1
+
+providers:
+  - name: frontdashboard
+    orgId: 1
+    folder: FrontDashboard
+    type: file
+    # Grafana re-reads the directory on this interval, so a changed file lands without a restart.
+    updateIntervalSeconds: 30
+    # Read-only in the UI. A dashboard edited in the browser would silently diverge from the file
+    # and be overwritten on the next scan, which is worse than not being editable.
+    allowUiUpdates: false
+    disableDeletion: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
