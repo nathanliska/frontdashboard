@@ -203,13 +203,17 @@ _Last updated: 2026-07-30_
   path, so a scanner cannot mint a series per URL. Status counting is pure-ASGI middleware, never
   `BaseHTTPMiddleware`, which reads a streaming response to completion and would buffer SSE.
   A Prometheus container joined to the `internal` network scrapes it every 15s at
-  `frontdashboard-backend:8000/metrics`. Two Grafana dashboards live in [`grafana/`](grafana/) —
+  `frontdashboard-backend:8000/metrics`. Two Grafana dashboards live in [`observability/`](observability/) —
   an overview carrying the availability and latency SLIs, and an internals board for pool, hashing
-  and stream detail — with alert expressions in [`prometheus/`](prometheus/). Both are hand-synced
-  to the deployment host, and `test_observability_coverage.py` fails the build if either names a
+  and stream detail — with fifteen alert rules beside them in Prometheus format, which is the one
+  Grafana's rule importer accepts. All three are loaded by hand through the Grafana UI rather than
+  reaching the deployment host, and `test_observability_coverage.py` fails the build if any names a
   metric the code no longer registers. The connects-to-resyncs ratio is what says whether reconnect
-  marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads, with the
-  sampling caveat in #64.
+  marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads. Both
+  saturation gauges report the peak since the previous scrape rather than the instant value, so a
+  burst that opens and closes between two scrapes still counts. Transactional email is counted by
+  outcome because it is sent from a background task: a failed send answers 2xx and reaches no other
+  signal.
 - **Rejected auth attempts are counted by cause**, as `auth_failures_total{operation,reason}` —
   both labels closed enumerations, so cardinality is bounded. It exists because `status_class`
   collapses 401 and 403 into one `4xx` series, which makes "wrong password" and "unverified email,

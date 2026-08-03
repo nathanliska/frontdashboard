@@ -1,6 +1,22 @@
 {
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "name": "Backend restarts",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 96, 96, 1)",
+        "titleFormat": "Backend restarted",
+        "target": {
+          "expr": "changes(process_start_time_seconds{job=\"frontdashboard\"}[$__interval]) > 0",
+          "refId": "restarts"
+        }
+      }
+    ]
   },
   "editable": true,
   "graphTooltip": 1,
@@ -22,6 +38,7 @@
   ],
   "panels": [
     {
+      "id": 1,
       "type": "stat",
       "title": "DB pool peak (1h)",
       "description": "Peak across the window's samples, rather than the value at one scrape. Still blind to a burst that opens and closes between scrapes \u2014 the gauge is read at scrape time and nothing records the interval's true high-water mark.",
@@ -79,7 +96,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(max_over_time(frontdashboard_db_pool_checked_out[1h])) / sum(frontdashboard_db_pool_limit)",
+          "expr": "sum(max_over_time(frontdashboard_db_pool_checked_out_peak[1h])) / sum(frontdashboard_db_pool_limit)",
           "legendFormat": "",
           "range": true,
           "refId": "A"
@@ -87,6 +104,7 @@
       ]
     },
     {
+      "id": 2,
       "type": "stat",
       "title": "Resync rate (24h)",
       "description": "Share of reconnects that cost a full refetch. Near 0 means the watermark is working.",
@@ -152,6 +170,7 @@
       ]
     },
     {
+      "id": 3,
       "type": "timeseries",
       "title": "Argon2 latency & saturation",
       "datasource": {
@@ -322,6 +341,7 @@
       ]
     },
     {
+      "id": 4,
       "type": "timeseries",
       "title": "DB pool",
       "description": "Summed across replicas, which is the number that must stay under Postgres max_connections \u2014 each replica carries its own pool_size + max_overflow.",
@@ -453,7 +473,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(max_over_time(frontdashboard_db_pool_checked_out[$__rate_interval]))",
+          "expr": "sum(max_over_time(frontdashboard_db_pool_checked_out_peak[$__rate_interval]))",
           "legendFormat": "checked out (peak)",
           "range": true,
           "refId": "A"
@@ -494,6 +514,7 @@
       ]
     },
     {
+      "id": 5,
       "type": "timeseries",
       "title": "SSE connects vs resyncs",
       "description": "Resyncs should stay far below connects. Evictions rising is finding #52 showing up in practice. Shown as count per hour: at this traffic a 5-minute rate is zero almost always.",
@@ -598,6 +619,7 @@
       ]
     },
     {
+      "id": 6,
       "type": "timeseries",
       "title": "SSE stream lifetime (p50 / p95)",
       "description": "Healthy streams sit near the 30-minute cap. A collapse toward zero is clients flapping \u2014 which connect counts alone cannot distinguish from healthy traffic.",
@@ -680,6 +702,7 @@
       ]
     },
     {
+      "id": 7,
       "type": "timeseries",
       "title": "Events delivered & backpressure",
       "description": "Delivery is the point of the whole SSE system and nothing else measures it. Queue depth is backpressure before it becomes an eviction.",
@@ -762,9 +785,10 @@
       ]
     },
     {
+      "id": 8,
       "type": "timeseries",
-      "title": "Rate limiting & reaper failures",
-      "description": "Both were collected and shown nowhere. A reaper retrying forever keeps the freshness stat green.",
+      "title": "Background failures",
+      "description": "Things that fail where no request ever 5xxs for them. An email send happens after its response has gone, so this is the only place it shows.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -840,10 +864,33 @@
           "legendFormat": "reaper failures / hr",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(frontdashboard_email_sends_total{outcome=\"failed\"}[1h]))",
+          "legendFormat": "email sends failed / hr",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(frontdashboard_email_sends_total{outcome=\"dropped\"}[1h]))",
+          "legendFormat": "email dropped, unconfigured / hr",
+          "range": true,
+          "refId": "D"
         }
       ]
     },
     {
+      "id": 9,
       "type": "timeseries",
       "title": "Process memory & CPU",
       "datasource": {
@@ -955,6 +1002,7 @@
       ]
     },
     {
+      "id": 10,
       "type": "timeseries",
       "title": "Open FDs vs SSE clients",
       "datasource": {

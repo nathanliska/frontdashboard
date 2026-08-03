@@ -56,6 +56,14 @@ SSE_STREAM_SECONDS = Histogram(
     buckets=(1, 5, 15, 60, 300, 900, 1500, 1800, 2100),
 )
 
+# A send happens in a background task after the response has gone, so a failure is invisible to
+# every other signal here: the caller already got its 2xx and no route ever 5xxs.
+EMAIL_SENDS = Counter(
+    f"{_PREFIX}email_sends",
+    "Transactional email attempts, by kind and outcome.",
+    ["operation", "outcome"],
+)
+
 REAPER_LAST_SUCCESS = Gauge(
     f"{_PREFIX}reaper_last_success_unixtime",
     "Unix time of the last completed retention sweep; staleness means the sweep died.",
@@ -87,6 +95,37 @@ def observe_response(method: str, route: str, status_code: int, *, seconds: floa
     HTTP_RESPONSES.labels(method=method, route=route, status_class=f"{status_code // 100}xx").inc()
     if seconds is not None:
         HTTP_REQUEST_SECONDS.labels(route=route).observe(seconds)
+
+
+class PeakGauge:
+    """Highest value seen since the last read, for a quantity that is transient by nature.
+
+    A connection is held for milliseconds and a queue drains in one tick, so a gauge sampled every
+    15s reads zero through the bursts it exists to catch. Whatever holds one of these has to
+    `record` on the path that makes the value rise; nothing else needs to know.
+    """
+
+    def __init__(self) -> None:
+        self._peak = 0.0
+
+    def record(self, value: float) -> None:
+        """Note a value the quantity just reached."""
+        self._peak = max(self._peak, value)
+
+    def read(self, current: float) -> float:
+        """Report the interval's peak and start a new one.
+
+        Reset is to `current`, never to zero: a resource still held after the scrape has not gone
+        away, and reporting it free would be a worse lie than the one this replaces.
+        """
+        peak = max(self._peak, current)
+        self._peak = current
+        return peak
+
+
+# Owned here so the code that makes the value rise can reach them without importing a router.
+SSE_QUEUE_PEAK = PeakGauge()
+DB_POOL_PEAK = PeakGauge()
 
 
 def register_gauge(name: str, documentation: str, reader: Callable[[], float]) -> Gauge:

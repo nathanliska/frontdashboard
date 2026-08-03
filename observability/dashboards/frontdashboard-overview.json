@@ -1,6 +1,22 @@
 {
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "name": "Backend restarts",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 96, 96, 1)",
+        "titleFormat": "Backend restarted",
+        "target": {
+          "expr": "changes(process_start_time_seconds{job=\"frontdashboard\"}[$__interval]) > 0",
+          "refId": "restarts"
+        }
+      }
+    ]
   },
   "editable": true,
   "graphTooltip": 1,
@@ -22,6 +38,7 @@
   ],
   "panels": [
     {
+      "id": 1,
       "type": "stat",
       "title": "Backend up",
       "datasource": {
@@ -100,6 +117,7 @@
       ]
     },
     {
+      "id": 2,
       "type": "stat",
       "title": "Restarts (24h)",
       "datasource": {
@@ -166,6 +184,7 @@
       ]
     },
     {
+      "id": 3,
       "type": "stat",
       "title": "Served in 500ms (6h)",
       "datasource": {
@@ -233,6 +252,7 @@
       ]
     },
     {
+      "id": 4,
       "type": "stat",
       "title": "Non-5xx (6h)",
       "datasource": {
@@ -300,6 +320,7 @@
       ]
     },
     {
+      "id": 5,
       "type": "stat",
       "title": "SSE clients",
       "description": "Streams open right now. A gauge, so the raw value is the answer.",
@@ -357,6 +378,7 @@
       ]
     },
     {
+      "id": 6,
       "type": "stat",
       "title": "Since retention sweep",
       "description": "The only silent failure here: if the reaper dies the app looks fine while trash never purges.",
@@ -418,6 +440,7 @@
       ]
     },
     {
+      "id": 7,
       "type": "timeseries",
       "title": "Request rate by route",
       "description": "Counters are monotonic, so this is rate() not the raw total. Scrape and healthcheck traffic filtered out.",
@@ -488,6 +511,7 @@
       ]
     },
     {
+      "id": 8,
       "type": "timeseries",
       "title": "Responses by status class",
       "description": "5xx is the one to watch. 4xx includes every signed-out /auth/me, which is normal.",
@@ -558,6 +582,7 @@
       ]
     },
     {
+      "id": 9,
       "type": "timeseries",
       "title": "Request latency (p95)",
       "description": "Time to begin the response. SSE is measured on its headers, so a half-hour stream does not skew this.",
@@ -629,6 +654,7 @@
       ]
     },
     {
+      "id": 10,
       "type": "timeseries",
       "title": "Auth failures by cause",
       "description": "session/no_cookie is background noise \u2014 an expired session or a bot hitting /api. Drawn unfilled so a real login failure is not buried under it; a no_cookie spike still matters.",

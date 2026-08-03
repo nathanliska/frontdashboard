@@ -1,0 +1,206 @@
+# Alert rules in Prometheus format, which is what Grafana's rule importer accepts — see README.md.
+#
+# Every expression carries its own comparison and so returns a series only while firing. That is
+# also why BackendDown and SiteDown count rather than compare: `up == 0` returns 0, not a boolean,
+# so a threshold placed on its value would never trip.
+#
+# `__grafana_alert_rule_uid__` pins each rule's identity, so re-importing this file updates the
+# rules in place instead of creating a second copy of all fifteen. `__dashboardUid__` and
+# `__panelId__` put a link to the relevant panel on the alert — import the dashboards first.
+
+groups:
+  - name: frontdashboard-availability
+    interval: 30s
+    rules:
+      - alert: BackendDown
+        expr: count(up{job="frontdashboard"} == 0) > 0
+        for: 2m
+        labels:
+          severity: critical
+          __grafana_alert_rule_uid__: backenddown
+        annotations:
+          summary: Backend is not answering scrapes
+          description: Prometheus cannot reach /metrics. Check `docker logs frontdashboard-backend`.
+          runbook_url: https://github.com/nathanliska/frontdashboard/blob/main/docs/runbooks/rollback.md
+          __dashboardUid__: frontdashboard
+          __panelId__: "1"
+
+      - alert: BackendRestartLoop
+        expr: max(changes(process_start_time_seconds{job="frontdashboard"}[1h])) > 3
+        for: 5m
+        labels:
+          severity: critical
+          __grafana_alert_rule_uid__: backendrestartloop
+        annotations:
+          summary: Backend has restarted {{ $value }} times in an hour
+          description: Crash loop. Roll back to the previous image rather than debugging in place.
+          runbook_url: https://github.com/nathanliska/frontdashboard/blob/main/docs/runbooks/rollback.md
+          __dashboardUid__: frontdashboard
+          __panelId__: "2"
+
+      - alert: ServerErrors
+        expr: sum(rate(frontdashboard_http_responses_total{status_class="5xx"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+          __grafana_alert_rule_uid__: servererrors
+        annotations:
+          summary: Backend is serving 5xx responses
+          description: '{{ $value | printf "%.3f" }} req/s failing. Check the request-rate panel for the route.'
+          runbook_url: https://github.com/nathanliska/frontdashboard/blob/main/docs/runbooks/rollback.md
+          __dashboardUid__: frontdashboard
+          __panelId__: "8"
+
+  - name: frontdashboard-latency
+    interval: 1m
+    rules:
+      # Threshold at 0.5 rather than 0: increase() extrapolates to the window edges, so the
+      # difference of two of them lands near but not exactly on zero when nothing was slow.
+      - alert: SlowRequests
+        expr: sum(increase(frontdashboard_http_request_seconds_count{route!="/api/health/ready"}[1h])) - sum(increase(frontdashboard_http_request_seconds_bucket{le="2.5",route!="/api/health/ready"}[1h])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: slowrequests
+        annotations:
+          summary: '{{ $value | printf "%.0f" }} request(s) took over 2.5s in the last hour'
+          description: Check the request-latency panel for the route, then the pool and Argon2 panels.
+          __dashboardUid__: frontdashboard
+          __panelId__: "9"
+
+      - alert: LatencyObjectiveBreached
+        expr: (sum(rate(frontdashboard_http_request_seconds_bucket{le="0.5",route!="/api/health/ready"}[6h])) / sum(rate(frontdashboard_http_request_seconds_count{route!="/api/health/ready"}[6h]))) < 0.95 and sum(increase(frontdashboard_http_request_seconds_count{route!="/api/health/ready"}[6h])) > 50
+        for: 15m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: latencyobjectivebreached
+        annotations:
+          summary: Under 95% of requests served in 500ms over 6h
+          description: Sustained degradation rather than a spike. Nothing is down; users are waiting.
+          __dashboardUid__: frontdashboard
+          __panelId__: "9"
+
+  - name: frontdashboard-retention
+    interval: 1m
+    rules:
+      - alert: RetentionSweepStale
+        expr: time() - max(frontdashboard_reaper_last_success_unixtime) > 93600
+        for: 10m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: retentionsweepstale
+        annotations:
+          summary: No retention sweep has completed in over 26 hours
+          description: Trashed dashboards are not being purged and the 30-day promise is slipping.
+          __dashboardUid__: frontdashboard
+          __panelId__: "6"
+
+      - alert: ReaperFailing
+        expr: sum(increase(frontdashboard_reaper_failures_total[1h])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: reaperfailing
+        annotations:
+          summary: Retention sweep raised and is retrying
+          description: A failed sweep rolls back the whole tick — often a table added without a matching cascade.
+          __dashboardUid__: frontdashboard-internals
+          __panelId__: "8"
+
+      - alert: EmailSendsFailing
+        expr: sum(increase(frontdashboard_email_sends_total{outcome=~"failed|dropped"}[1h])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          __grafana_alert_rule_uid__: emailsendsfailing
+        annotations:
+          summary: '{{ $value | printf "%.0f" }} transactional email(s) failed in the last hour'
+          description: New sign-ups cannot verify and password resets cannot complete.
+          __dashboardUid__: frontdashboard-internals
+          __panelId__: "8"
+
+  - name: frontdashboard-saturation
+    interval: 1m
+    rules:
+      - alert: DatabasePoolSaturated
+        expr: sum(max_over_time(frontdashboard_db_pool_checked_out_peak[5m])) / sum(frontdashboard_db_pool_limit) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: databasepoolsaturated
+        annotations:
+          summary: Connection pool over 80% of its ceiling
+          description: Requests will start waiting on db_pool_timeout_seconds and then failing.
+          __dashboardUid__: frontdashboard-internals
+          __panelId__: "4"
+
+      - alert: Argon2Queueing
+        expr: histogram_quantile(0.95, sum by (le) (rate(frontdashboard_argon2_seconds_bucket[10m]))) > 0.15
+        for: 10m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: argon2queueing
+        annotations:
+          summary: Logins are queued behind the Argon2 concurrency limit
+          description: p95 far above the ~34ms hashing floor is contention for a limiter slot, not slow hashing.
+          __dashboardUid__: frontdashboard-internals
+          __panelId__: "3"
+
+      - alert: SSEClientsEvicted
+        expr: sum(increase(frontdashboard_sse_evictions_total[1h])) > 0
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: sseclientsevicted
+        annotations:
+          summary: SSE clients dropped for falling behind their queue
+          description: Backpressure became eviction. Those clients lost real-time until they reconnected.
+          __dashboardUid__: frontdashboard-internals
+          __panelId__: "5"
+
+  - name: frontdashboard-monitoring-health
+    interval: 1m
+    rules:
+      - alert: BackendTargetMissing
+        expr: absent(up{job="frontdashboard"})
+        for: 10m
+        labels:
+          severity: critical
+          __grafana_alert_rule_uid__: backendtargetmissing
+        annotations:
+          summary: No scrape target for the backend
+          description: Every frontdashboard alert is blind until this is fixed.
+          __dashboardUid__: frontdashboard
+          __panelId__: "1"
+
+      - alert: PublicProbeMissing
+        expr: absent(probe_success{job="blackbox-public"})
+        for: 10m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: publicprobemissing
+        annotations:
+          summary: Nothing is probing the public site
+          description: SiteDown and CertificateExpiringSoon cannot fire. See the Prometheus section of README.md.
+
+  - name: frontdashboard-public
+    interval: 30s
+    rules:
+      - alert: SiteDown
+        expr: count by (instance) (probe_success{job="blackbox-public"} == 0) > 0
+        for: 3m
+        labels:
+          severity: critical
+          __grafana_alert_rule_uid__: sitedown
+        annotations:
+          summary: '{{ $labels.instance }} is not answering from the public internet'
+          description: 'The backend can be healthy while this fires: Caddy, the frontend container, or Cloudflare.'
+
+      - alert: CertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox-public"} - time() < 7 * 86400
+        for: 1h
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: certificateexpiringsoon
+        annotations:
+          summary: TLS certificate for {{ $labels.instance }} expires in under 7 days
+          description: Caddy renews unattended, so this means renewal has been failing for weeks. Check its logs.

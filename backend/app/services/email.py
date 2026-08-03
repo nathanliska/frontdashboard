@@ -6,6 +6,7 @@ from string import Template
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from app import metrics
 from app.config import Environment, settings
 from app.services.dev_mail import write_dev_message
 from app.services.email_templates import EXISTING_ACCOUNT_HTML, PASSWORD_RESET_HTML, VERIFICATION_HTML
@@ -29,17 +30,21 @@ def _expiry_text(hours: int) -> str:
     return f"This link expires in {hours} {unit}."
 
 
-async def _deliver(message: _Message) -> None:
+async def _deliver(message: _Message, *, operation: str) -> None:
     """Send the message, or park it in the development outbox when email isn't configured.
 
     Rendering is deliberately kept out of here: every caller produces a complete `_Message`, so the
     outbox holds exactly what Resend would have been handed rather than a hand-assembled summary.
+    `operation` exists only to label the counter, since a failure here reaches nothing else.
     """
     if settings.resend_api_key:
         try:
             await asyncio.to_thread(_call_resend, message)
         except RuntimeError:
+            metrics.EMAIL_SENDS.labels(operation=operation, outcome="failed").inc()
             logger.exception("Failed to send %r to %s", message.subject, message.to)
+        else:
+            metrics.EMAIL_SENDS.labels(operation=operation, outcome="sent").inc()
         return
 
     if settings.environment is Environment.development:
@@ -50,12 +55,14 @@ async def _deliver(message: _Message) -> None:
             html=message.html,
             text=message.text,
         )
+        metrics.EMAIL_SENDS.labels(operation=operation, outcome="outbox").inc()
         # The path, never the body: these messages carry live account-takeover links.
         logger.info("Email is not configured; wrote %r for %s to %s", message.subject, message.to, path)
         return
 
     # Not development and no key: dropping mail silently would strand users mid-verification with
     # nothing in the record to explain it.
+    metrics.EMAIL_SENDS.labels(operation=operation, outcome="dropped").inc()
     logger.error("Email is not configured; dropped %r for %s", message.subject, message.to)
 
 
@@ -67,7 +74,8 @@ async def send_verification_email(email: str, verification_url: str) -> None:
             subject="Verify your FrontDashboard email",
             html=Template(VERIFICATION_HTML).substitute(verification_url=verification_url, expiry_text=expiry),
             text=f"Welcome to FrontDashboard.\n\nVerify your email address here:\n{verification_url}\n\n{expiry}",
-        )
+        ),
+        operation="verification",
     )
 
 
@@ -79,7 +87,8 @@ async def send_password_reset_email(email: str, reset_url: str) -> None:
             subject="Reset your FrontDashboard password",
             html=Template(PASSWORD_RESET_HTML).substitute(reset_url=reset_url, expiry_text=expiry),
             text=(f"Reset your FrontDashboard password here:\n{reset_url}\n\n{expiry}\n\nIf you did not request this, you can ignore this email."),
-        )
+        ),
+        operation="password_reset",
     )
 
 
@@ -104,7 +113,8 @@ async def send_existing_account_email(email: str) -> None:
                 f"Forgot your password? Reset it here:\n{reset_url}\n\n"
                 "If this wasn't you, no action is needed."
             ),
-        )
+        ),
+        operation="existing_account",
     )
 
 

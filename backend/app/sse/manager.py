@@ -100,6 +100,7 @@ class SseManager:
                 continue
             try:
                 client.queue.put_nowait(message)
+                metrics.SSE_QUEUE_PEAK.record(client.queue.qsize())
             except asyncio.QueueFull:
                 # Too far behind to catch up: drop the backlog and leave only a
                 # close sentinel, so the generator ends the stream and the client

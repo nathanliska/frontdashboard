@@ -10,6 +10,7 @@ counts and activity volume to anyone.
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from sqlalchemy import event
 
 from app import metrics
 from app.auth.hashing import argon2_limiter
@@ -42,10 +43,16 @@ def _overflow() -> float:
 metrics.register_gauge("sse_clients", "SSE streams currently open.", lambda: manager.client_count)
 metrics.register_gauge(
     "sse_queue_depth_max",
-    "Deepest queue across open streams; backpressure before it becomes eviction.",
-    lambda: manager.max_queue_depth,
+    "Deepest queue seen since the last scrape; backpressure before it becomes eviction.",
+    lambda: metrics.SSE_QUEUE_PEAK.read(manager.max_queue_depth),
 )
-metrics.register_gauge("db_pool_checked_out", "Connections handed out right now.", lambda: _pool_reader("checkedout"))
+# Fires with the new connection already counted, so the handler sees the true running total.
+event.listen(engine.sync_engine.pool, "checkout", lambda *_: metrics.DB_POOL_PEAK.record(_pool_reader("checkedout")))
+metrics.register_gauge(
+    "db_pool_checked_out_peak",
+    "Peak connections handed out since the last scrape; a burst between scrapes has no other witness.",
+    lambda: metrics.DB_POOL_PEAK.read(_pool_reader("checkedout")),
+)
 metrics.register_gauge("db_pool_size", "Connections the pool keeps open.", lambda: _pool_reader("size"))
 metrics.register_gauge("db_pool_overflow", "Connections open beyond pool_size.", _overflow)
 metrics.register_gauge(

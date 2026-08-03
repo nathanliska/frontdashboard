@@ -19,14 +19,17 @@ from prometheus_client import REGISTRY
 import app.routers.metrics  # noqa: F401
 
 _REPO = Path(__file__).resolve().parents[2]
-_DASHBOARDS = sorted((_REPO / "grafana").glob("*.json"))
-_ALERTS = _REPO / "prometheus" / "alerts.yml"
+_DASHBOARDS = sorted((_REPO / "observability" / "dashboards").glob("*.json"))
+_ALERTS = _REPO / "observability" / "alerts.yml"
 
 # A counter's samples end in `_total`, a histogram's in `_bucket`/`_sum`/`_count`, but the metric
 # family is registered under the bare name. Queries name the sample, so both forms have to resolve.
 _SAMPLE_SUFFIXES = ("_bucket", "_count", "_sum", "_total")
 
 _METRIC_REFERENCE = re.compile(r"\bfrontdashboard_\w+\b")
+
+# The two keys are always written adjacent, which is what lets this pair them without a YAML parser.
+_PANEL_LINK = re.compile(r'__dashboardUid__:\s*(\S+)\s*\n\s*__panelId__:\s*"(\d+)"')
 
 
 def _exposed_metric_names() -> set[str]:
@@ -39,8 +42,8 @@ def _referenced_metric_names() -> dict[str, set[str]]:
     found: dict[str, set[str]] = {}
     for path in [*_DASHBOARDS, _ALERTS]:
         text = path.read_text()
-        # The dashboards are JSON, the rules are YAML; only metric names are needed from either,
-        # so a regex over the raw text avoids a YAML parser as a test dependency.
+        # Both are structured text, but only metric names are needed, so a regex over the raw
+        # bytes avoids a YAML parser as a test dependency.
         names = set(_METRIC_REFERENCE.findall(text))
         if names:
             found[str(path.relative_to(_REPO))] = names
@@ -55,7 +58,7 @@ def _resolves(name: str, exposed: set[str]) -> bool:
 
 def test_observability_files_are_present() -> None:
     """A vacuous pass is the failure mode this whole module exists to avoid."""
-    assert _DASHBOARDS, "no dashboards found in grafana/ — this test would pass having checked nothing"
+    assert _DASHBOARDS, "no dashboards found — this test would pass having checked nothing"
     assert _ALERTS.is_file(), f"{_ALERTS} is missing"
 
 
@@ -68,10 +71,18 @@ def test_every_referenced_metric_exists() -> None:
     assert not unknown, f"metrics named but not registered: {unknown}"
 
 
+def test_alert_panel_links_resolve() -> None:
+    """An alert's "go to panel" button is followed under pressure, so a dead one costs real time."""
+    panels = {(doc["uid"], panel["id"]) for doc in (json.loads(path.read_text()) for path in _DASHBOARDS) for panel in doc["panels"]}
+    linked = {(uid, int(panel_id)) for uid, panel_id in _PANEL_LINK.findall(_ALERTS.read_text())}
+    assert linked, "no alert links a panel — this test would pass having checked nothing"
+    assert not linked - panels, f"alerts link panels that do not exist: {sorted(linked - panels)}"
+
+
 def test_dashboards_parse_and_declare_a_datasource_variable() -> None:
-    """Provisioning rejects `__inputs`, and manual import needs *something* to bind to."""
+    """Panels need something to bind to, and `__inputs` makes that a prompt instead of a variable."""
     for path in _DASHBOARDS:
         doc = json.loads(path.read_text())
-        assert "__inputs" not in doc, f"{path.name} carries __inputs, which provisioning cannot load"
+        assert "__inputs" not in doc, f"{path.name} carries __inputs, which makes import a prompt"
         kinds = {var.get("type") for var in doc.get("templating", {}).get("list", [])}
         assert "datasource" in kinds, f"{path.name} has no datasource variable to bind panels to"

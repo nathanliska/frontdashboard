@@ -259,7 +259,7 @@ async def test_metrics_endpoint_reports_pool_gauges() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         body = (await client.get("/metrics")).text
 
-    assert "frontdashboard_db_pool_checked_out" in body
+    assert "frontdashboard_db_pool_checked_out_peak" in body
     assert "frontdashboard_db_pool_limit" in body
     # Never negative: SQLAlchemy counts overflow up from -pool_size, which reads as nonsense.
     overflow = next(line for line in body.splitlines() if line.startswith("frontdashboard_db_pool_overflow "))
