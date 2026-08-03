@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Notification } from '../api/notifications'
 import { ActivityFeed } from '../components/notifications/ActivityFeed'
-import { ActivityFilterSelect } from '../components/notifications/ActivityFilterSelect'
+import { ActivityFilter } from '../components/notifications/ActivityFilter'
 import { NotificationFeed } from '../components/notifications/NotificationFeed'
 import { useNotificationsStore } from '../stores/notifications'
 import {
@@ -124,7 +124,7 @@ export function NotificationsPage() {
               <p className="min-w-0 text-xs text-zinc-500 truncate">
                 Activity now shows your own timeline.
               </p>
-              <ActivityFilterSelect value={activityFilter} onChange={setActivityFilter} />
+              <ActivityFilter value={activityFilter} onChange={setActivityFilter} />
             </div>
             {activityFailed && !activityLoading ? (
               <RetryState message="Couldn't load activity." onRetry={() => void loadActivity()} />

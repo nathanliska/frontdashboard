@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
-from app.models.activity import ActivityEvent, EventType
+from app.models.activity import ActivityEvent
 from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.notifications import (
@@ -154,12 +154,6 @@ async def mark_all_read(
 
 activity_router = APIRouter(prefix="/activity", tags=["activity"])
 
-# Kept out of the feed by default: a checkbox is toggled far too often to read as a timeline
-# entry. The frontend hides the same set from live SSE appends — `FEED_HIDDEN_EVENT_TYPES` in
-# notificationFeedUtils.ts, pinned to this one by test_activity.py.
-FEED_HIDDEN_EVENT_TYPES: tuple[EventType, ...] = (EventType.list_item_checked,)
-
-
 # One filter in the UI can name a whole category, so the bound is "more than there are event
 # types" rather than a page size. Past it the request is noise, not a filter.
 _MAX_EVENT_TYPE_FILTERS = 40
@@ -174,8 +168,8 @@ async def list_activity(
 ) -> list[ActivityEventResponse]:
     """Return the caller's own activity feed, optionally narrowed to named event types.
 
-    Repeat `event_type` to ask for several. Naming any type overrides the default hiding —
-    asking for a type is asking to see it, `FEED_HIDDEN_EVENT_TYPES` included.
+    Repeat `event_type` to ask for several. Nothing is withheld otherwise: the feed and the log
+    agree, and the volume that used to justify hiding is collapsed in the client instead.
     """
     if event_type is not None and len(event_type) > _MAX_EVENT_TYPE_FILTERS:
         raise HTTPException(
@@ -185,11 +179,8 @@ async def list_activity(
 
     q = select(ActivityEvent).where(ActivityEvent.actor_id == current_user.id)
 
-    q = (
-        q.where(ActivityEvent.event_type.in_(event_type))
-        if event_type
-        else q.where(ActivityEvent.event_type.notin_([hidden.value for hidden in FEED_HIDDEN_EVENT_TYPES]))
-    )
+    if event_type:
+        q = q.where(ActivityEvent.event_type.in_(event_type))
     if before_event_id is not None:
         q = q.where(ActivityEvent.event_id < before_event_id)
 

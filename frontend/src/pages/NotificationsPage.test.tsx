@@ -121,7 +121,7 @@ describe('NotificationsPage', () => {
     await screen.findByText('You granted viewer access to "Roadmap".')
 
     mockedApiGetActivity.mockResolvedValue([])
-    fireEvent.change(screen.getByLabelText('Filter activity'), { target: { value: 'calendar' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Calendar' }))
 
     await screen.findByText('No activity of this kind yet.')
     expect(mockedApiGetActivity).toHaveBeenLastCalledWith({
@@ -135,7 +135,7 @@ describe('NotificationsPage', () => {
     })
   })
 
-  it('renders a run of widget moves as one counted row', async () => {
+  it('renders a run of widget moves as one row that states its own count', async () => {
     const layoutEvent = (eventId: number) => ({
       event_id: eventId,
       event_type: 'dashboard.updated',
@@ -151,8 +151,9 @@ describe('NotificationsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^activity$/i }))
 
-    expect(await screen.findAllByText('You rearranged widgets on "Roadmap".')).toHaveLength(1)
-    expect(screen.getByText('×3')).toBeInTheDocument()
+    expect(await screen.findAllByText('You rearranged widgets on "Roadmap" 3 times.')).toHaveLength(
+      1,
+    )
   })
 
   it('refetches when the caller forces it, which is how a resync recovers', async () => {

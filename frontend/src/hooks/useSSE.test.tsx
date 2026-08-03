@@ -383,7 +383,7 @@ describe('useSSE', () => {
       expect(useNotificationsStore.getState().activity).toEqual([])
     })
 
-    it('drops an event type the endpoint hides, which a reload would take away again', async () => {
+    it('appends checkbox churn, which the endpoint serves too', async () => {
       render(<TestHarness />)
 
       act(() => {
@@ -403,7 +403,7 @@ describe('useSSE', () => {
       await waitFor(() => {
         expect(handleListResourceEvent).toHaveBeenCalled()
       })
-      expect(useNotificationsStore.getState().activity).toEqual([])
+      expect(useNotificationsStore.getState().activity).toHaveLength(1)
     })
   })
 })

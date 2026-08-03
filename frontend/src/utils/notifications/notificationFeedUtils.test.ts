@@ -3,6 +3,7 @@ import type { ActivityEvent, Notification } from '../../api/notifications'
 import { ROUTES } from '../../routes'
 import {
   formatActivityEvent,
+  formatActivityGroup,
   getNotificationDestination,
   getNotificationTypeLabel,
   groupActivityEvents,
@@ -25,6 +26,19 @@ function activityEvent(
     created_at: '2026-07-17T18:51:34.000Z',
     ...overrides,
   }
+}
+
+function checkedEvent(
+  eventId: number,
+  listId = 'list-1',
+  text = 'Milk',
+  createdAt = '2026-07-17T18:51:34.000Z',
+): ActivityEvent {
+  return activityEvent(
+    'list.item.checked',
+    { list_id: listId, list_name: 'Groceries', text, values: { checked: true } },
+    { event_id: eventId, entity_id: `item-${eventId}`, created_at: createdAt },
+  )
 }
 
 function layoutEvent(
@@ -240,13 +254,156 @@ describe('isOwnFeedActivity', () => {
     expect(isOwnFeedActivity(layoutEvent(1), 'user-2')).toBe(false)
   })
 
-  it('drops a type the endpoint hides, which would vanish on the next reload', () => {
+  it('keeps checkbox churn, which the endpoint also serves', () => {
     const checked = activityEvent('list.item.checked', { values: { checked: true } })
-    expect(isOwnFeedActivity(checked, 'user-1')).toBe(false)
+    expect(isOwnFeedActivity(checked, 'user-1')).toBe(true)
   })
 
   it('drops everything when nobody is signed in', () => {
     expect(isOwnFeedActivity(layoutEvent(1), null)).toBe(false)
+  })
+})
+
+describe('collapsing checkbox churn', () => {
+  it('collapses a run on one list, keyed on the list rather than the item', () => {
+    const groups = groupActivityEvents([
+      checkedEvent(5, 'list-1', 'Bread'),
+      checkedEvent(4, 'list-1', 'Eggs'),
+      checkedEvent(3, 'list-1', 'Milk'),
+    ])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].count).toBe(3)
+  })
+
+  it('does not merge two different lists', () => {
+    const groups = groupActivityEvents([checkedEvent(2, 'list-1'), checkedEvent(1, 'list-2')])
+
+    expect(groups.map((group) => group.count)).toEqual([1, 1])
+  })
+
+  it('summarizes the run against the list, because each event names a different item', () => {
+    const [group] = groupActivityEvents([
+      checkedEvent(5, 'list-1', 'Bread'),
+      checkedEvent(4, 'list-1', 'Eggs'),
+      checkedEvent(3, 'list-1', 'Milk'),
+    ])
+    const row = formatActivityGroup(group)
+
+    // Naming the newest would claim the other two never happened.
+    expect(row.summary).toBe('You updated 3 checkboxes in "Groceries".')
+  })
+
+  it('still names the item when the run is one event', () => {
+    const [group] = groupActivityEvents([checkedEvent(1, 'list-1', 'Milk')])
+
+    expect(formatActivityGroup(group).summary).toBe('You checked "Milk" in "Groceries".')
+  })
+
+  it('leaves layout churn on the counted-badge shape, where every event said the same thing', () => {
+    const [group] = groupActivityEvents([layoutEvent(2), layoutEvent(1)])
+    const row = formatActivityGroup(group)
+
+    expect(row.summary).toBe('You rearranged widgets on "Home" 2 times.')
+  })
+})
+
+describe('counting what a collapsed run actually touched', () => {
+  function toggle(eventId: number, itemId: string): ActivityEvent {
+    return activityEvent(
+      'list.item.checked',
+      { list_id: 'list-1', list_name: 'Groceries', text: 'Milk', values: { checked: true } },
+      { event_id: eventId, entity_id: itemId, created_at: '2026-07-17T18:51:34.000Z' },
+    )
+  }
+
+  it('counts checkboxes, not events, when one item is toggled more than once', () => {
+    const [group] = groupActivityEvents([
+      toggle(3, 'item-a'),
+      toggle(2, 'item-b'),
+      toggle(1, 'item-a'),
+    ])
+
+    expect(group.count).toBe(3)
+    expect(group.entities).toBe(2)
+    expect(formatActivityGroup(group).summary).toBe('You updated 2 checkboxes in "Groceries".')
+  })
+
+  it('reads as the item itself when a run only ever touched one', () => {
+    const [group] = groupActivityEvents([
+      toggle(3, 'item-a'),
+      toggle(2, 'item-a'),
+      toggle(1, 'item-a'),
+    ])
+    const row = formatActivityGroup(group)
+
+    // "3 checkboxes" would be three items; it was one, three times.
+    expect(row.summary).toBe('You checked "Milk" in "Groceries" 3 times.')
+  })
+
+  it('collapses repeated edits to one entity, where every row reads alike', () => {
+    const edit = (eventId: number) =>
+      activityEvent(
+        'list.item.updated',
+        { list_name: 'Chores', text: 'Vacuum' },
+        { event_id: eventId, entity_id: 'item-a', created_at: '2026-07-17T18:51:34.000Z' },
+      )
+    const [group] = groupActivityEvents([edit(2), edit(1)])
+
+    expect(formatActivityGroup(group).summary).toBe('You updated "Vacuum" in "Chores" 2 times.')
+  })
+
+  it('does not merge edits to two different items', () => {
+    const edit = (eventId: number, itemId: string) =>
+      activityEvent(
+        'list.item.updated',
+        { text: 'Vacuum' },
+        { event_id: eventId, entity_id: itemId },
+      )
+    expect(groupActivityEvents([edit(2, 'item-a'), edit(1, 'item-b')])).toHaveLength(2)
+  })
+})
+
+describe('collapsing reorder churn', () => {
+  function reorderEvent(eventId: number, listId = 'list-1'): ActivityEvent {
+    return activityEvent(
+      'list.item.reordered',
+      { list_id: listId, list_name: 'Chores' },
+      { event_id: eventId, created_at: '2026-07-17T18:51:34.000Z' },
+    )
+  }
+
+  it('collapses a run of item reorders on one list', () => {
+    const groups = groupActivityEvents([reorderEvent(3), reorderEvent(2), reorderEvent(1)])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].count).toBe(3)
+  })
+
+  it('keeps the counted badge, because every row in the run says the same thing', () => {
+    const [group] = groupActivityEvents([reorderEvent(2), reorderEvent(1)])
+    const row = formatActivityGroup(group)
+
+    expect(row.summary).toBe('You reordered items in "Chores" 2 times.')
+  })
+
+  it('does not merge reorders of two different lists', () => {
+    const groups = groupActivityEvents([reorderEvent(2, 'list-1'), reorderEvent(1, 'list-2')])
+
+    expect(groups.map((group) => group.count)).toEqual([1, 1])
+  })
+
+  it('collapses list reorders on the dashboard that holds them', () => {
+    const listReorder = (eventId: number) =>
+      activityEvent(
+        'list.reordered',
+        { dashboard_id: 'dash-1', dashboard_name: 'Home' },
+        { event_id: eventId, created_at: '2026-07-17T18:51:34.000Z' },
+      )
+    const groups = groupActivityEvents([listReorder(2), listReorder(1)])
+
+    expect(groups).toHaveLength(1)
+    expect(formatActivityGroup(groups[0]).summary).toBe('You reordered lists in "Home" 2 times.')
   })
 })
 

@@ -16,7 +16,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent, EventType
-from app.routers.notifications import FEED_HIDDEN_EVENT_TYPES
 from app.services.activity import log_event
 from app.services.notifications import stage_notification
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
@@ -39,19 +38,11 @@ def test_all_activity_event_types_have_frontend_presentations() -> None:
 
 
 def test_all_activity_event_types_are_reachable_in_the_filter() -> None:
-    """A type with no filter label is one the Activity tab can never be narrowed to."""
-    labels = _FEED_UTILS_PATH.read_text().split("const ACTIVITY_TYPE_LABELS", 1)[1].split("}", 1)[0]
-    labelled_event_types = set(re.findall(r"'([^']+)':", labels))
+    """A type in no category is one the Activity tab can never be narrowed to."""
+    categories = _FEED_UTILS_PATH.read_text().split("const ACTIVITY_CATEGORIES", 1)[1].split("\n]", 1)[0]
+    categorised = set(re.findall(r"'([a-z]+\.[a-z_.]+)'", categories))
 
-    assert labelled_event_types == {event_type.value for event_type in EventType}
-
-
-def test_hidden_event_types_match_the_frontend() -> None:
-    """The two hidden sets must agree, or a type shows live and vanishes on reload (or never shows)."""
-    declaration = _FEED_UTILS_PATH.read_text().split("export const FEED_HIDDEN_EVENT_TYPES", 1)[1].split("\n\n", 1)[0]
-    frontend_hidden = set(re.findall(r"'([^']+)'", declaration))
-
-    assert frontend_hidden == {hidden.value for hidden in FEED_HIDDEN_EVENT_TYPES}
+    assert categorised == {event_type.value for event_type in EventType}
 
 
 async def _make_list(client: AsyncClient, dashboard_id: str, **kwargs) -> dict:
@@ -287,7 +278,8 @@ async def test_restore_names_the_dashboard_it_brought_back(auth_client: AsyncCli
     assert restored["payload"]["name"] == "Kitchen"
 
 
-async def test_hidden_event_types_stay_out_of_the_feed_unless_asked_for(auth_client: AsyncClient) -> None:
+async def test_the_feed_withholds_nothing_from_its_own_log(auth_client: AsyncClient) -> None:
+    """Checkbox churn is collapsed in the client, not dropped here — the two must not disagree."""
     dashboard = await create_dashboard(auth_client, name="Board")
     lst = await create_list(auth_client, dashboard["id"], name="Chores")
     item = await create_list_item(auth_client, lst["id"], text="Vacuum")
@@ -297,10 +289,9 @@ async def test_hidden_event_types_stay_out_of_the_feed_unless_asked_for(auth_cli
     assert check_resp.status_code == 200
 
     feed = (await auth_client.get("/api/activity")).json()
-    assert "list.item.checked" not in [event["event_type"] for event in feed]
-
-    asked_for = (await auth_client.get("/api/activity", params={"event_type": "list.item.checked"})).json()
-    assert [event["event_type"] for event in asked_for] == ["list.item.checked"]
+    checked = next(event for event in feed if event["event_type"] == "list.item.checked")
+    # The client keys its collapse on the list, so a summarized row has no name without this.
+    assert checked["payload"]["list_name"] == "Chores"
 
 
 async def test_activity_narrows_to_every_named_event_type(auth_client: AsyncClient) -> None:

@@ -7,6 +7,9 @@ type ActivityPresentation = {
   detail?: string
 }
 
+/** A collapsed run rendered as one line. Every row states its own count, so nothing sits beside it. */
+export type ActivityRow = ActivityPresentation
+
 function payloadString(payload: Record<string, unknown>, key: string): string | null {
   const value = payload[key]
   return typeof value === 'string' && value.trim() ? value : null
@@ -57,63 +60,25 @@ function occurrenceLabel(payload: Record<string, unknown>): string {
   return `${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(at)} occurrence`
 }
 
-/**
- * Event types the activity feed leaves out of its default view. Must match
- * `FEED_HIDDEN_EVENT_TYPES` in the backend's `routers/notifications.py`: a type hidden on one
- * side only either never appears, or appears live and then vanishes on the next reload.
- */
-export const FEED_HIDDEN_EVENT_TYPES: ReadonlySet<string> = new Set(['list.item.checked'])
-
-/**
- * What one event type is called inside its own category. Every EventType needs an entry, or it
- * is unreachable in the filter — pinned by `test_activity.py`.
- */
-const ACTIVITY_TYPE_LABELS: Record<string, string> = {
-  'dashboard.created': 'Created',
-  'dashboard.updated': 'Changed',
-  'dashboard.deleted': 'Trashed',
-  'dashboard.share_added': 'Access granted',
-  'dashboard.share_updated': 'Access changed',
-  'dashboard.share_removed': 'Access removed',
-  'list.created': 'Created',
-  'list.updated': 'Renamed',
-  'list.deleted': 'Deleted',
-  'list.reordered': 'Reordered',
-  'list.item.created': 'Added',
-  'list.item.updated': 'Edited',
-  'list.item.checked': 'Checked off',
-  'list.item.deleted': 'Deleted',
-  'list.item.reordered': 'Reordered',
-  'calendar.event.created': 'Created',
-  'calendar.event.updated': 'Updated',
-  'calendar.event.deleted': 'Deleted',
-  'calendar.event.occurrence.updated': 'Occurrence updated',
-  'calendar.event.occurrence.cancelled': 'Occurrence cancelled',
-}
-
 const ACTIVITY_CATEGORIES = [
   {
     id: 'dashboards',
     label: 'Dashboards',
-    allLabel: 'All dashboard activity',
     eventTypes: ['dashboard.created', 'dashboard.updated', 'dashboard.deleted'],
   },
   {
     id: 'sharing',
     label: 'Sharing',
-    allLabel: 'All sharing activity',
     eventTypes: ['dashboard.share_added', 'dashboard.share_updated', 'dashboard.share_removed'],
   },
   {
     id: 'lists',
     label: 'Lists',
-    allLabel: 'All list activity',
     eventTypes: ['list.created', 'list.updated', 'list.deleted', 'list.reordered'],
   },
   {
     id: 'list-items',
     label: 'List items',
-    allLabel: 'All list item activity',
     eventTypes: [
       'list.item.created',
       'list.item.updated',
@@ -125,7 +90,6 @@ const ACTIVITY_CATEGORIES = [
   {
     id: 'calendar',
     label: 'Calendar',
-    allLabel: 'All calendar activity',
     eventTypes: [
       'calendar.event.created',
       'calendar.event.updated',
@@ -140,29 +104,21 @@ const ACTIVITY_CATEGORIES = [
 export type ActivityFilterOption = {
   id: string
   label: string
-  group: string | null
-  /** Types to ask the endpoint for. Empty means "whatever it shows by default". */
+  /** Types to ask the endpoint for. Empty means "everything". */
   eventTypes: readonly string[]
 }
 
 export const ACTIVITY_FILTER_ALL = 'all'
 
+// Categories only. Per-type rows made this 26 deep, which buries the thing you are looking for —
+// and every type belongs to a category, so nothing here is unreachable without them.
 export const ACTIVITY_FILTERS: readonly ActivityFilterOption[] = [
-  { id: ACTIVITY_FILTER_ALL, label: 'All activity', group: null, eventTypes: [] },
-  ...ACTIVITY_CATEGORIES.flatMap((category) => [
-    {
-      id: category.id,
-      label: category.allLabel,
-      group: category.label,
-      eventTypes: category.eventTypes,
-    },
-    ...category.eventTypes.map((eventType) => ({
-      id: eventType,
-      label: ACTIVITY_TYPE_LABELS[eventType] ?? eventType,
-      group: category.label,
-      eventTypes: [eventType],
-    })),
-  ]),
+  { id: ACTIVITY_FILTER_ALL, label: 'All', eventTypes: [] },
+  ...ACTIVITY_CATEGORIES.map((category) => ({
+    id: category.id,
+    label: category.label,
+    eventTypes: category.eventTypes,
+  })),
 ]
 
 /** The types a filter asks the endpoint for; empty for the unfiltered default. */
@@ -175,7 +131,7 @@ export function eventTypesForActivityFilter(filterId: string): readonly string[]
  *
  * Mirrors `GET /api/activity` exactly, because anything else appends a row the next load takes
  * away: frames fan out to everyone who can see the dashboard while the feed is the reader's own
- * log, and naming types overrides the default hiding rather than narrowing it.
+ * log.
  */
 export function isOwnFeedActivity(
   event: ActivityEvent,
@@ -185,7 +141,7 @@ export function isOwnFeedActivity(
   if (viewerId === null || event.actor_id !== viewerId) return false
   const eventTypes = eventTypesForActivityFilter(filterId)
   if (eventTypes.length > 0) return eventTypes.includes(event.event_type)
-  return !FEED_HIDDEN_EVENT_TYPES.has(event.event_type)
+  return true
 }
 
 export function getNotificationTypeLabel(type: string): string {
@@ -395,15 +351,41 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
 export type ActivityGroup = {
   event: ActivityEvent
   count: number
+  /** Distinct entities the run touched. Toggling one checkbox ten times is one checkbox. */
+  entities: number
 }
 
 /**
- * The key a run of events collapses on, or null for an event that always gets its own row.
+ * Types whose run is one sitting with a container, and the payload field naming it.
  *
- * Only coordinate churn collapses — tidying a dashboard emits one event per drag, all reading
- * alike. Anything a person decided to do once stays countable on its own.
+ * A run here spans several entities, so what the row says is `formatActivityGroup`'s call.
  */
+const COLLAPSE_SUBJECT_FIELD: Record<string, string> = {
+  'list.item.checked': 'list_id',
+  'list.item.reordered': 'list_id',
+  'list.reordered': 'dashboard_id',
+}
+
+/**
+ * Types whose run is one thing edited repeatedly, so every row in it reads identically.
+ *
+ * Keyed on the entity, which is what makes a plain "×N" true rather than a guess.
+ */
+const COLLAPSE_ON_ENTITY: ReadonlySet<string> = new Set([
+  'list.updated',
+  'list.item.updated',
+  'calendar.event.updated',
+  'calendar.event.occurrence.updated',
+])
+
 function collapseKey(event: ActivityEvent): string | null {
+  if (COLLAPSE_ON_ENTITY.has(event.event_type)) return `${event.event_type}:${event.entity_id}`
+  const subjectField = COLLAPSE_SUBJECT_FIELD[event.event_type]
+  if (subjectField) {
+    // No container id means no honest way to group it, so the event keeps its own row.
+    const subject = payloadString(event.payload, subjectField)
+    return subject ? `${event.event_type}:${subject}` : null
+  }
   if (event.event_type !== 'dashboard.updated') return null
   const changedFields = payloadStrings(event.payload, 'changed_fields')
   const layoutOnly = changedFields.length === 1 && changedFields[0] === 'layout'
@@ -427,6 +409,7 @@ export function groupActivityEvents(events: ActivityEvent[]): ActivityGroup[] {
   const groups: ActivityGroup[] = []
   let runKey: string | null = null
   let runPreviousAt = 0
+  let runEntities = new Set<string>()
 
   for (const event of events) {
     const key = collapseKey(event)
@@ -438,13 +421,38 @@ export function groupActivityEvents(events: ActivityEvent[]): ActivityGroup[] {
 
     if (last && key !== null && key === runKey && withinWindow) {
       last.count += 1
+      runEntities.add(event.entity_id)
+      last.entities = runEntities.size
       runPreviousAt = at
       continue
     }
-    groups.push({ event, count: 1 })
+    groups.push({ event, count: 1, entities: 1 })
     runKey = key
     runPreviousAt = at
+    runEntities = new Set([event.entity_id])
   }
 
   return groups
+}
+
+/**
+ * How a collapsed run reads as one line, with its count inside the sentence.
+ *
+ * A run spanning several entities is summarized against what contains them, since naming the
+ * newest would claim the others never happened. A run that touched one thing repeatedly keeps its
+ * own sentence and says how often.
+ */
+export function formatActivityGroup({ event, count, entities }: ActivityGroup): ActivityRow {
+  if (entities > 1 && event.event_type === 'list.item.checked') {
+    const listName = payloadString(event.payload, 'list_name')
+    const location = listName ? ` in "${listName}"` : ''
+    return {
+      badge: 'List item',
+      // "updated", not "checked": the same event type carries unchecking, and a run mixes both.
+      summary: `You updated ${entities} checkboxes${location}.`,
+    }
+  }
+  const presentation = formatActivityEvent(event)
+  if (count === 1) return presentation
+  return { ...presentation, summary: `${presentation.summary.replace(/\.$/, '')} ${count} times.` }
 }

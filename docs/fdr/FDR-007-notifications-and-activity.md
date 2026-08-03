@@ -60,33 +60,40 @@ event types.
 **Decision:** Activity lives in the notifications store behind a loaded flag, not in the page, and a
 mount does not refetch it. Mutation frames are appended to the cached feed as they arrive, but only
 those `GET /api/activity` would itself return: `isOwnFeedActivity` re-implements the endpoint's
-predicate — actor, hidden types, active filter — and is the single gate on the append.
+predicate — actor and active filter — and is the single gate on the append.
 **Why:** Anything fetched on a page belongs in a store with a loaded flag, or returning to the page
 re-reads what SSE has already delivered. The caching and the live append are one decision, not two:
 a cached feed without the append would trade a redundant GET for a timeline that silently stops at
 page load. But an *unfiltered* append is worse than none, because frames fan out to the whole
-dashboard audience while the feed is self-scoped — so a co-editor's change rendered as "You…", and a
-type the endpoint hides appeared and then vanished at the next load, which reads as data loss.
-**Tradeoff:** One predicate is maintained on both sides of the wire and they can drift; the hidden
-set is pinned across languages by `test_activity.py`, the rest is not. A new event type that skips
-the append is invisible until a resync, and that staleness would not show up in a test that only
-asserts the initial render.
+dashboard audience while the feed is self-scoped, so a co-editor's change rendered as "You…".
+**Tradeoff:** One predicate is maintained on both sides of the wire and they can drift, and nothing
+pins them together. A new event type that skips the append is invisible until a resync, and that
+staleness would not show up in a test that only asserts the initial render.
 
 ### 4. Activity feed is self-scoped and keyset-paginated, filterable, and collapses churn
 
-**Decision:** The feed shows only the caller's own events, paginated by keyset. Everything is
-readable back: the unfiltered view hides only `list.item.checked`, and naming any event type —
-which the filter does per category or per type — overrides that. Adjacent layout-only dashboard
-events on the same dashboard collapse into one counted row.
+**Decision:** The feed shows only the caller's own events, paginated by keyset, and withholds
+nothing. Adjacent runs of the same churn on the same subject collapse into one row: layout-only
+dashboard edits, checkbox changes on one list, and either kind of reorder. Filtering narrows to one
+of five categories — per-type rows made the control 26 deep, and every type sits in a category.
 **Why:** Keyset pagination is stable under inserts, and scoping to self keeps it a personal audit
-trail rather than a firehose. Readability was previously bought by dropping whole classes of event
-from the *read* path, which made the feed disagree with its own log — a widget move was recorded,
-pushed live, and then gone. Collapsing buys the same readability in the presentation layer, where
-being wrong costs a merged row rather than a missing one, and filtering serves the case hiding was
-really aiming at: finding one kind of thing.
+trail rather than a firehose. Readability used to be bought by dropping whole classes of event from
+the *read* path, which made the feed disagree with its own log — recorded, pushed live, then gone.
+Collapsing buys the same readability in the presentation layer, where being wrong costs a merged row
+rather than a missing one, and filtering serves what hiding was really aiming at: finding one kind
+of thing. Checkbox churn is 69% of a real log and the reason hiding was reached for; collapsing it
+measured 112 events into 23 rows, which is the same quiet without the dishonesty.
+**A collapsed run is one sentence that states its own count** — "You reordered items in List 3
+times" — rather than a row with a separate `×N` beside it. Two shapes were tried and the split was
+principled but invisible: a reader cannot tell why one row carries a badge and the next does not,
+and being asked is the evidence that it does not work. The exception is a run spanning several
+entities, where naming the newest would claim the others never happened; those summarize against
+what contains them — "You updated 3 checkboxes in Groceries", counting **distinct checkboxes**, not
+events, because one box toggled ten times is one box. The verb is *updated* because the same event
+type carries unchecking and a run mixes both.
 **Tradeoff:** A tidying session still costs one row per drag underneath, so a collapsed run split
-across a page boundary shows as two rows. It's not a cross-user or admin audit view; that would be a
-separate surface.
+across a page boundary shows as two rows, and one interrupted by an unrelated event shows as two
+sittings. It's not a cross-user or admin audit view; that would be a separate surface.
 
 ### 5. Trashing a shared dashboard notifies the people who lose access
 
