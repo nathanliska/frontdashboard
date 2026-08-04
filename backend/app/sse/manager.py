@@ -49,26 +49,6 @@ class SseManager:
         return len(self._clients)
 
     @property
-    def user_count(self) -> int:
-        """Distinct users holding a stream — people online, where client_count is browser tabs.
-
-        Each tab opens its own EventSource, so one person reading on a laptop and a phone with two
-        tabs each is four clients and one user. Fan-out cost tracks the former, "is anyone else
-        around" the latter.
-        """
-        return len({client.user_id for client in self._clients})
-
-    @property
-    def session_count(self) -> int:
-        """Distinct sessions holding a stream — devices, where client_count is tabs.
-
-        The session cookie is per browser per device and tabs share it, so this is the only one of
-        the three that separates "three devices" from "three tabs". Approximate by nature: signing
-        in again mints a session, and two browsers on one machine count as two.
-        """
-        return len({client.session_id for client in self._clients})
-
-    @property
     def max_queue_depth(self) -> int:
         """Deepest queue across open streams — backpressure, visible before it becomes eviction."""
         return max((client.queue.qsize() for client in self._clients), default=0)

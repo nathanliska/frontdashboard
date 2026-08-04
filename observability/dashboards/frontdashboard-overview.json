@@ -306,8 +306,8 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "SSE streams / people",
-      "description": "Streams open right now, and how many distinct people hold them. Each browser tab is its own stream. People is a per-process set, so it cannot be summed across replicas \u2014 max is exact at one replica and a floor beyond it, where sum would double-count anyone on two devices.",
+      "title": "SSE clients",
+      "description": "Streams open right now. Each browser tab is its own stream.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -343,7 +343,7 @@
         },
         "colorMode": "value",
         "graphMode": "area",
-        "textMode": "value_and_name",
+        "textMode": "auto",
         "justifyMode": "auto",
         "orientation": "auto"
       },
@@ -355,20 +355,9 @@
           },
           "editorMode": "code",
           "expr": "sum(frontdashboard_sse_clients)",
-          "legendFormat": "streams",
+          "legendFormat": "",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "max(frontdashboard_sse_users)",
-          "legendFormat": "people",
-          "range": true,
-          "refId": "B"
         }
       ]
     },

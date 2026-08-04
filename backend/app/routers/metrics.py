@@ -41,10 +41,6 @@ def _overflow() -> float:
 
 
 metrics.register_gauge("sse_clients", "SSE streams currently open.", lambda: manager.client_count)
-# Set cardinalities, so unlike every other gauge here they do not sum across replicas — one person
-# on two devices can land on two of them. Queries take max(): exact at one replica, a floor beyond.
-metrics.register_gauge("sse_users", "Distinct users holding a stream on THIS process — see sse_clients for tabs.", lambda: manager.user_count)
-metrics.register_gauge("sse_sessions", "Distinct sessions holding a stream on THIS process — devices, roughly.", lambda: manager.session_count)
 metrics.register_gauge(
     "sse_queue_depth_max",
     "Deepest queue seen in the last minute; backpressure before it becomes eviction.",

@@ -129,10 +129,11 @@ async def test_manager_multiple_connections_same_user() -> None:
     assert tab2.queue.qsize() == 1
 
 
-def test_manager_counts_tabs_devices_and_people_separately() -> None:
-    """The three published counts diverge: one person on a laptop and a phone is 3 / 2 / 1.
+def test_client_count_is_streams_not_people() -> None:
+    """One person on a laptop with two tabs plus a phone is three streams, and the gauge says so.
 
-    Tabs share a session cookie, so only session_count separates a second device from a second tab.
+    The count is deliberately per-stream: it sums across replicas because the sets are disjoint,
+    which a distinct count of users or devices would not.
     """
     mgr = SseManager()
     reader = uuid.uuid4()
@@ -142,14 +143,12 @@ def test_manager_counts_tabs_devices_and_people_separately() -> None:
     mgr.connect(reader, session_id=laptop)  # second tab, same device
     mgr.connect(reader, session_id=uuid.uuid4())  # phone
     assert mgr.client_count == 3
-    assert mgr.session_count == 2
-    assert mgr.user_count == 1
 
     housemate = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
-    assert (mgr.client_count, mgr.session_count, mgr.user_count) == (4, 3, 2)
+    assert mgr.client_count == 4
 
     mgr.disconnect(housemate)
-    assert (mgr.client_count, mgr.session_count, mgr.user_count) == (3, 2, 1)
+    assert mgr.client_count == 3
 
 
 # ---------------------------------------------------------------------------

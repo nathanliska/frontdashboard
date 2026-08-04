@@ -205,10 +205,8 @@ _Last updated: 2026-07-30_
   backend publishes no port, leaving the Docker network as the only route in.
   Built on `prometheus_client`, so the exposition, the label handling and the multiprocess path
   are the library's rather than ours. Series: SSE connects / resyncs / evictions / lifetime
-  expiries, open streams grouped three ways (tabs, and the distinct sessions and users holding them
-  — each tab is its own stream, so the three diverge; the two set counts are per-process and take
-  `max()` rather than `sum()`, since a person on two devices can straddle replicas) and deepest
-  queue, retention sweeps plus the unix time of the last
+  expiries, open streams (each browser tab is one, so this counts streams rather than people) and
+  deepest queue, retention sweeps plus the unix time of the last
   successful one, rate-limit rejections, DB pool checked-out / size / overflow / limit, and
   `http_responses_total{method,route,status_class}` — labelled by route *template*, never the raw
   path, so a scanner cannot mint a series per URL. Status counting is pure-ASGI middleware, never
