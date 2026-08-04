@@ -13,6 +13,7 @@ import { handleAgendaResourceEvent } from '../resources/agendaData'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
 import { consumePendingListMutationEcho, handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
+import { useConnectionStore } from '../stores/connection'
 import { useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
 
@@ -163,7 +164,14 @@ export function useSSE(): void {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reconnectNonce is bumped to force teardown/recreate of the EventSource; it's never read in the effect body.
   useEffect(() => {
-    if (!userId) return
+    // Read rather than subscribed: this effect must not re-run when the status it sets changes.
+    const { setConnectionStatus } = useConnectionStore.getState()
+
+    if (!userId) {
+      // Signed out — the stream is absent by design, which is not the same as degraded.
+      setConnectionStatus('connecting')
+      return
+    }
 
     let cancelled = false
     // Only a reconnect can have missed anything, and only a known mark lets the server rule it
@@ -173,6 +181,10 @@ export function useSSE(): void {
     const es = new EventSource(url, { withCredentials: true })
 
     es.onerror = () => {
+      // Set before the CLOSED check on purpose: a drop EventSource retries for us is still a
+      // stream that is not delivering, and a silent outage is the state this exists to show.
+      setConnectionStatus('reconnecting')
+
       // EventSource retries below-HTTP drops itself but not an error status, where the spec
       // sets CLOSED. So CLOSED means the server rejected us — and the event carries no status.
       if (es.readyState !== EventSource.CLOSED) return
@@ -202,6 +214,7 @@ export function useSSE(): void {
 
     function onConnected(e: MessageEvent<string>) {
       reconnectAttemptsRef.current = 0
+      setConnectionStatus('connected')
       const frame = parseFrame(e.data, ConnectedSseEvent)
       const head = frame?.last_event_id
       if (typeof head === 'number') watermarkRef.current = head

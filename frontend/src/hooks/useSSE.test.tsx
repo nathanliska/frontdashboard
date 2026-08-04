@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
 import { handleListResourceEvent } from '../resources/listData'
 import { useAuthStore } from '../stores/auth'
+import { useConnectionStore } from '../stores/connection'
 import { resetDashboardData, useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
 import { APP_RESYNC_EVENT, SSE_AUTH_PROBE_EVERY, SSE_RECONNECT_MAX_MS, useSSE } from './useSSE'
@@ -777,5 +778,47 @@ describe('useSSE reconnect backoff', () => {
     // An initial connect follows the components' own REST fetches — resyncing here would be the
     // GET storm this whole design exists to avoid.
     expect(handleListResourceEvent).not.toHaveBeenCalled()
+  })
+
+  it('publishes the stream as connected once the server says so', async () => {
+    render(<TestHarness />)
+    expect(useConnectionStore.getState().status).toBe('connecting')
+
+    act(() => {
+      MockEventSource.instances[0].dispatch('connected', '{"last_event_id":1}')
+    })
+
+    expect(useConnectionStore.getState().status).toBe('connected')
+  })
+
+  it('publishes a drop as degraded, including one EventSource retries for us', async () => {
+    render(<TestHarness />)
+    const es = latestStream()
+
+    act(() => {
+      es.dispatch('connected', '{"last_event_id":1}')
+    })
+
+    // Not CLOSED: the browser reconnects on its own here and our backoff never runs. The stream
+    // is still not delivering, which is the whole point of showing it.
+    es.readyState = MockEventSource.CONNECTING
+    act(() => {
+      es.triggerError()
+    })
+
+    expect(useConnectionStore.getState().status).toBe('reconnecting')
+  })
+
+  it('clears the degraded state when a fresh stream connects', async () => {
+    render(<TestHarness />)
+
+    await failLatest(SSE_RECONNECT_MAX_MS)
+    expect(useConnectionStore.getState().status).toBe('reconnecting')
+
+    act(() => {
+      latestStream().dispatch('connected', '{"last_event_id":1}')
+    })
+
+    expect(useConnectionStore.getState().status).toBe('connected')
   })
 })

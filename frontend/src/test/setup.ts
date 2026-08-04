@@ -2,6 +2,7 @@ import '@testing-library/jest-dom'
 import { afterEach } from 'vitest'
 import * as apiClient from '../api/client'
 import * as resetRegistry from '../resources/resetRegistry'
+import * as connectionStore from '../stores/connection'
 import * as toastStore from '../stores/toast'
 import * as dashboardMutation from '../utils/dashboard/dashboardMutation'
 import * as listMutation from '../utils/lists/listMutation'
@@ -19,6 +20,7 @@ import * as listMutation from '../utils/lists/listMutation'
 afterEach(() => {
   toastStore.__resetToastStoreForTests?.()
   apiClient.__resetApiClientForTests?.()
+  connectionStore.__resetConnectionStoreForTests?.()
   resetRegistry.resetAllResourceData?.()
   dashboardMutation.__resetPendingDashboardMutationsForTests?.()
   listMutation.__resetPendingListMutationsForTests?.()

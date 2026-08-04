@@ -144,6 +144,14 @@ _Last updated: 2026-07-30_
   is discovered without a dead backend being mistaken for one. That path reconnects with its
   mark on the query string, since a fresh `EventSource` sends no `Last-Event-ID` header; a tab
   holding no mark still asks for the resync itself. The browser's own auto-retry is left alone.
+- **The UI admits when the stream is down** — an amber dot while reconnecting, on the sidebar
+  account avatar and on the mobile navigation button, since below `sm:` the sidebar is an overlay
+  and a phone is where a stream drops most. Only the degraded state is drawn: a dot that reads
+  green all day stops being read, and the failure worth surfacing is the app looking live while
+  receiving nothing. The dot is decorative; each surface carries its own wording (a `title` on the
+  account button, the `aria-label` on the mobile one). It reflects *your own* stream, not who else
+  is online — there is no presence feature. Raised on any `error`, including the below-HTTP drops
+  the browser retries itself, and cleared by the next `connected` frame.
 - Streams revalidate their session every 30s and end when it is revoked; revocation also drops
   them in-process immediately (the drop is a latency optimisation, not the guarantee — the periodic
   check is worker-agnostic and holds without it). Closes #8's authorization half: a revoked session

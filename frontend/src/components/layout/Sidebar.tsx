@@ -11,10 +11,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { ROUTES } from '../../routes'
 import { useAuthStore } from '../../stores/auth'
+import { isConnectionDegraded, useConnectionStore } from '../../stores/connection'
 import { useNotificationsStore } from '../../stores/notifications'
 import { useUIStore } from '../../stores/ui'
 import { cn } from '../../utils/shared/cn'
 import { NotificationPanel } from '../notifications/NotificationPanel'
+import { ConnectionDot } from './ConnectionDot'
 
 const NAV = [
   { label: 'Dashboards', icon: LayoutDashboard, to: ROUTES.dashboards },
@@ -149,6 +151,7 @@ function UserMenu({
 }) {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
+  const connectionStatus = useConnectionStore((s) => s.status)
   const navigate = useNavigate()
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -172,19 +175,26 @@ function UserMenu({
 
   const initial = user?.display_name?.[0]?.toUpperCase() ?? '?'
   const displayName = user?.display_name ?? 'Account'
+  const degraded = isConnectionDegraded(connectionStatus)
+  // The dot means nothing to someone seeing it for the first time, so give it words on hover.
+  let accountTitle: string | undefined
+  if (degraded) accountTitle = `${displayName} — reconnecting, live updates are paused`
+  else if (collapsed) accountTitle = displayName
 
   return (
     <div ref={containerRef} className="relative z-50">
       <button
         type="button"
         onClick={() => onOpenChange(!open)}
-        title={collapsed ? displayName : undefined}
+        title={accountTitle}
         className="relative z-50 flex items-center gap-3 mx-2 px-2.5 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors w-[calc(100%-16px)]"
       >
-        <div className="shrink-0 w-4.5 h-4.5 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 text-[10px] font-semibold">
+        <div className="relative shrink-0 w-4.5 h-4.5 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 text-[10px] font-semibold">
           {initial}
+          <ConnectionDot className="-bottom-0.5 -right-0.5" />
         </div>
         {!collapsed && <span className="flex-1 text-left truncate">{displayName}</span>}
+        {degraded && <span className="sr-only">Reconnecting — live updates are paused</span>}
       </button>
 
       {open && (
