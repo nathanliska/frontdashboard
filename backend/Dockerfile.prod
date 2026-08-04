@@ -1,6 +1,6 @@
 # Pinned by digest so rebuilding an old commit produces the same image; Dependabot bumps these
 # weekly, without which pinning would just freeze the base's security patches.
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS build
+FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS build
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ RUN uv sync --frozen --no-dev --no-cache
 
 # Same base as the builder, so the venv's interpreter symlink and wheel ABIs still match. It must
 # land at the path it was built at — console scripts embed that in their shebangs.
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6
 
 WORKDIR /app
 

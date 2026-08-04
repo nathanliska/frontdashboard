@@ -2,43 +2,43 @@
 name = "frontdashboard-backend"
 version = "0.1.0"
 description = "FrontDashboard backend API"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
-    "fastapi>=0.139.2",
+    "fastapi>=0.141.1",
     # Not uvicorn[standard]: that pulls websockets (this app is SSE-only per ADR-004),
     # PyYAML and watchfiles, none of which run in production. The two extras that do matter
     # are named explicitly and uvicorn picks them up automatically.
-    "uvicorn>=0.46.0",
+    "uvicorn>=0.52.0",
     "uvloop>=0.22.1",
-    "httptools>=0.7.1",
-    "sqlalchemy[asyncio]>=2.0.49",
+    "httptools>=0.8.0",
+    "sqlalchemy[asyncio]>=2.0.51",
     "asyncpg>=0.29.0",
     "alembic>=1.18.5",
     "argon2-cffi>=23.1.0",
     "slowapi>=0.1.10",
     "email-validator>=2.1.0",
     "pydantic>=2.13.3",
-    "sse-starlette>=3.4.5",
+    "sse-starlette>=3.4.6",
     "pydantic-settings>=2.14.2",
-    "anyio>=4.13.0",
+    "anyio>=4.14.2",
     "prometheus-client>=0.26.0",
 ]
 
 [dependency-groups]
 dev = [
     "deptry>=0.23.1",
-    "ruff>=0.15.22",
-    "ty>=0.0.60",
+    "ruff>=0.16.0",
+    "ty>=0.0.65",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "httpx>=0.27.0",
-    "testcontainers>=4.0.0",
+    "testcontainers>=4.15.0",
     # `uvicorn --reload` in Dockerfile (dev) needs this; the production image does not.
-    "watchfiles>=1.1.1",
+    "watchfiles>=1.2.0",
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 150
 extend-exclude = ["alembic/versions"]
 force-exclude = true
@@ -68,7 +68,7 @@ markers = [
 ]
 
 [tool.ty]
-environment.python-version = "3.12"
+environment.python-version = "3.14"
 
 [tool.uv]
 constraint-dependencies = [

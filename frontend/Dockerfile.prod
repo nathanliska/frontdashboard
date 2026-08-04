@@ -1,5 +1,5 @@
 # Pinned by digest for reproducibility; Dependabot's docker ecosystem keeps them current.
-FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS build
+FROM node:24-alpine@sha256:f70403e87646dc51b45295f4b8b70cdad0b63d2297c4c9899119b03f7af7a6b3 AS build
 
 WORKDIR /app
 

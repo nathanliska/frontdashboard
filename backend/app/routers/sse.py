@@ -85,7 +85,7 @@ async def stream_events(
     watermark: int | None = None,
     max_lifetime: timedelta = _MAX_STREAM_LIFETIME,
     resync_scopes: set[str] | None = None,
-) -> AsyncGenerator[dict, None]:
+) -> AsyncGenerator[dict]:
     """Yield SSE frames until the connection closes, is evicted, or its session is revoked.
 
     Module-level rather than nested in the route so tests can drive it directly: httpx's ASGI

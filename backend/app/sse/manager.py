@@ -35,7 +35,7 @@ REVOKED_SENTINEL = object()
 class _Client:
     user_id: uuid.UUID
     session_id: uuid.UUID
-    manager: "SseManager"
+    manager: SseManager
     queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=_QUEUE_MAX))
 
 

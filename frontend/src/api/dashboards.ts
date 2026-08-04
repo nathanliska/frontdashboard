@@ -58,7 +58,6 @@ export type DashboardWidget = z.infer<typeof DashboardWidgetSchema>
 export type WidgetType = DashboardWidget['widget_type']
 
 export type {
-  AgendaWidgetConfig,
   CalendarWidgetConfig,
   ClockWidgetConfig,
   ListWidgetConfig,

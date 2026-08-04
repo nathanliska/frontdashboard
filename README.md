@@ -20,7 +20,7 @@ A self-hosted dashboard app that acts as a private household operating system. S
 
 | Layer | Choice |
 |---|---|
-| Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 17 |
+| Backend | Python 3.14+, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 17 |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, Zustand, react-grid-layout |
 | Infra | Docker Compose, Caddy (production reverse proxy) |
 

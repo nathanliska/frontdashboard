@@ -101,7 +101,7 @@ make audit       # dependency/security audit checks
 
 ## Architecture
 
-- `backend/` — Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 17.
+- `backend/` — Python 3.14+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 17.
 - `frontend/` — React 19 + TypeScript, Vite, Tailwind CSS, Zustand stores, react-grid-layout v2.
 - Infra — Docker Compose (dev + prod variants), Caddy reverse proxy (prod), `uv` and `npm`.
 - **Sharing model**: per-resource `ResourceShare` rows. Dashboards are shared directly with users

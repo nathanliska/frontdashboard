@@ -16,7 +16,6 @@ const listDetailRequests = new Map<string, Promise<ListDetailResponse>>()
 const listSummaryRequests = new Map<string, Promise<ListResponse[]>>()
 
 export type {
-  ItemPriority,
   ListDetailResponse as ListDetail,
   ListItemResponse as ListItem,
   ListResponse as ListSummary,

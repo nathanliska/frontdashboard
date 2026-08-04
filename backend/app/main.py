@@ -45,7 +45,7 @@ def _requested_worker_count() -> int:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger = logging.getLogger("app")
     if settings.environment == Environment.production:
         logger.info("Starting: environment=production (Secure cookies ON, production config validated)")

@@ -78,7 +78,7 @@ class Settings(BaseSettings):
         return url
 
     @model_validator(mode="after")
-    def _validate_production_security(self) -> "Settings":
+    def _validate_production_security(self) -> Settings:
         if self.environment is not Environment.production:
             return self
         errors: list[str] = []

@@ -72,7 +72,7 @@ def test_environment_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ENVIRONMENT", raising=False)
     with pytest.raises(ValidationError):
         Settings(
-            _env_file=None,  # ty: ignore[unknown-argument]  # pydantic-settings runtime option
+            _env_file=None,  # pydantic-settings runtime option
             database_url="postgresql+asyncpg://u:p@localhost/db",
         )
 

@@ -10,7 +10,6 @@ import { parseJson } from './http'
 
 export type {
   ActivityEventResponse as ActivityEvent,
-  NotificationPageResponse as NotificationPage,
   NotificationResponse as Notification,
 } from './generated/contract'
 

@@ -7,6 +7,7 @@ import { ShareAccessList } from './share-panel/ShareAccessList'
 import { SharePanelInvite } from './share-panel/SharePanelInvite'
 
 export type { SharePanelItem, ShareRoleOption } from '../../utils/share/sharePanelTypes'
+/** @knipignore Retained scaffolding — see the declaration for why nothing mounts it yet. */
 export { DashboardManagedAccessList } from './share-panel/DashboardManagedAccessList'
 
 const DEFAULT_SHARE_ROLE_OPTIONS: ShareRoleOption[] = (

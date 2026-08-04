@@ -60,8 +60,11 @@ format:
 	cd backend && uv run ruff format . && uv run ruff check --fix .
 	cd frontend && npm run lint:fix
 
-# Auditing — Frontend dependency/security checks
+# Auditing — dependency/security checks for both stacks. uv-secure reads uv.lock under uvx, so no
+# auditor joins the project's own dependency graph; --no-check-uv-tool keeps a developer's global
+# uv install from failing the project's audit.
 audit:
+	cd backend && uvx uv-secure@0.17.2 --no-check-uv-tool uv.lock
 	cd frontend && npm run audit
 
 audit-fix:

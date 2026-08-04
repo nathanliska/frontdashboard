@@ -13,7 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
-from testcontainers.postgres import PostgresContainer
+from testcontainers.community.postgres import PostgresContainer
 
 from alembic import command
 from app.database import get_db
@@ -78,7 +78,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 @pytest.fixture(scope="session")
-def test_database() -> Generator[_TestDatabase, None, None]:
+def test_database() -> Generator[_TestDatabase]:
     """Provide one migrated PostgreSQL database for integration tests.
 
     TEST_DATABASE_URL selects a dedicated existing test database. When it is
@@ -122,7 +122,7 @@ def alembic_config(test_database: _TestDatabase) -> Config:
 
 
 @pytest.fixture(autouse=True)
-async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None, None]:
+async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None]:
     """Reset non-database global state after each test."""
     app.state.email_verification_tokens = {}
     app.state.password_reset_tokens = {}
@@ -147,7 +147,7 @@ async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
 
 
 @pytest.fixture
-async def db_session(test_database: _TestDatabase) -> AsyncGenerator[AsyncSession, None]:
+async def db_session(test_database: _TestDatabase) -> AsyncGenerator[AsyncSession]:
     async with test_database.engine.connect() as conn:
         transaction = await conn.begin()
         session = AsyncSession(
@@ -164,7 +164,7 @@ async def db_session(test_database: _TestDatabase) -> AsyncGenerator[AsyncSessio
 
 
 @pytest.fixture
-async def concurrent_sessions(test_database: _TestDatabase) -> AsyncGenerator[tuple[AsyncSession, AsyncSession, uuid.UUID], None]:
+async def concurrent_sessions(test_database: _TestDatabase) -> AsyncGenerator[tuple[AsyncSession, AsyncSession, uuid.UUID]]:
     """Two independently-committing sessions plus a throwaway user.
 
     Everything else in this suite runs in a savepoint that is rolled back. These
@@ -202,8 +202,8 @@ async def concurrent_sessions(test_database: _TestDatabase) -> AsyncGenerator[tu
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
+async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
+    async def _override_get_db() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
@@ -215,12 +215,12 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
-async def db_client(client: AsyncClient) -> AsyncGenerator[AsyncClient, None]:
+async def db_client(client: AsyncClient) -> AsyncGenerator[AsyncClient]:
     yield client
 
 
 @pytest.fixture
-async def auth_client(db_client: AsyncClient) -> AsyncGenerator[AsyncClient, None]:
+async def auth_client(db_client: AsyncClient) -> AsyncGenerator[AsyncClient]:
     """Client pre-authenticated as a throwaway test user."""
     resp = await db_client.post(
         "/api/auth/register",
