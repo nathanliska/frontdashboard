@@ -51,6 +51,8 @@ typecheck:
 # Linting — check only, no modifications
 lint:
 	cd backend && uv run ruff check .
+	# CI runs this too; without it a formatting drift only ever surfaces there.
+	cd backend && uv run ruff format --check .
 	cd backend && uv run deptry .
 	cd frontend && npm run lint
 	cd frontend && npm run knip

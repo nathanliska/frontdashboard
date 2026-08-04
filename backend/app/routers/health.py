@@ -48,7 +48,7 @@ async def ready(response: Response) -> ReadinessResponse:
         with anyio.fail_after(settings.health_ready_timeout_seconds):
             async with engine.connect() as connection:
                 await connection.execute(text("SELECT 1"))
-    except (TimeoutError, SQLAlchemyError, OSError):
+    except TimeoutError, SQLAlchemyError, OSError:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return ReadinessResponse(status="unavailable", database=False)
 

@@ -31,7 +31,7 @@ def _pool_reader(attribute: str) -> float:
         return 0
     try:
         return float(reader())
-    except (AttributeError, TypeError, ValueError):
+    except AttributeError, TypeError, ValueError:
         return 0
 
 

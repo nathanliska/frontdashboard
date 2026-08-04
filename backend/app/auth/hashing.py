@@ -27,7 +27,7 @@ def _verify(password: str, hashed: str) -> bool:
     try:
         _ph.verify(hashed, password)
         return True
-    except (VerifyMismatchError, VerificationError):
+    except VerifyMismatchError, VerificationError:
         return False
 
 
