@@ -129,22 +129,27 @@ async def test_manager_multiple_connections_same_user() -> None:
     assert tab2.queue.qsize() == 1
 
 
-def test_manager_counts_streams_and_people_separately() -> None:
-    """client_count is tabs, user_count is people — the two diverge and both are published."""
+def test_manager_counts_tabs_devices_and_people_separately() -> None:
+    """The three published counts diverge: one person on a laptop and a phone is 3 / 2 / 1.
+
+    Tabs share a session cookie, so only session_count separates a second device from a second tab.
+    """
     mgr = SseManager()
     reader = uuid.uuid4()
+    laptop = uuid.uuid4()
 
-    mgr.connect(reader, session_id=uuid.uuid4())
-    mgr.connect(reader, session_id=uuid.uuid4())
-    assert mgr.client_count == 2
+    mgr.connect(reader, session_id=laptop)
+    mgr.connect(reader, session_id=laptop)  # second tab, same device
+    mgr.connect(reader, session_id=uuid.uuid4())  # phone
+    assert mgr.client_count == 3
+    assert mgr.session_count == 2
     assert mgr.user_count == 1
 
     housemate = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
-    assert mgr.client_count == 3
-    assert mgr.user_count == 2
+    assert (mgr.client_count, mgr.session_count, mgr.user_count) == (4, 3, 2)
 
     mgr.disconnect(housemate)
-    assert mgr.user_count == 1
+    assert (mgr.client_count, mgr.session_count, mgr.user_count) == (3, 2, 1)
 
 
 # ---------------------------------------------------------------------------
