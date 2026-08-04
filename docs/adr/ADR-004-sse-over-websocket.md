@@ -57,9 +57,12 @@ harmless:
   one thing a second worker would break — a client attached to worker A is unreachable from worker
   B. Per-user affinity at the proxy does *not* defer it, because a shared dashboard fans out to
   other users, who land on other workers. Because of the two invariants above, the fix is a
-  backplane behind `broadcast` needing only at-least-once delivery, which Postgres `LISTEN/NOTIFY`
-  satisfies without new infrastructure. Deferred, with the rest of the multi-process picture, as
-  #21/#45.
+  backplane behind `broadcast` needing only at-least-once delivery. **Redis** (amended 2026-08-04),
+  superseding an earlier note here that `LISTEN/NOTIFY` would do: it would, on its own merits, but
+  a second replica also needs a shared rate-limit store, and `limits` — the library under slowapi —
+  offers memory, memcached, mongodb and redis/valkey, with no Postgres backend. Redis is therefore
+  already required, and one backplane is cheaper to run and reason about than two. Deferred, with
+  the rest of the multi-process picture, as #21/#45.
 - **Overflow favours resync over silence**: bounded queues can drop a slow client, but the eviction
   sentinel guarantees it *knows* it was dropped and re-syncs, so it never silently diverges.
 - **Client-side write ordering matters on the server**: because REST mutations and SSE fan-out are
