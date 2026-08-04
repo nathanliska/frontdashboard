@@ -49,7 +49,7 @@
     "tailwindcss": "^4.2.2",
     "typed-openapi": "2.2.7",
     "typescript": "~7.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vitest": "^4.1.5"
   }
 }
