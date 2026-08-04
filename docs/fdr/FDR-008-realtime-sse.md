@@ -1,7 +1,7 @@
 # FDR-008: Real-Time Delivery (SSE)
 
 **Status:** Active
-**Last reviewed:** 2026-08-01
+**Last reviewed:** 2026-08-04
 
 ## Overview
 
@@ -29,6 +29,9 @@ it is in their FDRs.
   not mistaken for one.
 - **Revocation ends the stream.** Streams revalidate their session every 30s and end when it's
   revoked; revocation also drops in-process streams immediately.
+- **The UI admits when the stream is down.** An amber dot appears in the sidebar while reconnecting
+  and nothing is drawn otherwise. A tab brought back to the foreground reopens a stream the browser
+  closed while it was hidden.
 
 ## Design Decisions
 
@@ -133,6 +136,33 @@ nothing, but "a calendar event changed" would report another household's activit
 a full resync — the same answer as before this existed. Unknown scopes widen rather than narrow, so
 a backend that learns to log a new entity type cannot silently skip a cache in an older client.
 Notifications stay unconditional: they are not activity events, so no scope can rule them out.
+
+### 8. Degraded connection is shown, and only while degraded
+
+**Decision:** A `connection` store tracks `connecting | connected | reconnecting`, and the sidebar
+draws an amber dot only in `reconnecting`. `onerror` sets that state *before* the `CLOSED` check, so
+a drop the browser retries for us still counts as degraded.
+
+**Why:** The failure this exists for is the app looking live while receiving nothing — a wall display
+or a phone that quietly stopped listening. A dot that is green all day stops being read, so only the
+state worth acting on is drawn.
+
+**Tradeoff:** Deliberately not a presence badge: it reports *your* stream, not who else is online, so
+it cannot answer "is anyone there". A tab that is degraded for less than a render never shows it,
+which is intended.
+
+### 9. A foregrounded tab reopens a stream the browser abandoned
+
+**Decision:** On `visibilitychange` to visible, reconnect if `readyState` is `CLOSED`. A reconnect
+already scheduled by `onerror` is left alone, since two would open two streams.
+
+**Why:** A backgrounded tab can have its stream closed without `EventSource` retrying, so the tab
+returns looking live while receiving nothing — the same silent-staleness failure as an overflow,
+reached by a different route. `readyState` is the only signal available: SSE pings are comment lines
+the client never sees as events, so nothing else distinguishes a dead stream from an idle one.
+
+**Tradeoff:** It fires on foreground only, so a tab left visible on a machine that slept still waits
+for the backoff. One connection per open tab is unchanged — this reopens a stream, it does not add one.
 
 ## Access
 

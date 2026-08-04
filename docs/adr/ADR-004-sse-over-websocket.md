@@ -1,6 +1,6 @@
 # ADR-004: SSE (Not WebSocket), One Multiplexed Connection Per User
 
-**Date:** 2026-07-20
+**Date:** 2026-07-20 (amended 2026-07-28 — HTTP-error reconnect no longer signs anyone out; amended 2026-08-04 — Redis named as the backplane)
 
 ## Context
 
@@ -61,8 +61,9 @@ harmless:
   superseding an earlier note here that `LISTEN/NOTIFY` would do: it would, on its own merits, but
   a second replica also needs a shared rate-limit store, and `limits` — the library under slowapi —
   offers memory, memcached, mongodb and redis/valkey, with no Postgres backend. Redis is therefore
-  already required, and one backplane is cheaper to run and reason about than two. Deferred, with
-  the rest of the multi-process picture, as #21/#45.
+  already required, and one backplane is cheaper to run and reason about than two. Not built while
+  the stack runs one replica, but the two invariants above are maintained deliberately so it stays a
+  swap rather than a rewrite; tracked with the rest of the replica picture as #21/#45.
 - **Overflow favours resync over silence**: bounded queues can drop a slow client, but the eviction
   sentinel guarantees it *knows* it was dropped and re-syncs, so it never silently diverges.
 - **Client-side write ordering matters on the server**: because REST mutations and SSE fan-out are

@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-07-30_
+_Last updated: 2026-08-04_
 
 ## What's built
 
@@ -244,8 +244,10 @@ _Last updated: 2026-07-30_
   so one `/metrics` scrape reaches an arbitrary one and every counter reads as resetting — a replica
   is its own scrape target and has no such problem. `WEB_CONCURRENCY` is therefore inert and only
   logs a warning. A second process of either kind is not yet safe regardless: SSE clients and
-  rate-limit counters both live in process memory. Migrations stay in the container command, where
-  `alembic/env.py`'s session-scoped advisory lock already serialises replicas starting together.
+  rate-limit counters both live in process memory until the Redis backplane lands (#21/#45), which
+  the fan-out and resync invariants are maintained to keep a swap. Migrations stay in the container
+  command, where `alembic/env.py`'s session-scoped advisory lock already serialises replicas
+  starting together.
 - **The frontend waits for the backend to start, not to be healthy.** Caddy resolves its upstream
   per request, so container start is enough; waiting on health stalled every restart and served
   nothing meanwhile, instead of the shell plus a 502 on `/api`.
@@ -294,8 +296,9 @@ _Last updated: 2026-07-30_
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
   are in-memory/per-process, correct for the current single worker: N workers would mean N× every
-  limit. Going shared is a `storage_uri` on the `Limiter`, so it is deferred as a one-line change
-  rather than pre-built (#21/#45).
+  limit. Going shared is a `storage_uri` on the `Limiter` pointed at Redis, so it stays a one-line
+  change rather than a pre-built knob — and it has to land *with* the first replica, not after it
+  (#21/#45).
 - **The backend schema is the API contract** ([ADR-018](docs/adr/ADR-018-generated-validated-contracts.md)):
   `make contracts` exports FastAPI's OpenAPI document and generates the frontend's zod schemas into
   `frontend/src/api/generated/contract.ts` (committed; CI fails on drift). Every response body is
