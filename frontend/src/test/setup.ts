@@ -1,17 +1,25 @@
 import '@testing-library/jest-dom'
 import { afterEach } from 'vitest'
+import * as apiClient from '../api/client'
+import * as resetRegistry from '../resources/resetRegistry'
 import * as toastStore from '../stores/toast'
+import * as dashboardMutation from '../utils/dashboard/dashboardMutation'
+import * as listMutation from '../utils/lists/listMutation'
 
 /**
- * Cancel any auto-dismiss timers a test armed.
+ * Cancel what a test armed and drop what it cached.
  *
- * Most test files don't mock `stores/toast`, so anything that surfaces an error arms a real 4s
- * timeout and then the file finishes in milliseconds. Vitest reuses a worker across files, so
- * those orphaned closures pile up holding the store — and the module graph behind it — alive.
+ * Vitest reuses a worker across files, so an uncleared timeout keeps its closure — and the store
+ * and module graph behind it — alive for every file that follows. `resetAllResourceData` covers
+ * each cache that registered itself, so a new one needs nothing here.
  *
- * Optional call on purpose: in the files that *do* mock the module this resolves to the mock,
- * which has no reset helper and needs none, because a mocked toast never arms a timer.
+ * Every call is optional on purpose: in the files that mock one of these modules this resolves to
+ * the mock, which has no reset helper and needs none.
  */
 afterEach(() => {
   toastStore.__resetToastStoreForTests?.()
+  apiClient.__resetApiClientForTests?.()
+  resetRegistry.resetAllResourceData?.()
+  dashboardMutation.__resetPendingDashboardMutationsForTests?.()
+  listMutation.__resetPendingListMutationsForTests?.()
 })

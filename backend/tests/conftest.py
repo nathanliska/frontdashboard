@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from alembic.config import Config
+from argon2 import PasswordHasher
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -16,10 +17,12 @@ from sqlalchemy.pool import NullPool
 from testcontainers.community.postgres import PostgresContainer
 
 from alembic import command
+from app.auth import hashing
 from app.database import get_db
 from app.limiter import limiter
 from app.main import app
 from app.models.user import User
+from app.routers import auth as auth_router
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,6 +32,10 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 # test_config.py fails the build if the two defaults drift apart.
 POSTGRES_IMAGE_DEFAULT = "postgres:17-alpine"
 POSTGRES_IMAGE = os.getenv("POSTGRES_IMAGE", POSTGRES_IMAGE_DEFAULT)
+
+# Bound before the session fixture swaps the cheap profile in, so `production_argon2` restores what
+# production actually builds rather than a reconstruction of it.
+_PRODUCTION_HASHER = hashing._ph
 
 
 @dataclass(frozen=True)
@@ -119,6 +126,33 @@ def test_database() -> Generator[_TestDatabase]:
 @pytest.fixture(scope="session")
 def alembic_config(test_database: _TestDatabase) -> Config:
     return test_database.alembic_config
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cheap_argon2() -> Generator[None]:
+    """Run Argon2 at its minimum cost for the whole suite.
+
+    The production profile is ~64 MiB and four threads per operation, and most of this suite
+    registers or logs in, so at full cost hashing is the run's peak memory and thread pressure.
+    It is not the run's wall clock — that is database round-trips, and this changes it by nothing.
+    Tests that assert on the real profile take `production_argon2` instead.
+    """
+    cheap = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+    dummy = cheap.hash("frontdashboard-login-timing-equalizer")
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(hashing, "_ph", cheap)
+        monkeypatch.setattr(hashing, "_DUMMY_HASH", dummy)
+        # The login-miss path bound the dummy by value at import, so the source alone is not enough.
+        monkeypatch.setattr(auth_router, "_DUMMY_HASH", dummy)
+        yield
+
+
+@pytest.fixture
+def production_argon2() -> Generator[PasswordHasher]:
+    """Restore the real Argon2 profile for tests that assert on its cost."""
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(hashing, "_ph", _PRODUCTION_HASHER)
+        yield _PRODUCTION_HASHER
 
 
 @pytest.fixture(autouse=True)
