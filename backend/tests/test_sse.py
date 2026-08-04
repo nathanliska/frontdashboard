@@ -129,6 +129,24 @@ async def test_manager_multiple_connections_same_user() -> None:
     assert tab2.queue.qsize() == 1
 
 
+def test_manager_counts_streams_and_people_separately() -> None:
+    """client_count is tabs, user_count is people — the two diverge and both are published."""
+    mgr = SseManager()
+    reader = uuid.uuid4()
+
+    mgr.connect(reader, session_id=uuid.uuid4())
+    mgr.connect(reader, session_id=uuid.uuid4())
+    assert mgr.client_count == 2
+    assert mgr.user_count == 1
+
+    housemate = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+    assert mgr.client_count == 3
+    assert mgr.user_count == 2
+
+    mgr.disconnect(housemate)
+    assert mgr.user_count == 1
+
+
 # ---------------------------------------------------------------------------
 # sse.py unit tests
 # ---------------------------------------------------------------------------
