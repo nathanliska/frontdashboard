@@ -47,14 +47,14 @@ metrics.register_gauge("sse_users", "Distinct users holding a stream on THIS pro
 metrics.register_gauge("sse_sessions", "Distinct sessions holding a stream on THIS process — devices, roughly.", lambda: manager.session_count)
 metrics.register_gauge(
     "sse_queue_depth_max",
-    "Deepest queue seen since the last scrape; backpressure before it becomes eviction.",
+    "Deepest queue seen in the last minute; backpressure before it becomes eviction.",
     lambda: metrics.SSE_QUEUE_PEAK.read(manager.max_queue_depth),
 )
 # Fires with the new connection already counted, so the handler sees the true running total.
 event.listen(engine.sync_engine.pool, "checkout", lambda *_: metrics.DB_POOL_PEAK.record(_pool_reader("checkedout")))
 metrics.register_gauge(
     "db_pool_checked_out_peak",
-    "Peak connections handed out since the last scrape; a burst between scrapes has no other witness.",
+    "Peak connections handed out in the last minute; a burst between scrapes has no other witness.",
     lambda: metrics.DB_POOL_PEAK.read(_pool_reader("checkedout")),
 )
 metrics.register_gauge("db_pool_size", "Connections the pool keeps open.", lambda: _pool_reader("size"))

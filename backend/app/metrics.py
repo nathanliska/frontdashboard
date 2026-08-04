@@ -9,7 +9,9 @@ workers share one socket and cannot be, and multiprocess mode reports 0 for the 
 gauges `register_gauge` builds; `docs/TODO.md` carries the reasoning.
 """
 
+import contextlib
 from collections.abc import Callable
+from time import monotonic
 
 from prometheus_client import Counter, Gauge, Histogram, disable_created_metrics
 
@@ -91,41 +93,62 @@ ARGON2_SECONDS = Histogram(
 
 
 def observe_response(method: str, route: str, status_code: int, *, seconds: float | None = None) -> None:
-    """Count one response, and time it when the caller measured. Never raises."""
-    HTTP_RESPONSES.labels(method=method, route=route, status_class=f"{status_code // 100}xx").inc()
-    if seconds is not None:
-        HTTP_REQUEST_SECONDS.labels(route=route).observe(seconds)
+    """Count one response, and time it when the caller measured.
+
+    Never raises, and enforced rather than asserted: this runs inside the ASGI send path, so an
+    instrumentation fault has to cost a measurement rather than the response being measured.
+    """
+    with contextlib.suppress(Exception):
+        HTTP_RESPONSES.labels(method=method, route=route, status_class=f"{status_code // 100}xx").inc()
+        if seconds is not None:
+            HTTP_REQUEST_SECONDS.labels(route=route).observe(seconds)
 
 
-class PeakGauge:
-    """Highest value seen since the last read, for a quantity that is transient by nature.
+# Must outlast the scrape interval, or a burst can still fall between two scrapes and be missed.
+# Longer costs only that a spike is reported by several consecutive scrapes rather than one.
+_PEAK_WINDOW_SECONDS = 60.0
+
+
+class WindowedPeak:
+    """Highest value seen in the last `window_seconds`, for a quantity that is transient by nature.
 
     A connection is held for milliseconds and a queue drains in one tick, so a gauge sampled every
     15s reads zero through the bursts it exists to catch. Whatever holds one of these has to
     `record` on the path that makes the value rise; nothing else needs to know.
+
+    Reading adds to the window but never discards from it, so a scrape is safe to repeat: an HA
+    Prometheus pair, or one server plus a `curl` while debugging, all see the same peak. Draining
+    on read would hand each of them a different fraction of the same burst.
     """
 
-    def __init__(self) -> None:
-        self._peak = 0.0
+    def __init__(self, window_seconds: float = _PEAK_WINDOW_SECONDS, *, clock: Callable[[], float] = monotonic) -> None:
+        self._window = window_seconds
+        self._clock = clock
+        # Keyed by whole second, so a hot path recording thousands of times still costs one entry
+        # per second of window rather than one per call.
+        self._buckets: dict[int, float] = {}
 
     def record(self, value: float) -> None:
         """Note a value the quantity just reached."""
-        self._peak = max(self._peak, value)
+        second = int(self._clock())
+        if value > self._buckets.get(second, 0.0):
+            self._buckets[second] = value
 
     def read(self, current: float) -> float:
-        """Report the interval's peak and start a new one.
+        """Report the window's peak, counting a value still held right now.
 
-        Reset is to `current`, never to zero: a resource still held after the scrape has not gone
-        away, and reporting it free would be a worse lie than the one this replaces.
+        `current` is recorded rather than only compared, which is what carries a level across a
+        quiet window: connections open at this scrape are still the peak at the next one.
         """
-        peak = max(self._peak, current)
-        self._peak = current
-        return peak
+        self.record(current)
+        cutoff = self._clock() - self._window
+        self._buckets = {second: value for second, value in self._buckets.items() if second >= cutoff}
+        return max(self._buckets.values(), default=0.0)
 
 
 # Owned here so the code that makes the value rise can reach them without importing a router.
-SSE_QUEUE_PEAK = PeakGauge()
-DB_POOL_PEAK = PeakGauge()
+SSE_QUEUE_PEAK = WindowedPeak()
+DB_POOL_PEAK = WindowedPeak()
 
 
 def register_gauge(name: str, documentation: str, reader: Callable[[], float]) -> Gauge:

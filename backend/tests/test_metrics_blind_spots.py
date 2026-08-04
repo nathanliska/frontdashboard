@@ -10,11 +10,21 @@ from prometheus_client import REGISTRY
 from sqlalchemy import event
 
 from app import metrics
-from app.metrics import PeakGauge
+from app.metrics import WindowedPeak
+
+
+class _Clock:
+    """A hand-wound monotonic clock, so window expiry is exercised without sleeping."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
 
 
 def test_a_burst_between_reads_survives_to_the_next_one() -> None:
-    gauge = PeakGauge()
+    gauge = WindowedPeak()
 
     gauge.record(4)
     gauge.record(7)
@@ -24,39 +34,69 @@ def test_a_burst_between_reads_survives_to_the_next_one() -> None:
     assert gauge.read(current=0) == 7
 
 
-def test_a_quiet_interval_reports_nothing_left_over() -> None:
-    """A peak belongs to its own interval, or one spike reads as permanent saturation."""
-    gauge = PeakGauge()
-    gauge.record(9)
-    gauge.read(current=0)
+def test_scraping_twice_reports_the_same_peak() -> None:
+    """The whole reason this is a window and not a reset: a scrape must not consume what it reports.
 
+    Two Prometheus servers, or one plus a `curl` while debugging, would otherwise each be handed a
+    different fraction of the same burst, with nothing to say which was the real one.
+    """
+    gauge = WindowedPeak()
+    gauge.record(7)
+
+    assert gauge.read(current=0) == 7
+    assert gauge.read(current=0) == 7
+
+
+def test_a_peak_falls_out_once_its_window_has_passed() -> None:
+    """A spike belongs to its own window, or one burst reads as permanent saturation."""
+    clock = _Clock()
+    gauge = WindowedPeak(window_seconds=60, clock=clock)
+    gauge.record(9)
+    assert gauge.read(current=0) == 9
+
+    clock.now += 61
     assert gauge.read(current=0) == 0
 
 
 def test_a_resource_still_held_never_reads_as_free() -> None:
-    """Resetting to zero would report an in-use pool as idle on the very next scrape."""
-    gauge = PeakGauge()
-    gauge.record(5)
+    """A pool in use must never read as idle, however the window happens to have emptied."""
+    gauge = WindowedPeak()
 
-    assert gauge.read(current=3) == 5
     assert gauge.read(current=3) == 3
 
 
-def test_a_level_held_into_an_interval_is_not_forgotten_when_it_drops() -> None:
-    """The distinguishing case for resetting to `current` rather than to zero.
+def test_a_level_held_into_a_window_is_not_forgotten_when_it_drops() -> None:
+    """The distinguishing case for recording `current` rather than only comparing against it.
 
-    Three connections held when a scrape lands are still held as the next interval opens, so that
-    interval's peak is three even if they are all released and nothing new is ever recorded.
+    Three connections held when a scrape lands are still held as the next window opens, so that
+    window's peak is three even if they are all released and nothing new is ever recorded.
     """
-    gauge = PeakGauge()
+    clock = _Clock()
+    gauge = WindowedPeak(window_seconds=60, clock=clock)
     gauge.read(current=3)
 
+    clock.now += 1
     assert gauge.read(current=0) == 3
 
 
 def test_the_current_value_wins_when_it_exceeds_the_recorded_peak() -> None:
     """Nothing has to `record` for the gauge to stay truthful — it only adds resolution."""
-    assert PeakGauge().read(current=6) == 6
+    assert WindowedPeak().read(current=6) == 6
+
+
+def test_a_hot_path_costs_one_entry_per_second_not_one_per_call() -> None:
+    """Recording is on every queue put and every pool checkout, so it must not grow with traffic."""
+    clock = _Clock()
+    gauge = WindowedPeak(window_seconds=60, clock=clock)
+
+    for value in range(500):
+        gauge.record(value)
+    clock.now += 1
+    for value in range(500):
+        gauge.record(value)
+
+    assert len(gauge._buckets) == 2
+    assert gauge.read(current=0) == 499
 
 
 def test_pool_checkout_feeds_the_peak() -> None:
@@ -69,7 +109,7 @@ def test_pool_checkout_feeds_the_peak() -> None:
     # The count only exists on a real pool; NullPool and StaticPool are why `_pool_reader` guards.
     assert isinstance(pool, QueuePool)
 
-    gauge = PeakGauge()
+    gauge = WindowedPeak()
     event.listen(pool, "checkout", lambda *_: gauge.record(pool.checkedout()))
 
     first = engine.connect()
@@ -84,8 +124,8 @@ def test_pool_checkout_feeds_the_peak() -> None:
 
 def test_module_level_peaks_are_wired_for_the_subsystems_that_feed_them() -> None:
     """`sse/manager.py` and the metrics router reach these by import; a rename must not orphan them."""
-    assert isinstance(metrics.SSE_QUEUE_PEAK, PeakGauge)
-    assert isinstance(metrics.DB_POOL_PEAK, PeakGauge)
+    assert isinstance(metrics.SSE_QUEUE_PEAK, WindowedPeak)
+    assert isinstance(metrics.DB_POOL_PEAK, WindowedPeak)
 
 
 async def test_a_failed_send_is_counted_where_nothing_else_would_notice(monkeypatch) -> None:
