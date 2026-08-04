@@ -135,7 +135,21 @@ curl -s -b jar -X PATCH "$S/api/auth/profile" -H 'Content-Type: application/json
 # {"detail":"Cross-origin request rejected"} — and without the header, "CSRF token missing"
 ```
 
-## 5. Tear down
+## 5. Read the backend log
+
+```sh
+docker compose -f docker-compose.verify.yml logs backend | grep -iE 'traceback|error|critical'
+```
+
+Catches what the browser cannot: a migration that failed and left the app serving against a
+half-built schema, an unhandled exception behind a 500 the UI rendered as a generic toast, or a
+config warning that only fires under `ENVIRONMENT=production`.
+
+Not a credential scan. "Never log bearer credentials" governs what a `log` call may contain and is
+enforced when the code is written; the values in this stack are throwaway, and gitleaks covers
+committed secrets separately.
+
+## 6. Tear down
 
 ```sh
 docker compose -f docker-compose.verify.yml down
