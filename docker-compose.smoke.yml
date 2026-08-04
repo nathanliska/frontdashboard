@@ -1,0 +1,48 @@
+# CI overlay for docker-compose.prod.yml — boots the real production stack against a throwaway
+# database so the images are exercised as deployed. Layered, not forked, so a drift between the
+# prod file and the Caddy upstream it depends on fails here rather than at deploy.
+# Usage: docker compose -f docker-compose.prod.yml -f docker-compose.smoke.yml up -d
+#
+# The project name is not optional. Without it Compose derives one from the directory, which is
+# also the dev stack's — so `db` resolves to the development container and its real pgdata volume.
+name: frontdashboard-smoke
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ci
+      POSTGRES_PASSWORD: ci
+      POSTGRES_DB: ci
+    # The backend runs `alembic upgrade head` before uvicorn, so it must not start against a
+    # database still initialising — a failed migration exits the container rather than retrying.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ci -d ci"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks:
+      - internal
+
+  backend:
+    image: frontdashboard-backend:ci
+    pull_policy: never
+    # Prod restarts forever; here a crash must surface as a failed smoke run, not as a slow one.
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: frontdashboard-frontend:ci
+    pull_policy: never
+    restart: "no"
+    ports:
+      - "8080:80"
+
+# Prod declares these external because Cloudflare's tunnel joins `edge` out of band. CI has no
+# tunnel, so Compose creates and disposes of both with the stack.
+networks:
+  internal:
+    external: false
+  edge:
+    external: false

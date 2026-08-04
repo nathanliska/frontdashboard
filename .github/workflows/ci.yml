@@ -26,8 +26,7 @@ jobs:
         with:
           version: "1.7.12"
           pyflakes: false
-      # The prod stack is never exercised by CI otherwise, so a typo in it surfaces at deploy.
-      # Values are dummies: this validates structure, not configuration.
+      # Structure only, with dummy values — the smoke job is what proves the stack boots.
       - name: Validate the production Compose file
         env:
           DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
@@ -36,8 +35,29 @@ jobs:
           EMAIL_FROM: ci@example.invalid
         run: docker compose -f docker-compose.prod.yml config --quiet
 
-  backend:
-    name: Backend
+  backend-checks:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          working-directory: backend
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run ty check
+      - run: uv run deptry .
+
+  backend-tests:
+    name: Backend tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -56,34 +76,11 @@ jobs:
             pyproject.toml
             uv.lock
       - run: uv sync --frozen
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run ty check
-      - run: uv run deptry .
+      # Integration tests reach Postgres through Testcontainers, which needs the runner's Docker.
       - run: uv run pytest
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      # The frontend prod image was already built here; the backend one never was, so a broken
-      # Dockerfile.prod only surfaced at deploy time. Same job, no extra runner.
-      - name: Build production backend image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: backend
-          file: backend/Dockerfile.prod
-          push: false
-          load: true
-          tags: frontdashboard-backend:ci
-          cache-from: type=gha,scope=frontdashboard-backend
-          cache-to: type=gha,mode=max,scope=frontdashboard-backend
-      # A USER line is easy to drop in a refactor and nothing else would notice, so assert it.
-      - name: Assert the production image does not run as root
-        run: |
-          uid=$(docker run --rm frontdashboard-backend:ci id -u)
-          echo "production image runs as uid $uid"
-          test "$uid" != "0"
 
-  frontend:
-    name: Frontend
+  frontend-checks:
+    name: Frontend checks
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -100,12 +97,36 @@ jobs:
       - run: npm run knip
       # `tsc --build` (not `--noEmit`): the root tsconfig is a solution file with `files: []`,
       # so a plain `tsc --noEmit` type-checks nothing and always passes. `vite build` is
-      # transpile-only, so this is the only step that actually checks types.
+      # transpile-only, so this is the only step that actually checks types. The bundle itself is
+      # built by the frontend image job, so nothing here needs to run vite.
       - run: npm run typecheck
+
+  frontend-tests:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
       - run: npm run test:run
-      - run: npm run build
-      # Folded in from a separate job: this needs both toolchains, and the frontend job is the
-      # shorter of the two, so uv lands here rather than npm ci landing on the backend job.
+
+  contract:
+    name: Contract drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
@@ -113,6 +134,8 @@ jobs:
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
+      - run: npm ci
+        working-directory: frontend
       - run: uv sync --frozen
         working-directory: backend
       - name: Contract is in sync with the backend schema
@@ -121,13 +144,95 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
           ENVIRONMENT: development
-        working-directory: .
         run: |
           make contracts
           git diff --exit-code frontend/src/api/generated/contract.ts
+
+  # Registration is open to the internet, so a disclosed CVE is not a "fix it next sprint" item —
+  # this gates publish deliberately. A finding with no upstream fix yet is the cost of that.
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      # Both auditors read lockfiles, so neither stack needs installing first.
+      - run: make audit
+
+  images:
+    name: Image (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Both images are wanted on every run: knowing only that one broke means a second push to
+      # find out about the other.
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: backend
+            file: backend/Dockerfile.prod
+          - name: frontend
+            context: .
+            file: frontend/Dockerfile.prod
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: Build production frontend image
+      - name: Build production image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          load: true
+          tags: frontdashboard-${{ matrix.name }}:ci
+          cache-from: type=gha,scope=frontdashboard-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=frontdashboard-${{ matrix.name }}
+      # A USER line is easy to drop in a refactor and nothing else would notice, so assert it. The
+      # frontend is the more fragile of the two: it binds :80 via a file capability, so losing
+      # either the USER line or the setcap silently returns it to root.
+      - name: Assert the production image does not run as root
+        env:
+          IMAGE: frontdashboard-${{ matrix.name }}:ci
+        run: |
+          uid=$(docker run --rm "$IMAGE" id -u)
+          echo "production image runs as uid $uid"
+          test "$uid" != "0"
+
+  # The only job that sees the two images serving together. Everything above tests a stack in
+  # isolation; a broken Caddy upstream, a failed migration on boot or a missing bundle only shows
+  # here. Assertions mirror the invariants that have actually broken in production — see the
+  # deploy-verify skill.
+  smoke:
+    name: Smoke
+    needs: [images]
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://ci:ci@db:5432/ci
+      FRONTEND_BASE_URL: http://localhost:8080
+      RESEND_API_KEY: ci-smoke
+      EMAIL_FROM: ci@example.invalid
+      # Read natively by every `docker compose` call below, so no step repeats the -f pair.
+      COMPOSE_FILE: docker-compose.prod.yml:docker-compose.smoke.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      # Rebuilt rather than carried between jobs: with the layer cache the images job just wrote,
+      # this is cheaper than saving and re-loading a few hundred MB of tarball.
+      - name: Load the backend image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: backend
+          file: backend/Dockerfile.prod
+          push: false
+          load: true
+          tags: frontdashboard-backend:ci
+          cache-from: type=gha,scope=frontdashboard-backend
+      - name: Load the frontend image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -136,14 +241,71 @@ jobs:
           load: true
           tags: frontdashboard-frontend:ci
           cache-from: type=gha,scope=frontdashboard-frontend
-          cache-to: type=gha,mode=max,scope=frontdashboard-frontend
-      # Mirrors the backend assertion. This image is the more fragile of the two: it binds :80 via
-      # a file capability, so losing either the USER line or the setcap silently returns it to root.
-      - name: Assert the production image does not run as root
+
+      - name: Start the stack
+        run: docker compose up -d
+
+      - name: Wait for readiness through the proxy
+        # Proves three things at once: Caddy resolves its upstream, the backend finished
+        # `alembic upgrade head`, and it can reach the database.
         run: |
-          uid=$(docker run --rm frontdashboard-frontend:ci id -u)
-          echo "production image runs as uid $uid"
-          test "$uid" != "0"
+          for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:8080/api/health/ready; then
+              echo "ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "backend never became ready"
+          exit 1
+
+      - name: Document is served uncached, with its security headers
+        run: |
+          set -eu
+          curl -fsS -D headers.txt -o doc.html http://localhost:8080/
+          # Absent means browsers guess a lifetime from Last-Modified and a stale document asks
+          # for bundles the deploy deleted.
+          grep -qi '^cache-control: no-cache' headers.txt
+          grep -qi '^content-security-policy: ' headers.txt
+          grep -qi '^x-frame-options: DENY' headers.txt
+          grep -qi '^x-content-type-options: nosniff' headers.txt
+          grep -qi '^strict-transport-security: ' headers.txt
+
+      - name: Bundle the document names is reachable and is JavaScript
+        # A 200 of text/html here is the silent blank page: the browser parses the SPA fallback as
+        # a module and renders nothing.
+        run: |
+          set -eu
+          bundle=$(grep -oE '/assets/[^"]+\.js' doc.html | head -1)
+          test -n "$bundle"
+          type=$(curl -fsS -o /dev/null -w '%{content_type}' "http://localhost:8080$bundle")
+          echo "$bundle is $type"
+          case "$type" in
+            text/javascript*|application/javascript*) ;;
+            *) echo "bundle is not JavaScript"; exit 1 ;;
+          esac
+          curl -fsSI -o asset-headers.txt "http://localhost:8080$bundle"
+          grep -qi 'cache-control: .*immutable' asset-headers.txt
+
+      - name: Missing bundle 404s instead of falling back to the document
+        run: |
+          set -eu
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/assets/index-DELETED.js)
+          echo "deleted asset returned $code"
+          test "$code" = "404"
+
+      - name: Unknown path falls back to the SPA
+        run: |
+          set -eu
+          curl -fsS -o notfound.html http://localhost:8080/not-a-real-page
+          grep -q '<div id="root">' notfound.html
+
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down
 
   # Publish, not deploy: images land in GHCR as a matched pair; prod still pulls by hand.
   # Both images build before any tag is pushed, and :sha goes before :latest, so no failure
@@ -151,7 +313,7 @@ jobs:
   publish:
     name: Publish images
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [workflow, backend, frontend]
+    needs: [workflow, backend-checks, backend-tests, frontend-checks, frontend-tests, contract, audit, smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -172,7 +334,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Rebuilds are near-free: cache-from reuses the layer cache the test jobs just wrote.
+      # Rebuilds are near-free: cache-from reuses the layer cache the images job wrote.
       - name: Build backend image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:

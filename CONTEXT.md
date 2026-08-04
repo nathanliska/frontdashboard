@@ -293,12 +293,19 @@ _Last updated: 2026-07-30_
   validated at the network boundary, widgets are a discriminated union on `widget_type`, and SSE
   frames validate against generated frame schemas — so a new backend event type or widget type is a
   compile error in the client code that must handle it.
-- CI: lint (Ruff/Biome), dead-code and dependency gates (knip, deptry), workflow linting
-  (actionlint), tests (pytest, Vitest), `ty` + `tsc` type checks, contract-drift check, frontend
-  build, and a production frontend image build. Backend tests build their schema with `alembic upgrade head`, so **migrations run on
-  every CI job** and `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the
-  Docker-free subset. Pre-commit hooks incl. Conventional Commit enforcement. Dependabot
-  grouped/monthly.
+- CI: independent parallel lanes, so one run reports every failure rather than the first — lint
+  (Ruff/Biome), dead-code and dependency gates (knip, deptry), workflow linting (actionlint), tests
+  (pytest, Vitest), `ty` + `tsc` type checks, contract drift, a dependency audit (uv-secure, npm
+  audit), and both production image builds as a matrix. A **smoke job** then boots the two images
+  together against a throwaway database — [docker-compose.smoke.yml](docker-compose.smoke.yml)
+  layered over the real prod Compose file, so a drift between it and the Caddy upstream fails here
+  rather than at deploy — and asserts the serving contract of
+  [ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md): readiness through the proxy,
+  `no-cache` on the document, an immutable JavaScript bundle, a 404 for a missing asset, SPA
+  fallback for an unknown path. Publishing to GHCR is gated on all of it. Backend tests build their
+  schema with `alembic upgrade head`, so **migrations run on every backend test run** and
+  `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the Docker-free subset.
+  Pre-commit hooks incl. Conventional Commit enforcement. Dependabot grouped/monthly.
 
 ## In flight
 
