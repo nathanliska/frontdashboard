@@ -1,5 +1,5 @@
 # Node 24 to match CI and Dockerfile.prod — react-router 8 requires >=22.22.0.
-FROM node:24-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 
