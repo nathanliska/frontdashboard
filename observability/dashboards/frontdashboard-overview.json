@@ -1,22 +1,6 @@
 {
   "annotations": {
-    "list": [
-      {
-        "name": "Backend restarts",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${DS_PROMETHEUS}"
-        },
-        "enable": true,
-        "hide": false,
-        "iconColor": "rgba(255, 96, 96, 1)",
-        "titleFormat": "Backend restarted",
-        "target": {
-          "expr": "changes(process_start_time_seconds{job=\"frontdashboard\"}[$__interval]) > 0",
-          "refId": "restarts"
-        }
-      }
-    ]
+    "list": []
   },
   "editable": true,
   "graphTooltip": 1,
@@ -681,7 +665,8 @@
               "mode": "none",
               "group": "A"
             },
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "axisSoftMax": 5
           },
           "thresholds": {
             "mode": "absolute",

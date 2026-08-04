@@ -1,22 +1,6 @@
 {
   "annotations": {
-    "list": [
-      {
-        "name": "Backend restarts",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${DS_PROMETHEUS}"
-        },
-        "enable": true,
-        "hide": false,
-        "iconColor": "rgba(255, 96, 96, 1)",
-        "titleFormat": "Backend restarted",
-        "target": {
-          "expr": "changes(process_start_time_seconds{job=\"frontdashboard\"}[$__interval]) > 0",
-          "refId": "restarts"
-        }
-      }
-    ]
+    "list": []
   },
   "editable": true,
   "graphTooltip": 1,
@@ -177,7 +161,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Latency includes time queued for a limiter slot, so a p95 well above the ~34ms floor is contention, not slow hashing.",
+      "description": "Latency includes time queued for a limiter slot, so a p95 well above the ~34ms floor is contention. Slots in flight and queued share the right axis.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -217,7 +201,9 @@
               "options": {
                 "mode": "include",
                 "names": [
-                  "queued"
+                  "queued",
+                  "in flight",
+                  "slot limit"
                 ]
               }
             },
@@ -232,7 +218,7 @@
               },
               {
                 "id": "custom.axisLabel",
-                "value": "queued / slots"
+                "value": "slots"
               },
               {
                 "id": "custom.fillOpacity",
@@ -246,22 +232,27 @@
               "options": {
                 "mode": "include",
                 "names": [
-                  "slots in use"
+                  "slot limit"
                 ]
               }
             },
             "properties": [
               {
-                "id": "unit",
-                "value": "percentunit"
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
               },
               {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
               }
             ]
           }
@@ -333,10 +324,21 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(frontdashboard_argon2_in_flight) / sum(frontdashboard_argon2_limit)",
-          "legendFormat": "slots in use",
+          "expr": "sum(frontdashboard_argon2_in_flight)",
+          "legendFormat": "in flight",
           "range": true,
           "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(frontdashboard_argon2_limit)",
+          "legendFormat": "slot limit",
+          "range": true,
+          "refId": "F"
         }
       ]
     },
@@ -813,7 +815,8 @@
               "mode": "none",
               "group": "A"
             },
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "axisSoftMax": 5
           },
           "thresholds": {
             "mode": "absolute",

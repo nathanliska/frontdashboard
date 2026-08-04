@@ -25,10 +25,14 @@ the JSON, pick the data source. The `uid` in the file matches an existing dashbo
 updates rather than duplicates.
 
 **Then the rules**: *Alerting → Alert rules → Import rules → Prometheus YAML file*, upload
-`alerts.yml`, choose the FrontDashboard folder and the data source.
+`alerts.yml`, choose a target folder and the data source.
 
-Three things worth knowing about that import:
+Four things worth knowing about that import:
 
+- **Untick "pause imported rules".** It defaults to *on*, and a paused rule never evaluates —
+  `lastEvaluation` stays at the zero time while the list shows fifteen healthy, inactive rules. It
+  looks exactly like working alerting and is inert. If they are already in, select all and
+  *More → Resume evaluation*.
 - **Prometheus format is the only one that works.** Grafana's own provisioning format exports but
   never imports; it can only be mounted as a file inside the container, on the NAS.
 - **No-data semantics survive the conversion** — an empty result leaves a rule Normal rather than
