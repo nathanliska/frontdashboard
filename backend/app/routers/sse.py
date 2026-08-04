@@ -1,4 +1,8 @@
-"""SSE endpoint — single multiplexed stream per authenticated user."""
+"""SSE endpoint — one stream per connection, multiplexing every event type onto it.
+
+Not one per user: a laptop, a phone and a second tab are three streams, each with its own session
+and watermark, and fan-out addresses all of them by user id.
+"""
 
 import asyncio
 import random

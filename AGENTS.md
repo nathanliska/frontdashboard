@@ -115,7 +115,8 @@ make audit       # dependency/security audit checks
   refresh token, no `/auth/refresh`, no localStorage tokens
   ([ADR-002](docs/adr/ADR-002-jwt-httponly-cookies-csrf.md),
   [ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
-- **Real-time**: SSE, not WebSocket; one multiplexed connection per user.
+- **Real-time**: SSE, not WebSocket; one multiplexed connection per open tab, fanned out by user —
+  a laptop, a phone and a second tab are three streams, not one.
 - **State**: Zustand stores shared between widgets and full pages. REST for the initial fetch, SSE
   for incremental updates.
 - **API contract**: the backend's OpenAPI document is authoritative. The frontend's types are

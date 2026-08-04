@@ -809,6 +809,56 @@ describe('useSSE reconnect backoff', () => {
     expect(useConnectionStore.getState().status).toBe('reconnecting')
   })
 
+  /** Bring the tab to the foreground, as a phone unlocking does. */
+  function foreground() {
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+  }
+
+  it('reopens a stream the browser tore down while the tab was hidden', async () => {
+    render(<TestHarness />)
+    const es = latestStream()
+    act(() => {
+      es.dispatch('connected', '{"last_event_id":1}')
+    })
+
+    // Closed with no `error`: nothing else in the hook would ever notice this.
+    es.readyState = MockEventSource.CLOSED
+    foreground()
+
+    expect(MockEventSource.instances).toHaveLength(2)
+  })
+
+  it('leaves a live stream alone when the tab comes back', async () => {
+    render(<TestHarness />)
+    const es = latestStream()
+    act(() => {
+      es.dispatch('connected', '{"last_event_id":1}')
+    })
+
+    es.readyState = MockEventSource.OPEN
+    foreground()
+
+    // Reopening a healthy stream would cost a resync probe every time a phone was picked up.
+    expect(MockEventSource.instances).toHaveLength(1)
+  })
+
+  it('does not race the backoff when a reconnect is already scheduled', async () => {
+    render(<TestHarness />)
+    const es = latestStream()
+
+    es.readyState = MockEventSource.CLOSED
+    act(() => {
+      es.triggerError()
+    })
+    foreground()
+
+    // The pending timer owns the reconnect; a second one here would open two streams.
+    expect(MockEventSource.instances).toHaveLength(1)
+  })
+
   it('clears the degraded state when a fresh stream connects', async () => {
     render(<TestHarness />)
 
