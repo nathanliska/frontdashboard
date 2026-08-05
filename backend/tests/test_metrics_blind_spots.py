@@ -99,6 +99,24 @@ def test_a_hot_path_costs_one_entry_per_second_not_one_per_call() -> None:
     assert gauge.read(current=0) == 499
 
 
+def test_recording_without_ever_reading_stays_bounded() -> None:
+    """Nothing scrapes for an hour — a dead Prometheus, a dropped target — and the app runs on.
+
+    Reading is what prunes, so without this the buckets grow one per second for as long as the
+    outage lasts, in the one state where nobody is watching the process that holds them.
+    """
+    clock = _Clock()
+    gauge = WindowedPeak(window_seconds=60, clock=clock)
+
+    for _ in range(3600):
+        gauge.record(1)
+        clock.now += 1
+
+    assert len(gauge._buckets) <= 120
+    # Pruning must not have cost it the window it is meant to report.
+    assert gauge.read(current=0) == 1
+
+
 def test_pool_checkout_feeds_the_peak() -> None:
     """The listener is what makes the pool gauge see anything between scrapes."""
     from sqlalchemy import create_engine

@@ -133,6 +133,11 @@ class WindowedPeak:
         second = int(self._clock())
         if value > self._buckets.get(second, 0.0):
             self._buckets[second] = value
+        # Reading is what normally bounds this, so nothing does while nothing is scraping — the one
+        # state in which a bucket per second forever would also go unnoticed. Amortised: the sweep
+        # runs once per window at most, not once per call.
+        if len(self._buckets) > 2 * self._window:
+            self._expire()
 
     def read(self, current: float) -> float:
         """Report the window's peak, counting a value still held right now.
@@ -141,9 +146,12 @@ class WindowedPeak:
         quiet window: connections open at this scrape are still the peak at the next one.
         """
         self.record(current)
+        self._expire()
+        return max(self._buckets.values(), default=0.0)
+
+    def _expire(self) -> None:
         cutoff = self._clock() - self._window
         self._buckets = {second: value for second, value in self._buckets.items() if second >= cutoff}
-        return max(self._buckets.values(), default=0.0)
 
 
 # Owned here so the code that makes the value rise can reach them without importing a router.
