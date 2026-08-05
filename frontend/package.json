@@ -44,7 +44,7 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.4",
     "@vitest/ui": "^4.1.10",
-    "jsdom": "^29.0.2",
+    "jsdom": "^30.0.1",
     "knip": "^6.29.0",
     "tailwindcss": "^4.2.2",
     "typed-openapi": "2.2.7",
