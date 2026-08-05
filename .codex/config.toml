@@ -1,0 +1,10 @@
+# Codex's copy of the MCP servers declared in `.mcp.json` for Claude Code. Two files because the
+# two tools read different formats; keep them in step when either changes.
+[mcp_servers.chrome-devtools]
+command = "sh"
+# The server otherwise auto-selects the Windows chrome.exe under /mnt/c on WSL, whose CDP pipe
+# resets immediately. `sh -c` expands the path here because args are passed through literally.
+args = [
+  "-c",
+  'exec npx -y chrome-devtools-mcp@latest --headless --isolated --executablePath="${CHROME_PATH:-$(ls -d "$HOME"/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome 2>/dev/null | head -1)}"',
+]

@@ -61,6 +61,11 @@ the browser, that is the first thing to check, not an app bug.
 
 ## 3. Drive it in the browser
 
+**Check the MCP is there before building anything.** If the `chrome-devtools` tools are not
+available in this session, no part of this step works, and finding that out after a full image
+build wastes the build. The server is declared per tool — `.mcp.json` for Claude Code,
+`.codex/config.toml` for Codex — and adding it needs a session restart before the tools appear.
+
 Use the `chrome-devtools` MCP tools. Navigate to http://localhost:8080, sign in with the account
 above, then exercise whatever changed. The **network panel is the point** — most of this project's
 recurring bugs are visible only as request traffic, not as pixels.
