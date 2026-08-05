@@ -314,7 +314,8 @@ _Last updated: 2026-08-04_
   rather than at deploy — and asserts the serving contract of
   [ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md): readiness through the proxy,
   `no-cache` on the document, an immutable JavaScript bundle, a 404 for a missing asset, SPA
-  fallback for an unknown path. Publishing to GHCR is gated on all of it. Backend tests build their
+  fallback for an unknown path. Publishing to GHCR is gated on all of it, and those are the images
+  production pulls — there is no path that builds and pushes without passing them first. Backend tests build their
   schema with `alembic upgrade head`, so **migrations run on every backend test run** and
   `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the Docker-free subset.
   Pre-commit hooks incl. Conventional Commit enforcement. Dependabot grouped/monthly.

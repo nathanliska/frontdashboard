@@ -5,12 +5,13 @@ image swap — it does **not** undo a migration. Read the migration warning befo
 
 ## What makes this possible
 
-`deploy.sh` tags every build twice: the mutable tag (`latest`) and an immutable `:<short-sha>`.
-Pushing moves `latest` and leaves its predecessor unnamed, so the sha tag is the only durable
-handle on a previous build. The script refuses to run against a dirty working tree, because a sha
-that doesn't describe what's in the image is worse than no rollback target at all.
+CI tags every build on `main` twice: the mutable `latest` and an immutable `:<short-sha>`. Moving
+`latest` leaves its predecessor unnamed, so the sha tag is the only durable handle on a previous
+build. Both images are pushed at `:<short-sha>` before either `latest` moves, and nothing is
+published unless the whole suite is green — so the build you roll back to passed the same gates as
+the one that replaced it.
 
-**This is not retroactive.** Only builds pushed after that change carry sha tags; anything older
+**This is not retroactive.** Only builds published to GHCR carry usable sha tags; anything older
 has no target and still has to be rebuilt from its commit.
 
 ## Roll back
@@ -24,9 +25,9 @@ has no target and still has to be rebuilt from its commit.
 
    ```yaml
    backend:
-     image: heatslinger/frontdashboard-backend:abc1234
+     image: ghcr.io/nathanliska/frontdashboard-backend:abc1234
    frontend:
-     image: heatslinger/frontdashboard-frontend:abc1234
+     image: ghcr.io/nathanliska/frontdashboard-frontend:abc1234
    ```
 
 3. **Pull and restart.**

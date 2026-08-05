@@ -1,7 +1,7 @@
 services:
   frontend:
     container_name: frontdashboard-frontend
-    image: heatslinger/frontdashboard-frontend:${TAG:-latest}
+    image: ghcr.io/nathanliska/frontdashboard-frontend:${TAG:-latest}
     # Started, not healthy: Caddy resolves the upstream per request, so it only needs DNS. Waiting
     # on health stalls every restart and serves nothing meanwhile, instead of shell plus a 502.
     depends_on:
@@ -19,7 +19,7 @@ services:
 
   backend:
     container_name: frontdashboard-backend
-    image: heatslinger/frontdashboard-backend:${TAG:-latest}
+    image: ghcr.io/nathanliska/frontdashboard-backend:${TAG:-latest}
     pull_policy: always
     environment:
       DATABASE_URL: ${DATABASE_URL}

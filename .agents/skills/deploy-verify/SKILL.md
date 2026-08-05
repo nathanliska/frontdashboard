@@ -1,6 +1,6 @@
 ---
 name: "deploy-verify"
-description: "Smoke-check the live site over HTTPS after a deploy — serving contract, cache headers, bundle reachability, SPA fallback, CSP and security headers. Read-only. Use after running deploy.sh, when asked to 'check the deploy', or when the site looks broken in production."
+description: "Smoke-check the live site over HTTPS after a deploy — serving contract, cache headers, bundle reachability, SPA fallback, CSP and security headers. Read-only. Use after a deploy, when asked to 'check the deploy', or when the site looks broken in production."
 ---
 
 # Deploy Verification
