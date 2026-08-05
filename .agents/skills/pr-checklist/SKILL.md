@@ -26,6 +26,10 @@ Give these items precedence over general instructions given earlier in the sessi
 - If the change alters *how* a result is produced rather than *what* it is, assert on the mechanism
   — a call count, `getState` — not the result, which passes against the unfixed code.
 - Run what would actually catch a regression here: `make test`, or the narrower suite plus a reason.
+- **When a change is cheap to run, run it before arguing about whether it is safe.** Toolchain and
+  dependency bumps especially: their failures are usually environmental, so they are invisible to
+  reading the diff and obvious the moment CI executes it. A red run is a better reason than a good
+  argument, and a green one retires the debate.
 
 ## The conventions that fail the build
 
@@ -79,6 +83,10 @@ FDRs and TODO findings involved. Use `Closes #123.` when it closes an issue.
 For multiline bodies with `gh`, write Markdown to a file and use `--body-file` — never escaped `\n`
 in `--body`. Afterwards, read it back with
 `gh pr view --json body,baseRefName,closingIssuesReferences` and confirm it matches the diff.
+
+The read-back is the check that the write landed, not a formality: `gh pr edit` can fail on
+something unrelated to your edit and leave the previous title and body in place. When it does,
+`gh api repos/{owner}/{repo}/pulls/{n} -X PATCH -F body=@file` goes around it.
 
 ## Migrations
 
