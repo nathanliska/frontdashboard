@@ -53,6 +53,9 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    # Mirrors docker-compose.prod.yml, so every live-verify run binds :80 the way prod does.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
     ports:
       - "8080:80"
 

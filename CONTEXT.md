@@ -260,9 +260,10 @@ _Last updated: 2026-08-05_
   path rather than silently redirecting — a truncated reset or invite link is the usual way there.
   See [ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md).
 - **Both production images run unprivileged** (uid 10001), with base images pinned by digest and a
-  `docker` Dependabot ecosystem keeping those pins current. Caddy still binds `:80` — it holds
-  `CAP_NET_BIND_SERVICE` on the binary rather than running as root, so the port the tunnel points at
-  never had to move. CI asserts both images are non-root.
+  `docker` Dependabot ecosystem keeping those pins current. Caddy carries no Linux capability at
+  all: `:80` binds because `net.ipv4.ip_unprivileged_port_start` is 0, which the compose files set
+  explicitly rather than inherit from the daemon, so the port the tunnel points at never had to
+  move. CI asserts both images are non-root.
 - **Liveness and readiness are separate.** `GET /api/health` answers "the process is up" and touches
   nothing, so a dependency outage can never look like a crashed process. `GET /api/health/ready` runs
   a bounded `SELECT 1` and returns 503 when the database is unreachable, hung, or the pool is
