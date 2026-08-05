@@ -21,7 +21,7 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 - [docs/runbooks/](docs/runbooks/) — operational procedures for the day something is broken. Prose
   aimed at a person under pressure, not architecture; the *why* still belongs in an ADR/FDR.
 - `.agents/skills/**` — workflow skills. Use them when the task names one or clearly matches one,
-  especially `live-verify`, `deploy-verify`, `doc-checkup` and `security-review`.
+  especially `live-verify`, `doc-checkup` and `security-review`.
 
 ## Project Status
 
@@ -110,7 +110,8 @@ make audit       # dependency/security audit checks
 
 - `/live-verify` runs the real production images against a throwaway database and drives them in a
   browser — the only check that sees a blank page, a stray refetch, or a serving/caching fault.
-  `/deploy-verify` smoke-checks the live site over HTTPS afterwards, read-only.
+  After a deploy, verify the live site from outside with the checks in
+  [docs/runbooks/deploy.md](docs/runbooks/deploy.md), read-only.
 - Backend integration tests need PostgreSQL: either a Docker socket (Testcontainers) or
   `TEST_DATABASE_URL` pointing at a dedicated test database. `make test-unit` needs neither.
 - CI runs lint, tests, `ty` type checking and the frontend build on every push and PR. Keep it
@@ -214,13 +215,13 @@ make audit       # dependency/security audit checks
 
 - A feature landing or being deliberately deferred → fold its *current behavior* into the right
   CONTEXT.md section. It is a snapshot, not a changelog.
-- A cross-cutting architectural decision → add or amend an ADR and update `docs/adr/INDEX.md`.
-  Supersede rather than delete when a decision is replaced. A decision local to one feature
-  belongs in that feature's FDR.
+- A cross-cutting architectural decision → add or amend an ADR and update `docs/adr/INDEX.md`
+  (`adr` skill). Supersede rather than delete when a decision is replaced. A decision local to one
+  feature belongs in that feature's FDR.
 - A feature's behavior or rationale changing → rewrite the affected FDR section in place, bump
-  **Last reviewed**, and cite any new ADR.
+  **Last reviewed**, and cite any new ADR (`fdr` skill).
 - A project-specific term being coined or renamed → add or rewrite its `docs/GLOSSARY.md` entry in
-  the right section and cross-link the owning FDR/ADR.
+  the right section and cross-link the owning FDR/ADR (`glossary` skill).
 - A backlog finding shipping or being deferred → remove or update its `docs/TODO.md` item in the
   same change. The execution detail lives in the commit; don't reproduce it in a doc.
 - A new standing rule or gotcha → this file.

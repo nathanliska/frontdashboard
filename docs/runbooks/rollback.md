@@ -38,8 +38,7 @@ has no target and still has to be rebuilt from its commit.
    ```
 
 4. **Verify from outside.** Document served with `Cache-Control: no-cache`, the bundle it names
-   answers `200 text/javascript`, `/api/health/ready` answers `200`. The `deploy-verify` skill is
-   this checklist.
+   answers `200 text/javascript`, `/api/health/ready` answers `200`.
 
 5. **Un-pin once fixed.** Put the tag back to `latest` when the fix ships, or the next deploy will
    appear to do nothing.
