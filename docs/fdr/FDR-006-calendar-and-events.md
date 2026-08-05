@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-07-31
+**Last reviewed:** 2026-08-05
 
 ## Overview
 
@@ -14,6 +14,12 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
 - **Views.** Day, week, and month.
 - **Event editor.** A mobile-optimized editor with all-day toggle, a duration toolbar, timezones, and
   weekly recurrence.
+- **Duration is the end time, said another way.** The toolbar shows the gap between start and end in
+  minutes, hours or days; typing a duration or stepping it moves the end time, and moving the start
+  carries the duration with it. Switching the *unit* only changes how that gap reads — 90 minutes
+  becomes 1.5 hours — because asking to see a duration differently is not an edit. While a value is
+  being typed the field holds what was typed, including the empty and trailing-dot states a decimal
+  passes through, and falls back to the event's real duration if what is left behind is unusable.
 - **All-day means whole local days.** Setting `all_day` snaps `starts_at` to local midnight and
   `ends_at` to local midnight after the last covered day, in the event's *own* timezone, so a day
   that runs 23 or 25 hours across a DST boundary is still exactly one day. The end is **exclusive**.

@@ -23,23 +23,46 @@ export function formatDurationValue(durationMinutes: number | null, unit: Durati
   return trimTrailingZeroes((durationMinutes / (60 * 24)).toFixed(2))
 }
 
-export function getDurationStep(unit: DurationUnit): number {
+function getDurationStep(unit: DurationUnit): number {
   if (unit === 'minutes') return 15
   if (unit === 'hours') return 0.25
   return 0.25
 }
 
-export function getMinimumDurationValue(unit: DurationUnit): number {
+function getMinimumDurationValue(unit: DurationUnit): number {
   if (unit === 'minutes') return 15
   return 0.25
 }
 
-export function getDefaultDurationValue(unit: DurationUnit): number {
-  if (unit === 'minutes') return 30
-  return 1
+/**
+ * The duration a step away from `durationMinutes`, in minutes, never below the unit's minimum.
+ *
+ * Steps in minutes rather than in the displayed value because that value is rounded for display:
+ * 90 minutes reads as `0.06` days, and stepping from what is shown would write back the rounding.
+ */
+export function stepDurationMinutes(
+  durationMinutes: number | null,
+  unit: DurationUnit,
+  delta: number,
+): number {
+  const minimum = toDurationMinutes(getMinimumDurationValue(unit), unit)
+  const step = toDurationMinutes(getDurationStep(unit), unit)
+  return Math.max(minimum, (durationMinutes ?? minimum) + delta * step)
 }
 
-export function toDurationMinutes(value: number, unit: DurationUnit): number {
+/**
+ * The duration a partially typed value means, or `null` while it means nothing yet.
+ *
+ * `''` and `'1.'` are what a decimal looks like mid-keystroke, so they have to be answerable
+ * without the caller treating them as a duration.
+ */
+export function parseDurationValue(value: string, unit: DurationUnit): number | null {
+  const parsed = Number(value.trim())
+  if (value.trim() === '' || !Number.isFinite(parsed) || parsed <= 0) return null
+  return toDurationMinutes(parsed, unit)
+}
+
+function toDurationMinutes(value: number, unit: DurationUnit): number {
   if (unit === 'minutes') return Math.round(value)
   if (unit === 'hours') return Math.round(value * 60)
   return Math.round(value * 60 * 24)

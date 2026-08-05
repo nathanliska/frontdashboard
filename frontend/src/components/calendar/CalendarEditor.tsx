@@ -14,12 +14,10 @@ import {
 import {
   type DurationUnit,
   formatDurationValue,
-  getDefaultDurationValue,
   getDurationMinutes,
-  getDurationStep,
-  getMinimumDurationValue,
   inferDurationUnit,
-  toDurationMinutes,
+  parseDurationValue,
+  stepDurationMinutes,
   toLocalDateTimeValue,
 } from '../../utils/calendar/calendarEditorDurationUtils'
 import { cn } from '../../utils/shared/cn'
@@ -58,6 +56,9 @@ export const CalendarEditor = memo(function CalendarEditor({
   const [durationUnit, setDurationUnit] = useState<DurationUnit>(
     inferDurationUnit(initialDraft.startsAt, initialDraft.endsAt),
   )
+  // Held while the field is being typed into, because `''` and `1.` are states a duration derived
+  // from the start and end times cannot represent, and snapping back mid-decimal reads `1.5` as 15.
+  const [durationDraft, setDurationDraft] = useState<string | null>(null)
   const [showOptionalFields, setShowOptionalFields] = useState(
     Boolean(initialDraft.description || initialDraft.eventLocation),
   )
@@ -75,7 +76,7 @@ export const CalendarEditor = memo(function CalendarEditor({
       ? 'End time must be after the start time.'
       : null
   const durationMinutes = getDurationMinutes(startsAt, endsAt)
-  const durationValue = formatDurationValue(durationMinutes, durationUnit)
+  const durationValue = durationDraft ?? formatDurationValue(durationMinutes, durationUnit)
   const overlapWarning = !isRepeating
     ? null
     : getRecurringOverlapWarning(
@@ -157,35 +158,37 @@ export const CalendarEditor = memo(function CalendarEditor({
     handleRecurrenceModeChange(recurrenceMode === 'none' ? lastRecurringMode : recurrenceMode)
   }
 
-  function handleDurationValueChange(value: string) {
-    if (!hasValidStart) return
-    const nextValue = Number(value)
-    if (!Number.isFinite(nextValue) || nextValue <= 0) return
+  function applyDurationMinutes(minutes: number) {
     const nextEnd = new Date(parsedStart)
-    nextEnd.setMinutes(nextEnd.getMinutes() + toDurationMinutes(nextValue, durationUnit))
+    nextEnd.setMinutes(nextEnd.getMinutes() + minutes)
     setEndsAt(toLocalDateTimeValue(nextEnd))
+  }
+
+  function handleDurationValueChange(value: string) {
+    setDurationDraft(value)
+    if (!hasValidStart) return
+    const minutes = parseDurationValue(value, durationUnit)
+    if (minutes != null) applyDurationMinutes(minutes)
   }
 
   function adjustDuration(delta: number) {
     if (!hasValidStart) return
-    const currentValue = Number(durationValue) || getMinimumDurationValue(durationUnit)
-    const nextValue = Math.max(
-      getMinimumDurationValue(durationUnit),
-      currentValue + delta * getDurationStep(durationUnit),
-    )
-    const nextEnd = new Date(parsedStart)
-    nextEnd.setMinutes(nextEnd.getMinutes() + toDurationMinutes(nextValue, durationUnit))
-    setEndsAt(toLocalDateTimeValue(nextEnd))
+    setDurationDraft(null)
+    applyDurationMinutes(stepDurationMinutes(durationMinutes, durationUnit, delta))
   }
 
+  // The unit is how the duration reads, not what it is: converting here instead would make asking
+  // to see 90 minutes in hours an edit that shortens the event.
   function handleDurationUnitChange(nextUnit: DurationUnit) {
     setDurationUnit(nextUnit)
-    if (!hasValidStart) return
-    const nextEnd = new Date(parsedStart)
-    nextEnd.setMinutes(
-      nextEnd.getMinutes() + toDurationMinutes(getDefaultDurationValue(nextUnit), nextUnit),
-    )
-    setEndsAt(toLocalDateTimeValue(nextEnd))
+    setDurationDraft(null)
+  }
+
+  // All-day unmounts the duration control, and an unmount fires no blur — so a half-typed value
+  // would come back on the other side of the toggle describing a duration that had moved on.
+  function handleAllDayChange(checked: boolean) {
+    setAllDay(checked)
+    setDurationDraft(null)
   }
 
   function handleRecurrenceIntervalChange(value: string) {
@@ -285,7 +288,7 @@ export const CalendarEditor = memo(function CalendarEditor({
         <div className="grid gap-2">
           {/* All-day toggle + date picker (all-day mode) */}
           <div className="flex items-center gap-2">
-            <AllDayToggle allDay={allDay} onAllDayChange={setAllDay} />
+            <AllDayToggle allDay={allDay} onAllDayChange={handleAllDayChange} />
             {allDay && (
               <input
                 type="date"
@@ -336,6 +339,7 @@ export const CalendarEditor = memo(function CalendarEditor({
                 onAdjustDuration={adjustDuration}
                 onDurationUnitChange={handleDurationUnitChange}
                 onDurationValueChange={handleDurationValueChange}
+                onDurationValueCommit={() => setDurationDraft(null)}
               />
             )}
             <select
@@ -407,6 +411,7 @@ function DurationControl({
   durationValue,
   onAdjustDuration,
   onDurationValueChange,
+  onDurationValueCommit,
   onDurationUnitChange,
 }: {
   disabled: boolean
@@ -414,6 +419,7 @@ function DurationControl({
   durationValue: string
   onAdjustDuration: (delta: number) => void
   onDurationValueChange: (value: string) => void
+  onDurationValueCommit: () => void
   onDurationUnitChange: (unit: DurationUnit) => void
 }) {
   return (
@@ -433,8 +439,9 @@ function DurationControl({
           inputMode="decimal"
           value={durationValue}
           onChange={(event) => onDurationValueChange(event.target.value)}
+          onBlur={onDurationValueCommit}
           disabled={disabled}
-          className="h-7 w-10 border-x border-zinc-800 bg-transparent px-1 text-center text-sm text-zinc-100 focus:outline-none disabled:text-zinc-600"
+          className="h-7 w-14 border-x border-zinc-800 bg-transparent px-1 text-center text-sm text-zinc-100 focus:outline-none disabled:text-zinc-600"
           aria-label="Duration value"
         />
         <button
