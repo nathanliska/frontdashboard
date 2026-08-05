@@ -37,7 +37,7 @@ export function ActivityFeed({
   )
 }
 
-export function ActivityFeedItem({ group }: { group: ActivityGroup }) {
+function ActivityFeedItem({ group }: { group: ActivityGroup }) {
   const { event } = group
   const presentation = formatActivityGroup(group)
 

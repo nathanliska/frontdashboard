@@ -9,6 +9,11 @@
     "exports",
     "types"
   ],
-  "ignoreExportsUsedInFile": true,
-  "tags": ["-@knipignore"]
+  "ignoreExportsUsedInFile": false,
+  "tags": [
+    "-@knipignore"
+  ],
+  "ignore": [
+    "src/api/generated/**"
+  ]
 }

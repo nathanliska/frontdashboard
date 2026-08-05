@@ -94,7 +94,12 @@ export const RecurrenceRule = z.object({
     .union([z.union([z.array(z.number()), z.null()]), z.undefined()])
     .optional(),
   count: z.union([z.union([z.number(), z.null()]), z.undefined()]).optional(),
-  frequency: z.string(),
+  frequency: z.union([
+    z.literal('daily'),
+    z.literal('weekly'),
+    z.literal('monthly'),
+    z.literal('yearly')
+  ]),
   interval: z.union([z.number(), z.undefined()]).optional(),
   until: z.union([z.union([z.string(), z.null()]), z.undefined()]).optional()
 })

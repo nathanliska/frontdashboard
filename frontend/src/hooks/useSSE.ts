@@ -23,7 +23,7 @@ import { useNotificationsStore } from '../stores/notifications'
  * type and only the cross-cutting keys are modelled), which the generator can't express — so
  * unknown payload keys are kept here instead of being silently stripped by validation.
  */
-export const SseEventSchema = ActivitySseEvent.extend({
+const SseEventSchema = ActivitySseEvent.extend({
   payload: ActivitySsePayload.and(z.record(z.unknown())),
 })
 
