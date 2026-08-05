@@ -47,7 +47,7 @@
     "jsdom": "^29.0.2",
     "knip": "^6.29.0",
     "tailwindcss": "^4.2.2",
-    "typed-openapi": "2.2.7",
+    "typed-openapi": "3.2.0",
     "typescript": "~7.0.2",
     "vite": "^8.2.0",
     "vitest": "^4.1.5"
