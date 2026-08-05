@@ -89,7 +89,7 @@ issue.
 
 For multiline bodies with `gh`, write Markdown to a file and use `--body-file` — never escaped `\n`
 in `--body`. Afterwards, read it back with
-`gh pr view --json body,baseRefName,closingIssuesReferences` and confirm it matches the diff.
+`gh pr view --json title,body,baseRefName,isDraft` and confirm it matches the diff.
 
 ## Migrations
 
