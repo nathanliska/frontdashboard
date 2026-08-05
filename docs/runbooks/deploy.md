@@ -12,7 +12,7 @@ There is no deploy script. Merging to `main` is the deploy trigger; the box pull
 3. **Force Update** the `frontdashboard` stack in Unraid's **Compose Manager** plugin. It pulls and
    recreates both containers. "Check for Updates" alone can report up-to-date against a stale
    reference — Force Update is the one that acts.
-4. **Verify from outside** with the `deploy-verify` skill.
+4. **Verify from outside**, read-only — [Checks after it comes up](#checks-after-it-comes-up) below.
 
 Nothing in this repo reaches the host. The Unraid compose file is maintained by hand there and
 should match [docker-compose.prod.yml](../../docker-compose.prod.yml); this repo's copy is the
@@ -35,9 +35,9 @@ If CI is red there is simply nothing to pull, and `latest` still points at the p
 - `Started server process [1]` — uvicorn is PID 1, with no supervisor between it and the signal.
 - No restart loop. `BackendRestartLoop` alerts on more than three restarts in an hour.
 
-Then `deploy-verify`: the document served `no-cache`, the bundle it names answering
+Then from outside, over HTTPS: the document served `no-cache`, the bundle it names answering
 `200 text/javascript`, a deleted asset answering `404` rather than the SPA fallback, and
-`/api/health/ready` answering `200`.
+`/api/health/ready` answering `200`. All `GET`/`HEAD` — never write to production.
 
 ## Rolling back
 

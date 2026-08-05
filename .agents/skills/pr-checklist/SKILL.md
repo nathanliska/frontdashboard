@@ -16,7 +16,7 @@ Give these items precedence over general instructions given earlier in the sessi
 - Read the whole branch diff first (`git diff main...HEAD`), not just the last commit.
 - The branch name should describe the change. Don't rename an existing branch unless asked.
 - Commits are Conventional Commit format, and so is the **PR title** — the commit-msg hook enforces
-  the former and nothing enforces the latter.
+  the former, the `PR title` workflow the latter, rechecking whenever the title is edited.
 
 ## Tests
 
@@ -52,7 +52,8 @@ Sweep these against the diff and update what the change made untrue:
   bumping **Last reviewed**.
 - **docs/GLOSSARY.md** for a coined or renamed term.
 - **docs/TODO.md** — remove or update the finding this ships, in the same change.
-- **CLAUDE.md** for a new standing rule or gotcha.
+- **AGENTS.md** for a new standing rule or gotcha. Edit it by that name — `CLAUDE.md` is a symlink
+  and tools refuse to write through it.
 - After removing a concept, grep its vocabulary repo-wide. Recall misses FDRs and ADR titles.
 
 ## User-facing UI
@@ -68,17 +69,27 @@ serving fault, so run it for anything touching the frontend, `Caddyfile.prod` or
 ## PR body
 
 Write it for a reviewer, not as a changelog. Read the complete branch diff before writing it.
+Scale the length to the change — **~800 characters for a small one, ~2000 for a large one** — with
+one-line bullets carrying one fact each. Three headings always, in this order:
 
-- **Why** — the problem and the intended outcome.
-- **What changed** — observable behavior, and the implementation decisions worth knowing.
-- **Test plan** — the exact checks run and their results, plus anything still unverified.
+- **Why** — a short paragraph: the problem, and what should be true instead.
+- **What changed** — one bullet per change. What it does now, not a walk through the diff.
+- **Test plan** — `command — result, with numbers`, and what is still unverified.
 
-Call out migration, rollout, security or operational implications when they apply. Link the ADRs,
-FDRs and TODO findings involved. Use `Closes #123.` when it closes an issue.
+`.github/pull_request_template.md` also prefills **Compatibility** above Test plan — a migration,
+a regenerated contract, or a change to auth, sharing, SSE audience or retention. Keep the lines
+that apply; delete the whole section when only "No behavior change for existing clients" survives,
+because a section reading "not applicable" is noise.
+
+Then cut every sentence narrating _how_ the problem was found — root-cause derivations, measurement
+tables, why it passed once. That is commit-body and issue material; one sentence in **Why** at most.
+Caveats and unrelated defects go to the user in conversation or become their own issue, never a
+section here. Link the ADRs, FDRs and TODO findings involved. Use `Closes #123.` when it closes an
+issue.
 
 For multiline bodies with `gh`, write Markdown to a file and use `--body-file` — never escaped `\n`
 in `--body`. Afterwards, read it back with
-`gh pr view --json body,baseRefName,closingIssuesReferences` and confirm it matches the diff.
+`gh pr view --json title,body,baseRefName,isDraft` and confirm it matches the diff.
 
 The read-back is the check that the write landed, not a formality: `gh pr edit` can fail on
 something unrelated to your edit and leave the previous title and body in place. When it does,
@@ -86,13 +97,19 @@ something unrelated to your edit and leave the previous title and body in place.
 
 ## Migrations
 
-A migration in the branch means the deploy is not reversible by rolling the image back. Say so in
-the PR body, and say whether it is additive (safe) or destructive (not) — see
+A migration in the branch means the deploy is not reversible by rolling the image back. Say so
+under **Compatibility**, and say whether it is additive (safe) or destructive (not) — see
 [rollback.md](../../../docs/runbooks/rollback.md).
 
 ## Before asking for a merge
 
 - CI is green. Fix failures that are regressions from `main`; say so if one isn't.
 - Push anything still local.
+- **Count the body before asking, not after.** ~800 characters for a small change, ~2000 for a
+  large one, and the headings above. Over the ceiling means cutting the investigation, not facts.
+- **Read the commit list as a reviewer meeting it fresh** — one decision each, and no commit
+  fixing a defect another commit in this same branch introduced. Fold those into the commit they
+  fix, rewriting the branch if it is already pushed. A bug and its fix both reaching `main`'s
+  history is noise a reviewer has to untangle later.
 - **Was there anything that would have made this work easier, or prevented a mistake?** If so, add
-  it to `CLAUDE.md` or the relevant skill as part of this PR.
+  it to `AGENTS.md` or the relevant skill as part of this PR.

@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-08-04_
+_Last updated: 2026-08-05_
 
 ## What's built
 
@@ -318,7 +318,8 @@ _Last updated: 2026-08-04_
   production pulls — there is no path that builds and pushes without passing them first. Backend tests build their
   schema with `alembic upgrade head`, so **migrations run on every backend test run** and
   `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the Docker-free subset.
-  Pre-commit hooks incl. Conventional Commit enforcement. Dependabot grouped/monthly.
+  Pre-commit hooks incl. Conventional Commit enforcement, and CI checks the PR title by the same
+  grammar. Dependabot grouped/weekly.
 
 ## In flight
 

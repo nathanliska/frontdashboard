@@ -62,7 +62,7 @@ Accepts plain `.sql`, gzipped `.sql.gz`, and `pg_dump` custom format.
    ```
 
 5. **Verify from outside**, read-only: the document is served, the bundle it names is `200`, and
-   `/api/health/ready` answers. The `deploy-verify` skill is exactly this checklist.
+   `/api/health/ready` answers.
 
 ## What a restore costs
 

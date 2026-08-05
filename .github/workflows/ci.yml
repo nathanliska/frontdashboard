@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["main", "dev"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
 
@@ -204,8 +204,8 @@ jobs:
 
   # The only job that sees the two images serving together. Everything above tests a stack in
   # isolation; a broken Caddy upstream, a failed migration on boot or a missing bundle only shows
-  # here. Assertions mirror the invariants that have actually broken in production — see the
-  # deploy-verify skill.
+  # here. Assertions mirror the invariants that have actually broken in production — see
+  # ADR-019 and docs/runbooks/deploy.md.
   smoke:
     name: Smoke
     needs: [images]

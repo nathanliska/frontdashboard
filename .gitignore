@@ -80,7 +80,6 @@ media/
 *.bak
 *.tmp
 .cache/
-.codex
 .superpowers/
 
 # Machine-specific Claude Code settings (browser path for chrome-devtools MCP, etc.)
