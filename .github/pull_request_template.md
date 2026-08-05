@@ -1,27 +1,26 @@
-## Type of change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor
-- [ ] Docs / comments
-- [ ] Chore / tooling
-- [ ] Other: <!-- describe -->
+## Why
 
-## What does this PR do?
-<!-- 1-3 sentences. Link to issue if applicable. Closes #N -->
+<!-- The problem, and what should be true instead. -->
 
-## Why / motivation
-<!-- Why is this change needed? What problem does it solve? -->
+## What changed
 
-## How to test
-<!-- Steps to verify this works as expected. -->
+<!-- One bullet per change — what it does now, not a walk through the diff. -->
 
-## Screenshots / recordings
-<!-- If this changes UI, include before/after. Delete section if not applicable. -->
+-
 
-## Checklist
-- [ ] Tests pass (`make test`)
-- [ ] Lint passes (`make lint`)
-- [ ] Migrations included if schema changed
-- [ ] `.env.example` updated if new env vars added
-- [ ] No secrets or credentials committed
-- [ ] Docs / API spec updated if behavior changed
+## Compatibility
+
+<!-- Delete what does not apply, and the whole section if only the first line survives. -->
+
+- No behavior change for existing clients.
+- Migration included — additive, so an image rollback is still safe.
+- Migration included — destructive, so it is not.
+- API contract regenerated (`make contracts`) and committed.
+- Touches auth, sharing, SSE audience or the retention sweeps.
+
+## Test plan
+
+<!-- `command — result, with numbers`, and anything still unverified. Screenshots of the rendered
+     states if this changes UI — drag-dropped, never committed to the repo. -->
+
+-
