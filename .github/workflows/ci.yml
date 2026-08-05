@@ -192,8 +192,8 @@ jobs:
           cache-from: type=gha,scope=frontdashboard-${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=frontdashboard-${{ matrix.name }}
       # A USER line is easy to drop in a refactor and nothing else would notice, so assert it. The
-      # frontend is the more fragile of the two: it binds :80 via a file capability, so losing
-      # either the USER line or the setcap silently returns it to root.
+      # frontend is the more fragile of the two: it binds :80 holding no capability at all, so
+      # losing the USER line is what would silently return it to root.
       - name: Assert the production image does not run as root
         env:
           IMAGE: frontdashboard-${{ matrix.name }}:ci
@@ -258,6 +258,15 @@ jobs:
           done
           echo "backend never became ready"
           exit 1
+
+      - name: Caddy serves holding no capability
+        # The base image's binary ships one; stripping it is what leaves :80 bound on the sysctl
+        # alone. Nothing else would notice it returning — the container still serves, 74 MB heavier.
+        run: |
+          set -eu
+          caps=$(docker compose exec -T frontend grep CapPrm /proc/1/status | awk '{print $2}' | tr -d '\r')
+          echo "frontend PID 1 CapPrm=$caps"
+          test "$caps" = "0000000000000000"
 
       - name: Document is served uncached, with its security headers
         run: |

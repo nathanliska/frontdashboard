@@ -7,6 +7,10 @@ services:
     depends_on:
       backend:
         condition: service_started
+    # Caddy carries no capability, so :80 binds on this alone. Docker already defaults it to 0;
+    # setting it makes that the container's guarantee rather than the daemon's.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
     logging:
       driver: json-file
       options:
