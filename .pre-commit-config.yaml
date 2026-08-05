@@ -54,6 +54,14 @@ repos:
         stages: [prepare-commit-msg]
         always_run: true
 
+      - id: refuse-push-to-main
+        name: refuse a push to main
+        entry: scripts/refuse-push-to-main.sh
+        language: script
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
+
       - id: biome-check
         name: biome check (frontend)
         entry: scripts/run-biome-check.sh

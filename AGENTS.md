@@ -4,6 +4,8 @@ Read this file first. It contains repo-wide rules that should not be hidden in p
 guidance. It is the only file of its kind — there are no per-stack variants, so a convention that
 bites belongs here, in the relevant ADR/FDR, or in a comment at the code it governs.
 
+`CLAUDE.md` is a symlink to this file. Edit `AGENTS.md`; tools refuse to write through the link.
+
 ## Where Context Lives
 
 - [README.md](README.md) — general project overview.
@@ -67,15 +69,29 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 Standing user constraints. Do not violate these.
 
 - Confirm before commit **and** before push — the user reviews the files first, every time.
-- Commit straight to `main` (sole contributor). No feature branches unless explicitly asked.
+- **Work on a branch and open a PR. Never commit to `main` directly.** A `pre-push` hook refuses
+  it, because the plan cannot enforce it: branch protection needs a public repo or GitHub Pro.
 - Group commits logically: batch related work into coherent commits, don't micro-commit, don't
   lump unrelated changes together.
 - Use Conventional Commit messages (`type(scope): description`, hook-normalized and enforced).
-  Never add a `Co-Authored-By` or attribution trailer.
+  The **PR title** is Conventional too, and nothing enforces that one. Never add a
+  `Co-Authored-By` or attribution trailer.
 - Never run `docker compose down -v` — it wipes the database volume. Target volumes by name if one
   must be removed.
 - Prod is behind Cloudflare. A static asset not updating after a deploy means purge the Cloudflare
   cache first, not rebuild.
+
+## Commits & PRs
+
+- Run the `pr-checklist` skill **before opening a PR and again before asking for a merge**. It owns
+  the required body shape and the docs/ADR/FDR sweep, so a hand-written body drifts from house
+  standard without it.
+- Open full, ready-for-review PRs. Draft only when explicitly asked.
+- CI runs on every PR to `main`, and merging is what publishes images. Check CI after opening and
+  fix failures that are regressions from `main`.
+- Deploying is [docs/runbooks/deploy.md](docs/runbooks/deploy.md): merge, wait for the publish,
+  then **Force Update** the stack in Unraid's Compose Manager. Production is driven through that
+  plugin's UI, not `docker compose` on the host.
 
 ## Tooling
 
@@ -211,6 +227,7 @@ make audit       # dependency/security audit checks
 ## Git Hooks
 
 `make hooks`, once per clone, installs [pre-commit](https://pre-commit.com/) via `uv` for all
-stages: pre-commit (ruff, biome, deptry, whitespace), prepare-commit-msg (subject normalization),
-and commit-msg (Conventional Commit enforcement — `feat`, `fix`, `docs`, `refactor`, `chore`,
-`test`, `ci`, `perf`, `style`, `build`, `revert`).
+stages: pre-commit (ruff, biome, deptry, gitleaks, whitespace), prepare-commit-msg (subject
+normalization), commit-msg (Conventional Commit enforcement — `feat`, `fix`, `docs`, `refactor`,
+`chore`, `test`, `ci`, `perf`, `style`, `build`, `revert`), and pre-push (refuses a push to
+`main`).

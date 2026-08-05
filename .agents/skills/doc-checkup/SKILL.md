@@ -1,7 +1,6 @@
 ---
 name: doc-checkup
 description: Use when docs may have drifted from the code — after a run of feature commits, before relying on the ADRs/FDRs, or when CONTEXT.md, an ADR, an FDR, the glossary, or docs/TODO.md looks stale.
-disable-model-invocation: true
 ---
 
 # Doc checkup — drift audit (propose-only)
@@ -10,12 +9,13 @@ Audits the repo's agent docs against `git log` and the code. **Reports findings 
 edits; never applies them without explicit user direction.**
 
 The doc system:
+
 - **[AGENTS.md](../../../AGENTS.md)** — repo-wide agent instructions. The only file of its kind;
   `CLAUDE.md` is a symlink to it, and there are no per-stack variants.
 - **[CONTEXT.md](../../../CONTEXT.md)** — current-state snapshot across the whole app.
-- **[docs/adr/](../../../docs/adr/)** — Architecture Decision Records (*why* the cross-cutting
+- **[docs/adr/](../../../docs/adr/)** — Architecture Decision Records (_why_ the cross-cutting
   architecture is the way it is). Living; supersede rather than delete.
-- **[docs/fdr/](../../../docs/fdr/)** — Feature Decision Records (*what* each feature does + design
+- **[docs/fdr/](../../../docs/fdr/)** — Feature Decision Records (_what_ each feature does + design
   rationale). Living; rewrite the affected section, don't append.
 - **[docs/GLOSSARY.md](../../../docs/GLOSSARY.md)** — canonical vocabulary.
 - **[docs/TODO.md](../../../docs/TODO.md)** — open remediation backlog (numbered findings).
@@ -36,7 +36,7 @@ The doc system:
    **Last reviewed** on any FDR proposed for edit, **and the matching row in `docs/fdr/INDEX.md`** —
    these drift apart silently, since nothing reads the index. Compare every row against its file's
    header, not just the ones being edited. ADRs date differently on purpose: the file header keeps
-   the *original* decision date with `(amended …)` appended, and the index row shows the latest.
+   the _original_ decision date with `(amended …)` appended, and the index row shows the latest.
 4. **Glossary** — cross-reference each entry against its cited FDR/ADR; flag dead links, definitions
    contradicted by code, and jargon used across multiple docs but missing an entry.
 5. **TODO.md vs. `git log`** — any backlog item whose work appears shipped in recent commits (should
