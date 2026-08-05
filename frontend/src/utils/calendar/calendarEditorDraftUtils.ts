@@ -2,7 +2,8 @@ import type { CalendarEvent, UpdateCalendarEventInput } from '../../api/calendar
 import type { RecurrenceRule } from '../../api/generated/contract'
 import { dateKey, defaultLocalDateTime, toLocalInputValue } from './calendarUtils'
 
-export type RecurrenceMode = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+// Derived, so a frequency added backend-side reaches the editor instead of diverging quietly.
+export type RecurrenceMode = RecurrenceRule['frequency'] | 'none'
 export type EditorMode = 'create' | 'edit'
 export type CalendarEditorDraft = {
   title: string
