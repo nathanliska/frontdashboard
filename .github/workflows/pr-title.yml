@@ -1,0 +1,33 @@
+name: PR title
+
+# Its own workflow because it needs `edited`, which CI must not have: a title or body tweak would
+# otherwise rebuild both images and rerun smoke. Nothing here checks out the repo, so it is seconds.
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, reopened, edited, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  title:
+    name: Conventional title
+    runs-on: ubuntu-latest
+    steps:
+      # A squash merge keeps the PR title, not the commit subjects the commit-msg hook
+      # normalized, so this is the only check on the string that reaches main's history.
+      - name: PR title is a Conventional Commit
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          types='feat|fix|docs|refactor|chore|test|ci|perf|style|build|revert'
+          if ! printf '%s' "$TITLE" | grep -qE "^($types)(\([^)]+\))?!?: .+"; then
+            echo "::error::PR title is not a Conventional Commit: $TITLE"
+            echo "Expected 'type(scope): description', type one of: $types" >&2
+            exit 1
+          fi
