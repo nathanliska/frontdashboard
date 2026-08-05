@@ -1,4 +1,5 @@
 import type { CalendarEvent, UpdateCalendarEventInput } from '../../api/calendar'
+import type { RecurrenceRule } from '../../api/generated/contract'
 import { dateKey, defaultLocalDateTime, toLocalInputValue } from './calendarUtils'
 
 export type RecurrenceMode = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
@@ -155,50 +156,35 @@ export function formatWeeklySelection(weekdays: number[]): string {
   return selected.length > 0 ? selected.join(', ') : 'the selected day'
 }
 
-export function getInitialWeeklySelection(
-  startsAt: string,
-  recurrence: {
-    frequency: string
-    interval: number
-    until?: string
-    count?: number
-    by_weekday?: number[]
-  } | null,
-): number[] {
+function getInitialWeeklySelection(startsAt: string, recurrence: RecurrenceRule | null): number[] {
   if (recurrence?.frequency === 'weekly' && recurrence.by_weekday?.length) {
     return [...new Set(recurrence.by_weekday)].sort((a, b) => a - b)
   }
   return recurrence?.frequency === 'weekly' ? [toMondayWeekday(new Date(startsAt).getDay())] : []
 }
 
-export function deriveRecurrenceEndDate(
-  startsAt: string,
-  recurrence: {
-    frequency: string
-    interval: number
-    until?: string
-    count?: number
-    by_weekday?: number[]
-  },
-): string {
+function deriveRecurrenceEndDate(startsAt: string, recurrence: RecurrenceRule): string {
   if (recurrence.until) return toLocalDateInput(recurrence.until)
   if (!recurrence.count || recurrence.count <= 1) return ''
 
   const date = new Date(startsAt)
   const repeatsToAdvance = recurrence.count - 1
+  // Mirrors the backend default: the field is optional on the wire, and arithmetic against an
+  // absent one silently produces an Invalid Date rather than a wrong one.
+  const interval = recurrence.interval ?? 1
   for (let index = 0; index < repeatsToAdvance; index += 1) {
     switch (recurrence.frequency) {
       case 'daily':
-        date.setDate(date.getDate() + recurrence.interval)
+        date.setDate(date.getDate() + interval)
         break
       case 'weekly':
-        date.setDate(date.getDate() + recurrence.interval * 7)
+        date.setDate(date.getDate() + interval * 7)
         break
       case 'monthly':
-        date.setMonth(date.getMonth() + recurrence.interval)
+        date.setMonth(date.getMonth() + interval)
         break
       case 'yearly':
-        date.setFullYear(date.getFullYear() + recurrence.interval)
+        date.setFullYear(date.getFullYear() + interval)
         break
       default:
         return ''
@@ -301,7 +287,7 @@ export function formatEndDateLabel(value: string): string {
   }).format(new Date(`${value}T12:00:00`))
 }
 
-export function toLocalDateTimeInput(value: string): string {
+function toLocalDateTimeInput(value: string): string {
   const date = new Date(value)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }

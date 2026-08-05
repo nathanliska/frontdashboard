@@ -4,6 +4,7 @@ import {
   CalendarEventResponse,
   type CalendarEventUpdate,
   CalendarOccurrenceResponse,
+  type RecurrenceRule,
   ResourceAccessResponse,
   ShareResponse,
 } from './generated/contract'
@@ -12,52 +13,9 @@ import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } f
 
 const occurrenceRequests = new Map<string, Promise<CalendarOccurrence[]>>()
 
-// The generated `RecurrenceRule.frequency` is a plain `string` (the backend models it as a
-// free-form field), looser than this hand `RecurrenceFrequency` literal union that
-// calendarEditorDraftUtils relies on for switch narrowing and draft typing. Kept hand-written
-// for now (deferred, same as the widget union in dashboards.ts) — responses are still validated
-// against the generated `CalendarEventResponse`/`CalendarOccurrenceResponse` schemas below.
-export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly'
-
-export interface RecurrenceRule {
-  frequency: RecurrenceFrequency
-  interval: number
-  by_weekday?: number[]
-  until?: string
-  count?: number
-}
-
-export interface CalendarEvent {
-  id: string
-  dashboard_id: string
-  title: string
-  description: string | null
-  location: string | null
-  starts_at: string
-  ends_at: string
-  timezone: string
-  all_day: boolean
-  created_by: string
-  updated_by: string
-  recurrence: RecurrenceRule | null
-  created_at: string
-  updated_at: string
-}
-
-export interface CalendarOccurrence {
-  event_id: string
-  occurrence_start: string
-  occurrence_end: string
-  original_start: string
-  title: string
-  description: string | null
-  location: string | null
-  timezone: string
-  all_day: boolean
-  created_by: string
-  recurring: boolean
-  is_exception: boolean
-}
+// The generated response shapes, aliased to the names this module's callers already use.
+export type CalendarEvent = CalendarEventResponse
+export type CalendarOccurrence = CalendarOccurrenceResponse
 
 export interface CreateCalendarEventInput {
   dashboard_id?: string
@@ -84,7 +42,7 @@ async function readError(res: Response, fallback: string): Promise<Error> {
 }
 
 async function parseEvent(res: Response): Promise<CalendarEvent> {
-  return (await parseJson(res, CalendarEventResponse)) as unknown as CalendarEvent
+  return parseJson(res, CalendarEventResponse)
 }
 
 export async function apiListOccurrences(params: {

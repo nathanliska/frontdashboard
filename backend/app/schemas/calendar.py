@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Self
+from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -21,7 +21,7 @@ def _ensure_timezone_exists(name: str) -> None:
 
 
 class RecurrenceRule(BaseModel):
-    frequency: str = Field(pattern="^(daily|weekly|monthly|yearly)$")
+    frequency: Literal["daily", "weekly", "monthly", "yearly"]
     interval: int = Field(default=1, ge=1, le=366)
     by_weekday: list[int] | None = None
     until: datetime | None = None
