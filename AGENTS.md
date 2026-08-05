@@ -21,7 +21,7 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 - [docs/runbooks/](docs/runbooks/) — operational procedures for the day something is broken. Prose
   aimed at a person under pressure, not architecture; the *why* still belongs in an ADR/FDR.
 - `.agents/skills/**` — workflow skills. Use them when the task names one or clearly matches one,
-  especially `live-verify`, `deploy-verify`, and `doc-checkup`.
+  especially `live-verify`, `deploy-verify`, `doc-checkup` and `security-review`.
 
 ## Project Status
 
@@ -74,7 +74,7 @@ Standing user constraints. Do not violate these.
 - Group commits logically: batch related work into coherent commits, don't micro-commit, don't
   lump unrelated changes together.
 - Use Conventional Commit messages (`type(scope): description`, hook-normalized and enforced).
-  The **PR title** is Conventional too, and nothing enforces that one. Never add a
+  The **PR title** is Conventional too, checked by CI because a squash merge keeps it. Never add a
   `Co-Authored-By` or attribution trailer.
 - Never run `docker compose down -v` — it wipes the database volume. Target volumes by name if one
   must be removed.
@@ -85,7 +85,8 @@ Standing user constraints. Do not violate these.
 
 - Run the `pr-checklist` skill **before opening a PR and again before asking for a merge**. It owns
   the required body shape and the docs/ADR/FDR sweep, so a hand-written body drifts from house
-  standard without it.
+  standard without it. `.github/pull_request_template.md` prefills the same headings; change the
+  two together.
 - Open full, ready-for-review PRs. Draft only when explicitly asked.
 - CI runs on every PR to `main`, and merging is what publishes images. Check CI after opening and
   fix failures that are regressions from `main`.

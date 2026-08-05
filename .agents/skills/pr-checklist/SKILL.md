@@ -16,7 +16,7 @@ Give these items precedence over general instructions given earlier in the sessi
 - Read the whole branch diff first (`git diff main...HEAD`), not just the last commit.
 - The branch name should describe the change. Don't rename an existing branch unless asked.
 - Commits are Conventional Commit format, and so is the **PR title** — the commit-msg hook enforces
-  the former and nothing enforces the latter.
+  the former, the `Workflow` CI job the latter.
 
 ## Tests
 
@@ -52,7 +52,8 @@ Sweep these against the diff and update what the change made untrue:
   bumping **Last reviewed**.
 - **docs/GLOSSARY.md** for a coined or renamed term.
 - **docs/TODO.md** — remove or update the finding this ships, in the same change.
-- **CLAUDE.md** for a new standing rule or gotcha.
+- **AGENTS.md** for a new standing rule or gotcha. Edit it by that name — `CLAUDE.md` is a symlink
+  and tools refuse to write through it.
 - After removing a concept, grep its vocabulary repo-wide. Recall misses FDRs and ADR titles.
 
 ## User-facing UI
@@ -68,13 +69,23 @@ serving fault, so run it for anything touching the frontend, `Caddyfile.prod` or
 ## PR body
 
 Write it for a reviewer, not as a changelog. Read the complete branch diff before writing it.
+Scale the length to the change — **~800 characters for a small one, ~2000 for a large one** — with
+one-line bullets carrying one fact each. Three headings always, in this order:
 
-- **Why** — the problem and the intended outcome.
-- **What changed** — observable behavior, and the implementation decisions worth knowing.
-- **Test plan** — the exact checks run and their results, plus anything still unverified.
+- **Why** — a short paragraph: the problem, and what should be true instead.
+- **What changed** — one bullet per change. What it does now, not a walk through the diff.
+- **Test plan** — `command — result, with numbers`, and what is still unverified.
 
-Call out migration, rollout, security or operational implications when they apply. Link the ADRs,
-FDRs and TODO findings involved. Use `Closes #123.` when it closes an issue.
+Add **one** more section above Test plan when it applies, and nothing when it doesn't:
+**Compatibility** (a migration, a regenerated contract, anything an existing session notices),
+**Documentation** (an ADR/FDR/CONTEXT change to read first), or **Security** (auth, sharing, SSE
+audience, retention). A standing section filled with "not applicable" is noise.
+
+Then cut every sentence narrating _how_ the problem was found — root-cause derivations, measurement
+tables, why it passed once. That is commit-body and issue material; one sentence in **Why** at most.
+Caveats and unrelated defects go to the user in conversation or become their own issue, never a
+section here. Link the ADRs, FDRs and TODO findings involved. Use `Closes #123.` when it closes an
+issue.
 
 For multiline bodies with `gh`, write Markdown to a file and use `--body-file` — never escaped `\n`
 in `--body`. Afterwards, read it back with
@@ -82,8 +93,8 @@ in `--body`. Afterwards, read it back with
 
 ## Migrations
 
-A migration in the branch means the deploy is not reversible by rolling the image back. Say so in
-the PR body, and say whether it is additive (safe) or destructive (not) — see
+A migration in the branch means the deploy is not reversible by rolling the image back. Say so
+under **Compatibility**, and say whether it is additive (safe) or destructive (not) — see
 [rollback.md](../../../docs/runbooks/rollback.md).
 
 ## Before asking for a merge
@@ -91,4 +102,4 @@ the PR body, and say whether it is additive (safe) or destructive (not) — see
 - CI is green. Fix failures that are regressions from `main`; say so if one isn't.
 - Push anything still local.
 - **Was there anything that would have made this work easier, or prevented a mistake?** If so, add
-  it to `CLAUDE.md` or the relevant skill as part of this PR.
+  it to `AGENTS.md` or the relevant skill as part of this PR.

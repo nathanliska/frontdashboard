@@ -5,11 +5,8 @@ labels: enhancement
 ---
 
 ## Why
-<!-- What's driving this request? What problem, pain point, or opportunity is this addressing?
-     Be specific — "would be nice" isn't enough. -->
-
-## Motivation
-<!-- Who benefits from this and how? What does success look like for the user? -->
+<!-- What problem, pain point, or opportunity is this addressing, who benefits, and what does
+     success look like for them? Be specific — "would be nice" isn't enough. -->
 
 ## Proposed solution
 <!-- How should it work? Describe the behavior from the user's perspective.
