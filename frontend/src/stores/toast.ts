@@ -8,7 +8,7 @@ import { create } from 'zustand'
 
 export type ToastType = 'success' | 'error' | 'info'
 
-export interface Toast {
+interface Toast {
   id: number
   type: ToastType
   message: string

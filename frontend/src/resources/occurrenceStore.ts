@@ -15,7 +15,7 @@ type Millis = number
 
 type Interval = { start: Millis; end: Millis }
 
-export type OccurrenceState = {
+type OccurrenceState = {
   occurrences: CalendarOccurrence[]
   /** Distinguishes "no events here" from "nothing fetched yet" — callers render those differently. */
   loaded: boolean

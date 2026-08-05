@@ -47,7 +47,7 @@ export type WidgetCreate =
 // No standalone `WidgetResponse` in the generated contract — FastAPI inlines the discriminated
 // union, so it is composed here from the generated variants. `widget_type` generates as a
 // literal per variant (see backend/app/openapi_export.py), so this narrows through `switch`.
-export const DashboardWidgetSchema = z.discriminatedUnion('widget_type', [
+const DashboardWidgetSchema = z.discriminatedUnion('widget_type', [
   ClockWidgetResponse,
   CalendarWidgetResponse,
   ListWidgetResponse,

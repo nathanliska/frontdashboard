@@ -538,7 +538,7 @@ export function handleListResourceEvent(
   }
 }
 
-export function resetListData(): void {
+function resetListData(): void {
   listSummariesQuery.reset()
   listDetailQuery.reset()
 }

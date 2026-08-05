@@ -17,7 +17,7 @@ export function startOfDay(date: Date): Date {
   return next
 }
 
-export function startOfMonth(date: Date): Date {
+function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1)
 }
 

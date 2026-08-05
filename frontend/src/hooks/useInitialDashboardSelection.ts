@@ -3,7 +3,7 @@ import type { DashboardSummary } from '../api/dashboards'
 import { useDashboardStore } from '../stores/dashboard'
 import { toast } from '../stores/toast'
 
-export function pickInitialDashboardId(
+function pickInitialDashboardId(
   dashboards: DashboardSummary[],
   requestedDashboardId: string | null,
 ): string | null {
