@@ -23,7 +23,7 @@ Give these items precedence over general instructions given earlier in the sessi
 - Are there gaps around new or changed behavior? Fill them.
 - **Prove each new test by breaking the thing back**: stash the change, watch it fail, restore. A
   caching, ordering or fan-out test that has never been seen to fail is not evidence.
-- If the change alters *how* a result is produced rather than *what* it is, assert on the mechanism
+- If the change alters _how_ a result is produced rather than _what_ it is, assert on the mechanism
   — a call count, `getState` — not the result, which passes against the unfixed code.
 - Run what would actually catch a regression here: `make test`, or the narrower suite plus a reason.
 
@@ -34,7 +34,7 @@ Each of these has a test that fails CI when missed. Check the ones the diff touc
 - Every non-GET route: `_csrf: None = Depends(require_csrf)` **and** `@limiter.limit(WRITE_LIMIT)`
   with a `request: Request` parameter.
 - Auth rejections raise `auth_failure(...)`, never a bare `HTTPException`.
-- SSE writes go through `commit_and_broadcast(...)`, with the event dict built *before* the call.
+- SSE writes go through `commit_and_broadcast(...)`, with the event dict built _before_ the call.
 - A new table with a `dashboard_id`/`users` FK is in the matching sweep in `services/retention.py`.
 - A new model module is imported in `alembic/env.py` and has a hand-authored migration.
 - A new activity event type has a `formatActivityEvent` case **and** an `ACTIVITY_CATEGORIES` entry.
@@ -79,6 +79,10 @@ FDRs and TODO findings involved. Use `Closes #123.` when it closes an issue.
 For multiline bodies with `gh`, write Markdown to a file and use `--body-file` — never escaped `\n`
 in `--body`. Afterwards, read it back with
 `gh pr view --json body,baseRefName,closingIssuesReferences` and confirm it matches the diff.
+
+The read-back is the check that the write landed, not a formality: `gh pr edit` can fail on
+something unrelated to your edit and leave the previous title and body in place. When it does,
+`gh api repos/{owner}/{repo}/pulls/{n} -X PATCH -F body=@file` goes around it.
 
 ## Migrations
 

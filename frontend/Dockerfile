@@ -1,4 +1,5 @@
-# Node 24 to match CI and Dockerfile.prod — react-router 8 requires >=22.22.0.
+# Kept in step with .nvmrc and Dockerfile.prod by test_toolchain_coverage.py.
+# react-router 8 requires >=22.22.0.
 FROM node:24-alpine
 
 WORKDIR /app
