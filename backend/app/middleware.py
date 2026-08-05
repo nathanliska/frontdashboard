@@ -1,5 +1,6 @@
 """ASGI middleware."""
 
+import contextlib
 from collections.abc import Awaitable, Callable
 from time import perf_counter
 from typing import Any
@@ -38,20 +39,36 @@ class ResponseStatusMiddleware:
             return
 
         started = perf_counter()
+        responded = False
 
         async def send_wrapper(message: Message) -> None:
+            nonlocal responded
             if message["type"] == "http.response.start":
-                route = _route_label(scope)
-                if route not in _UNCOUNTED_ROUTES:
-                    metrics.observe_response(
-                        scope.get("method", ""),
-                        route,
-                        message["status"],
-                        seconds=perf_counter() - started,
-                    )
+                responded = True
+                _observe(scope, message["status"], started)
             await send(message)
 
-        await self.app(scope, receive, send_wrapper)
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception:
+            # `add_middleware` mounts this inside ServerErrorMiddleware, which builds the 500 above
+            # here — so a crash never reaches `send_wrapper` and would go uncounted. Guarded on
+            # `responded` because a stream that dies mid-body already counted its own status.
+            if not responded:
+                _observe(scope, 500, started)
+            raise
+
+
+def _observe(scope: Scope, status: int, started: float) -> None:
+    """Record one response, unless its route is deliberately uncounted.
+
+    Suppressing covers the label lookup as well as the counters: this runs on the exception path,
+    where raising would replace the crash being reported with one from the code reporting it.
+    """
+    with contextlib.suppress(Exception):
+        route = _route_label(scope)
+        if route not in _UNCOUNTED_ROUTES:
+            metrics.observe_response(scope.get("method", ""), route, status, seconds=perf_counter() - started)
 
 
 def _route_label(scope: Scope) -> str:

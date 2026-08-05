@@ -12,6 +12,7 @@ gauges `register_gauge` builds; `docs/TODO.md` carries the reasoning.
 import contextlib
 from collections.abc import Callable
 from time import monotonic
+from typing import Literal, get_args
 
 from prometheus_client import Counter, Gauge, Histogram, disable_created_metrics
 
@@ -29,6 +30,11 @@ SSE_EXPIRIES = Counter(f"{_PREFIX}sse_expiries", "Streams closed on the lifetime
 REAPER_SWEEPS = Counter(f"{_PREFIX}reaper_sweeps", "Retention sweeps that completed.")
 REAPER_FAILURES = Counter(f"{_PREFIX}reaper_failures", "Retention sweeps that raised and will retry.")
 RATE_LIMITED = Counter(f"{_PREFIX}rate_limited", "Requests rejected by the rate limiter.")
+
+# Unlabelled twin of the 5xx slice below, and the only one an alert can be built on: route is
+# unbounded, so the labelled counter has no 5xx series until the first one — born already at 1,
+# where `increase()` has nothing behind it to diff against. See docs/runbooks/rollback.md.
+HTTP_SERVER_ERRORS = Counter(f"{_PREFIX}http_server_errors", "Responses served with a 5xx status.")
 
 # Labelled by route *template*, never the raw path: /dashboards/{id} is one series, not one per
 # dashboard. Status class rather than code keeps a 404 storm from minting series for each variant.
@@ -60,11 +66,21 @@ SSE_STREAM_SECONDS = Histogram(
 
 # A send happens in a background task after the response has gone, so a failure is invisible to
 # every other signal here: the caller already got its 2xx and no route ever 5xxs.
+EmailOperation = Literal["verification", "password_reset", "existing_account"]
+EmailOutcome = Literal["sent", "outbox", "failed", "dropped"]
+
 EMAIL_SENDS = Counter(
     f"{_PREFIX}email_sends",
     "Transactional email attempts, by kind and outcome.",
     ["operation", "outcome"],
 )
+
+# Every combination exists from import, because the client library creates a labelled child on
+# first use — and a counter whose first sample is already 1 gives `increase()` nothing to diff
+# against, so an alert on a rare outcome cannot see it happen for the first time.
+for _operation in get_args(EmailOperation):
+    for _outcome in get_args(EmailOutcome):
+        EMAIL_SENDS.labels(operation=_operation, outcome=_outcome)
 
 REAPER_LAST_SUCCESS = Gauge(
     f"{_PREFIX}reaper_last_success_unixtime",
@@ -79,6 +95,38 @@ AUTH_FAILURES = Counter(
     "Rejected authentication attempts, by surface and cause.",
     ["operation", "reason"],
 )
+
+# The pairs that can actually occur, not the cross product: 6 operations by 11 reasons is 66
+# series of which 50 are unreachable, and a panel of permanent zeroes reads like coverage.
+# `test_auth_failure_coverage.py` fails the build when the code raises a pair missing here.
+AUTH_FAILURE_PAIRS = frozenset(
+    {
+        ("csrf", "origin_rejected"),
+        ("csrf", "token_missing"),
+        ("csrf", "token_mismatch"),
+        ("email_verify", "already_verified"),
+        ("email_verify", "invalid_token"),
+        ("email_verify", "superseded_token"),
+        ("email_verify", "unknown_user"),
+        ("login", "bad_password"),
+        ("login", "unknown_user"),
+        ("login", "unverified_email"),
+        ("password_change", "bad_password"),
+        ("password_reset", "invalid_token"),
+        ("password_reset", "unknown_user"),
+        ("session", "no_cookie"),
+        ("session", "not_resolvable"),
+        ("session", "unverified_email"),
+    }
+)
+
+for _op, _reason in AUTH_FAILURE_PAIRS:
+    AUTH_FAILURES.labels(operation=_op, reason=_reason)
+
+# The denominator for a failure *ratio*, which is what distinguishes an attack from a household
+# mistyping a password — raw failure volume cannot. Unlabelled so the series is always present and
+# costs no cardinality; `auth_failures{operation="login"}` is its numerator.
+LOGIN_SUCCESSES = Counter(f"{_PREFIX}login_successes", "Logins that issued a session.")
 
 # An Argon2 hash costs a near-constant floor, so the spread above it is queueing for the
 # concurrency limiter. A gauge alone would miss that — saturation is bursty and scrapes are not.
@@ -100,6 +148,8 @@ def observe_response(method: str, route: str, status_code: int, *, seconds: floa
     """
     with contextlib.suppress(Exception):
         HTTP_RESPONSES.labels(method=method, route=route, status_class=f"{status_code // 100}xx").inc()
+        if status_code >= 500:
+            HTTP_SERVER_ERRORS.inc()
         if seconds is not None:
             HTTP_REQUEST_SECONDS.labels(route=route).observe(seconds)
 

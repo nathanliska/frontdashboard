@@ -8,6 +8,8 @@ failure instead of a silently under-counted series.
 import ast
 import pathlib
 
+from app.metrics import AUTH_FAILURE_PAIRS
+
 _AUTH_LAYER = (
     pathlib.Path(__file__).resolve().parents[1] / "app" / "auth" / "dependencies.py",
     pathlib.Path(__file__).resolve().parents[1] / "app" / "routers" / "auth.py",
@@ -55,6 +57,50 @@ def test_the_scan_actually_finds_raises() -> None:
     """Guards the guard: a parse that finds nothing would pass every assertion below vacuously."""
     total = sum(len(_raised_call_names(ast.parse(path.read_text()))) for path in _AUTH_LAYER)
     assert total > 5, f"AST scan found only {total} raises across the auth layer — it is not parsing what it thinks"
+
+
+def _raised_auth_failure_pairs() -> set[tuple[str, str]]:
+    """Every (operation, reason) the auth layer can raise, read out of the source.
+
+    A reason is often a conditional — `"unknown_user" if user is None else "bad_password"` — so
+    both branches are collected rather than the expression being evaluated.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for path in _AUTH_LAYER:
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.Call) or getattr(node.func, "id", None) != "auth_failure":
+                continue
+            if len(node.args) < 2:
+                continue
+            operation, reason = node.args[0], node.args[1]
+            if not isinstance(operation, ast.Constant) or not isinstance(operation.value, str):
+                continue
+            reasons = [reason.body, reason.orelse] if isinstance(reason, ast.IfExp) else [reason]
+            for candidate in reasons:
+                if isinstance(candidate, ast.Constant) and isinstance(candidate.value, str):
+                    pairs.add((operation.value, candidate.value))
+    return pairs
+
+
+def test_the_pair_scan_sees_both_branches_of_a_conditional_reason() -> None:
+    """Guards the guard: login's reason is an `if` expression, and missing it would look like a pass."""
+    pairs = _raised_auth_failure_pairs()
+    assert ("login", "unknown_user") in pairs
+    assert ("login", "bad_password") in pairs
+
+
+def test_every_raisable_pair_has_a_series_before_it_first_happens() -> None:
+    """A pair absent from the declared set is invisible to `increase()` the first time it fires."""
+    undeclared = _raised_auth_failure_pairs() - set(AUTH_FAILURE_PAIRS)
+
+    assert not undeclared, f"add to metrics.AUTH_FAILURE_PAIRS, or the first one is uncountable: {sorted(undeclared)}"
+
+
+def test_no_declared_pair_is_unreachable() -> None:
+    """The other direction: a pair nothing raises is a permanent zero that reads like coverage."""
+    unreachable = set(AUTH_FAILURE_PAIRS) - _raised_auth_failure_pairs()
+
+    assert not unreachable, f"declared but never raised: {sorted(unreachable)}"
 
 
 def test_no_auth_rejection_bypasses_the_counter() -> None:

@@ -30,7 +30,7 @@ def _expiry_text(hours: int) -> str:
     return f"This link expires in {hours} {unit}."
 
 
-async def _deliver(message: _Message, *, operation: str) -> None:
+async def _deliver(message: _Message, *, operation: metrics.EmailOperation) -> None:
     """Send the message, or park it in the development outbox when email isn't configured.
 
     Rendering is deliberately kept out of here: every caller produces a complete `_Message`, so the

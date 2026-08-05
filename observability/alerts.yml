@@ -5,7 +5,7 @@
 # so a threshold placed on its value would never trip.
 #
 # `__grafana_alert_rule_uid__` pins each rule's identity, so re-importing this file updates the
-# rules in place instead of creating a second copy of all fifteen. `__dashboardUid__` and
+# rules in place instead of creating a second copy of all seventeen. `__dashboardUid__` and
 # `__panelId__` put a link to the relevant panel on the alert — import the dashboards first.
 
 groups:
@@ -39,14 +39,16 @@ groups:
           __panelId__: "2"
 
       - alert: ServerErrors
-        expr: sum(rate(frontdashboard_http_responses_total{status_class="5xx"}[5m])) > 0
+        # The unlabelled twin, not the status_class slice: that one has no series until the first
+        # 5xx, and increase() cannot see a counter whose every sample is already 1.
+        expr: sum(increase(frontdashboard_http_server_errors_total[5m])) > 0
         for: 2m
         labels:
           severity: critical
           __grafana_alert_rule_uid__: servererrors
         annotations:
           summary: Backend is serving 5xx responses
-          description: '{{ $value | printf "%.3f" }} req/s failing. Check the request-rate panel for the route.'
+          description: '{{ $value | printf "%.0f" }} in the last 5 minutes. Check the request-rate panel for the route.'
           runbook_url: https://github.com/nathanliska/frontdashboard/blob/main/docs/runbooks/rollback.md
           __dashboardUid__: frontdashboard
           __panelId__: "8"
@@ -123,7 +125,9 @@ groups:
     interval: 1m
     rules:
       - alert: DatabasePoolSaturated
-        expr: sum(max_over_time(frontdashboard_db_pool_checked_out_peak[5m])) / sum(frontdashboard_db_pool_limit) > 0.8
+        # Worst replica, not the fleet average: the pool is per process, so a saturated one starves
+        # its own requests however idle its siblings are — and summing first hides it behind them.
+        expr: max(max_over_time(frontdashboard_db_pool_checked_out_peak[5m]) / frontdashboard_db_pool_limit) > 0.8
         for: 10m
         labels:
           severity: warning
@@ -156,6 +160,46 @@ groups:
           description: Backpressure became eviction. Those clients lost real-time until they reconnected.
           __dashboardUid__: frontdashboard-internals
           __panelId__: "5"
+
+  - name: frontdashboard-abuse
+    interval: 1m
+    rules:
+      # A *share*, not a volume: a household mistyping and a bot walking a breach list differ in
+      # shape, not count. Floors sit against a measured ~9 logins a month with no failure ever —
+      # above human error, far below the 600/hr one IP reaches at 10/minute. Warning, never page.
+      - alert: LoginFailureShareHigh
+        expr: |
+          sum(increase(frontdashboard_auth_failures_total{operation="login"}[1h]))
+            / (sum(increase(frontdashboard_auth_failures_total{operation="login"}[1h])) + sum(increase(frontdashboard_login_successes_total[1h]))) > 0.5
+          and sum(increase(frontdashboard_auth_failures_total{operation="login"}[5m]))
+            / (sum(increase(frontdashboard_auth_failures_total{operation="login"}[5m])) + sum(increase(frontdashboard_login_successes_total[5m]))) > 0.5
+          and sum(increase(frontdashboard_auth_failures_total{operation="login"}[1h])) > 10
+        for: 10m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: loginfailuresharehigh
+        annotations:
+          summary: Most login attempts are failing
+          description: 'Failure share {{ $value | printf "%.2f" }} over the last hour. Check the rate-limiter panel before assuming an outage.'
+          __dashboardUid__: frontdashboard
+          __panelId__: "10"
+
+      - alert: AccountEnumerationSuspected
+        # unknown_user means the address does not exist here — a signature of a list being walked,
+        # not of a person forgetting a password. The reason label is what makes this separable.
+        expr: |
+          sum(increase(frontdashboard_auth_failures_total{operation="login",reason="unknown_user"}[1h]))
+            / sum(increase(frontdashboard_auth_failures_total{operation="login"}[1h])) > 0.8
+          and sum(increase(frontdashboard_auth_failures_total{operation="login",reason="unknown_user"}[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: accountenumerationsuspected
+        annotations:
+          summary: Login failures are mostly addresses that do not exist
+          description: Consistent with a breach list being walked. Registration is open, so confirm the rate limiter is holding.
+          __dashboardUid__: frontdashboard
+          __panelId__: "10"
 
   - name: frontdashboard-monitoring-health
     interval: 1m
