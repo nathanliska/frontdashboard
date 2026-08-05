@@ -68,32 +68,21 @@ serving fault, so run it for anything touching the frontend, `Caddyfile.prod` or
 
 ## PR body
 
-Write it for a reviewer, not as a changelog. Read the complete branch diff before writing it.
-Scale the length to the change — **~800 characters for a small one, ~2000 for a large one** — with
-one-line bullets carrying one fact each. Three headings always, in this order:
+Write it for a reviewer, not as a changelog. Read the complete branch diff before writing it, then
+fill the sections in `.github/pull_request_template.md`: **Why**, **What changed**,
+**Compatibility**, **Test plan**. That template carries the per-section instruction; this skill does
+not repeat it.
 
-- **Why** — a short paragraph: the problem, and what should be true instead.
-- **What changed** — one bullet per change. What it does now, not a walk through the diff.
-- **Test plan** — `command — result, with numbers`, and what is still unverified.
-
-`.github/pull_request_template.md` also prefills **Compatibility** above Test plan — a migration,
-a regenerated contract, or a change to auth, sharing, SSE audience or retention. Keep the lines
-that apply; delete the whole section when only "No behavior change for existing clients" survives,
-because a section reading "not applicable" is noise.
-
-Then cut every sentence narrating _how_ the problem was found — root-cause derivations, measurement
-tables, why it passed once. That is commit-body and issue material; one sentence in **Why** at most.
-Caveats and unrelated defects go to the user in conversation or become their own issue, never a
-section here. Link the ADRs, FDRs and TODO findings involved. Use `Closes #123.` when it closes an
-issue.
+Call out migration, rollout, security or operational implications when they apply. Use concise
+headings and bullets, never a single summary paragraph as the whole body, and never drop rationale
+to shorten. Cut sentences narrating _how_ the problem was found — that is commit-body material.
+Link the ADRs, FDRs and TODO findings involved; `Closes #123.` when it closes an issue.
 
 For multiline bodies with `gh`, write Markdown to a file and use `--body-file` — never escaped `\n`
 in `--body`. Afterwards, read it back with
-`gh pr view --json title,body,baseRefName,isDraft` and confirm it matches the diff.
-
-The read-back is the check that the write landed, not a formality: `gh pr edit` can fail on
-something unrelated to your edit and leave the previous title and body in place. When it does,
-`gh api repos/{owner}/{repo}/pulls/{n} -X PATCH -F body=@file` goes around it.
+`gh pr view --json title,body,baseRefName,isDraft,closingIssuesReferences` and confirm it matches
+the diff. The read-back is the check that the write landed, not a formality: a failed edit leaves
+the previous title and body in place, which reads exactly like never having run it.
 
 ## Migrations
 
@@ -105,8 +94,6 @@ under **Compatibility**, and say whether it is additive (safe) or destructive (n
 
 - CI is green. Fix failures that are regressions from `main`; say so if one isn't.
 - Push anything still local.
-- **Count the body before asking, not after.** ~800 characters for a small change, ~2000 for a
-  large one, and the headings above. Over the ceiling means cutting the investigation, not facts.
 - **Read the commit list as a reviewer meeting it fresh** — one decision each, and no commit
   fixing a defect another commit in this same branch introduced. Fold those into the commit they
   fix, rewriting the branch if it is already pushed. A bug and its fix both reaching `main`'s

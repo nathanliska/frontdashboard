@@ -6,11 +6,20 @@ reads zero through every burst worth catching; and an email send happens in a ba
 after the response has gone, so no route ever 5xxs for one that failed.
 """
 
+import contextlib
+from collections.abc import AsyncIterator
+from typing import get_args
+
+import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from fastapi.testclient import TestClient
 from prometheus_client import REGISTRY
 from sqlalchemy import event
 
 from app import metrics
 from app.metrics import WindowedPeak
+from app.middleware import ResponseStatusMiddleware
 
 
 class _Clock:
@@ -161,6 +170,127 @@ async def test_a_failed_send_is_counted_where_nothing_else_would_notice(monkeypa
     await email.send_verification_email("someone@example.com", "https://example.test/verify?token=x")
 
     assert _email_count("verification", "failed") == before + 1
+
+
+def test_a_server_error_is_countable_before_one_has_ever_happened() -> None:
+    """`ServerErrors` is the rule that must not need a second failure to fire.
+
+    The labelled counter is keyed by route, so its 5xx slice does not exist until a 5xx does. This
+    twin is registered at import with no labels, which is what gives `increase()` a zero to count
+    up from — on every replica, and again after each restart.
+    """
+    before = _server_errors()
+
+    metrics.observe_response("GET", "/api/anything", 503)
+
+    assert _server_errors() == before + 1
+
+
+def test_a_handled_response_leaves_the_server_error_count_alone() -> None:
+    before = _server_errors()
+
+    for status in (200, 304, 401, 404, 429, 499):
+        metrics.observe_response("GET", "/api/anything", status)
+
+    assert _server_errors() == before
+
+
+def _app_that_raises(exc: Exception) -> FastAPI:
+    """The real mounting in miniature: `add_middleware` always lands inside ServerErrorMiddleware."""
+    app = FastAPI()
+    app.add_middleware(ResponseStatusMiddleware)
+
+    @app.get("/api/boom")
+    async def boom() -> None:
+        raise exc
+
+    return app
+
+
+def test_a_crash_is_counted_although_the_500_is_built_above_this_middleware() -> None:
+    """The case asserting on `observe_response` directly cannot reach: nothing calls it.
+
+    An unhandled exception propagates past `send_wrapper` to ServerErrorMiddleware, which writes the
+    500 where this middleware can no longer see it — so the alert named for 5xx saw only the
+    deliberate ones.
+    """
+    client = TestClient(_app_that_raises(RuntimeError("kaboom")), raise_server_exceptions=False)
+    before = _server_errors()
+
+    assert client.get("/api/boom").status_code == 500
+
+    assert _server_errors() == before + 1
+
+
+def test_a_deliberate_500_is_counted_exactly_once() -> None:
+    """The response *does* reach `send_wrapper` here, so the exception path must not count it again."""
+    client = TestClient(_app_that_raises(HTTPException(status_code=500)), raise_server_exceptions=False)
+    before = _server_errors()
+
+    assert client.get("/api/boom").status_code == 500
+
+    assert _server_errors() == before + 1
+
+
+def test_the_original_exception_still_reaches_the_handler_above() -> None:
+    """A bare re-raise, never `from None` — that would cost ServerErrorMiddleware the traceback it logs."""
+    client = TestClient(_app_that_raises(RuntimeError("kaboom")), raise_server_exceptions=True)
+
+    with pytest.raises(RuntimeError, match="kaboom"):
+        client.get("/api/boom")
+
+
+def test_a_stream_that_dies_mid_body_is_not_counted_a_second_time() -> None:
+    """The whole reason the exception path is guarded, and the case SSE actually lands in.
+
+    Its status line went out as a 200 long before the body failed, so counting the raise as well
+    would report one request as two — and invent a 5xx the client was never served.
+    """
+    app = FastAPI()
+    app.add_middleware(ResponseStatusMiddleware)
+
+    async def body() -> AsyncIterator[bytes]:
+        yield b"partial"
+        raise RuntimeError("the stream went away")
+
+    @app.get("/api/stream")
+    async def stream() -> StreamingResponse:
+        return StreamingResponse(body())
+
+    client = TestClient(app, raise_server_exceptions=False)
+    before = _server_errors()
+
+    with contextlib.suppress(Exception):
+        client.get("/api/stream")
+
+    assert _server_errors() == before
+
+
+def test_every_email_outcome_has_a_series_before_it_first_happens() -> None:
+    """`EmailSendsFailing` alerts on an outcome that may never have occurred, which is the trap.
+
+    A labelled child is created on first use, so without pre-creation the first failure appears as
+    a series whose every sample is already 1 — and `increase()` over that is 0. The alert would
+    then need a *second* failure before it could fire.
+    """
+    missing = [
+        (operation, outcome)
+        for operation in get_args(metrics.EmailOperation)
+        for outcome in get_args(metrics.EmailOutcome)
+        if REGISTRY.get_sample_value(
+            "frontdashboard_email_sends_total",
+            {"operation": operation, "outcome": outcome},
+        )
+        is None
+    ]
+    assert not missing, f"invisible until they first happen: {missing}"
+
+
+def _server_errors() -> float:
+    value = REGISTRY.get_sample_value("frontdashboard_http_server_errors_total")
+    # Not `or 0.0`: absent and zero are the same number and opposite facts, and absent is the bug.
+    assert value is not None, "no series until the first 5xx, so increase() would start from 1"
+    return value
 
 
 def _email_count(operation: str, outcome: str) -> float:

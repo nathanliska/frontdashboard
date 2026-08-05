@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import metrics
 from app.auth.csrf import generate_csrf_token
 from app.auth.dependencies import (
     get_current_session,
@@ -417,6 +418,7 @@ async def login(
 
     await _create_session(user, response, db)
     await db.commit()
+    metrics.LOGIN_SUCCESSES.inc()
     return UserResponse.model_validate(user)
 
 

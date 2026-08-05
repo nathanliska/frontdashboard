@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi import HTTPException, Response
 from httpx import ASGITransport, AsyncClient
+from prometheus_client import REGISTRY
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -162,6 +163,40 @@ async def test_login(db_client: AsyncClient) -> None:
     assert resp.status_code == 200
     assert "session" in resp.cookies
     assert "csrf_token" in resp.cookies
+
+
+async def test_a_successful_login_is_counted(db_client: AsyncClient) -> None:
+    """`LoginFailureShareHigh` divides by this, so an uncounted success reads as a failed one.
+
+    A denominator that never moves makes the share 1.0 for as long as anyone fails to log in,
+    which is a permanently firing alert rather than a missing one.
+    """
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "counted@example.com", "password": "mypassword", "display_name": "C"},
+    )
+    token = app.state.email_verification_tokens["counted@example.com"]
+    await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
+    before = REGISTRY.get_sample_value("frontdashboard_login_successes_total")
+    assert before is not None, "no series until the first login, so increase() would start from 1"
+
+    resp = await db_client.post(_LOGIN_URL, json={"email": "counted@example.com", "password": "mypassword"})
+
+    assert resp.status_code == 200
+    assert REGISTRY.get_sample_value("frontdashboard_login_successes_total") == before + 1
+
+
+async def test_a_rejected_login_leaves_the_success_count_alone(db_client: AsyncClient) -> None:
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "notcounted@example.com", "password": "correct", "display_name": "N"},
+    )
+    before = REGISTRY.get_sample_value("frontdashboard_login_successes_total")
+
+    await db_client.post(_LOGIN_URL, json={"email": "notcounted@example.com", "password": "incorrect"})
+    await db_client.post(_LOGIN_URL, json={"email": "nobody@example.com", "password": "whatever"})
+
+    assert REGISTRY.get_sample_value("frontdashboard_login_successes_total") == before
 
 
 async def test_login_requires_email_verification(db_client: AsyncClient) -> None:
