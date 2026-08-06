@@ -110,7 +110,7 @@ make format      # format both sides
 make dev-up      # start all services (Docker Compose)
 make migrate     # run Alembic migrations
 make seed        # seed development data
-make audit       # dependency/security audit checks
+make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 ```
 
 - `/live-verify` runs the real production images against a throwaway database and drives them in a

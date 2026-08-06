@@ -153,13 +153,21 @@ jobs:
   audit:
     name: Audit
     runs-on: ubuntu-latest
+    env:
+      # Nothing bumps these for you — Dependabot does not track a curl. Move both together.
+      OSV_VERSION: v2.4.0
+      OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-      # Both auditors read lockfiles, so neither stack needs installing first.
+      # osv-scanner reads both lockfiles, so neither stack needs installing. Checksum-pinned, so a
+      # swapped release binary fails here rather than auditing the audit away.
+      - name: Install osv-scanner
+        run: |
+          set -eu
+          curl -fsSLo /tmp/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  /tmp/osv-scanner" | sha256sum -c -
+          install -m 0755 /tmp/osv-scanner /usr/local/bin/osv-scanner
       - run: make audit
 
   images:

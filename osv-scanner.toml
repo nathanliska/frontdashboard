@@ -1,0 +1,9 @@
+# Advisories that do not apply here. There are none — this file exists so the first one has a home.
+#
+# An entry needs the advisory id, a reason the next reader can check against the source, and an
+# ignoreUntil, after which it is reported again rather than quietly outliving its reasoning:
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2026-12-01
+# reason = "Why it cannot fire in this codebase, and what blocks the fix."
