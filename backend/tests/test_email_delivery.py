@@ -9,6 +9,7 @@ import logging
 from collections.abc import Iterator
 from pathlib import Path
 
+import httpx
 import pytest
 
 from app.config import Environment
@@ -75,7 +76,11 @@ async def test_a_configured_key_sends_and_writes_nothing_locally(outbox: Path, m
     monkeypatch.setattr(email_service.settings, "environment", Environment.development)
     monkeypatch.setattr(email_service.settings, "resend_api_key", "re_test_key")
     sent: list[email_service._Message] = []
-    monkeypatch.setattr(email_service, "_call_resend", sent.append)
+
+    async def _record(message: email_service._Message) -> None:
+        sent.append(message)
+
+    monkeypatch.setattr(email_service, "_call_resend", _record)
 
     await email_service.send_password_reset_email("user@example.com", _RESET_URL)
 
@@ -90,7 +95,7 @@ async def test_send_failures_are_logged_without_the_link(outbox: Path, monkeypat
     monkeypatch.setattr(email_service.settings, "environment", Environment.development)
     monkeypatch.setattr(email_service.settings, "resend_api_key", "re_test_key")
 
-    def _fail(message: email_service._Message) -> None:
+    async def _fail(message: email_service._Message) -> None:
         raise RuntimeError("Resend email request failed: unreachable")
 
     monkeypatch.setattr(email_service, "_call_resend", _fail)
@@ -99,6 +104,62 @@ async def test_send_failures_are_logged_without_the_link(outbox: Path, monkeypat
 
     assert "Failed to send" in logs.text
     assert _RESET_URL not in logs.text
+
+
+def _resend_returning(handler, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route `_call_resend`'s client at a mock transport, leaving its own construction intact."""
+    transport = httpx.MockTransport(handler)
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=transport, **kw))
+
+
+async def test_a_rejected_send_carries_the_status_and_the_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_deliver` only distinguishes RuntimeError, so everything below has to normalise to one.
+
+    The status and body are the whole diagnostic — an invalid API key reaches the operator as a 401
+    and Resend's own wording, or not at all.
+    """
+    monkeypatch.setattr(email_service.settings, "resend_api_key", "re_test_key")
+    _resend_returning(lambda _req: httpx.Response(401, json={"message": "API key is invalid"}), monkeypatch)
+    message = email_service._Message(to="user@example.com", subject="s", html="h", text="t")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await email_service._call_resend(message)
+
+    assert "401" in str(excinfo.value)
+    assert "API key is invalid" in str(excinfo.value)
+
+
+async def test_an_unreachable_resend_is_the_same_kind_of_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transport error and a rejection differ by class, and `_deliver` handles neither specially."""
+
+    def _refuse(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("nope")
+
+    monkeypatch.setattr(email_service.settings, "resend_api_key", "re_test_key")
+    _resend_returning(_refuse, monkeypatch)
+    message = email_service._Message(to="user@example.com", subject="s", html="h", text="t")
+
+    with pytest.raises(RuntimeError):
+        await email_service._call_resend(message)
+
+
+async def test_a_send_posts_the_message_as_json_under_the_bearer_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[httpx.Request] = []
+
+    def _accept(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"id": "abc"})
+
+    monkeypatch.setattr(email_service.settings, "resend_api_key", "re_test_key")
+    _resend_returning(_accept, monkeypatch)
+    message = email_service._Message(to="user@example.com", subject="s", html="<p>h</p>", text="t")
+
+    await email_service._call_resend(message)
+
+    assert seen[0].headers["authorization"] == "Bearer re_test_key"
+    assert seen[0].headers["content-type"] == "application/json"
+    assert b'"to":["user@example.com"]' in seen[0].content
 
 
 def test_the_outbox_keeps_only_the_most_recent_messages(outbox: Path, monkeypatch: pytest.MonkeyPatch) -> None:
