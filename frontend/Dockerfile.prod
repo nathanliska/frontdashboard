@@ -1,5 +1,5 @@
 # Pinned by digest for reproducibility; Dependabot's docker ecosystem keeps them current.
-FROM node:24-alpine@sha256:f70403e87646dc51b45295f4b8b70cdad0b63d2297c4c9899119b03f7af7a6b3 AS build
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS build
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ RUN cp /usr/bin/caddy /caddy
 
 # Alpine, not the caddy image, so that binary ships once rather than twice. Caddy is static; mailcap
 # (76 kB) covers the types Go's builtin table lacks — fonts, .webmanifest — as the caddy image does.
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 ENV XDG_CONFIG_HOME=/config XDG_DATA_HOME=/data
 
