@@ -1,10 +1,10 @@
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
-import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { CalendarOccurrence } from '../api/calendar'
 import { CalendarDayNumber } from '../components/calendar/CalendarDayNumber'
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
+import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialog'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import { useLocalDay } from '../hooks/useLocalDay'
@@ -446,7 +446,10 @@ export function CalendarPage() {
       </div>
 
       {(editorLoading || editorSession) && (
-        <CalendarEditorModal onClose={closeEditor}>
+        <CalendarEditorDialog
+          title={editorSession?.mode === 'edit' ? 'Edit event' : 'Add event'}
+          onClose={closeEditor}
+        >
           {editorLoading && <CalendarEditorLoading />}
 
           {editorSession && (
@@ -460,35 +463,15 @@ export function CalendarPage() {
               onSubmit={handleEditorSubmit}
             />
           )}
-        </CalendarEditorModal>
+        </CalendarEditorDialog>
       )}
-    </div>
-  )
-}
-
-function CalendarEditorModal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center">
-      <button
-        type="button"
-        aria-label="Close event dialog"
-        className="absolute inset-0 bg-black/60"
-        onClick={onClose}
-      />
-      <div className="relative w-full sm:mx-4 sm:max-w-4xl">
-        {/* Drag handle — visible on mobile only */}
-        <div className="flex justify-center pb-2 pt-3 sm:hidden">
-          <div className="h-1 w-12 rounded-full bg-zinc-600" />
-        </div>
-        <div className="max-h-[88dvh] overflow-y-auto sm:max-h-[90dvh]">{children}</div>
-      </div>
     </div>
   )
 }
 
 function CalendarEditorLoading() {
   return (
-    <div className="grid gap-3 rounded-xl border border-zinc-800 bg-zinc-950/45 p-4">
+    <div className="grid gap-3 p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-zinc-200">Loading event</p>

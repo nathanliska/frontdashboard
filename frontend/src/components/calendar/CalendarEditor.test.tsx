@@ -40,6 +40,14 @@ function renderEditor(draft: CalendarEditorDraft = makeDraft()) {
   }
 }
 
+describe('opening the editor', () => {
+  it('puts the caret in the title rather than on Cancel', () => {
+    renderEditor()
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Event title'))
+  })
+})
+
 // Every assertion here is on the end time rather than on the duration reading correctly: the
 // duration is derived from it either way, so a display-only assertion passes against the bug.
 describe('duration unit', () => {
