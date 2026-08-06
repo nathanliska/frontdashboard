@@ -1,5 +1,5 @@
 import { Minus, Plus } from 'lucide-react'
-import { type FormEvent, memo, useEffect, useEffectEvent, useState } from 'react'
+import { type FormEvent, memo, useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
   type CalendarEditorDraft,
   type EditorMode,
@@ -63,6 +63,12 @@ export const CalendarEditor = memo(function CalendarEditor({
     Boolean(initialDraft.description || initialDraft.eventLocation),
   )
   const [submitting, setSubmitting] = useState(false)
+  const titleRef = useRef<HTMLInputElement>(null)
+
+  // Radix would otherwise land on Cancel, the first tabbable in the panel.
+  useEffect(() => {
+    titleRef.current?.focus()
+  }, [])
 
   const dashboardLabel = activeDashboardName ?? 'the selected dashboard'
   const isRepeating = recurrenceMode !== 'none'
@@ -225,11 +231,7 @@ export const CalendarEditor = memo(function CalendarEditor({
   }
 
   return (
-    <form
-      onSubmit={(event) => void handleSubmit(event)}
-      aria-busy={submitting}
-      className="overflow-hidden rounded-t-2xl border border-zinc-800/80 bg-zinc-950 shadow-[0_-8px_40px_rgba(0,0,0,0.5)] sm:rounded-2xl sm:shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
-    >
+    <form onSubmit={(event) => void handleSubmit(event)} aria-busy={submitting}>
       {/* Header */}
       <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
         <div className="flex min-w-0 items-center gap-2">
@@ -251,6 +253,7 @@ export const CalendarEditor = memo(function CalendarEditor({
       <div className="grid gap-3 px-4 pb-4">
         {/* Title */}
         <input
+          ref={titleRef}
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-3.5 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:bg-zinc-900 focus:outline-none sm:h-10 sm:text-sm"

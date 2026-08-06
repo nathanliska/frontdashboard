@@ -3,9 +3,20 @@ import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '../../utils/shared/cn'
 
+/** Where the panel sits. `sheet` docks it to the bottom edge below `sm` and centres it above.
+ *
+ * The two are exclusive branches rather than overrides because `cn` joins rather than merges, so a
+ * caller's `left-0` and this file's `left-1/2` would both apply and stylesheet order would decide.
+ */
+const PLACEMENT = {
+  center: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl',
+  sheet:
+    'inset-x-0 bottom-0 rounded-t-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl',
+} as const
+
 /** The one modal shell, on Radix Dialog.
  *
- * Radix owns the focus trap, scroll lock, Escape, aria-modal wiring and focus restoration on close;
+ * Radix owns the focus trap, scroll lock, Escape, hiding the page behind it and restoring focus;
  * this wrapper owns the house style. A hand-rolled overlay does not trap focus, so Tab walks out
  * into the page behind it. Render conditionally (`{open && <Dialog …>}`).
  *
@@ -20,6 +31,7 @@ export function Dialog({
   contentClassName,
   headerAccessory,
   hideHeader = false,
+  placement = 'center',
 }: {
   title: string
   onClose: () => void
@@ -28,6 +40,7 @@ export function Dialog({
   contentClassName?: string
   headerAccessory?: ReactNode
   hideHeader?: boolean
+  placement?: keyof typeof PLACEMENT
 }) {
   return (
     <RadixDialog.Root
@@ -49,8 +62,9 @@ export function Dialog({
               : undefined
           }
           className={cn(
-            'fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2',
-            'max-h-[85vh] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl',
+            'fixed z-50 w-full max-w-2xl',
+            PLACEMENT[placement],
+            'max-h-[85vh] overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl',
             'px-0 focus:outline-none',
             contentClassName,
           )}
