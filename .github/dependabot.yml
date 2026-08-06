@@ -28,6 +28,14 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # Majors arrive as one PR rather than one each: they are reviewed as a batch anyway, and
+      # ungrouped they accumulate. Declining one means an `ignore` entry, which regroups the rest.
+      backend-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
       backend-security:
         applies-to: "security-updates"
         patterns:
@@ -40,6 +48,12 @@ updates:
     labels:
       - "dependencies"
       - "frontend"
+    # We depend on react-resizable only for the stylesheet that styles react-grid-layout's handles,
+    # so its major must follow that library's rather than lead it — leading installs a second copy.
+    ignore:
+      - dependency-name: "react-resizable"
+        update-types:
+          - "version-update:semver-major"
     groups:
       react:
         applies-to: "version-updates"
@@ -55,6 +69,13 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # Listed after `react`, which claims its own packages at every level and must keep doing so.
+      frontend-major:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "major"
       frontend-security:
         applies-to: "security-updates"
         patterns:
