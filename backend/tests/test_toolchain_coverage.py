@@ -7,6 +7,10 @@ on 24, and it is a split toolchain: unit tests on one major, the shipped bundle 
 
 So `.nvmrc` is the pin, CI reads it with `node-version-file`, and this fails the build if either
 Dockerfile drifts from it or a literal pin creeps back into a workflow.
+
+Node 26 needs one thing more than the pins: it defines `globalThis.localStorage`, and vitest's jsdom
+environment leaves an existing global alone, so jsdom's own never installs and the store tests fail.
+`--no-webstorage` settles it — the whole suite is green on 26.7.0 from a clean install.
 """
 
 import re
@@ -31,6 +35,16 @@ def test_the_pin_exists() -> None:
     assert _NVMRC.is_file(), ".nvmrc is missing — nothing pins the Node version"
     assert _pinned_major().isdigit(), f".nvmrc should hold a bare major, got {_pinned_major()!r}"
     assert _WORKFLOWS, "no workflows found — this test would pass having checked nothing"
+
+
+def test_the_pinned_major_is_a_line_that_reaches_lts() -> None:
+    """Odd Node majors never go LTS: they ship, go maintenance at six months, and die at seven.
+
+    Dependabot's docker updater compares tag integers and has no model of a dead release line, so
+    it will offer one — it offered 25 the day after that line's last image rebuild.
+    """
+    major = int(_pinned_major())
+    assert major % 2 == 0, f"Node {major} is an odd release line, which never reaches LTS"
 
 
 def test_both_images_build_on_the_pinned_major() -> None:

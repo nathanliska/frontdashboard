@@ -9,6 +9,13 @@ vi.mock('./client', () => ({
   apiFetch,
 }))
 
+// Real UUIDs because the generated contract validates the format; a placeholder here would fail
+// the boundary for a reason that has nothing to do with what these tests assert.
+const DASHBOARD_ID = '11111111-1111-4111-8111-111111111111'
+const OWNER_ID = '22222222-2222-4222-8222-222222222222'
+const VIEWER_ID = '33333333-3333-4333-8333-333333333333'
+const SHARE_ID = '44444444-4444-4444-8444-444444444444'
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -29,14 +36,14 @@ describe('dashboard share request dedupe', () => {
       ok: true,
       json: vi.fn().mockResolvedValue([
         {
-          id: 'share-1',
+          id: SHARE_ID,
           resource_type: 'dashboard',
-          resource_id: 'dash-1',
+          resource_id: DASHBOARD_ID,
           principal_type: 'user',
-          principal_id: 'user-2',
+          principal_id: VIEWER_ID,
           principal_name: 'Viewer One',
           role: 'viewer',
-          granted_by: 'user-1',
+          granted_by: OWNER_ID,
           created_at: '2026-01-01T00:00:00Z',
         },
       ]),
@@ -44,14 +51,14 @@ describe('dashboard share request dedupe', () => {
     const request = deferred<typeof response>()
     apiFetch.mockReturnValue(request.promise)
 
-    const first = apiGetDashboardShares('dash-1')
-    const second = apiGetDashboardShares('dash-1')
+    const first = apiGetDashboardShares(DASHBOARD_ID)
+    const second = apiGetDashboardShares(DASHBOARD_ID)
 
     expect(apiFetch).toHaveBeenCalledTimes(1)
 
     request.resolve(response)
-    await expect(first).resolves.toMatchObject([{ id: 'share-1' }])
-    await expect(second).resolves.toMatchObject([{ id: 'share-1' }])
+    await expect(first).resolves.toMatchObject([{ id: SHARE_ID }])
+    await expect(second).resolves.toMatchObject([{ id: SHARE_ID }])
   })
 })
 
@@ -61,8 +68,8 @@ describe('response boundary validation', () => {
   })
 
   const validSummary = {
-    id: 'dash-1',
-    user_id: 'user-1',
+    id: DASHBOARD_ID,
+    user_id: OWNER_ID,
     name: 'Primary Dashboard',
     can_edit: true,
     can_manage_shares: true,

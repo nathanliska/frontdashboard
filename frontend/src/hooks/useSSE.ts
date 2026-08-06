@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { type ZodType, z } from 'zod'
+import type { ZodType, z } from 'zod'
 import { apiFetch } from '../api/client'
 import {
   ActivitySseEvent,
-  ActivitySsePayload,
   ConnectedSseEvent,
   type EventType,
   NotificationSseEvent,
@@ -18,16 +17,13 @@ import { useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
 
 /**
- * A server activity frame. Generated from the backend's ActivitySseEvent contract, with one
- * local widening: that model is `extra="allow"` on `payload` (payload shape varies per event
- * type and only the cross-cutting keys are modelled), which the generator can't express — so
- * unknown payload keys are kept here instead of being silently stripped by validation.
+ * A server activity frame, straight from the contract.
+ *
+ * `payload` is `extra="allow"` backend-side — its shape varies per event type and only the
+ * cross-cutting keys are modelled — and the generated schema keeps unknown keys, so nothing is
+ * re-opened here. Re-adding a local widening would be a no-op.
  */
-const SseEventSchema = ActivitySseEvent.extend({
-  payload: ActivitySsePayload.and(z.record(z.unknown())),
-})
-
-export type SseEvent = z.infer<typeof SseEventSchema>
+export type SseEvent = z.infer<typeof ActivitySseEvent>
 
 /**
  * Not a server frame: the local "you may have missed events" signal, fanned out to the same
@@ -229,7 +225,7 @@ export function useSSE(): void {
     // Every activity frame moves the mark, whichever handler it is bound for, so the parse and
     // the bookkeeping stay together rather than being repeated per route.
     function readActivityFrame(e: MessageEvent<string>): SseEvent | null {
-      const data = parseFrame(e.data, SseEventSchema)
+      const data = parseFrame(e.data, ActivitySseEvent)
       if (data && data.event_id > (watermarkRef.current ?? 0)) {
         watermarkRef.current = data.event_id
       }

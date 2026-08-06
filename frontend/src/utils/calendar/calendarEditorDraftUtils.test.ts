@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CalendarEvent } from '../../api/calendar'
+import { RecurrenceRule } from '../../api/generated/contract'
 import {
   buildEventUpdateFromDraft,
   type CalendarEditorDraft,
@@ -22,10 +23,7 @@ describe('calendar editor draft utils', () => {
     expect(synced.recurrenceWeekdays).toEqual([])
   })
 
-  it('derives a repeat end date when the rule omits its interval', () => {
-    // `interval` is optional on the wire and defaulted server-side, so it can arrive absent.
-    // Arithmetic against an absent one yields an Invalid Date, which renders as an empty field
-    // rather than a wrong one — silent, and the reason the DTO may not be hand-written.
+  it('derives a repeat end date from a count-based rule', () => {
     const event = {
       id: 'e1',
       dashboard_id: 'd1',
@@ -40,12 +38,18 @@ describe('calendar editor draft utils', () => {
       updated_by: 'u1',
       created_at: '2026-04-01T00:00',
       updated_at: '2026-04-01T00:00',
-      recurrence: { frequency: 'daily' as const, count: 3 },
+      recurrence: { frequency: 'daily' as const, interval: 1, count: 3 },
     } satisfies CalendarEvent
 
     const draft = createCalendarEditorDraftFromEvent(event)
 
     expect(draft.recurrenceEndsOn).toBe('2026-04-15')
+  })
+
+  it('fills an omitted interval at the network boundary', () => {
+    // Arithmetic against an absent interval yields an Invalid Date, which renders as an empty
+    // field rather than a wrong one. The contract's default is what makes that unreachable.
+    expect(RecurrenceRule.parse({ frequency: 'daily', count: 3 }).interval).toBe(1)
   })
 
   it('keeps weekly weekday selection in sync when it only followed the old start day', () => {

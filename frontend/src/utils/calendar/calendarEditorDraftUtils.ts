@@ -170,9 +170,7 @@ function deriveRecurrenceEndDate(startsAt: string, recurrence: RecurrenceRule): 
 
   const date = new Date(startsAt)
   const repeatsToAdvance = recurrence.count - 1
-  // Mirrors the backend default: the field is optional on the wire, and arithmetic against an
-  // absent one silently produces an Invalid Date rather than a wrong one.
-  const interval = recurrence.interval ?? 1
+  const interval = recurrence.interval
   for (let index = 0; index < repeatsToAdvance; index += 1) {
     switch (recurrence.frequency) {
       case 'daily':

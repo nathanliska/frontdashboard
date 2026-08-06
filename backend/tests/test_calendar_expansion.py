@@ -8,10 +8,12 @@ getting one wrong is silent: the event is simply absent, and nobody files a bug 
 they cannot see.
 """
 
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
 from app.models.calendar import CalendarEvent, CalendarEventOverride
+from app.schemas.calendar import CalendarOccurrenceResponse
 from app.services.calendar import expand_event_occurrences
 
 
@@ -380,3 +382,27 @@ def test_a_one_off_event_expands_to_exactly_itself() -> None:
     assert occurrences[0].recurring is False
     assert occurrences[0].is_exception is False
     assert occurrences[0].occurrence_end - occurrences[0].occurrence_start == timedelta(hours=1)
+
+
+def test_every_serialized_datetime_is_utc_z_form() -> None:
+    """The client parses these with `z.iso.datetime()`, which accepts `Z` and rejects offset form.
+
+    Expansion is the only place doing timezone arithmetic, so it is the only place a local-zone
+    datetime could reach Pydantic — where it serializes as `+HH:MM` and fails validation at the
+    boundary for the whole response, rather than showing a wrong time (ADR-018).
+    """
+    event = _event(
+        starts_at=_utc("2026-03-06T15:00:00+00:00"),
+        ends_at=_utc("2026-03-06T15:30:00+00:00"),
+        timezone="America/Chicago",
+        recurrence={"frequency": "weekly", "interval": 1, "by_weekday": [4]},
+    )
+
+    occurrences = expand_event_occurrences(event, {}, _utc("2026-03-01T00:00:00+00:00"), _utc("2026-03-31T00:00:00+00:00"))
+    # Spans the 8 March transition, so the event's local offset is not the same for every occurrence.
+    assert len(occurrences) >= 3
+
+    for occurrence in occurrences:
+        body = json.loads(CalendarOccurrenceResponse.model_validate(occurrence, from_attributes=True).model_dump_json())
+        for field in ("occurrence_start", "occurrence_end", "original_start"):
+            assert body[field].endswith("Z"), f"{field} serialized as {body[field]}, which the client rejects"

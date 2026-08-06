@@ -32,13 +32,14 @@ frontend consumes it mechanically:
   bodies, so they're registered as models purely to appear in `components.schemas`; endpoints
   return typed models rather than bare dicts.
 
-Two deliberate seams remain, each local and documented at its definition:
+One deliberate seam remains, local and documented at its definition:
 
 - The exporter widens single-value `const` to a one-member `enum`, because the generator emits
   `z.literal` for `enum` but degrades `const` to `z.string()` — without it the widget union
   doesn't narrow.
-- `SseEventSchema` re-opens `payload`, whose backend model is `extra="allow"`; the generator
-  cannot express that, and validation would otherwise silently strip payload keys.
+
+Seams are debt, not fixtures. The client also re-opened the `extra="allow"` SSE payload until the
+generator learned to express it; that compensation is gone. Re-check on every generator upgrade.
 
 ## Consequences
 
@@ -51,8 +52,9 @@ Two deliberate seams remain, each local and documented at its definition:
   part of shipping it (see the `const`/`enum` seam), and swapping generators means re-checking
   those seams.
 - **Type checking has to actually run.** Generated types are only a gate if `tsc` runs over the
-  project — `vite build` is transpile-only, and a solution-style root `tsconfig.json` makes plain
-  `tsc --noEmit` silently check nothing.
+  project — `vite build` is transpile-only, a solution-style root `tsconfig.json` makes plain
+  `tsc --noEmit` silently check nothing, and the generator marks its own output `@ts-nocheck`
+  unless `--no-runtime-types` keeps each type inferred from the schema beside it.
 - **Boundary validation is strict by default.** A response missing a required field now errors
   visibly rather than rendering half-broken. Where the backend is genuinely permissive
   (open-ended SSE payloads), that has to be re-stated explicitly on the client schema.
