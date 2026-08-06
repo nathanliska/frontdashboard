@@ -1,17 +1,17 @@
-# Pinned by digest so rebuilding an old commit produces the same image; Dependabot bumps these
-# weekly, without which pinning would just freeze the base's security patches.
-FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS build
+# Pinned by digest so rebuilding an old commit produces the same image, and refreshed by hand:
+# Dependabot bumps the tag but has never sent a digest-only update, which pinning alone needs.
+FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc AS build
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:latest@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c /uv /bin/
+COPY --from=ghcr.io/astral-sh/uv:latest@sha256:069a51314a7bb6031777a9273205fe1b0b19e914ef418207d1338b268df641dd /uv /bin/
 
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev --no-cache
 
 # Same base as the builder, so the venv's interpreter symlink and wheel ABIs still match. It must
 # land at the path it was built at — console scripts embed that in their shebangs.
-FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6
+FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc
 
 WORKDIR /app
 
