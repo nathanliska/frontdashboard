@@ -189,12 +189,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      # Every build sets `pull: true`, because the bases are floating tags: the layer cache would
+      # otherwise hold a build to whichever base it first resolved, reintroducing the very drift
+      # dropping the digests was meant to end.
       - name: Build production image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: false
+          pull: true
           load: true
           tags: frontdashboard-${{ matrix.name }}:ci
           cache-from: type=gha,scope=frontdashboard-${{ matrix.name }}
@@ -237,6 +241,7 @@ jobs:
           context: backend
           file: backend/Dockerfile.prod
           push: false
+          pull: true
           load: true
           tags: frontdashboard-backend:ci
           cache-from: type=gha,scope=frontdashboard-backend
@@ -246,6 +251,7 @@ jobs:
           context: .
           file: frontend/Dockerfile.prod
           push: false
+          pull: true
           load: true
           tags: frontdashboard-frontend:ci
           cache-from: type=gha,scope=frontdashboard-frontend
@@ -358,6 +364,7 @@ jobs:
           context: backend
           file: backend/Dockerfile.prod
           push: false
+          pull: true
           load: true
           tags: |
             ${{ env.BACKEND_IMAGE }}:latest
@@ -372,6 +379,7 @@ jobs:
           context: .
           file: frontend/Dockerfile.prod
           push: false
+          pull: true
           load: true
           tags: |
             ${{ env.FRONTEND_IMAGE }}:latest

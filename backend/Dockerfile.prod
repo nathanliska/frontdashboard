@@ -1,17 +1,20 @@
-# Pinned by digest so rebuilding an old commit produces the same image, and refreshed by hand:
-# Dependabot bumps the tag but has never sent a digest-only update, which pinning alone needs.
-FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc AS build
+# Floating tag, not a digest: a rebuild then takes the base's security patches on its own. Pinning
+# froze them — nothing sends digest-only bumps — and a rollback pulls a published image rather
+# than rebuilding, so reproducibility bought nothing to offset it.
+FROM python:3.14-slim AS build
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:latest@sha256:069a51314a7bb6031777a9273205fe1b0b19e914ef418207d1338b268df641dd /uv /bin/
+# uv is a tool, not a patched base, so it takes a version: a resolver change should arrive as a
+# reviewable bump rather than silently on the next build.
+COPY --from=ghcr.io/astral-sh/uv:0.12.2 /uv /bin/
 
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev --no-cache
 
 # Same base as the builder, so the venv's interpreter symlink and wheel ABIs still match. It must
 # land at the path it was built at — console scripts embed that in their shebangs.
-FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc
+FROM python:3.14-slim
 
 WORKDIR /app
 

@@ -263,8 +263,12 @@ _Last updated: 2026-08-05_
   on mount, and the CSP forbids inline script). An unknown URL renders a 404 page that names the
   path rather than silently redirecting — a truncated reset or invite link is the usual way there.
   See [ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md).
-- **Both production images run unprivileged** (uid 10001), with base images pinned by digest and a
-  `docker` Dependabot ecosystem keeping those pins current. Caddy carries no Linux capability at
+- **Both production images run unprivileged** (uid 10001). Base images float on their tags, so a
+  rebuild takes each one's security patches on its own; they were pinned by digest until four sat
+  months behind, because nothing sends digest-only bumps and a rollback pulls a published image
+  rather than rebuilding. Every CI build passes `pull: true` so the layer cache cannot hold a build
+  to a stale base, and `uv` keeps a version tag — a tool, not a patched base, so a resolver change
+  should arrive as a reviewable bump. Caddy carries no Linux capability at
   all: `:80` binds because `net.ipv4.ip_unprivileged_port_start` is 0, which the compose files set
   explicitly rather than inherit from the daemon, so the port the tunnel points at never had to
   move. CI asserts both images are non-root.
@@ -324,7 +328,8 @@ _Last updated: 2026-08-05_
   schema with `alembic upgrade head`, so **migrations run on every backend test run** and
   `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the Docker-free subset.
   Pre-commit hooks incl. Conventional Commit enforcement, and CI checks the PR title by the same
-  grammar. Dependabot grouped/weekly.
+  grammar. Dependabot is grouped and **monthly**, majors included: weekly churn was noise, and
+  batching keeps upgrades incremental rather than deferring them into one forced jump.
 
 ## In flight
 
