@@ -10,7 +10,8 @@ Dockerfile drifts from it or a literal pin creeps back into a workflow.
 
 Node 26 needs one thing more than the pins: it defines `globalThis.localStorage`, and vitest's jsdom
 environment leaves an existing global alone, so jsdom's own never installs and the store tests fail.
-`--no-webstorage` settles it — the whole suite is green on 26.7.0 from a clean install.
+`frontend/vite.config.ts` passes `--no-webstorage` to the test workers, but only where the property
+exists — the option is fatal on Node 24, which does not define it.
 """
 
 import re
