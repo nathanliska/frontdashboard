@@ -21,10 +21,33 @@ services:
       - edge
     restart: unless-stopped
 
+  # Bundled rather than shared with the box's other apps, which is what Immich and Paperless do too:
+  # on the internal network with no published port, isolation needs no ACL to enforce it.
+  redis:
+    container_name: frontdashboard-redis
+    image: redis:8-alpine
+    # Insurance, not a working limit: counters expire on their own and the stream is capped by
+    # MAXLEN, so `noeviction` can never bite — and evicting a rate-limit key resets an abuse window.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal
+    restart: unless-stopped
+
   backend:
     container_name: frontdashboard-backend
     image: ghcr.io/nathanliska/frontdashboard-backend:${TAG:-latest}
     pull_policy: always
+    # Started, not healthy: an unreachable Redis already degrades rather than fails, so this only
+    # buys a resolvable name — worth having, since resolving one that does not exist costs ~4s.
+    depends_on:
+      redis:
+        condition: service_started
     environment:
       DATABASE_URL: ${DATABASE_URL}
       # Empty by default — the Origin allowlist is FRONTEND_BASE_URL plus this. Passed through so
@@ -36,6 +59,8 @@ services:
       # quietly doing nothing; scaling by replica also needs `container_name` dropped above.
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
+      # Override only to point at an external instance; the bundled one is the supported shape.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       RESEND_API_KEY: ${RESEND_API_KEY}
       EMAIL_FROM: ${EMAIL_FROM}
     logging:

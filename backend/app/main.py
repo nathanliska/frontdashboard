@@ -21,16 +21,25 @@ from app.middleware import ResponseStatusMiddleware
 from app.routers.metrics import router as metrics_router
 from app.services.retention import reaper_loop
 
+_LOG_HANDLER_NAME = "frontdashboard"
+
 
 def _configure_app_logging() -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
-    app_logger = logging.getLogger("app")
-    app_logger.setLevel(level)
-    app_logger.propagate = False
-    if not app_logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-        app_logger.addHandler(handler)
+    formatter = logging.Formatter("%(levelname)s:%(name)s:%(message)s")
+    # slowapi is here because losing the rate-limit store is otherwise silent: it says so once, on
+    # its own logger, which ships a no-op handler — so the app serves on per-process limits looking
+    # entirely healthy. Never quieter than WARNING, so raising LOG_LEVEL cannot hide it.
+    for name, floor in (("app", level), ("slowapi", min(level, logging.WARNING))):
+        logger = logging.getLogger(name)
+        logger.setLevel(floor)
+        logger.propagate = False
+        # By name, not emptiness: slowapi has already attached its own discarding handler.
+        if not any(h.get_name() == _LOG_HANDLER_NAME for h in logger.handlers):
+            handler = logging.StreamHandler(sys.stdout)
+            handler.set_name(_LOG_HANDLER_NAME)
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
 
 
 _configure_app_logging()

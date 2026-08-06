@@ -61,9 +61,11 @@ harmless:
   superseding an earlier note here that `LISTEN/NOTIFY` would do: it would, on its own merits, but
   a second replica also needs a shared rate-limit store, and `limits` — the library under slowapi —
   offers memory, memcached, mongodb and redis/valkey, with no Postgres backend. Redis is therefore
-  already required, and one backplane is cheaper to run and reason about than two. Not built while
-  the stack runs one replica, but the two invariants above are maintained deliberately so it stays a
-  swap rather than a rewrite; tracked with the rest of the replica picture as #21/#45.
+  already required, and one backplane is cheaper to run and reason about than two. The **shared
+  rate-limit store is built** (2026-08-06, [ADR-013](ADR-013-rate-limit-cf-connecting-ip.md)) because
+  it cannot lag the first replica without silently multiplying every abuse limit; **fan-out is not**,
+  and the two invariants above are maintained deliberately so it stays a swap rather than a rewrite.
+  Tracked with the rest of the replica picture as #21/#45.
 - **Overflow favours resync over silence**: bounded queues can drop a slow client, but the eviction
   sentinel guarantees it *knows* it was dropped and re-syncs, so it never silently diverges.
 - **Client-side write ordering matters on the server**: because REST mutations and SSE fan-out are

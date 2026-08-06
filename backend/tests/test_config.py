@@ -47,6 +47,21 @@ def test_production_requires_resend_key() -> None:
         )
 
 
+def test_production_rejects_an_empty_redis_url() -> None:
+    """An empty uri reads as `memory://` to slowapi, degrading to per-process limits.
+
+    Silently: there is no unreachable store to detect, so neither the fallback warning nor any
+    error would fire, and N replicas would each enforce the full limit on their own.
+    """
+    with pytest.raises(ValidationError):
+        _make(
+            environment="production",
+            resend_api_key="re_test",
+            email_from="FrontDashboard <noreply@example.com>",
+            redis_url="",
+        )
+
+
 def test_production_rejects_default_email_from() -> None:
     with pytest.raises(ValidationError):
         _make(
