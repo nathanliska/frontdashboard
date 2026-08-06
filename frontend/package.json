@@ -10,7 +10,6 @@
     "lint:fix": "biome check --write .",
     "knip": "knip",
     "format": "biome format --write .",
-    "audit": "npm audit",
     "audit:fix": "npm audit fix",
     "typecheck": "tsc --build --force",
     "test": "vitest",

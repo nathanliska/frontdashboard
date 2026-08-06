@@ -77,7 +77,7 @@ weight, so the reasoning survives and nothing here has to be re-derived later.
   tracing is a different weight and still answers no question being asked.
 - **SBOM + release signing** — when there are external contributors, redistribution, or a compliance ask.
 - **Dependency/SAST/secret/image scanning in CI** — when the app stores anything beyond calendars,
-  lists and dashboards, or when contributors outnumber one. Dependabot + `npm audit` cover the
+  lists and dashboards, or when contributors outnumber one. Dependabot + `osv-scanner` cover the
   realistic case now.
 - **Browser/a11y regression tests (Playwright + axe)** — #27 landed, so the primitives now exist
   (`ui/Dialog`, `ui/OverflowMenu`, `ui/FormField`, the confirm dialog and the live-region toaster)

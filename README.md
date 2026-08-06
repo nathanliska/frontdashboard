@@ -32,7 +32,9 @@ A self-hosted dashboard app that acts as a private household operating system. S
 
 - Docker and Docker Compose
 - `uv` ([install](https://docs.astral.sh/uv/getting-started/installation/))
-- Node.js 20+
+- Node.js — the major in [.nvmrc](.nvmrc), which CI and both images also read
+- `osv-scanner`, for `make audit` — no apt package, so use the release binary or `go install`
+  ([install](https://google.github.io/osv-scanner/installation/))
 
 ### Setup
 
@@ -68,7 +70,7 @@ make test        # Run all tests
 make test-unit   # Run tests that need neither PostgreSQL nor Docker
 make lint        # Lint backend + frontend
 make format      # Format backend + frontend
-make audit       # Run dependency/security audit checks
+make audit       # Dependency CVE audit (osv-scanner, both lockfiles)
 make audit-fix   # Apply npm audit fixes for frontend dependencies
 make migrate     # Run Alembic migrations
 make seed        # Seed development data
@@ -122,7 +124,11 @@ See [CONTEXT.md](CONTEXT.md) for current project state, the [ADRs](docs/adr/INDE
 ## Contributing
 
 - Commits must follow [Conventional Commits](https://www.conventionalcommits.org/) format; the subject is normalized in `prepare-commit-msg` and enforced in `commit-msg`.
-- Frontend dependency/security audits can be run with `make audit` or `cd frontend && npm run audit`.
-- Suggested automatic fixes can be applied with `make audit-fix` or `cd frontend && npm run audit:fix`.
-- Sole-contributor project: work is committed directly to `main` in logically grouped commits.
+- Dependency CVE audits run with `make audit` — one `osv-scanner` pass over `backend/uv.lock` and
+  `frontend/package-lock.json`. An advisory that does not apply goes in `osv-scanner.toml` with a
+  reason and an `ignoreUntil`, so the exception expires rather than becoming permanent.
+- `make audit-fix` applies npm's own suggested fixes. It reaches the frontend only, and the audit
+  above is what decides whether anything is left to do.
+- Work on a branch and open a pull request, in logically grouped commits — a `pre-push` hook refuses
+  a push to `main`.
 - CI (lint, tests, build) runs on every push and must stay green.

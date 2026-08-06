@@ -10,7 +10,7 @@ help:
 	@echo "  make lint      Lint backend + frontend (check only)"
 	@echo "  make typecheck Run type checks for backend + frontend"
 	@echo "  make format    Format + auto-fix backend and frontend"
-	@echo "  make audit     Run dependency/security audit checks"
+	@echo "  make audit     Dependency CVE audit (osv-scanner, both lockfiles)"
 	@echo "  make audit-fix Apply npm audit fixes for frontend dependencies"
 	@echo "  make migrate   Run Alembic migrations"
 	@echo "  make seed      Seed development data"
@@ -62,12 +62,12 @@ format:
 	cd backend && uv run ruff format . && uv run ruff check --fix .
 	cd frontend && npm run lint:fix
 
-# Auditing — dependency/security checks for both stacks. uv-secure reads uv.lock under uvx, so no
-# auditor joins the project's own dependency graph; --no-check-uv-tool keeps a developer's global
-# uv install from failing the project's audit.
+# Auditing — one scanner over both lockfiles, so no auditor joins either dependency graph and
+# neither stack is installed to audit it. An advisory that does not apply goes in osv-scanner.toml
+# with a reason and an ignoreUntil, so the exception expires rather than becoming permanent.
 audit:
-	cd backend && uvx uv-secure@0.17.2 --no-check-uv-tool uv.lock
-	cd frontend && npm run audit
+	osv-scanner scan source --config=osv-scanner.toml \
+		--lockfile=backend/uv.lock --lockfile=frontend/package-lock.json
 
 audit-fix:
 	cd frontend && npm run audit:fix
