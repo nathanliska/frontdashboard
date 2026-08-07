@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-07-31
+**Last reviewed:** 2026-08-07
 
 ## Overview
 
@@ -70,8 +70,9 @@ detect a concurrent edit — advancing it from a config event would let a stale 
 be current.
 **Tradeoff:** The discriminator is `changed_fields` being exactly `['widgets']`, since add and
 delete both carry `'layout'`; a future write that touches widgets *and* the version must not reuse
-that shape. Events that still reload are debounced, so a widget drag costs one GET per tab rather
-than one per event.
+that shape. The vocabulary and its full refetch table are in
+[FDR-008 §10](FDR-008-realtime-sse.md). Events that still reload are debounced, so a widget drag
+costs one GET per tab rather than one per event.
 
 ## Access
 

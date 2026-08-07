@@ -169,6 +169,39 @@ the client never sees as events, so nothing else distinguishes a dead stream fro
 **Tradeoff:** It fires on foreground only, so a tab left visible on a machine that slept still waits
 for the backoff. One connection per open tab is unchanged — this reopens a stream, it does not add one.
 
+### 10. `changed_fields` is a closed vocabulary with one refetch table
+
+**Decision:** A `dashboard.updated` frame says what changed in `payload["changed_fields"]`, drawn
+from the `ChangedField` enum. The enum reaches the frontend as a generated Zod enum, and every
+consumer derives its answer from one table in `utils/dashboard/changedFields.ts` rather than
+testing the strings itself. Two facts decide every question:
+
+| Value | Applied locally | Moves the dashboard row | Emitted by |
+|---|---|---|---|
+| `layout` | yes | yes — bumps `version` | `PUT /layout`, widget add/delete |
+| `widgets` | yes | **no** — writes the widget row only | widget add/update/delete |
+| `name` | no | yes | `PATCH /dashboards/{id}` |
+| `restored` | no | yes | `POST /restore` |
+| `shares` | no | no | `dashboard.share_*` frames only |
+
+*Applied locally* means the client can compute the new summary itself, so the frame needs no
+`GET /dashboards`. *Moves the dashboard row* means `updated_at` advanced, so a cached summary is
+stale until touched. `widgets` alone is the one combination where the first is true and the second
+is false, and missing that is a summary list silently sorted wrong.
+
+**Why:** These were five predicates in the store and two in the activity feed, each individually
+correct and none of them showing which combinations were possible. Extending the vocabulary meant
+re-deriving all seven by hand, and a mistake surfaces only as staleness in *another* person's tab —
+the class of bug nobody reports. Typing the vocabulary makes a consumer testing for a value no
+producer emits a compile error, and `test_changed_fields_coverage.py` makes the reverse a build
+failure.
+
+**Tradeoff:** Order is deliberately not part of the contract. Rows already in the activity log carry
+`['widgets', 'layout']` unsorted and are immutable, so sortedness could never become an invariant —
+consumers must stay order-independent, which the table's tests pin. An unrecognised value fails
+safe in every direction (refetch, don't suppress), so a newer backend cannot talk an older tab out
+of refreshing.
+
 ## Access
 
 Every stream authenticates via the user's session (ADR-002/ADR-003); a user receives only events for
