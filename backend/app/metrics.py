@@ -27,6 +27,7 @@ SSE_CONNECTS = Counter(f"{_PREFIX}sse_connects", "SSE streams opened, including 
 SSE_RESYNCS = Counter(f"{_PREFIX}sse_resyncs", "Streams told to refetch caches on connect.")
 SSE_EVICTIONS = Counter(f"{_PREFIX}sse_evictions", "Clients dropped for falling behind their queue.")
 SSE_EXPIRIES = Counter(f"{_PREFIX}sse_expiries", "Streams closed on the lifetime cap.")
+SSE_PUBLISH_FAILURES = Counter(f"{_PREFIX}sse_publish_failures", "Frames the other workers never received.")
 REAPER_SWEEPS = Counter(f"{_PREFIX}reaper_sweeps", "Retention sweeps that completed.")
 REAPER_FAILURES = Counter(f"{_PREFIX}reaper_failures", "Retention sweeps that raised and will retry.")
 RATE_LIMITED = Counter(f"{_PREFIX}rate_limited", "Requests rejected by the rate limiter.")

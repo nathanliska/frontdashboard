@@ -5,7 +5,7 @@
 # so a threshold placed on its value would never trip.
 #
 # `__grafana_alert_rule_uid__` pins each rule's identity, so re-importing this file updates the
-# rules in place instead of creating a second copy of all seventeen. `__dashboardUid__` and
+# rules in place instead of creating a second copy of all nineteen. `__dashboardUid__` and
 # `__panelId__` put a link to the relevant panel on the alert — import the dashboards first.
 
 groups:
@@ -161,6 +161,41 @@ groups:
           __dashboardUid__: frontdashboard-internals
           __panelId__: "5"
 
+  # Both fire on a gauge rather than increase() on a counter: these states are rare, and a labelled
+  # counter whose first sample is already 1 gives increase() nothing to diff against.
+  - name: frontdashboard-shared-state
+    interval: 1m
+    rules:
+      - alert: RateLimitStoreDegraded
+        # max, not sum: one replica on per-process buckets is enough to multiply an abuse limit,
+        # and averaging it against healthy siblings is exactly how that stays invisible.
+        expr: max(frontdashboard_rate_limit_store_degraded) > 0
+        for: 5m
+        labels:
+          # Warning, not critical, while the stack runs one replica: the fallback is per-process
+          # buckets, which is exactly what a single process already enforced. Raise this to critical
+          # with the second replica, where it starts multiplying every abuse limit (ADR-013).
+          severity: warning
+          __grafana_alert_rule_uid__: ratelimitstoredegraded
+        annotations:
+          summary: Rate limits are being enforced per process, not per deployment
+          description: Redis is unreachable. Limits still apply and one replica loses nothing, but each additional replica enforces its own copy of every abuse limit.
+          runbook_url: https://github.com/nathanliska/frontdashboard/blob/main/docs/runbooks/deploy.md
+          __dashboardUid__: frontdashboard-internals
+          __panelId__: "11"
+
+      - alert: SSEFanoutDegraded
+        expr: max(frontdashboard_sse_fanout_degraded) > 0
+        for: 5m
+        labels:
+          severity: warning
+          __grafana_alert_rule_uid__: ssefanoutdegraded
+        annotations:
+          summary: A worker is not receiving other workers' events
+          description: Its own clients still see its own writes, so the stream looks healthy from outside. Clients resync when the reader recovers.
+          __dashboardUid__: frontdashboard-internals
+          __panelId__: "11"
+
   - name: frontdashboard-abuse
     interval: 1m
     rules:
@@ -213,6 +248,7 @@ groups:
         annotations:
           summary: No scrape target for the backend
           description: Every frontdashboard alert is blind until this is fixed.
+          runbook_url: https://github.com/nathanliska/frontdashboard/blob/main/docs/runbooks/deploy.md
           __dashboardUid__: frontdashboard
           __panelId__: "1"
 
@@ -238,6 +274,7 @@ groups:
         annotations:
           summary: '{{ $labels.instance }} is not answering from the public internet'
           description: 'The backend can be healthy while this fires: Caddy, the frontend container, or Cloudflare.'
+          runbook_url: https://github.com/nathanliska/frontdashboard/blob/main/docs/runbooks/deploy.md
 
       - alert: CertificateExpiringSoon
         expr: probe_ssl_earliest_cert_expiry{job="blackbox-public"} - time() < 7 * 86400

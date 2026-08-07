@@ -11,6 +11,7 @@ import logging
 import pytest
 from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY
 from redis.retry import Retry
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -68,8 +69,8 @@ def test_limits_still_apply_when_redis_is_unreachable() -> None:
 def test_a_lost_rate_limit_store_is_not_silent() -> None:
     """Slowapi announces the fallback once, on a logger it ships a discarding handler for.
 
-    Unhandled, the deployment drops to per-process limits and looks entirely healthy — there is no
-    error, no failed request and no metric, so nothing else would ever say so.
+    Unhandled, the deployment drops to per-process limits and looks entirely healthy: no error and
+    no failed request. `rate_limit_store_degraded` is the other half, for anything not reading logs.
     """
     import app.main  # noqa: F401  — importing is what installs the handler
 
@@ -83,6 +84,27 @@ def test_a_lost_rate_limit_store_is_not_silent() -> None:
         handler.stream = original
 
     assert "Rate limit storage unreachable" in captured.getvalue()
+
+
+def test_the_degraded_gauge_tracks_slowapis_own_view() -> None:
+    """`_storage_dead` is private, so an upgrade could rename it and leave the gauge reading a lie.
+
+    Pinned here rather than trusted: the failure is a metric stuck at 0 through an outage, which
+    looks exactly like the healthy case it is supposed to distinguish.
+    """
+    from app.limiter import limiter
+
+    assert isinstance(limiter._storage_dead, bool), "slowapi no longer exposes _storage_dead as a bool"
+
+    gauge = REGISTRY.get_sample_value("frontdashboard_rate_limit_store_degraded")
+    assert gauge == float(limiter._storage_dead)
+
+    original = limiter._storage_dead
+    try:
+        limiter._storage_dead = True
+        assert REGISTRY.get_sample_value("frontdashboard_rate_limit_store_degraded") == 1.0
+    finally:
+        limiter._storage_dead = original
 
 
 def test_the_store_cannot_stall_a_write_for_long() -> None:

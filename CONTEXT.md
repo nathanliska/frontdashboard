@@ -211,14 +211,17 @@ _Last updated: 2026-08-07_
   `http_responses_total{method,route,status_class}` — labelled by route *template*, never the raw
   path, so a scanner cannot mint a series per URL. Beside it sit two unlabelled counters an alert
   can actually be built on: `http_server_errors_total`, and `login_successes_total` as the
-  denominator that turns login failures into a share. Status counting is pure-ASGI middleware, never
+  denominator that turns login failures into a share. The two shared-state failures are **gauges** —
+  `rate_limit_store_degraded` and `sse_fanout_degraded` — because each is a rare state rather than a
+  rate, and a counter first sampled at 1 reads as 0 under `increase()` for the whole outage it is
+  meant to expose; `sse_publish_failures_total` counts the frames siblings never received. Status counting is pure-ASGI middleware, never
   `BaseHTTPMiddleware`, which reads a streaming response to completion and would buffer SSE; it
   counts a crash on the way past, because the 500 for one is built above it and it would otherwise
   see only the deliberate ones.
   A Prometheus container joined to the `internal` network scrapes it every 15s at
   `frontdashboard-backend:8000/metrics`. Two Grafana dashboards live in [`observability/`](observability/) —
   an overview carrying the availability and latency SLIs, and an internals board for pool, hashing
-  and stream detail — with seventeen alert rules beside them in Prometheus format, which is the one
+  and stream detail — with nineteen alert rules beside them in Prometheus format, which is the one
   Grafana's rule importer accepts. All three are loaded by hand through the Grafana UI rather than
   reaching the deployment host, and `test_observability_coverage.py` fails the build if any names a
   metric the code no longer registers. The connects-to-resyncs ratio is what says whether reconnect

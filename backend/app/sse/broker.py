@@ -21,6 +21,7 @@ import redis.asyncio as aioredis
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 
+from app import metrics
 from app.config import settings
 from app.sse.events import resync_dict
 from app.sse.manager import manager
@@ -50,6 +51,16 @@ _PUBLISH_TIMEOUT_SECONDS = 1.0
 
 # Set on a failed publish; until then writes skip the attempt instead of each paying the timeout.
 _publish_retry_after = 0.0
+
+# Module scope rather than local to the reader, because a gauge has to be able to read it: a worker
+# that cannot reach the stream still serves its own clients, so nothing else reveals the state.
+_reader_degraded = False
+
+metrics.register_gauge(
+    "sse_fanout_degraded",
+    "1 while this worker cannot read the stream and is missing other workers' frames.",
+    lambda: float(_reader_degraded),
+)
 
 
 def stream_key() -> str:
@@ -153,6 +164,7 @@ async def publish(message: dict, *, user_ids: set[uuid.UUID] | None, actor_id: u
         _publish_retry_after = 0.0
     except Exception:
         _publish_retry_after = now + _PUBLISH_BACKOFF_SECONDS
+        metrics.SSE_PUBLISH_FAILURES.inc()
         logger.warning("SSE fan-out publish failed; siblings will not see this frame", exc_info=True)
 
 
@@ -170,8 +182,9 @@ async def run_subscriber(*, stop: asyncio.Event | None = None) -> None:
     for. After a read error it resumes from the last id it saw, and tells local clients to resync,
     because a stream that was unreachable may also have been trimmed past that id.
     """
+    global _reader_degraded
     last_id = "$"
-    degraded = False
+    _reader_degraded = False
     while stop is None or not stop.is_set():
         client = None
         try:
@@ -181,12 +194,12 @@ async def run_subscriber(*, stop: asyncio.Event | None = None) -> None:
             while stop is None or not stop.is_set():
                 # redis-py types this as a scalar union; the wire shape is [(key, [(id, fields)])].
                 response: Any = await client.xread({stream_key(): last_id}, count=100, block=_BLOCK_MS)
-                if degraded:
+                if _reader_degraded:
                     # On the way back, not on the way down: the reader may have missed frames while
                     # it was away, and a client can only act on that once it is being served again.
                     # Once per outage — resyncing on every failed retry would refetch everything on
                     # every connected tab, every second, for as long as Redis stayed down.
-                    degraded = False
+                    _reader_degraded = False
                     logger.warning("SSE fan-out reader reconnected; resyncing local clients")
                     manager.deliver_to_all(resync_dict())
                 for _key, entries in response or []:
@@ -198,8 +211,8 @@ async def run_subscriber(*, stop: asyncio.Event | None = None) -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            if not degraded:
-                degraded = True
+            if not _reader_degraded:
+                _reader_degraded = True
                 logger.warning("SSE fan-out reader cannot reach Redis", exc_info=True)
             await asyncio.sleep(_RECONNECT_DELAY_SECONDS)
         finally:
