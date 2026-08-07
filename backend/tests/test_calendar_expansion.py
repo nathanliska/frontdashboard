@@ -1,4 +1,4 @@
-"""Occurrence expansion, per frequency (#16).
+"""Occurrence expansion, per frequency.
 
 Unit tests — `expand_event_occurrences` takes plain objects, so none of this needs a database.
 That matters because the integration tests in `test_calendar.py` only ever exercise **daily**

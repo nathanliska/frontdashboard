@@ -11,7 +11,7 @@ def test_database_is_at_head_and_matches_models(alembic_config: Config) -> None:
 
 
 async def test_concurrent_upgrades_serialize_instead_of_racing(test_database) -> None:
-    """Two `alembic upgrade head` runs at once must serialize on the advisory lock (#33).
+    """Two `alembic upgrade head` runs at once must serialize on the advisory lock.
 
     Every API container migrates at startup, so a restart mid-deploy runs this exact race.
     Subprocesses, not threads: that is what two containers are, and alembic's command layer

@@ -176,7 +176,7 @@ async def test_empty_event_patch_is_rejected(auth_client: AsyncClient) -> None:
 
 
 async def test_out_of_window_one_off_events_are_not_loaded(auth_client: AsyncClient) -> None:
-    """Non-recurring events are bounded in SQL by their own times (#16).
+    """Non-recurring events are bounded in SQL by their own times.
 
     Behaviour is unchanged — they were already discarded after expansion — so this pins the
     filter against dropping something it should have kept.
@@ -219,7 +219,7 @@ async def test_out_of_window_one_off_events_are_not_loaded(auth_client: AsyncCli
 
 
 async def test_recurring_series_starting_before_the_window_still_expands(auth_client: AsyncClient) -> None:
-    """The window filter must never bound a recurring event by its own start (#16)."""
+    """The window filter must never bound a recurring event by its own start."""
     dashboard = await create_dashboard(auth_client)
     await create_calendar_event(
         auth_client,
@@ -247,7 +247,7 @@ async def test_finished_and_unstarted_series_are_not_loaded(
     auth_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Recurring events are bounded by the two facts already in the row (#16).
+    """Recurring events are bounded by the two facts already in the row.
 
     A series cannot produce an occurrence before its own `starts_at`, and one carrying `until`
     cannot produce one after it. Both are read from the row and the JSONB rule, so unlike a
@@ -429,7 +429,7 @@ async def test_a_series_ending_at_the_window_edge_is_kept(auth_client: AsyncClie
 
 
 async def test_an_override_rescues_a_series_the_window_bounds_would_drop(auth_client: AsyncClient) -> None:
-    """The unbounded override EXISTS is what makes the two bounds above safe (#16).
+    """The unbounded override EXISTS is what makes the two bounds above safe.
 
     An override can retime an occurrence anywhere — including out of a finished series and into
     a window months later. Bound the override clause too and this event disappears.

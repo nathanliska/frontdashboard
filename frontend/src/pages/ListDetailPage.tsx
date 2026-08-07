@@ -99,8 +99,8 @@ export function ListDetailPage() {
     return (
       <div className="flex-1 flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40">
         {detailError ? (
-          // Said rather than silently redirected: a stale bookmark used to bounce to the index with
-          // no explanation, which reads as the app ignoring the click.
+          // Said rather than silently redirected: bouncing a stale bookmark to the index with no
+          // explanation reads as the app ignoring the click.
           <div className="flex flex-col items-center gap-3 text-center">
             <p className="text-sm text-zinc-400">
               Could not load this list. It may have been moved to the trash, or you may no longer

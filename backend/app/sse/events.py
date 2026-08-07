@@ -38,8 +38,8 @@ async def build_activity_sse_dict(db: AsyncSession, event: ActivityEvent) -> dic
     `eager_defaults=True` brings `created_at` back in the INSERT's RETURNING, but the
     sequence-assigned `event_id` is not eager-fetched (verified empirically — a plain flush
     leaves it unloaded, and lazy-loading it during serialisation raises MissingGreenlet), so it
-    is refreshed by name. One targeted SELECT per *mutation* is constant cost; the N+1 this file
-    used to carry was the full per-recipient refresh in the notification batch below (#25).
+    is refreshed by name. One targeted SELECT per *mutation* is constant cost; refreshing per
+    *recipient* in the notification batch below is the N+1 to avoid.
     """
     await db.flush()
     await db.refresh(event, attribute_names=["event_id"])
