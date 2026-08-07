@@ -78,7 +78,10 @@ def _build_occurrence(
 def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window_end: datetime):
     rule = event.recurrence or {}
     frequency = str(rule["frequency"])
-    interval = int(rule.get("interval", 1))
+    # Clamped, not trusted: every loop below advances by `interval`, so a stored 0 or negative never
+    # reaches `window_end` and hangs the worker. `RecurrenceRule` rejects both, but this column has
+    # held shapes the API never wrote before, and one bad row must cost a wrong series, not a worker.
+    interval = max(1, int(rule.get("interval", 1)))
     count_limit = int(rule["count"]) if rule.get("count") is not None else None
     until = _to_utc(rule.get("until"))
 
