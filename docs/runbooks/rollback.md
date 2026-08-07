@@ -30,12 +30,9 @@ has no target and still has to be rebuilt from its commit.
      image: ghcr.io/nathanliska/frontdashboard-frontend:abc1234
    ```
 
-3. **Pull and restart.**
-
-   ```sh
-   docker compose --env-file .env.prod -f docker-compose.prod.yml pull
-   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
-   ```
+3. **Update the stack** in Compose Manager — the same action as a deploy. The tags changed, so
+   that is what it pulls and recreates against. Nothing here is driven from a shell on the host:
+   this repo's compose file and `.env.prod` are not the ones the box runs.
 
 4. **Verify from outside.** Document served with `Cache-Control: no-cache`, the bundle it names
    answers `200 text/javascript`, `/api/health/ready` answers `200`.
