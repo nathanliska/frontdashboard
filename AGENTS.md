@@ -129,6 +129,10 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - `backend/` — Python 3.14+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 17.
 - `frontend/` — React 19 + TypeScript, Vite, Tailwind CSS, Zustand stores, react-grid-layout v2.
 - Infra — Docker Compose (dev + prod variants), Caddy reverse proxy (prod), `uv` and `npm`.
+- **Redis** — bundled in each stack, holding the rate-limit windows and the SSE fan-out stream. Not
+  a cache and not a source of truth: nothing durable lives there, and both consumers keep serving
+  without it ([ADR-013](docs/adr/ADR-013-rate-limit-cf-connecting-ip.md),
+  [ADR-004](docs/adr/ADR-004-sse-over-websocket.md)).
 - **Sharing model**: per-resource `ResourceShare` rows. Dashboards are shared directly with users
   (viewer/editor, owner = creator); lists and calendar events **inherit** access from the
   dashboard whose widget binds them, so their `/shares` endpoints are deliberate 409 stubs.
@@ -141,7 +145,9 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   ([ADR-002](docs/adr/ADR-002-jwt-httponly-cookies-csrf.md),
   [ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
 - **Real-time**: SSE, not WebSocket; one multiplexed connection per open tab, fanned out by user —
-  a laptop, a phone and a second tab are three streams, not one.
+  a laptop, a phone and a second tab are three streams, not one. Fan-out reaches the other workers
+  over a Redis stream: delivered locally first, published after, and a lost frame is repaired by the
+  reader's resync on recovery rather than retried.
 - **State**: Zustand stores shared between widgets and full pages. REST for the initial fetch, SSE
   for incremental updates.
 - **API contract**: the backend's OpenAPI document is authoritative. The frontend's types are
@@ -167,6 +173,9 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   that, and the fan-out reader in `sse/broker.py` is the one legitimate caller elsewhere, delivering
   a sibling worker's already-committed frame. Still yours: build the event dict *before* the call,
   and address it with `dashboard_audience_user_ids(...)`.
+- **Anything reaching Redis degrades; it never fails the request.** The limiter falls back to
+  per-process buckets and the fan-out to local-only delivery, each with a metric saying so. A
+  third consumer that raises when Redis is down turns a degradation into an outage.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single commit.
 - Layout and widget writes need the dashboard row lock and a `dashboard.version` bump;
   `PUT /layout` compares client against server version and 409s on mismatch.
