@@ -79,6 +79,24 @@ def test_alert_panel_links_resolve() -> None:
     assert not linked - panels, f"alerts link panels that do not exist: {sorted(linked - panels)}"
 
 
+# Route is a template drawn from the router table, so these two cannot enumerate their children up
+# front. `http_server_errors` is the unlabelled twin that keeps the 5xx case alertable regardless.
+_LAZY_BY_DESIGN = {"frontdashboard_http_responses", "frontdashboard_http_request_seconds"}
+
+
+def test_labelled_metrics_pre_create_their_children() -> None:
+    """A labelled child is created on first use, so its first sample is already 1.
+
+    `increase()` and `rate()` then have nothing to diff against and report 0 through the very event
+    the metric exists to catch — for a histogram, the quantiles resolve to NaN instead. Every family
+    with a bounded label set therefore names its children at import; this fails the build when a new
+    one forgets. Empty families are the tell, since an unlabelled metric always emits a sample.
+    """
+    empty = {metric.name for metric in REGISTRY.collect() if metric.name.startswith("frontdashboard_") and not metric.samples}
+
+    assert not empty - _LAZY_BY_DESIGN, f"labelled metrics with no pre-created children: {sorted(empty - _LAZY_BY_DESIGN)}"
+
+
 def test_dashboards_parse_and_declare_a_datasource_variable() -> None:
     """Panels need something to bind to, and `__inputs` makes that a prompt instead of a variable."""
     for path in _DASHBOARDS:

@@ -133,12 +133,20 @@ LOGIN_SUCCESSES = Counter(f"{_PREFIX}login_successes", "Logins that issued a ses
 # concurrency limiter. A gauge alone would miss that — saturation is bursty and scrapes are not.
 # Boundaries straddle a measured 34ms verify on the deployment host: too coarse and every healthy
 # operation lands in one bucket, which is a histogram with no resolution at all.
+Argon2Operation = Literal["hash", "verify"]
+
 ARGON2_SECONDS = Histogram(
     f"{_PREFIX}argon2_seconds",
     "Argon2 operation latency, including time queued for a limiter slot.",
     ["operation"],
     buckets=(0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
 )
+
+# Same trap as the email and auth-failure children: a child born at 1 gives `increase()` nothing to
+# diff against, so the first hash and the first verify after every restart read as no traffic — and
+# the latency quantiles resolve to NaN until a second one lands.
+for _argon2_operation in get_args(Argon2Operation):
+    ARGON2_SECONDS.labels(operation=_argon2_operation)
 
 
 def observe_response(method: str, route: str, status_code: int, *, seconds: float | None = None) -> None:
