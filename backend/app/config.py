@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     db_statement_timeout_seconds: int = 15
     # Bounded readiness probe — a hung database must fail the check, not hang it.
     health_ready_timeout_seconds: float = 3.0
+    # Shared limit windows today, SSE fan-out next: a per-process limit multiplies by N replicas.
+    redis_url: str = "redis://redis:6379/0"
 
     @field_validator("frontend_base_url", mode="before")
     @classmethod
@@ -86,6 +88,10 @@ class Settings(BaseSettings):
             errors.append("resend_api_key is required in production (email verification is mandatory)")
         if "@frontdashboard.local" in self.email_from.lower():
             errors.append("email_from must use a deliverable domain in production")
+        # slowapi reads an empty uri as `memory://` without so much as a warning, so an unset
+        # REDIS_URL would degrade to per-process limits and look identical to working software.
+        if not self.redis_url.strip():
+            errors.append("redis_url is required in production (rate limits would be per-process)")
         if errors:
             raise ValueError("Invalid production configuration: " + "; ".join(errors))
         return self

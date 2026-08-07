@@ -24,7 +24,7 @@ feature does*, [CONTEXT.md](../../CONTEXT.md) is the current-state snapshot, and
 | [ADR-001](ADR-001-per-resource-sharing.md) | Per-resource `ResourceShare` sharing (groups removed) | 2026-07-20 |
 | [ADR-002](ADR-002-jwt-httponly-cookies-csrf.md) | Credential in HttpOnly cookies (`__Host-`) + Origin check + CSRF double-submit | 2026-07-20 |
 | [ADR-003](ADR-003-first-class-sessions.md) | First-class sessions with immediate revocation | 2026-07-20 |
-| [ADR-004](ADR-004-sse-over-websocket.md) | SSE (not WebSocket), one multiplexed connection per user | 2026-08-04 |
+| [ADR-004](ADR-004-sse-over-websocket.md) | SSE (not WebSocket), one multiplexed connection per user | 2026-08-06 |
 | [ADR-005](ADR-005-two-layer-client-state.md) | Two-layer client state — Zustand stores + scoped-query caches | 2026-07-20 |
 | [ADR-006](ADR-006-rest-fetch-sse-patch.md) | REST for initial fetch, SSE for incremental patch | 2026-07-20 |
 | [ADR-007](ADR-007-soft-delete-boundary.md) | Soft delete for lists/items/events; dashboards trash then purge | 2026-07-26 |
@@ -33,7 +33,7 @@ feature does*, [CONTEXT.md](../../CONTEXT.md) is the current-state snapshot, and
 | [ADR-010](ADR-010-argon2-off-event-loop.md) | Argon2 password hashing off the event loop | 2026-07-20 |
 | [ADR-011](ADR-011-enumeration-safe-login.md) | Enumeration-safe, constant-work authentication (login + registration) | 2026-07-25 |
 | [ADR-012](ADR-012-session-generation-guard.md) | Session-generation guard for auth-boundary state reset | 2026-07-20 |
-| [ADR-013](ADR-013-rate-limit-cf-connecting-ip.md) | Rate limiting — per-route limits keyed on `CF-Connecting-IP` | 2026-07-30 |
+| [ADR-013](ADR-013-rate-limit-cf-connecting-ip.md) | Rate limiting — per-route limits keyed on `CF-Connecting-IP` | 2026-08-06 |
 | [ADR-014](ADR-014-fail-fast-prod-config.md) | Fail-fast production configuration validation | 2026-07-20 |
 | [ADR-015](ADR-015-sse-write-choreography.md) | SSE write choreography — build before commit, broadcast after | 2026-07-20 |
 | [ADR-016](ADR-016-hand-authored-migrations.md) | Hand-authored Alembic migrations, StrEnum-as-String, schema-via-upgrade | 2026-07-20 |

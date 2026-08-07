@@ -7,6 +7,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+# Before any app import: the limiter builds its storage from `settings.redis_url` at module scope,
+# and `limits` speaks `memory://` natively — so the suite keeps needing neither Redis nor Docker.
+os.environ.setdefault("REDIS_URL", "memory://")
+
 import pytest
 from alembic.config import Config
 from argon2 import PasswordHasher

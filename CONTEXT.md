@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-08-05_
+_Last updated: 2026-08-06_
 
 ## What's built
 
@@ -247,9 +247,9 @@ _Last updated: 2026-08-05_
 - **Scale is by replica; the container runs one worker.** Forked workers share a listening socket,
   so one `/metrics` scrape reaches an arbitrary one and every counter reads as resetting — a replica
   is its own scrape target and has no such problem. `WEB_CONCURRENCY` is therefore inert and only
-  logs a warning. A second process of either kind is not yet safe regardless: SSE clients and
-  rate-limit counters both live in process memory until the Redis backplane lands (#21/#45), which
-  the fan-out and resync invariants are maintained to keep a swap. Migrations stay in the container
+  logs a warning. A second process of either kind is not yet safe regardless: rate-limit counters are
+  shared now, but SSE clients still live in process memory until the Redis backplane lands (#21/#45),
+  which the fan-out and resync invariants are maintained to keep a swap. Migrations stay in the container
   command, where `alembic/env.py`'s session-scoped advisory lock already serialises replicas
   starting together.
 - **The frontend waits for the backend to start, not to be healthy.** Caddy resolves its upstream
@@ -304,10 +304,13 @@ _Last updated: 2026-08-05_
 - **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
-  are in-memory/per-process, correct for the current single worker: N workers would mean N× every
-  limit. Going shared is a `storage_uri` on the `Limiter` pointed at Redis, so it stays a one-line
-  change rather than a pre-built knob — and it has to land *with* the first replica, not after it
-  (#21/#45).
+  live in **Redis**, so a limit is the deployment's rather than one process's and a replica no longer
+  multiplies it. While Redis is unreachable they fall back to per-process buckets and recover on
+  their own, which keeps an outage from either 500ing every write or letting them through unbounded;
+  a bounded retry count is what stops that fallback costing seconds a write, since redis-py retries
+  ten times by default. Redis is **bundled in the stack** — internal network, no published port, the
+  shape Immich and Paperless ship — so `REDIS_URL` defaults to it and a deploy sets nothing; set to
+  an empty value it refuses to start rather than degrading to per-process limits in silence.
 - **The backend schema is the API contract** ([ADR-018](docs/adr/ADR-018-generated-validated-contracts.md)):
   `make contracts` exports FastAPI's OpenAPI document and generates the frontend's zod schemas into
   `frontend/src/api/generated/contract.ts` (committed; CI fails on drift). Every response body is

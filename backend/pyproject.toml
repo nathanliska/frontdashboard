@@ -25,6 +25,7 @@ dependencies = [
     # Also the test client. Runtime because outbound email posts through it — which brings certifi,
     # so outbound TLS now trusts a bundled CA set rather than the base image's.
     "httpx>=0.27.0",
+    "redis>=6.0.0",
 ]
 
 [dependency-groups]

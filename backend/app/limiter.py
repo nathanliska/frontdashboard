@@ -1,8 +1,13 @@
 import ipaddress
+from typing import Any
 
 from fastapi import Request
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+from app.config import settings
 
 
 def _peer_is_trusted(request: Request) -> bool:
@@ -27,7 +32,27 @@ def client_ip_key(request: Request) -> str:
     return get_remote_address(request)
 
 
-limiter = Limiter(key_func=client_ip_key)
+# Bounded so an outage costs a stall rather than seconds: redis-py defaults to ten attempts with
+# exponential backoff, which turns this connect ceiling into 5s on every write until the per-process
+# fallback takes over. ADR-013 has why that fallback, rather than 500ing or letting writes through.
+STORAGE_OPTIONS: dict[str, Any] = {
+    "socket_connect_timeout": 0.25,
+    "socket_timeout": 0.25,
+    "retry": Retry(NoBackoff(), 1),
+}
+
+limiter = Limiter(
+    key_func=client_ip_key,
+    storage_uri=settings.redis_url,
+    # `limits` keys every app it serves identically, so this is what keeps a REDIS_URL overridden to
+    # a shared instance from colliding — with another app, and with another environment of this one,
+    # whose traffic would otherwise spend the same client's budget. The bundled instance is alone.
+    key_prefix=f"frontdashboard:{settings.environment.value}",
+    # slowapi annotates this `dict[str, str]`, but the values reach redis-py, which raises
+    # TypeError on a string timeout. Floats are what work.
+    storage_options=STORAGE_OPTIONS,
+    in_memory_fallback_enabled=True,
+)
 
 # Applied per route because slowapi's app-wide limit cannot see through included-router nesting and
 # silently exempts everything; `test_rate_limit_coverage.py` catches a forgotten decorator. Generous

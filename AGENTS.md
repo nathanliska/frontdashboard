@@ -214,6 +214,9 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   DOM, a counter on what reached the expander rather than the response body.
 - Prove a test by breaking the thing back: stash the change, watch it fail, restore. A performance
   or caching test that has never been seen to fail is not evidence.
+- **A closed port is not an outage.** Timing a failure path against `connection refused` measures
+  nothing: a downed host blackholes instead, and the same connect cost 0.26s one way and 45s the
+  other. Stop the real service, or assert on the setting that bounds it rather than on the clock.
 - Argon2 runs at its **minimum** cost across the backend suite — the real profile is ~64 MiB and
   four threads per operation, and most tests register or log in. Take the `production_argon2`
   fixture to assert on the real profile; `test_hashing.py` guards it against a dependency bump.

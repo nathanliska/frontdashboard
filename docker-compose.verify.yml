@@ -22,14 +22,26 @@ services:
       timeout: 3s
       retries: 30
 
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   backend:
     image: frontdashboard-backend:verify
     pull_policy: never
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://frontdashboard:verify@db:5432/frontdashboard
+      REDIS_URL: redis://redis:6379/0
       # production, deliberately: the point is to exercise what ships. Costs the dev mail outbox, so
       # a verification link cannot be read — accounts are verified with SQL against this database.
       ENVIRONMENT: production
