@@ -1,6 +1,11 @@
 services:
   frontend:
-    build: ./frontend
+    # Context is the repo root, matching Dockerfile.prod: Docker reads the ignore file at the
+    # context root, so building `./frontend` instead would leave the root .dockerignore governing
+    # only the prod image and ship 428MB of host node_modules into this one.
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     ports:
       - "5173:5173"
     volumes:

@@ -57,7 +57,7 @@ In dev the services run directly without Caddy:
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:8000`
 
-Caddy (`Caddyfile`) is for production — it unifies both behind port 80, adds security headers, and handles SSE flush.
+Caddy (`Caddyfile.prod`) is for production — it unifies both behind port 80, adds security headers, and handles SSE flush. It is baked into the frontend image rather than run as its own service.
 
 ---
 
@@ -113,7 +113,7 @@ frontdashboard/
 ├── backend/          # FastAPI app (Python)
 ├── frontend/         # React app (TypeScript)
 ├── docker-compose.yml
-├── Caddyfile
+├── Caddyfile.prod
 └── .env.example
 ```
 
