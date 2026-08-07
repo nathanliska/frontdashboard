@@ -5,6 +5,9 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  # The only way to publish images for a commit whose own run never happened: a webhook dropped
+  # during an Actions incident triggers nothing, and no event replays itself afterwards.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -350,7 +353,10 @@ jobs:
   # order can leave :latest pointing at images from two different commits.
   publish:
     name: Publish images
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # `workflow_dispatch` is here or the manual trigger would rebuild everything and publish
+    # nothing, which is the one thing it exists for. The ref check still gates it to main, so
+    # dispatching from a branch runs the checks and skips this.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs: [workflow, backend-checks, backend-tests, frontend-checks, frontend-tests, contract, audit, smoke]
     runs-on: ubuntu-latest
     permissions:

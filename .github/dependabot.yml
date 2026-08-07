@@ -81,8 +81,9 @@ updates:
         patterns:
           - "*"
 
-  # Base images are pinned by digest for reproducibility, which also freezes their security
-  # patches — these entries are what keep a pinned digest from quietly going stale.
+  # Base images float by tag, so patch-level fixes arrive on the next rebuild rather than as a PR
+  # here. What these entries still catch is a tag that stops moving — a new major, or a distro
+  # release the floating tag will never reach on its own.
   - package-ecosystem: "docker"
     directories:
       - "/backend"
