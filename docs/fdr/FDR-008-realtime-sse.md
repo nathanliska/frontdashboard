@@ -1,7 +1,7 @@
 # FDR-008: Real-Time Delivery (SSE)
 
 **Status:** Active
-**Last reviewed:** 2026-08-04
+**Last reviewed:** 2026-08-07
 
 ## Overview
 
@@ -22,6 +22,11 @@ it is in their FDRs.
   them. An unknown or absent scope widens back to refetching everything.
 - **Overflow doesn't go silent.** A client whose queue overflows is disconnected with a closed
   sentinel, so it reconnects and resyncs rather than staying connected but deaf.
+- **A worker's own clients see its writes even when the fan-out is broken.** Frames are delivered
+  locally first and published to the other workers after, and publishing never fails a write that
+  has already committed. When a worker's reader reaches the stream again it resyncs its own clients
+  once — repairing whatever it missed, whether the stream was trimmed past its mark or a publish was
+  simply lost.
 - **Robust reconnect.** A network drop uses the browser's built-in retry (resyncing via the header). A
   stream rejected with an HTTP error — which `EventSource` never retries — reconnects on jittered
   exponential backoff (1s → 30s cap, indefinitely) and never signs anyone out. Every fourth attempt
@@ -41,11 +46,11 @@ it is in their FDRs.
 in-memory manager and bounded per-client queues.
 **Why:** The data flow is server→client only; SSE reuses the existing cookie auth and reverse proxy
 and has built-in reconnection, with none of WebSocket's unused duplex or extra handshake. See ADR-004.
-**Tradeoff:** The in-memory manager is single-process (correct for the current single worker); a
-multi-worker deployment needs a shared backplane, and proxy-level affinity would not substitute for
-one, since a shared dashboard fans out to users on other workers. Two invariants keep that swap
-confined to `broadcast` — single choke point, ordering-free resync — and both are stated in ADR-004
-because a change that breaks either would look harmless on one worker.
+**Tradeoff:** The in-memory manager is still process-local — it knows only its own worker's clients —
+so a Redis stream carries each frame to the others. Proxy-level affinity would not have substituted,
+since a shared dashboard fans out to users on *other* workers. Two invariants kept that a swap rather
+than a rewrite, and both are stated in ADR-004 because a change breaking either looks harmless on one
+worker: fan-out has a single choke point, and resync is ordering-free.
 
 ### 2. Overflow evicts with a resync sentinel
 
