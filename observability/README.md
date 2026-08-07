@@ -30,7 +30,7 @@ updates rather than duplicates.
 Four things worth knowing about that import:
 
 - **Untick "pause imported rules".** It defaults to *on*, and a paused rule never evaluates —
-  `lastEvaluation` stays at the zero time while the list shows fifteen healthy, inactive rules. It
+  `lastEvaluation` stays at the zero time while the list shows nineteen healthy, inactive rules. It
   looks exactly like working alerting and is inert. If they are already in, select all and
   *More → Resume evaluation*.
 - **Prometheus format is the only one that works.** Grafana's own provisioning format exports but
@@ -45,13 +45,23 @@ browser, then write it back here.
 
 **Contact points are not in this repo**; they hold a webhook URL or an SMTP password. Create one in
 *Alerting → Contact points* and route `severity = critical` to it under *Notification policies*.
-That is six of the fifteen — the rest stay visible and silent, because fifteen notifications is how
-alerting starts being ignored.
+That is six of the nineteen — the rest stay visible and silent, because nineteen notifications is
+how alerting starts being ignored.
 
 ## Editing
 
 Change the files here, not the browser, and validate every query against a live Prometheus first. A
 panel reading "No data" from a typo is indistinguishable from one whose metric has no samples yet.
+
+**Run the query; do not merely parse it.** A rule naming a series nothing produces is *valid* PromQL
+that evaluates to nothing forever, so a syntax check passes it and the rule is disabled rather than
+broken. `promtool check rules` in CI catches the syntax half; only executing the expression catches
+the other, and `test_observability_coverage.py` can only vouch for `frontdashboard_*` names, which
+it resolves against the code's own registry.
+
+**Every metric that comes from an exporter therefore needs an `absent()` companion**, because
+nothing else can tell a healthy quiet rule from one whose scrape job was never added.
+`PublicProbeMissing` is that pattern; add one alongside the next exporter.
 
 ## The Prometheus side
 

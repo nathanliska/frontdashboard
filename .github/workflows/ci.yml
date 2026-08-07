@@ -38,6 +38,13 @@ jobs:
           EMAIL_FROM: ci@example.invalid
           REDIS_URL: redis://localhost:6379/0
         run: docker compose -f docker-compose.prod.yml config --quiet
+      # `test_observability_coverage.py` reads this file with a regex to avoid a YAML dependency, so
+      # nothing there would catch a broken expression or a mis-indented rule — both of which only
+      # surface at import time, in a browser, on the deployment host.
+      - name: Validate the alert rules
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/observability:/w:ro" \
+            prom/prometheus:v3.7.3 check rules /w/alerts.yml
 
   backend-checks:
     name: Backend checks

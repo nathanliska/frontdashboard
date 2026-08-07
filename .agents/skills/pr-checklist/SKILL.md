@@ -42,6 +42,9 @@ Each of these has a test that fails CI when missed. Check the ones the diff touc
 - A new resource cache calls `registerResourceReset(...)` at module scope.
 - Backend schema changed → `make contracts`, and the regenerated contract is committed.
 - Any metric renamed → the dashboards and `observability/alerts.yml` still name something real.
+- A new labelled metric pre-creates its children at import, unless the label is genuinely unbounded.
+- A rule or panel naming a metric from an **exporter** → an `absent()` companion rule, since nothing
+  else distinguishes a healthy quiet rule from a scrape job that was never added.
 
 ## Documentation
 

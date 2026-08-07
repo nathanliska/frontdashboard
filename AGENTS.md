@@ -176,6 +176,10 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - **Anything reaching Redis degrades; it never fails the request.** The limiter falls back to
   per-process buckets and the fan-out to local-only delivery, each with a metric saying so. A
   third consumer that raises when Redis is down turns a degradation into an outage.
+- A new **labelled** metric names its children at import, over the bounded set of label values it
+  can take. A child is created on first use and so is born at 1, leaving `increase()` nothing to
+  diff against and reporting 0 through the very event it counts; `test_observability_coverage.py`
+  fails the build on an empty family. Only a genuinely unbounded label (route) is exempt.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single commit.
 - Layout and widget writes need the dashboard row lock and a `dashboard.version` bump;
   `PUT /layout` compares client against server version and 409s on mismatch.
