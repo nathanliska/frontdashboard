@@ -30,9 +30,15 @@ _FEED_UTILS_PATH = Path(__file__).parents[2] / "frontend/src/utils/notifications
 
 
 def test_all_activity_event_types_have_frontend_presentations() -> None:
+    """Every EventType renders a sentence, and nothing renders one that is not an EventType.
+
+    Matches only dotted `case` labels — the shape an event type has — and bounds the scan by the
+    function's own closing brace. An inner switch over some other vocabulary therefore neither
+    contributes phantom types nor cuts the scan short at its `default:`.
+    """
     formatter_source = _FEED_UTILS_PATH.read_text().split("export function formatActivityEvent", 1)[1]
-    formatter_source = formatter_source.split("default:", 1)[0]
-    mapped_event_types = set(re.findall(r"case '([^']+)':", formatter_source))
+    formatter_source = formatter_source.split("\n}", 1)[0]
+    mapped_event_types = set(re.findall(r"case '([a-z]+(?:\.[a-z_]+)+)':", formatter_source))
 
     assert mapped_event_types == {event_type.value for event_type in EventType}
 

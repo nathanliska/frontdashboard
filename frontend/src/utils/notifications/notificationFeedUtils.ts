@@ -1,5 +1,6 @@
 import type { ActivityEvent, Notification } from '../../api/notifications'
 import { ROUTES } from '../../routes'
+import { isOnly, primaryChangedField } from '../dashboard/changedFields'
 
 type ActivityPresentation = {
   badge: string
@@ -190,29 +191,29 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
     case 'dashboard.updated': {
       const changedFields = payloadStrings(payload, 'changed_fields')
       const name = quoted(payloadString(payload, 'name'), 'a dashboard')
-      if (changedFields.includes('restored')) {
-        return { badge: 'Dashboard', summary: `You restored ${name} from the trash.` }
-      }
-      if (changedFields.includes('name')) {
-        return { badge: 'Dashboard', summary: `You renamed ${name}.` }
-      }
-      // Before 'layout': adding and removing a widget move it too, and it is the lesser half of
-      // what happened.
-      if (changedFields.includes('widgets')) {
-        const widget = widgetLabel(payload)
-        const action = payloadString(payload, 'widget_action')
-        if (action === 'added') {
-          return { badge: 'Dashboard', summary: `You added ${widget} to ${name}.` }
+      // Which field wins when a frame carries several is `feedPrecedence` in the vocabulary
+      // table — adding a widget moves the layout too, and the widget is the truer sentence.
+      switch (primaryChangedField(changedFields)) {
+        case 'restored':
+          return { badge: 'Dashboard', summary: `You restored ${name} from the trash.` }
+        case 'name':
+          return { badge: 'Dashboard', summary: `You renamed ${name}.` }
+        case 'widgets': {
+          const widget = widgetLabel(payload)
+          const action = payloadString(payload, 'widget_action')
+          if (action === 'added') {
+            return { badge: 'Dashboard', summary: `You added ${widget} to ${name}.` }
+          }
+          if (action === 'removed') {
+            return { badge: 'Dashboard', summary: `You removed ${widget} from ${name}.` }
+          }
+          return { badge: 'Dashboard', summary: `You reconfigured ${widget} on ${name}.` }
         }
-        if (action === 'removed') {
-          return { badge: 'Dashboard', summary: `You removed ${widget} from ${name}.` }
-        }
-        return { badge: 'Dashboard', summary: `You reconfigured ${widget} on ${name}.` }
+        case 'layout':
+          return { badge: 'Dashboard', summary: `You rearranged widgets on ${name}.` }
+        default:
+          return { badge: 'Dashboard', summary: `You updated ${name}.` }
       }
-      if (changedFields.includes('layout')) {
-        return { badge: 'Dashboard', summary: `You rearranged widgets on ${name}.` }
-      }
-      return { badge: 'Dashboard', summary: `You updated ${name}.` }
     }
     case 'dashboard.share_added': {
       const dashboardName = quoted(payloadString(payload, 'dashboard_name'), 'a dashboard')
@@ -388,8 +389,7 @@ function collapseKey(event: ActivityEvent): string | null {
   }
   if (event.event_type !== 'dashboard.updated') return null
   const changedFields = payloadStrings(event.payload, 'changed_fields')
-  const layoutOnly = changedFields.length === 1 && changedFields[0] === 'layout'
-  return layoutOnly ? `dashboard.layout:${event.entity_id}` : null
+  return isOnly(changedFields, 'layout') ? `dashboard.layout:${event.entity_id}` : null
 }
 
 /**

@@ -46,6 +46,30 @@ class EventType(enum.StrEnum):
     calendar_event_occurrence_cancelled = "calendar.event.occurrence.cancelled"
 
 
+class ChangedField(enum.StrEnum):
+    """What a `dashboard.updated` frame says changed, in `payload["changed_fields"]`.
+
+    Clients branch on this to decide what to refetch, so it is a wire contract in both
+    directions: `test_changed_fields_coverage.py` fails the build when a producer invents a
+    value, and the members reach the frontend as a generated enum via `schemas/sse.py`.
+
+    Whether a value implies the *dashboard row* changed is the load-bearing distinction —
+    `widgets` alone does not, so `updated_at` does not move and summaries need no touch.
+    The full per-value refetch table is in
+    [FDR-008](../../../docs/fdr/FDR-008-realtime-sse.md).
+    """
+
+    # Bumps dashboard.version, so the row's updated_at moves with it.
+    layout = "layout"
+    # Widget set or a widget's config. Alone it touches no dashboard column.
+    widgets = "widgets"
+    name = "name"
+    restored = "restored"
+    # Recorded on dashboard.share_* frames for the activity log only; no client predicate reads
+    # it, because those frames are identified by event_type instead.
+    shares = "shares"
+
+
 class ActivityEvent(Base):
     __tablename__ = "activity_events"
     __table_args__ = (

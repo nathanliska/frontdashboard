@@ -30,6 +30,12 @@ import {
 import type { ShareCreate } from '../api/shares'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import {
+  isEchoSuppressible,
+  isFullyAppliedLocally,
+  isOnly,
+  movesDashboardRow,
+} from '../utils/dashboard/changedFields'
+import {
   consumePendingDashboardMutation,
   createClientMutationId,
   forgetPendingDashboardMutation,
@@ -159,11 +165,9 @@ function getDashboardEventClientMutationId(event: SseEvent): string | null {
 }
 
 function isLayoutOnlyDashboardEvent(event: SseEvent): boolean {
-  const changedFields = getDashboardEventChangedFields(event)
   return (
     event.event_type === 'dashboard.updated' &&
-    changedFields.length === 1 &&
-    changedFields[0] === 'layout'
+    isOnly(getDashboardEventChangedFields(event), 'layout')
   )
 }
 
@@ -179,8 +183,7 @@ function applyWidgetConfigPatch(
   set: (updater: (state: DashboardState) => Partial<DashboardState> | DashboardState) => void,
   event: SseEvent,
 ): boolean {
-  const changedFields = getDashboardEventChangedFields(event)
-  if (changedFields.length !== 1 || changedFields[0] !== 'widgets') return false
+  if (!isOnly(getDashboardEventChangedFields(event), 'widgets')) return false
 
   const widgetId = event.payload.widget_id
   const config = event.payload.config
@@ -204,20 +207,22 @@ function applyWidgetConfigPatch(
 }
 
 function canSkipDashboardSummaryReload(event: SseEvent): boolean {
-  const changedFields = getDashboardEventChangedFields(event)
   return (
     event.event_type === 'dashboard.updated' &&
-    changedFields.length > 0 &&
-    changedFields.every((field) => field === 'layout' || field === 'widgets')
+    isFullyAppliedLocally(getDashboardEventChangedFields(event))
   )
 }
 
+/**
+ * A skipped reload still leaves a stale `updated_at`, but only where the write moved the row.
+ * A widget-config change writes the widget alone, so there is nothing to touch.
+ */
 function shouldApplyLocalDashboardSummaryTouch(event: SseEvent): boolean {
   const changedFields = getDashboardEventChangedFields(event)
   return (
     event.event_type === 'dashboard.updated' &&
-    changedFields.includes('layout') &&
-    changedFields.every((field) => field === 'layout' || field === 'widgets')
+    isFullyAppliedLocally(changedFields) &&
+    movesDashboardRow(changedFields)
   )
 }
 
@@ -278,14 +283,7 @@ function canSuppressLocalDashboardEcho(event: SseEvent): boolean {
 
   if (event.event_type !== 'dashboard.updated') return false
 
-  const changedFields = getDashboardEventChangedFields(event)
-  return (
-    changedFields.length > 0 &&
-    changedFields.every(
-      (field) =>
-        field === 'name' || field === 'layout' || field === 'widgets' || field === 'restored',
-    )
-  )
+  return isEchoSuppressible(getDashboardEventChangedFields(event))
 }
 
 function normalizeDashboardLoadOptions(

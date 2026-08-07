@@ -202,6 +202,9 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   router in `resources/*`. Miss either and the UI silently goes stale.
 - The echo check consumes, so ask once at the router and pass the verdict down. Suppressing an
   echo obliges you to patch whatever the refetch would have refreshed.
+- A wire vocabulary the client branches on — `changed_fields`, resync `scopes` — is closed and
+  generated from the backend enum, and an unrecognised value must **widen** the response: refetch,
+  don't suppress. A newer backend must never talk an older tab out of refreshing.
 - A new activity event type needs a `formatActivityEvent` case **and** a place in one of
   `ACTIVITY_CATEGORIES`, or it renders as a raw string and no filter can reach it;
   `test_activity.py` fails the build on either.
