@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.sse import broker
 from app.sse.manager import manager
 
 
@@ -43,3 +44,6 @@ async def commit_and_broadcast(
     await db.commit()
     for fanout in fanouts:
         await manager.broadcast(fanout.message, user_ids=fanout.user_ids, actor_id=actor_id)
+        # Local first, then the other workers: publishing cannot raise, so a Redis fault costs
+        # sibling replicas the frame rather than costing this worker's clients theirs.
+        await broker.publish(fanout.message, user_ids=fanout.user_ids, actor_id=actor_id)

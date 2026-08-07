@@ -20,6 +20,7 @@ from app.limiter import limiter
 from app.middleware import ResponseStatusMiddleware
 from app.routers.metrics import router as metrics_router
 from app.services.retention import reaper_loop
+from app.sse.broker import close_publisher, run_subscriber
 
 _LOG_HANDLER_NAME = "frontdashboard"
 
@@ -73,15 +74,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     reaper_task: asyncio.Task[None] | None = None
     if settings.reaper_enabled:
         reaper_task = asyncio.create_task(reaper_loop())
+    # Unconditional: a worker that does not read the stream is one whose clients silently miss
+    # every change made on another replica.
+    fanout_task = asyncio.create_task(run_subscriber())
+    app.state.fanout_task = fanout_task
     try:
         yield
     finally:
         try:
-            if reaper_task is not None:
-                reaper_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await reaper_task
+            for task in (reaper_task, fanout_task):
+                if task is not None:
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
         finally:
+            await close_publisher()
             await engine.dispose()
 
 

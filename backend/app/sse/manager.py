@@ -79,6 +79,21 @@ class SseManager:
                 client.queue.put_nowait(REVOKED_SENTINEL)
             self.disconnect(client)
 
+    def deliver_to_all(self, message: dict) -> None:
+        """Send one frame to every stream on this worker, regardless of who it belongs to.
+
+        Only the fan-out reader uses this, to tell everyone here to resync after it may have
+        missed frames. Ordinary events address an audience and go through `broadcast`.
+
+        A full queue is evicted rather than skipped: dropping this frame would strand the one
+        client already behind enough to need it, still connected and quietly stale.
+        """
+        for client in list(self._clients):
+            try:
+                client.queue.put_nowait(message)
+            except asyncio.QueueFull:
+                self._evict(client)
+
     async def broadcast(
         self,
         message: dict,
@@ -102,16 +117,21 @@ class SseManager:
                 client.queue.put_nowait(message)
                 metrics.SSE_QUEUE_PEAK.record(client.queue.qsize())
             except asyncio.QueueFull:
-                # Too far behind to catch up: drop the backlog and leave only a
-                # close sentinel, so the generator ends the stream and the client
-                # reconnects + resyncs instead of silently receiving nothing.
-                while not client.queue.empty():
-                    with contextlib.suppress(asyncio.QueueEmpty):
-                        client.queue.get_nowait()
-                with contextlib.suppress(asyncio.QueueFull):
-                    client.queue.put_nowait(CLOSED_SENTINEL)
-                self.disconnect(client)
-                metrics.SSE_EVICTIONS.inc()
+                self._evict(client)
+
+    def _evict(self, client: _Client) -> None:
+        """Drop a client too far behind to catch up.
+
+        The backlog goes and only a close sentinel remains, so the generator ends the stream and
+        the client reconnects + resyncs instead of silently receiving nothing.
+        """
+        while not client.queue.empty():
+            with contextlib.suppress(asyncio.QueueEmpty):
+                client.queue.get_nowait()
+        with contextlib.suppress(asyncio.QueueFull):
+            client.queue.put_nowait(CLOSED_SENTINEL)
+        self.disconnect(client)
+        metrics.SSE_EVICTIONS.inc()
 
 
 # Module-level singleton used by routers (Step 12 wires this up)

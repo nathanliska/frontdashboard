@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-08-06_
+_Last updated: 2026-08-07_
 
 ## What's built
 
@@ -247,11 +247,12 @@ _Last updated: 2026-08-06_
 - **Scale is by replica; the container runs one worker.** Forked workers share a listening socket,
   so one `/metrics` scrape reaches an arbitrary one and every counter reads as resetting — a replica
   is its own scrape target and has no such problem. `WEB_CONCURRENCY` is therefore inert and only
-  logs a warning. A second process of either kind is not yet safe regardless: rate-limit counters are
-  shared now, but SSE clients still live in process memory until the Redis backplane lands (#21/#45),
-  which the fan-out and resync invariants are maintained to keep a swap. Migrations stay in the container
-  command, where `alembic/env.py`'s session-scoped advisory lock already serialises replicas
-  starting together.
+  logs a warning. The state a second process would have split is now shared: rate-limit buckets and
+  the SSE backplane both live in Redis, so a worker's clients receive a sibling's writes. What is
+  left is routing rather than state — `container_name` pins the backend and `Caddyfile.prod` names
+  it statically, so `--scale` is refused rather than half-working (#21/#45). Migrations stay in the
+  container command, where `alembic/env.py`'s session-scoped advisory lock already serialises
+  replicas starting together.
 - **The frontend waits for the backend to start, not to be healthy.** Caddy resolves its upstream
   per request, so container start is enough; waiting on health stalled every restart and served
   nothing meanwhile, instead of the shell plus a 502 on `/api`.

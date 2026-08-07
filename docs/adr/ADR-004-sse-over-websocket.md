@@ -1,6 +1,8 @@
 # ADR-004: SSE (Not WebSocket), One Multiplexed Connection Per User
 
-**Date:** 2026-07-20 (amended 2026-07-28 — HTTP-error reconnect no longer signs anyone out; amended 2026-08-04 — Redis named as the backplane)
+**Date:** 2026-07-20 (amended 2026-07-28 — HTTP-error reconnect no longer signs anyone out; amended
+2026-08-04 — Redis named as the backplane; amended 2026-08-07 — backplane built as a stream, pub/sub
+rejected on measurement)
 
 ## Context
 
@@ -46,6 +48,12 @@ harmless:
   a divergence. Making reconnect replay from the event log instead would buy some bandwidth and
   spend that guarantee.
 
+  **Redis pub/sub does not clear that bar** and was rejected for it (2026-08-06). It is at-most-once
+  by Redis's own definition: a subscriber that blinks loses whatever was published meanwhile, and
+  redis-py reconnects and resubscribes silently, so the loss has no symptom at either end. Measured:
+  a killed subscriber received nothing published during the gap and raised nothing. A **stream**
+  clears it — the reader resumes from the last id it saw.
+
 ## Consequences
 
 - **Reuses the existing HTTP/cookie/proxy stack**: no separate WS auth or upgrade handling; the
@@ -61,11 +69,16 @@ harmless:
   superseding an earlier note here that `LISTEN/NOTIFY` would do: it would, on its own merits, but
   a second replica also needs a shared rate-limit store, and `limits` — the library under slowapi —
   offers memory, memcached, mongodb and redis/valkey, with no Postgres backend. Redis is therefore
-  already required, and one backplane is cheaper to run and reason about than two. The **shared
-  rate-limit store is built** (2026-08-06, [ADR-013](ADR-013-rate-limit-cf-connecting-ip.md)) because
-  it cannot lag the first replica without silently multiplying every abuse limit; **fan-out is not**,
-  and the two invariants above are maintained deliberately so it stays a swap rather than a rewrite.
-  Tracked with the rest of the replica picture as #21/#45.
+  already required, and one backplane is cheaper to run and reason about than two. Both halves are
+  **built**: the shared rate-limit store first (2026-08-06), because it could not lag the first
+  replica without silently multiplying every abuse limit
+  ([ADR-013](ADR-013-rate-limit-cf-connecting-ip.md)), then fan-out itself (2026-08-07), as a Redis
+  stream read from the last id each worker saw.
+- **The reader repairs what resumption cannot.** Entries trimmed while a worker was away, or lost to
+  a Redis restart, leave a gap the stream cannot close. So on *recovery* — not on each failed retry,
+  which would refetch every open tab every second for the length of the outage — the reader tells its
+  local clients to resync. Publishing never raises: the write has already committed, so a Redis fault
+  costs sibling replicas a frame rather than costing the caller their write.
 - **Overflow favours resync over silence**: bounded queues can drop a slow client, but the eviction
   sentinel guarantees it *knows* it was dropped and re-syncs, so it never silently diverges.
 - **Client-side write ordering matters on the server**: because REST mutations and SSE fan-out are
