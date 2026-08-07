@@ -29,7 +29,7 @@ and effort are noted inline where known.
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #34◐, #20◐ |
-| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58◐, #59, #60, #61, #64, #21/#45 (Redis-gated) |
+| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58◐, #59, #60, #61, #64, #65, #21/#45 (Redis-gated) |
 
 ◐ = partially done; the line below states the remaining scope.
 
@@ -144,6 +144,7 @@ weight, so the reasoning survives and nothing here has to be re-derived later.
   commits — replaying by it inherits the gap FDR-008 §5 records, which wants a commit-ordered
   stream id first.
 
+- **#65 — Occurrence expansion is bounded per event, not per request (2026-08-07).** `GET /calendar/events` loads every event that could land in the window and expands each in pure Python on the event loop. Both per-event axes are bounded — the window is capped at 366 days with a 422 past it, `interval` is `1..366` and `count` is `≤ 1000` — so one series costs at most a few hundred iterations of `ZoneInfo` arithmetic. **The number of events is the axis nothing caps**: the query has no `LIMIT`, so the work is `events × iterations`, and a dashboard set holding thousands of recurring events makes one GET expensive. Same shape as #61 and blocked on the same decision — a quota is the tool for volume, and picking the number is a product call. Worth measuring before building anything: at today's event counts this is arithmetic, not a symptom, and `frontdashboard_http_request_seconds` on `/api/calendar/events` is where it would first show. *(Small once #61's numbers are settled)*
 - **#64 — The rate limiter blocks the event loop while Redis is unreachable (2026-08-06).** slowapi 0.1.10 has a single `Limiter` and imports only `limits.storage`, never the `limits.aio.storage` that `limits` 5.8 ships — so its Redis client is synchronous and `strategy.hit()`, called per rate-limited request, runs on the event loop. Healthy that costs **0.50ms p50 / 0.73ms p99**, which is why it has never shown. Against a stopped Redis container it took **7.68-7.70s**, and a ticker task alongside proved the loop frozen for the whole of it (0.50s call → 0.52s largest tick gap on a blackholed address). The unit of damage is therefore a stalled worker, not a slow write: concurrent requests, open SSE streams and `/api/health/ready` all wait it out, and the container health check allows 5s, so a check landing in a stall fails — a wrong health signal, though not a restart loop, since Compose does not restart on unhealthy. No configuration reaches it and `asyncio.wait_for` cannot either, a timeout callback being unable to fire on a frozen loop. The fix is dropping slowapi for `limits.aio` directly, which also costs the `@limiter.limit` decorator and `test_rate_limit_coverage.py` that enforces it — so it wants a trigger. That trigger is Redis restarting often enough to notice, or a second replica making a stalled worker cost more than a slow write. *(Medium, no trigger yet — [ADR-013](adr/ADR-013-rate-limit-cf-connecting-ip.md))*
 - **#63 — `test_the_liveness_predicate_is_shared` failed once, unreproduced (Low).** One full-suite
   run had `resolve_session` treat a session as expired while `session_is_live` still called it live,

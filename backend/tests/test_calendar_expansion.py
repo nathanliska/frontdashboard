@@ -12,6 +12,8 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.schemas.calendar import CalendarOccurrenceResponse
 from app.services.calendar import expand_event_occurrences
@@ -406,3 +408,27 @@ def test_every_serialized_datetime_is_utc_z_form() -> None:
         body = json.loads(CalendarOccurrenceResponse.model_validate(occurrence, from_attributes=True).model_dump_json())
         for field in ("occurrence_start", "occurrence_end", "original_start"):
             assert body[field].endswith("Z"), f"{field} serialized as {body[field]}, which the client rejects"
+
+
+@pytest.mark.parametrize("frequency", ["daily", "weekly", "monthly", "yearly"])
+def test_a_non_advancing_interval_cannot_hang_the_expander(frequency: str) -> None:
+    """Every branch advances by `interval`, so a stored 0 never reaches `window_end`.
+
+    `RecurrenceRule` bounds it to 1..366, which is why this is reachable only through a row the API
+    did not write — a migration, a direct write, an import. The cost of being wrong is not a wrong
+    series but a worker wedged in a `while True` on the event loop, so the clamp lives here too.
+    """
+    rule: dict = {"frequency": frequency, "interval": 0}
+    if frequency == "weekly":
+        rule["by_weekday"] = [4]
+    event = _event(
+        starts_at=_utc("2026-03-06T15:00:00+00:00"),
+        ends_at=_utc("2026-03-06T15:30:00+00:00"),
+        recurrence=rule,
+    )
+
+    occurrences = expand_event_occurrences(event, {}, _utc("2026-03-01T00:00:00+00:00"), _utc("2026-03-31T00:00:00+00:00"))
+
+    assert occurrences, "the clamp should still produce a series, not an empty one"
+    starts = [o.occurrence_start for o in occurrences]
+    assert len(starts) == len(set(starts)), "a non-advancing interval repeated the same start"
