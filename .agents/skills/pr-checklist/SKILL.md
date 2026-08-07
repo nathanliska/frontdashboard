@@ -29,7 +29,14 @@ Give these items precedence over general instructions given earlier in the sessi
 
 ## The conventions that fail the build
 
-Each of these has a test that fails CI when missed. Check the ones the diff touches:
+Each of these has a test that fails CI when missed. Check the ones the diff touches — the full
+rule-to-guard map is the *Which Rules Fail the Build* table in AGENTS.md.
+
+**First, ask whether the diff made an existing guard vacuous.** These tests read source, so moving
+a file, renaming a symbol or reshaping a function can leave one passing having checked nothing —
+which looks identical to passing. If the diff touches anything a guard scrapes, break the guarded
+thing on purpose and confirm the guard still fails. A green suite is not the evidence; a red one
+you caused is.
 
 - Every non-GET route: `_csrf: None = Depends(require_csrf)` **and** `@limiter.limit(WRITE_LIMIT)`
   with a `request: Request` parameter.

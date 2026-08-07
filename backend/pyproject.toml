@@ -64,6 +64,9 @@ known-first-party = ["app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# A guard that parametrizes over a discovery walk must fail when the walk finds nothing; the
+# default skips, which exits 0 and reads as a satisfied build.
+empty_parameter_set_mark = "fail_at_collect"
 testpaths = ["tests"]
 markers = [
     "unit: does not require PostgreSQL or Docker",
