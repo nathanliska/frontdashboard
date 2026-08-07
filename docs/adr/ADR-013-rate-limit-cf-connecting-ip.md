@@ -86,11 +86,15 @@ it silently exempts everything. Per-route decoration is the only form that actua
   the internet, so silently N-ing the abuse limits is a security regression rather than a scaling
   detail ([ADR-004](ADR-004-sse-over-websocket.md), #21/#45 in [TODO.md](../TODO.md)).
 - **Redis being down degrades, it does not fail**: limits stay enforced per process and recover on
-  their own. Nothing else reports it — no error, no failed request, no metric — so the app explicitly
-  attaches a handler to slowapi's logger, which ships a discarding one by default. Without that the
-  single WARNING announcing the fallback goes nowhere and running degraded is indistinguishable from
-  running correctly. There is still no metric; add one if this ever needs alerting rather than
-  reading a log.
+  their own. No error and no failed request reports it, so two things do. The app attaches a handler
+  to slowapi's logger, which ships a discarding one by default, or the single WARNING announcing the
+  fallback would go nowhere. And `rate_limit_store_degraded` carries the state as a **gauge**, since
+  a rare event counted lazily gives `increase()` nothing to diff against and reads 0 through the
+  outage it exists to show. It is last-known state, not live: slowapi only re-checks the store when
+  a limited request arrives, so with no writes it stays 1 until one comes. The alert on it is a
+  **warning** while the stack runs one replica, because the fallback is then exactly what that one
+  process already enforced; the second replica is what makes losing the shared store a real weakening
+  and promotes it.
 - **The stack brings its own Redis**, so no deploy step sets `REDIS_URL` and forgetting one is not a
   failure mode. Set to an *empty* value it refuses to start, because slowapi reads that as
   `memory://` and would otherwise run permanently on per-process limits without failing.

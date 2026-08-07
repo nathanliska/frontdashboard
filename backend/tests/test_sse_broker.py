@@ -9,6 +9,7 @@ import asyncio
 import uuid
 
 import pytest
+from prometheus_client import REGISTRY
 
 from app.sse import broker, choreography
 
@@ -235,6 +236,60 @@ async def test_a_committed_write_reaches_the_other_workers(monkeypatch: pytest.M
     )
 
     assert calls == ["commit", "local", "publish"], f"expected commit, then local, then publish; got {calls}"
+
+
+async def test_an_outage_is_reported_as_a_gauge_not_only_a_log(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worker that cannot read the stream still serves its own clients, so nothing else shows it.
+
+    The gauge is what a dashboard and an alert can see; the log line needs someone already looking.
+    """
+    monkeypatch.setattr(broker, "_reader_degraded", False)
+    assert REGISTRY.get_sample_value("frontdashboard_sse_fanout_degraded") == 0.0
+    stop = asyncio.Event()
+    attempts = 0
+
+    # Stopped mid-outage on purpose: any successful read recovers the reader and clears the flag,
+    # so a script that ends on one would assert against the recovered state instead.
+    def _down() -> object:
+        nonlocal attempts
+        attempts += 1
+        if attempts >= 2:
+            stop.set()
+        raise ConnectionError("redis is down")
+
+    monkeypatch.setattr(broker, "_reader_client", _down)
+    monkeypatch.setattr(broker, "_RECONNECT_DELAY_SECONDS", 0)
+    monkeypatch.setattr(broker.manager, "deliver_to_all", lambda _message: None)
+
+    await asyncio.wait_for(broker.run_subscriber(stop=stop), timeout=5)
+
+    assert REGISTRY.get_sample_value("frontdashboard_sse_fanout_degraded") == 1.0, "the reader gave up on Redis without the gauge saying so"
+
+
+async def test_a_recovered_reader_clears_the_gauge(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stuck at 1 after recovery is the same failure as stuck at 0 during an outage."""
+    monkeypatch.setattr(broker, "_reader_degraded", True)
+
+    await _run_reader(monkeypatch, [ConnectionError("down"), []])
+
+    assert REGISTRY.get_sample_value("frontdashboard_sse_fanout_degraded") == 0.0
+
+
+async def test_a_dropped_frame_is_counted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Publishing never raises, so this counter is the only trace a sibling missed a frame."""
+
+    class _Fails:
+        async def xadd(self, *_args: object, **_kwargs: object) -> object:
+            raise ConnectionError("redis is down")
+
+    monkeypatch.setattr(broker, "_publisher_client", _Fails)
+    monkeypatch.setattr(broker, "_publish_retry_after", 0.0)
+    before = REGISTRY.get_sample_value("frontdashboard_sse_publish_failures_total") or 0.0
+
+    await broker.publish({"id": "1"}, user_ids=None, actor_id=uuid.uuid4())
+
+    after = REGISTRY.get_sample_value("frontdashboard_sse_publish_failures_total") or 0.0
+    assert after == before + 1
 
 
 def test_the_app_still_starts_when_redis_is_unusable() -> None:

@@ -7,6 +7,7 @@ from redis.retry import Retry
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app import metrics
 from app.config import settings
 
 
@@ -52,6 +53,15 @@ limiter = Limiter(
     # TypeError on a string timeout. Floats are what work.
     storage_options=STORAGE_OPTIONS,
     in_memory_fallback_enabled=True,
+)
+
+# slowapi only re-checks the store when a limited request arrives, so this reports last-known state
+# rather than live truth: with no writes it stays 1 until one comes. `test_limiter_fallback.py`
+# pins the attribute, which is private and would otherwise be renamed by an upgrade in silence.
+metrics.register_gauge(
+    "rate_limit_store_degraded",
+    "1 while limits are enforced per process because the shared store is unreachable.",
+    lambda: float(limiter._storage_dead),
 )
 
 # Applied per route because slowapi's app-wide limit cannot see through included-router nesting and
