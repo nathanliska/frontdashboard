@@ -1,6 +1,6 @@
 # Kept in step with .nvmrc and Dockerfile.prod by test_toolchain_coverage.py.
 # react-router 8 requires >=22.22.0.
-FROM node:24-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 

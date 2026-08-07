@@ -1,6 +1,6 @@
 # Floating tags, not digests: a rebuild then takes each base's security patches on its own. See
 # backend/Dockerfile.prod for why the pins went.
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 
 WORKDIR /app
 
