@@ -55,7 +55,7 @@ describe('updateWhere and stale', () => {
   })
 })
 
-describe('cache eviction (#24)', () => {
+describe('cache eviction', () => {
   function makeCappedQuery(fetcher: (scope: Scope) => Promise<string>, maxCachedScopes: number) {
     return createScopedQuery<Scope, string>({
       getKey: (s) => s.id,

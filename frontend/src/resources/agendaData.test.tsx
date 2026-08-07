@@ -192,7 +192,7 @@ describe('agendaData', () => {
     expect(screen.getByText('Buy milk')).toBeInTheDocument()
   })
 
-  it('refetches the agenda when the local day rolls over, but not on mount (#12)', async () => {
+  it('refetches the agenda when the local day rolls over, but not on mount', async () => {
     vi.useFakeTimers()
     try {
       vi.setSystemTime(new Date(2026, 6, 19, 23, 59, 0)) // Jul 19, 23:59 local

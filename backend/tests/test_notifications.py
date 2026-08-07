@@ -226,7 +226,7 @@ async def test_dashboard_share_notifications_and_activity_filtering(
 
 
 async def test_notification_pages_walk_the_full_history_without_loss(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """The cursor walks unread-first ordering across pages, exactly once per row (#22).
+    """The cursor walks unread-first ordering across pages, exactly once per row.
 
     The page limit is 50, so 120 rows (60 unread, 60 read, interleaved timestamps) force the
     cursor across the unread/read section boundary mid-page and across created_at ties.

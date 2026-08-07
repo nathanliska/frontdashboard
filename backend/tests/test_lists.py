@@ -300,7 +300,7 @@ async def test_item_update_event_values_are_json_safe(
 
 
 async def test_list_details_returns_every_list_with_items_in_one_request(auth_client: AsyncClient) -> None:
-    """The agenda's batch endpoint (#17): all lists on the dashboard, items included."""
+    """The agenda's batch endpoint: all lists on the dashboard, items included."""
     dashboard = await create_dashboard(auth_client)
     groceries = await create_list(auth_client, dashboard["id"], name="Groceries")
     chores = await create_list(auth_client, dashboard["id"], name="Chores")

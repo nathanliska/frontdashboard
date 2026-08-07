@@ -106,7 +106,7 @@ const CANONICAL_LAYOUT: LayoutItem[] = [
 ]
 
 describe('DashboardGrid', () => {
-  it('does not let the mobile projection overwrite the canonical layout (#9)', () => {
+  it('does not let the mobile projection overwrite the canonical layout', () => {
     render(
       <DashboardGrid
         dashboard={{
@@ -133,7 +133,7 @@ describe('DashboardGrid', () => {
     expect(byId.get('widget-2')).toMatchObject({ x: 4, w: 4 })
   })
 
-  it('keeps the canonical 12-column grid across the tablet band (#53)', () => {
+  it('keeps the canonical 12-column grid across the tablet band', () => {
     render(
       <DashboardGrid
         dashboard={{
@@ -161,7 +161,7 @@ describe('DashboardGrid', () => {
     expect(gridSpy.lastCols).toBe(1)
   })
 
-  it('still accepts desktop layout edits, so the guard does not over-block (#9)', () => {
+  it('still accepts desktop layout edits, so the guard does not over-block', () => {
     render(
       <DashboardGrid
         dashboard={{

@@ -230,7 +230,7 @@ async def test_client_mutation_id_header_is_bounded(auth_client: AsyncClient) ->
 
 
 async def test_delete_moves_to_trash_and_restore_brings_everything_back(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """DELETE is a trash move now (#40): children and shares survive, and restore reverses it."""
+    """DELETE is a trash move: children and shares survive, and restore reverses it."""
     viewer = await register_client("trash-viewer@example.com", display_name="Viewer")
     try:
         viewer_me = await current_user(viewer)

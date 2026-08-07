@@ -111,7 +111,7 @@ describe('DashboardSettingsModal', () => {
     })
   })
 
-  it('keeps the modal open and the typed name when a rename fails (#10)', async () => {
+  it('keeps the modal open and the typed name when a rename fails', async () => {
     apiGetDashboardShares.mockResolvedValue([])
     const onClose = vi.fn()
     const onRename = vi.fn().mockResolvedValue(false)
@@ -130,7 +130,7 @@ describe('DashboardSettingsModal', () => {
     expect(screen.getByPlaceholderText('Dashboard name')).toHaveValue('Renamed Board')
   })
 
-  it('closes the modal when a rename succeeds (#10)', async () => {
+  it('closes the modal when a rename succeeds', async () => {
     apiGetDashboardShares.mockResolvedValue([])
     const onClose = vi.fn()
     const onRename = vi.fn().mockResolvedValue(true)

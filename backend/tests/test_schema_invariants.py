@@ -145,9 +145,9 @@ async def test_a_share_must_name_a_real_dashboard(db_session: AsyncSession) -> N
 
     db_session.add(_share(uuid.uuid4(), recipient.id, owner.id))
 
-    # `resource_id` went ten months without a foreign key because it was polymorphic in principle
-    # (#19). It is not, so it has one — a grant on a dashboard that never existed is not a state
-    # the application should have to be careful about.
+    # `resource_id` is polymorphic in principle but not in practice, so it carries a foreign key:
+    # a grant on a dashboard that never existed is not a state the application should have to be
+    # careful about.
     with pytest.raises(IntegrityError, match="fk_resource_shares_resource_id"):
         await db_session.flush()
 

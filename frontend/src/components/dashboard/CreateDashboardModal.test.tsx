@@ -30,7 +30,7 @@ describe('CreateDashboardModal', () => {
     vi.clearAllMocks()
   })
 
-  it('does not call onCreated (and does not reject) when create fails (#10)', async () => {
+  it('does not call onCreated (and does not reject) when create fails', async () => {
     const onCreated = vi.fn()
     // The store contract: createDashboard resolves null on failure, never throws.
     const createDashboard = vi.fn().mockResolvedValue(null)
@@ -52,7 +52,7 @@ describe('CreateDashboardModal', () => {
     expect(onCreated).not.toHaveBeenCalled()
   })
 
-  it('calls onCreated with the summary when create succeeds (#10)', async () => {
+  it('calls onCreated with the summary when create succeeds', async () => {
     const onCreated = vi.fn()
     const summary = makeSummary()
     const createDashboard = vi.fn().mockResolvedValue(summary)

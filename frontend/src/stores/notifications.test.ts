@@ -152,7 +152,7 @@ describe('notifications store unread accounting', () => {
   })
 })
 
-describe('notification load failures (#26)', () => {
+describe('notification load failures', () => {
   it('records a failure when nothing is cached, and a retry clears it', async () => {
     apiGetNotifications.mockRejectedValueOnce(new Error('offline'))
     await useNotificationsStore.getState().load()
@@ -180,7 +180,7 @@ describe('notification load failures (#26)', () => {
   })
 })
 
-describe('notification pagination (#22)', () => {
+describe('notification pagination', () => {
   it('appends older pages with id-dedupe and stops when the cursor runs out', async () => {
     const NOTIF_B = { id: 'b', read_at: null } as Notification
     apiGetNotifications.mockResolvedValueOnce({ items: [NOTIF_A], next_cursor: 'cursor-1' })
@@ -209,7 +209,7 @@ describe('notification pagination (#22)', () => {
     await useNotificationsStore.getState().loadMore()
 
     const state = useNotificationsStore.getState()
-    expect(state.hasMore).toBe(true) // retryable, not a dead end (#26)
+    expect(state.hasMore).toBe(true) // retryable, not a dead end
     expect(state.loadingMore).toBe(false)
     expect(state.notifications).toEqual([NOTIF_A])
   })

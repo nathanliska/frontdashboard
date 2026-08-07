@@ -284,7 +284,7 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().summaries).toEqual(refreshedSummaries)
   })
 
-  it('does not let a stale in-flight summaries load null out a newer session load handle (MIN-1)', async () => {
+  it('does not let a stale in-flight summaries load null out a newer session load handle', async () => {
     let resolveA!: (v: DashboardSummary[]) => void
     let resolveB!: (v: DashboardSummary[]) => void
 
@@ -458,7 +458,7 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().dashboard).toEqual(refreshedDashboard)
   })
 
-  it('coalesces rapid layout saves and re-reads the bumped version (#11)', async () => {
+  it('coalesces rapid layout saves and re-reads the bumped version', async () => {
     const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
     apiUpdateLayout.mockImplementation(
       () =>
@@ -521,7 +521,7 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().conflict).toBe(false)
   })
 
-  it('shows the banner only once the retry is beaten too (#11)', async () => {
+  it('shows the banner only once the retry is beaten too', async () => {
     apiUpdateLayout.mockResolvedValue({ conflict: true })
     apiGetDashboard.mockResolvedValue(makeDashboard({ version: 5 }))
     useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
@@ -547,7 +547,7 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().conflict).toBe(true)
   })
 
-  it('drops the layout save when the session resets mid-flight (#11)', async () => {
+  it('drops the layout save when the session resets mid-flight', async () => {
     const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
     apiUpdateLayout.mockImplementation(
       () =>
@@ -570,7 +570,7 @@ describe('useDashboardStore', () => {
     expect(apiUpdateLayout).toHaveBeenCalledTimes(1)
   })
 
-  it('createDashboard resolves null on API failure instead of throwing (#10)', async () => {
+  it('createDashboard resolves null on API failure instead of throwing', async () => {
     apiCreateDashboard.mockRejectedValue(new Error('boom'))
     useDashboardStore.setState({ summaries: [] })
 
@@ -578,7 +578,7 @@ describe('useDashboardStore', () => {
     expect(toastError).toHaveBeenCalledWith('Failed to create dashboard.')
   })
 
-  it('createDashboard resolves the summary on success (#10)', async () => {
+  it('createDashboard resolves the summary on success', async () => {
     const summary = makeSummary({ id: 'dash-new', name: 'X' })
     apiCreateDashboard.mockResolvedValue(summary)
     useDashboardStore.setState({ summaries: [] })
@@ -588,7 +588,7 @@ describe('useDashboardStore', () => {
     )
   })
 
-  it('renameDashboard resolves false on failure and true on success (#10)', async () => {
+  it('renameDashboard resolves false on failure and true on success', async () => {
     useDashboardStore.setState({ summaries: [makeSummary()], dashboard: makeDashboard() })
 
     apiUpdateDashboardMeta.mockRejectedValueOnce(new Error('boom'))
@@ -599,7 +599,7 @@ describe('useDashboardStore', () => {
     await expect(useDashboardStore.getState().renameDashboard('dash-1', 'New')).resolves.toBe(true)
   })
 
-  it('addWidget resolves false on failure and true on success (#10)', async () => {
+  it('addWidget resolves false on failure and true on success', async () => {
     useDashboardStore.setState({ dashboard: makeDashboard() })
 
     apiAddWidget.mockRejectedValueOnce(new Error('boom'))
@@ -613,7 +613,7 @@ describe('useDashboardStore', () => {
     )
   })
 
-  it('does not start a concurrent drain when a superseded save resolves after a session reset (#11)', async () => {
+  it('does not start a concurrent drain when a superseded save resolves after a session reset', async () => {
     const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
     apiUpdateLayout.mockImplementation(
       () =>
@@ -1014,7 +1014,7 @@ describe('useDashboardStore', () => {
     vi.useRealTimers()
   })
 
-  it('settles a pending debounced summaries-refresh promise on reset instead of hanging (MIN-2)', async () => {
+  it('settles a pending debounced summaries-refresh promise on reset instead of hanging', async () => {
     useDashboardStore.setState({
       summaries: [makeSummary()],
       summariesLoaded: true,
