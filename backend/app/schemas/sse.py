@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.activity import EventType
+from app.models.activity import ChangedField, EventType
 
 
 class ActivitySsePayload(BaseModel):
@@ -23,7 +23,9 @@ class ActivitySsePayload(BaseModel):
     dashboard_id: str | None = None
     list_id: str | None = None
     client_mutation_id: str | None = None
-    changed_fields: list[str] | None = None
+    # Closed vocabulary: makes the enum generate into the frontend contract, so a consumer can
+    # no longer test for a value no producer emits.
+    changed_fields: list[ChangedField] | None = None
     item_ids: list[str] | None = None
     list_ids: list[str] | None = None
     values: dict[str, Any] | None = None

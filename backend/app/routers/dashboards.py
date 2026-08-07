@@ -12,6 +12,7 @@ from app.auth.dependencies import get_current_user, require_csrf
 from app.config import settings
 from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
+from app.models.activity import ChangedField
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.list import List, ListType
 from app.models.notification import Notification
@@ -303,7 +304,7 @@ def _dashboard_share_event_payload(
 ) -> dict[str, Any]:
     return {
         "dashboard_name": dashboard.name,
-        "changed_fields": ["shares"],
+        "changed_fields": [ChangedField.shares],
         "share_action": action,
         "share_event_type": f"dashboard.share_{action}",
         "share_id": str(share.id),
@@ -532,7 +533,9 @@ async def update_dashboard_meta(
         dashboard=dashboard,
         payload={
             "name": dashboard.name,
-            "changed_fields": sorted(body.model_fields_set),
+            # Every patchable field is a vocabulary member; test_changed_fields_coverage.py
+            # fails the build if one is ever added that isn't.
+            "changed_fields": sorted(ChangedField(field) for field in body.model_fields_set),
         },
         client_mutation_id=client_mutation_id,
     )
@@ -659,7 +662,7 @@ async def restore_dashboard(
         event_type=EventType.dashboard_updated,
         current_user=current_user,
         dashboard=dashboard,
-        payload={"changed_fields": ["restored"]},
+        payload={"changed_fields": [ChangedField.restored]},
         client_mutation_id=client_mutation_id,
     )
     await commit_and_broadcast(
@@ -731,7 +734,7 @@ async def update_layout(
         event_type=EventType.dashboard_updated,
         current_user=current_user,
         dashboard=dashboard,
-        payload={"version": dashboard.version, "changed_fields": ["layout"]},
+        payload={"version": dashboard.version, "changed_fields": [ChangedField.layout]},
         client_mutation_id=client_mutation_id,
     )
     await commit_and_broadcast(
@@ -894,7 +897,7 @@ async def add_widget(
             # Add and remove are the same event type with the same changed_fields, so the feed
             # cannot tell them apart without this.
             "widget_action": "added",
-            "changed_fields": ["widgets", "layout"],
+            "changed_fields": [ChangedField.widgets, ChangedField.layout],
         },
         client_mutation_id=client_mutation_id,
     )
@@ -969,7 +972,7 @@ async def update_widget(
             # Lets other tabs patch the widget instead of reloading the dashboard. Safe only
             # because a config write bumps no version — layout writes, which do, are excluded.
             "config": widget.config,
-            "changed_fields": ["widgets"],
+            "changed_fields": [ChangedField.widgets],
         },
         client_mutation_id=client_mutation_id,
     )
@@ -1025,7 +1028,7 @@ async def delete_widget(
             "widget_id": str(widget.id),
             "widget_type": widget.widget_type,
             "widget_action": "removed",
-            "changed_fields": ["widgets", "layout"],
+            "changed_fields": [ChangedField.widgets, ChangedField.layout],
         },
         client_mutation_id=client_mutation_id,
     )

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
-from app.models.activity import EventType
+from app.models.activity import ChangedField, EventType
 from app.models.dashboard import Dashboard
 from app.models.share import PrincipalType, ResourceType, ShareRole
 from app.models.user import User
@@ -212,7 +212,7 @@ async def accept_invite(
             "dashboard_name": dashboard.name,
             "role": str(role),
             "share_action": "joined",
-            "changed_fields": ["shares"],
+            "changed_fields": [ChangedField.shares],
         },
     )
     event_message = await build_activity_sse_dict(db, event)
