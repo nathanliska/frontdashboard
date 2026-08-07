@@ -1,10 +1,9 @@
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from string import Template
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 from app import metrics
 from app.config import Environment, settings
@@ -39,7 +38,7 @@ async def _deliver(message: _Message, *, operation: metrics.EmailOperation) -> N
     """
     if settings.resend_api_key:
         try:
-            await asyncio.to_thread(_call_resend, message)
+            await _call_resend(message)
         except RuntimeError:
             metrics.EMAIL_SENDS.labels(operation=operation, outcome="failed").inc()
             logger.exception("Failed to send %r to %s", message.subject, message.to)
@@ -118,7 +117,12 @@ async def send_existing_account_email(email: str) -> None:
     )
 
 
-def _call_resend(message: _Message) -> None:
+async def _call_resend(message: _Message) -> None:
+    """Post one message to Resend, normalising every failure to RuntimeError for `_deliver`.
+
+    A client per call rather than a pooled one: these sends are rare enough that a connection to
+    keep alive would idle out between them, and pooling would owe the lifespan a close.
+    """
     payload = {
         "from": settings.email_from,
         "to": [message.to],
@@ -126,22 +130,20 @@ def _call_resend(message: _Message) -> None:
         "html": message.html,
         "text": message.text,
     }
-    data = json.dumps(payload).encode()
-    request = Request(
-        _RESEND_EMAILS_URL,
-        data=data,
-        headers={
-            "Authorization": f"Bearer {settings.resend_api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "frontdashboard/0.1",
-        },
-        method="POST",
-    )
+    headers = {
+        "Authorization": f"Bearer {settings.resend_api_key}",
+        "User-Agent": "frontdashboard/0.1",
+    }
     try:
-        with urlopen(request, timeout=10):
-            pass
-    except HTTPError as exc:
-        detail = exc.read().decode(errors="replace")
-        raise RuntimeError(f"Resend email request failed with status {exc.code}: {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Resend email request failed: {exc.reason}") from exc
+        # Stated because urllib followed redirects and httpx does not: a redirected POST would
+        # re-send the message to whatever answered, and this endpoint is fixed.
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+            response = await client.post(_RESEND_EMAILS_URL, json=payload, headers=headers)
+            response.raise_for_status()
+    # Before the base class, which this one inherits from.
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text
+        status = exc.response.status_code
+        raise RuntimeError(f"Resend email request failed with status {status}: {detail}") from exc
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Resend email request failed: {exc}") from exc

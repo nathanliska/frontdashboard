@@ -161,7 +161,7 @@ async def test_a_failed_send_is_counted_where_nothing_else_would_notice(monkeypa
 
     monkeypatch.setattr(email.settings, "resend_api_key", "test-key")
 
-    def explode(_message: email._Message) -> None:
+    async def explode(_message: email._Message) -> None:
         raise RuntimeError("Resend email request failed: unreachable")
 
     monkeypatch.setattr(email, "_call_resend", explode)
