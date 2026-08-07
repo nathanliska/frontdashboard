@@ -96,8 +96,8 @@ Standing user constraints. Do not violate these.
 - CI runs on every PR to `main`, and merging is what publishes images. Check CI after opening and
   fix failures that are regressions from `main`.
 - Deploying is [docs/runbooks/deploy.md](docs/runbooks/deploy.md): merge, wait for the publish,
-  then **Force Update** the stack in Unraid's Compose Manager. Production is driven through that
-  plugin's UI, not `docker compose` on the host.
+  then **check for updates and update** the stack in Unraid's Compose Manager. Production is driven
+  through that plugin's UI, not `docker compose` on the host.
 
 ## Tooling
 

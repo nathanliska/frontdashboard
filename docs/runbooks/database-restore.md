@@ -29,8 +29,12 @@ Accepts plain `.sql`, gzipped `.sql.gz`, and `pg_dump` custom format.
 1. **Stop the backend.** Not the database — the backend, so nothing writes mid-restore.
 
    ```sh
-   docker compose -p frontdashboard -f compose.yaml -f compose.override.yaml stop backend
+   docker stop frontdashboard-backend
    ```
+
+   By container name, as every step here does, so no compose file has to be found first. The stack
+   the box runs is Compose Manager's, at `/mnt/user/appdata/stacks/frontdashboard/` — not this
+   repo's. `restart: unless-stopped` is what makes the stop hold; `always` would race the restore.
 
 2. **Take a dump of the current state first, however broken it looks.** It is the only copy of
    whatever happened between the last backup and now, and restoring over it is irreversible.
@@ -57,8 +61,8 @@ Accepts plain `.sql`, gzipped `.sql.gz`, and `pg_dump` custom format.
    restart mid-restore waits rather than racing.
 
    ```sh
-   docker compose -p frontdashboard -f compose.yaml -f compose.override.yaml start backend
-   docker compose -p frontdashboard logs -f backend
+   docker start frontdashboard-backend
+   docker logs -f frontdashboard-backend
    ```
 
 5. **Verify from outside**, read-only: the document is served, the bundle it names is `200`, and
