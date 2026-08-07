@@ -220,8 +220,9 @@ _Last updated: 2026-08-07_
   see only the deliberate ones.
   A Prometheus container joined to the `internal` network scrapes it every 15s at
   `frontdashboard-backend:8000/metrics`. Two Grafana dashboards live in [`observability/`](observability/) —
-  an overview carrying the availability and latency SLIs, and an internals board for pool, hashing
-  and stream detail — with nineteen alert rules beside them in Prometheus format, which is the one
+  an overview carrying the availability and latency SLIs, and an internals board grouped into rows for
+  pool and hashing, real-time, shared Redis state and process resources — with nineteen alert rules
+  beside them in Prometheus format, which is the one
   Grafana's rule importer accepts. All three are loaded by hand through the Grafana UI rather than
   reaching the deployment host, and `test_observability_coverage.py` fails the build if any names a
   metric the code no longer registers. The connects-to-resyncs ratio is what says whether reconnect

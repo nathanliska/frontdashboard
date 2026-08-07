@@ -71,7 +71,10 @@
         "graphMode": "area",
         "textMode": "auto",
         "justifyMode": "auto",
-        "orientation": "auto"
+        "orientation": "auto",
+        "text": {
+          "valueSize": 32
+        }
       },
       "targets": [
         {
@@ -137,7 +140,10 @@
         "graphMode": "area",
         "textMode": "auto",
         "justifyMode": "auto",
-        "orientation": "auto"
+        "orientation": "auto",
+        "text": {
+          "valueSize": 32
+        }
       },
       "targets": [
         {
@@ -154,6 +160,319 @@
       ]
     },
     {
+      "id": 13,
+      "type": "stat",
+      "title": "Rate-limit store",
+      "description": "Which store the limits are enforced in. Last-known state rather than live: slowapi only re-checks when a limited request arrives, so with no writes it holds the previous answer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "shared",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "per process",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "text": {
+          "valueSize": 32
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "max(frontdashboard_rate_limit_store_degraded)",
+          "legendFormat": "",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "SSE fan-out",
+      "description": "Whether this worker is reading the Redis stream. Detached still serves its own clients, so nothing else in the UI reveals it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "attached",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "detached",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "text": {
+          "valueSize": 32
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "max(frontdashboard_sse_fanout_degraded)",
+          "legendFormat": "",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Frames lost (24h)",
+      "description": "Frames another worker never received. Publishing never raises, so this is the only trace that it happened.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "text": {
+          "valueSize": 32
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(frontdashboard_sse_publish_failures_total[24h]))",
+          "legendFormat": "",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Resident memory",
+      "description": "The leak signal for a process holding streams open for half an hour. No mem_limit is set on this service, so the thresholds are headroom against an Argon2 burst rather than a configured ceiling.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 471859200
+              },
+              {
+                "color": "red",
+                "value": 734003200
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "text": {
+          "valueSize": 32
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(process_resident_memory_bytes{job=\"frontdashboard\"})",
+          "legendFormat": "",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Requests & hashing",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "panels": []
+    },
+    {
       "id": 3,
       "type": "timeseries",
       "title": "Argon2 latency & saturation",
@@ -166,7 +485,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -355,7 +674,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -516,6 +835,19 @@
       ]
     },
     {
+      "id": 101,
+      "type": "row",
+      "title": "Real-time (SSE)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "panels": []
+    },
+    {
       "id": 5,
       "type": "timeseries",
       "title": "SSE connects vs resyncs",
@@ -528,7 +860,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 14
       },
       "fieldConfig": {
         "defaults": {
@@ -633,7 +965,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 14
       },
       "fieldConfig": {
         "defaults": {
@@ -716,7 +1048,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 22
       },
       "fieldConfig": {
         "defaults": {
@@ -787,235 +1119,6 @@
       ]
     },
     {
-      "id": 8,
-      "type": "timeseries",
-      "title": "Background work: completed vs failed",
-      "description": "Failures alone cannot tell a healthy reaper from a stopped one \u2014 no failures looks identical either way. The completed line is what separates them.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 20
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "min": 0,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "auto",
-            "spanNulls": true,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisPlacement": "auto",
-            "axisSoftMax": 5
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(increase(frontdashboard_rate_limited_total[1h]))",
-          "legendFormat": "rate-limited / hr",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(increase(frontdashboard_reaper_failures_total[1h]))",
-          "legendFormat": "reaper failures / hr",
-          "range": true,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(increase(frontdashboard_email_sends_total{outcome=\"failed\"}[1h]))",
-          "legendFormat": "email sends failed / hr",
-          "range": true,
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(increase(frontdashboard_email_sends_total{outcome=\"dropped\"}[1h]))",
-          "legendFormat": "email dropped, unconfigured / hr",
-          "range": true,
-          "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(increase(frontdashboard_reaper_sweeps_total[1h]))",
-          "legendFormat": "reaper sweeps completed / hr",
-          "range": true,
-          "refId": "E"
-        }
-      ]
-    },
-    {
-      "id": 9,
-      "type": "timeseries",
-      "title": "Process memory & CPU",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "description": "Memory trend is the leak signal for a process holding streams open for half an hour. CPU on the right axis, in cores.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 28
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisPlacement": "auto"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "include",
-                "names": [
-                  "cpu"
-                ]
-              }
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "percentunit"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.axisLabel",
-                "value": "cores"
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(process_resident_memory_bytes{job=\"frontdashboard\"})",
-          "legendFormat": "resident memory",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(rate(process_cpu_seconds_total{job=\"frontdashboard\"}[$__rate_interval]))",
-          "legendFormat": "cpu",
-          "range": true,
-          "refId": "B"
-        }
-      ]
-    },
-    {
       "id": 10,
       "type": "timeseries",
       "title": "Open FDs vs SSE clients",
@@ -1028,7 +1131,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 22
       },
       "fieldConfig": {
         "defaults": {
@@ -1147,6 +1250,19 @@
       ]
     },
     {
+      "id": 102,
+      "type": "row",
+      "title": "Shared state (Redis)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "panels": []
+    },
+    {
       "id": 11,
       "type": "timeseries",
       "title": "Shared state degraded (Redis)",
@@ -1159,7 +1275,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 36
+        "y": 31
       },
       "fieldConfig": {
         "defaults": {
@@ -1248,7 +1364,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 36
+        "y": 31
       },
       "fieldConfig": {
         "defaults": {
@@ -1305,6 +1421,248 @@
           "legendFormat": "frames lost / hr",
           "range": true,
           "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "type": "row",
+      "title": "Process & background",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Process memory & CPU",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Memory trend is the leak signal for a process holding streams open for half an hour. CPU on the right axis, in cores.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "include",
+                "names": [
+                  "cpu"
+                ]
+              }
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "cores"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(process_resident_memory_bytes{job=\"frontdashboard\"})",
+          "legendFormat": "resident memory",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(process_cpu_seconds_total{job=\"frontdashboard\"}[$__rate_interval]))",
+          "legendFormat": "cpu",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Background work: completed vs failed",
+      "description": "Failures alone cannot tell a healthy reaper from a stopped one \u2014 no failures looks identical either way. The completed line is what separates them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisSoftMax": 5
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(frontdashboard_rate_limited_total[1h]))",
+          "legendFormat": "rate-limited / hr",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(frontdashboard_reaper_failures_total[1h]))",
+          "legendFormat": "reaper failures / hr",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(frontdashboard_email_sends_total{outcome=\"failed\"}[1h]))",
+          "legendFormat": "email sends failed / hr",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(frontdashboard_email_sends_total{outcome=\"dropped\"}[1h]))",
+          "legendFormat": "email dropped, unconfigured / hr",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(frontdashboard_reaper_sweeps_total[1h]))",
+          "legendFormat": "reaper sweeps completed / hr",
+          "range": true,
+          "refId": "E"
         }
       ]
     }
