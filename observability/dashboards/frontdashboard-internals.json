@@ -1023,7 +1023,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Descriptors should track open streams. Climbing while clients hold flat is a stream that was never closed \u2014 and each SSE client holds one, so the ceiling is what turns that into a deadline rather than a number.",
+      "description": "Descriptors should track open streams; climbing while clients hold flat is a stream that was never closed. The ceiling sits on its own axis because it is three orders of magnitude above the values being compared \u2014 it answers how much headroom, not what the shape is.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1078,6 +1078,18 @@
                   "mode": "fixed",
                   "fixedColor": "red"
                 }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "ceiling"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
               }
             ]
           }
