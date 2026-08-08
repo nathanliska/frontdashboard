@@ -15,7 +15,7 @@ from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
 from app.models.activity import ChangedField, EventType
 from app.models.dashboard import Dashboard
-from app.models.share import PrincipalType, ResourceType, ShareRole
+from app.models.share import EffectiveRole, PrincipalType, ResourceType, as_share_role
 from app.models.user import User
 from app.schemas.invites import (
     InviteAcceptResponse,
@@ -74,7 +74,7 @@ async def create_invite(
     await db.commit()
     return InviteCreatedResponse(
         id=invite.id,
-        role=ShareRole(invite.role),
+        role=as_share_role(invite.role),
         expires_at=invite.expires_at,
         created_at=invite.created_at,
         code=code,
@@ -135,7 +135,7 @@ async def preview_invite(
     return InvitePreviewResponse(
         dashboard_name=dashboard.name,
         invited_by=inviter.display_name if inviter else "Someone",
-        role=ShareRole(invite.role),
+        role=as_share_role(invite.role),
     )
 
 
@@ -162,17 +162,24 @@ async def accept_invite(
     if dashboard is None or dashboard.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
 
-    role = ShareRole(invite.role)
-    existing_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    held = permissions.highest_role(
-        [ShareRole(share.role) for share in existing_shares if share.principal_type == PrincipalType.user and share.principal_id == current_user.id]
-    )
-
     # The owner redeeming their own link is a no-op, not an error: they already have full access,
     # and a share row for the owner would contradict "owner is the absence of a share".
-    if dashboard.user_id == current_user.id or (held is not None and permissions.is_at_least(held, role)):
+    if dashboard.user_id == current_user.id:
+        return InviteAcceptResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name, role=EffectiveRole.owner)
+
+    role = as_share_role(invite.role)
+    existing_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
+    held = permissions.highest_role(
+        [
+            as_share_role(share.role)
+            for share in existing_shares
+            if share.principal_type == PrincipalType.user and share.principal_id == current_user.id
+        ]
+    )
+
+    if held is not None and permissions.is_at_least(held, role):
         # Nothing to grant, so nothing is consumed — and the response reports the access they hold,
-        # not what the link offered. For the owner that is `None`, this codebase's spelling of owner.
+        # not what the link offered.
         return InviteAcceptResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name, role=held)
 
     # Consume only now that redemption will change something. Still the atomic UPDATE, so a code

@@ -1,7 +1,7 @@
 # FDR-004: Sharing & Access
 
 **Status:** Active
-**Last reviewed:** 2026-07-26
+**Last reviewed:** 2026-08-08
 
 ## Overview
 
@@ -38,14 +38,17 @@ partner") without the indirection of group membership. See ADR-001.
 **Tradeoff:** None outstanding — the `membership.*` event types this once listed as a leftover have
 since been removed.
 
-### 2. Owner is the absence of a share row, not a role value
+### 2. Owner is the absence of a share row, resolved as a named role
 
-**Decision:** `effective_role` returns `None` for the creator (owner), a `ShareRole` for a shared
-user, and raises 404 for no access.
+**Decision:** No share row is ever written for the creator, but `effective_role` reports them as
+`EffectiveRole.owner` — not as an absent value. It returns the strongest matching role for a shared
+user and raises 404 for no access.
 **Why:** The owner isn't a grant — they're the resource's creator; modelling that as "no row" keeps
-the grant table strictly about *delegated* access.
-**Tradeoff:** Guards must never write `if role:` — that misreads the owner (`None`) as no access. It's
-a documented backend footgun.
+the grant table strictly about *delegated* access. What the *caller* holds is a different question
+from what the table stores, so it gets its own vocabulary rather than borrowing `None`.
+**Tradeoff:** Two types over one vocabulary — `ShareRole`, the storable/requestable subset, is
+derived from `EffectiveRole` as a `Literal`, so they cannot drift; `test_permissions.py` proves a
+client requesting `owner` is rejected at the input boundary.
 
 ### 3. Children inherit; their `/shares` endpoints are 409 stubs
 
@@ -96,7 +99,7 @@ share panel lists, re-roles and revokes access after an invite is redeemed.
 
 This *is* the access model:
 
-- **Owner** (`role is None`) — creator; full control including delete and share.
+- **Owner** (`EffectiveRole.owner`) — creator; full control including delete and share.
 - **Editor** — edit the resource and its children.
 - **Viewer** — read-only.
 

@@ -1,6 +1,6 @@
 # ADR-001: Per-Resource `ResourceShare` Sharing (Groups Removed)
 
-**Date:** 2026-07-20
+**Date:** 2026-07-20 (amended 2026-08-08)
 
 ## Context
 
@@ -54,9 +54,10 @@ therefore a migration that drops one CHECK and one FK, not a redesign.
 - **Inheritance keeps child sharing coherent**: a list is visible to exactly the people who can see
   the dashboard binding it — you can't create a list more or less shared than its dashboard. The
   cost is that you can't share a single list independently of its dashboard.
-- **Owner is `role is None`, not a role value**: `permissions.effective_role` returns `None` for the
-  creator and raises 404 for no access. Guards must never write `if role:` — that misreads the owner
-  as "no access" ([AGENTS.md](../../AGENTS.md)).
+- **Owner is stored as no row, resolved as a role**: the grant table holds nothing for the creator,
+  but `permissions.effective_role` returns `EffectiveRole.owner` rather than `None`. The storable
+  subset `ShareRole` is derived from that enum as a `Literal`, keeping `owner` unrequestable while
+  killing the `if role:` guard that read the owner as "no access" ([AGENTS.md](../../AGENTS.md)).
 - **Trashed-visibility invariant lives in the access helpers**: querying a child table directly
   bypasses the trashed-dashboard filter, so all child access must route through the shares service.
 - **A share row cannot outlive what it names**: the FKs mean a purged dashboard takes its grants

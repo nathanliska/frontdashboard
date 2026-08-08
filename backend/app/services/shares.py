@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dashboard import Dashboard
-from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
 from app.schemas.shares import ShareCreate, ShareResponse
 from app.services import permissions
@@ -34,7 +34,7 @@ async def load_dashboard_access(
     db: AsyncSession,
     *,
     lock_for_update: bool = False,
-) -> tuple[Dashboard, list[ResourceShare], ShareRole | None]:
+) -> tuple[Dashboard, list[ResourceShare], EffectiveRole]:
     # Every dashboard-scoped resource loads access through here, so trashing hides child content
     # everywhere at once. Restore has its own owner-only loader.
     dashboard_query = select(Dashboard).where(Dashboard.id == dashboard_id, Dashboard.deleted_at.is_(None))
@@ -86,7 +86,7 @@ async def load_resource_access(
     resource_created_by: uuid.UUID,
     user: User,
     db: AsyncSession,
-) -> tuple[list[ResourceShare], ShareRole | None]:
+) -> tuple[list[ResourceShare], EffectiveRole]:
     """Load shares and compute effective access for the current user."""
     shares_result = await db.execute(
         select(ResourceShare).where(
@@ -95,9 +95,6 @@ async def load_resource_access(
         )
     )
     shares = list(shares_result.scalars().all())
-
-    if resource_created_by == user.id:
-        return shares, None
 
     # Direct grants are the whole story: a list or event belongs to exactly one dashboard and its
     # router resolves access from `dashboard_id`, so there is no inherited role to join for here.

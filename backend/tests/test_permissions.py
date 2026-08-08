@@ -1,10 +1,15 @@
 import uuid
+from typing import get_args
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
-from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType, ShareRole, as_share_role
+from app.schemas.shares import ShareCreate
 from app.services import permissions
+
+_STORABLE = get_args(ShareRole.__value__)
 
 
 def _share(
@@ -24,10 +29,23 @@ def _share(
     )
 
 
-def test_effective_role_returns_none_for_owner() -> None:
+def test_the_storable_subset_excludes_exactly_owner() -> None:
+    """`ShareRole` is derived from `EffectiveRole`; this pins what the derivation must exclude."""
+    assert set(_STORABLE) == {EffectiveRole.viewer, EffectiveRole.editor}
+
+
+def test_owner_is_rejected_at_the_input_boundary() -> None:
+    """The security property the split type exists for: a client cannot request `owner`."""
+    with pytest.raises(ValidationError):
+        ShareCreate.model_validate({"principal_type": "user", "principal_id": str(uuid.uuid4()), "role": "owner"})
+    with pytest.raises(ValueError, match="never stored"):
+        as_share_role("owner")
+
+
+def test_effective_role_returns_owner_for_the_creator() -> None:
     user_id = uuid.uuid4()
     role = permissions.effective_role(user_id, user_id, [])
-    assert role is None
+    assert role is EffectiveRole.owner
 
 
 def test_effective_role_uses_direct_user_share() -> None:
@@ -40,11 +58,11 @@ def test_effective_role_uses_direct_user_share() -> None:
                 resource_type=ResourceType.list,
                 principal_type=PrincipalType.user,
                 principal_id=user_id,
-                role=ShareRole.viewer,
+                role=EffectiveRole.viewer,
             )
         ],
     )
-    assert role == ShareRole.viewer
+    assert role is EffectiveRole.viewer
 
 
 def test_effective_role_uses_highest_matching_role() -> None:
@@ -57,17 +75,17 @@ def test_effective_role_uses_highest_matching_role() -> None:
                 resource_type=ResourceType.list,
                 principal_type=PrincipalType.user,
                 principal_id=user_id,
-                role=ShareRole.viewer,
+                role=EffectiveRole.viewer,
             ),
             _share(
                 resource_type=ResourceType.list,
                 principal_type=PrincipalType.user,
                 principal_id=user_id,
-                role=ShareRole.editor,
+                role=EffectiveRole.editor,
             ),
         ],
     )
-    assert role == ShareRole.editor
+    assert role is EffectiveRole.editor
 
 
 def test_effective_role_raises_404_without_access() -> None:
@@ -76,14 +94,27 @@ def test_effective_role_raises_404_without_access() -> None:
     assert exc.value.status_code == 404
 
 
+def test_every_role_has_a_distinct_rank() -> None:
+    """A member missing from the rank table would KeyError here on its first comparison."""
+    ranks = [permissions.rank(role) for role in EffectiveRole]
+    assert len(set(ranks)) == len(EffectiveRole)
+
+
+def test_owner_outranks_every_storable_role() -> None:
+    for role in _STORABLE:
+        assert permissions.is_at_least(EffectiveRole.owner, role)
+        assert not permissions.is_at_least(role, EffectiveRole.owner)
+
+
 def test_role_capabilities() -> None:
-    assert permissions.can_read(ShareRole.viewer)
-    assert permissions.can_read(None)
-    assert permissions.can_edit(ShareRole.editor)
-    assert permissions.can_edit(None)
-    assert not permissions.can_edit(ShareRole.viewer)
-    assert permissions.can_delete(None)
-    assert not permissions.can_delete(ShareRole.editor)
-    assert not permissions.can_delete(ShareRole.viewer)
-    assert permissions.can_manage_shares(None)
-    assert not permissions.can_manage_shares(ShareRole.editor)
+    assert permissions.can_read(EffectiveRole.viewer)
+    assert permissions.can_read(EffectiveRole.owner)
+    assert permissions.can_edit(EffectiveRole.editor)
+    assert permissions.can_edit(EffectiveRole.owner)
+    assert not permissions.can_edit(EffectiveRole.viewer)
+    assert permissions.can_delete(EffectiveRole.owner)
+    assert not permissions.can_delete(EffectiveRole.editor)
+    assert not permissions.can_delete(EffectiveRole.viewer)
+    assert permissions.can_manage_shares(EffectiveRole.owner)
+    assert not permissions.can_manage_shares(EffectiveRole.editor)
+    assert not permissions.can_manage_shares(EffectiveRole.viewer)

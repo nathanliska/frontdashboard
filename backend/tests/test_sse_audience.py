@@ -8,7 +8,7 @@ stale across all three resource types at once.
 import uuid
 from typing import cast
 
-from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType
 from app.services.shares import dashboard_audience_user_ids
 from tests.helpers import make_db_dashboard, make_db_user
 
@@ -19,7 +19,7 @@ def _share(dashboard_id: uuid.UUID, principal_id: uuid.UUID, granted_by: uuid.UU
         resource_id=dashboard_id,
         principal_type=principal_type,
         principal_id=principal_id,
-        role=ShareRole.viewer,
+        role=EffectiveRole.viewer,
         granted_by=granted_by,
     )
 

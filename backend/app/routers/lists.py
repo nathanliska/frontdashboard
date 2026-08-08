@@ -12,7 +12,7 @@ from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
 from app.models.dashboard import Dashboard
 from app.models.list import List, ListItem
-from app.models.share import ResourceShare, ResourceType, ShareRole
+from app.models.share import EffectiveRole, ResourceShare, ResourceType
 from app.models.user import User
 from app.schemas.lists import (
     ItemReorder,
@@ -79,7 +79,7 @@ async def _get_list_access(
     db: AsyncSession,
     *,
     lock_for_update: bool = False,
-) -> tuple[List, Dashboard, list[ResourceShare], ShareRole | None]:
+) -> tuple[List, Dashboard, list[ResourceShare], EffectiveRole]:
     list_query = select(List).where(List.id == list_id, List.deleted_at.is_(None))
     if lock_for_update:
         list_query = list_query.with_for_update()

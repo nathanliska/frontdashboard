@@ -167,9 +167,9 @@ async def test_owner_redeeming_their_own_invite_is_a_no_op(auth_client: AsyncCli
     shares = await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")
     assert shares.json() == []
 
-    # And the response says so: `None` is how this codebase spells owner (`effective_role`), so
-    # echoing the link's role here would announce a grant the request deliberately did not make.
-    assert accepted.json()["role"] is None
+    # And the response names the access they hold: echoing the link's role here would announce a
+    # grant the request deliberately did not make.
+    assert accepted.json()["role"] == "owner"
 
 
 async def test_accepting_notifies_the_owner(auth_client: AsyncClient) -> None:

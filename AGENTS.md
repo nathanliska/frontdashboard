@@ -195,8 +195,11 @@ from that:
 - Reject an authentication attempt with `raise auth_failure(...)`, never a bare `HTTPException`:
   building the 401/403 and counting it are one call, and `test_auth_failure_coverage.py` fails the
   build on a bare raise in the auth layer. Authorization refusals are a different thing and stay out.
-- `role is None` means **owner**, not "no access". `permissions.effective_role` returns `None` for
-  the creator and raises 404 for no access; never write `if role:` guards.
+- One role vocabulary, two types. `EffectiveRole` (owner/editor/viewer) is what
+  `permissions.effective_role` computes — owner for the creator, 404 for no access. `ShareRole` —
+  what a row stores and a client may request — is a `Literal` subset **derived** from it, so
+  `owner` is unrequestable by construction. Don't reintroduce a second enum, and go through
+  `as_share_role` when narrowing a stored value.
 - Child resources reach access through `load_dashboard_access` / `list_accessible_dashboard_ids`,
   which filter trashed dashboards. Querying a child table directly breaks that invariant.
 - SSE ordering is load-bearing. Commit and fan out through `commit_and_broadcast(...)`; a router
