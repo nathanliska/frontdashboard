@@ -202,6 +202,53 @@ async def test_only_users_can_hold_a_share(db_session: AsyncSession) -> None:
         )
 
 
+async def test_a_share_role_must_be_storable(db_session: AsyncSession) -> None:
+    owner = await make_db_user(db_session, label="owner")
+    recipient = await make_db_user(db_session, label="recipient")
+    dashboard = await make_db_dashboard(db_session, owner)
+
+    # Raw SQL because the ORM's `ShareRole` cannot express "owner" — which is the point: the CHECK
+    # is the only layer that can refuse a row written behind the application's back.
+    with pytest.raises(IntegrityError, match="ck_resource_shares_role"):
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO resource_shares
+                    (id, resource_type, resource_id, principal_type, principal_id, role, granted_by)
+                VALUES (:id, 'dashboard', :resource_id, 'user', :principal_id, 'owner', :granted_by)
+                """
+            ),
+            {
+                "id": uuid.uuid4(),
+                "resource_id": dashboard.id,
+                "principal_id": recipient.id,
+                "granted_by": owner.id,
+            },
+        )
+
+
+async def test_an_invite_role_must_be_storable(db_session: AsyncSession) -> None:
+    owner = await make_db_user(db_session, label="owner")
+    dashboard = await make_db_dashboard(db_session, owner)
+
+    with pytest.raises(IntegrityError, match="ck_dashboard_invites_role"):
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO dashboard_invites
+                    (id, dashboard_id, code_hash, role, created_by, expires_at)
+                VALUES (:id, :dashboard_id, :code_hash, 'owner', :created_by, now() + interval '1 hour')
+                """
+            ),
+            {
+                "id": uuid.uuid4(),
+                "dashboard_id": dashboard.id,
+                "code_hash": "not-a-real-hash-" + uuid.uuid4().hex,
+                "created_by": owner.id,
+            },
+        )
+
+
 async def test_purging_a_dashboard_takes_its_shares_with_it(db_session: AsyncSession) -> None:
     owner = await make_db_user(db_session, label="owner")
     recipient = await make_db_user(db_session, label="recipient")
