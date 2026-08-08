@@ -103,6 +103,10 @@ This *is* the access model:
 - **Editor** — edit the resource and its children.
 - **Viewer** — read-only.
 
+Any member may list the dashboard's members (`GET /members` — owner first, with display names):
+member names are already mutually visible in the activity feed, and the surfaces that attach
+people to things are editor surfaces, not owner ones. Managing shares stays owner-only.
+
 ## Related
 
 - **ADRs:** ADR-001 (per-resource sharing), ADR-007 (soft/hard delete boundary), ADR-015 (SSE
