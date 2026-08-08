@@ -166,6 +166,13 @@ Capabilities deliberately not built. Each states the condition that would make i
 - **Distinct counts of people or devices holding streams** — set cardinality is per-process and does
   not sum, so this needs the backplane to know the global set. Gauges were tried and removed
   (2026-08-04) rather than ship reading as a floor; worth building alongside, not before.
+- **Off-dashboard sharing (direct list/event shares)** — when someone actually asks to hand a single
+  list or event to a user without the whole dashboard. The scaffolding already exists and should not
+  be "simplified" away meanwhile: `ResourceType` carries `list`/`calendar_event`, the child `/shares`
+  endpoints are deliberate 409 stubs ([FDR-004](fdr/FDR-004-sharing-and-access.md)),
+  `resource_shares` is one dropped CHECK + FK away from polymorphic
+  ([ADR-001](adr/ADR-001-per-resource-sharing.md)), and the four capability predicates plus the
+  server-derived `can_*` booleans on dashboard summaries are the seams it lands in.
 - **SBOM + release signing** — when there are external contributors, redistribution, or a compliance
   ask.
 - **Dependency/SAST/secret/image scanning in CI** — when the app stores anything beyond calendars,

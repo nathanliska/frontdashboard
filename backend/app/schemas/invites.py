@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.share import ShareRole
+from app.models.share import EffectiveRole, ShareRole
 
 
 class InviteCreate(BaseModel):
@@ -44,7 +44,6 @@ class InvitePreviewResponse(BaseModel):
 class InviteAcceptResponse(BaseModel):
     dashboard_id: uuid.UUID
     dashboard_name: str
-    # `None` means owner, the same as `permissions.effective_role` — an owner holds no share row,
-    # so there is no role to report. Reporting the *link's* role instead said an owner had just
-    # been given viewer access, which is both untrue and contradicted by the grant never happening.
-    role: ShareRole | None
+    # The access the caller holds afterwards, not the role the link offered — reporting the link's
+    # role said an owner had just been given viewer access, a grant that never happened.
+    role: EffectiveRole

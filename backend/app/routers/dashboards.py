@@ -16,7 +16,7 @@ from app.models.activity import ChangedField
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.list import List, ListType
 from app.models.notification import Notification
-from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
+from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole, as_share_role
 from app.models.user import User
 from app.schemas.dashboards import (
     WIDGET_CONFIG_MODELS,
@@ -360,7 +360,7 @@ def _stage_dashboard_share_notification(
         action=action,
         actor_name=current_user.display_name,
         dashboard_name=dashboard.name,
-        role=ShareRole(share.role),
+        role=as_share_role(share.role),
     )
     notification = stage_notification(
         db,

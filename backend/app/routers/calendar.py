@@ -10,7 +10,7 @@ from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.models.dashboard import Dashboard
-from app.models.share import ResourceShare, ShareRole
+from app.models.share import EffectiveRole, ResourceShare
 from app.models.user import User
 from app.schemas.calendar import (
     CalendarEventCreate,
@@ -45,7 +45,7 @@ async def _get_event_access(
     event_id: uuid.UUID,
     user: User,
     db: AsyncSession,
-) -> tuple[CalendarEvent, Dashboard, list[ResourceShare], ShareRole | None]:
+) -> tuple[CalendarEvent, Dashboard, list[ResourceShare], EffectiveRole]:
     result = await db.execute(select(CalendarEvent).where(CalendarEvent.id == event_id, CalendarEvent.deleted_at.is_(None)))
     event = result.scalar_one_or_none()
     if event is None:

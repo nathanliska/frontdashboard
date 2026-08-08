@@ -4,27 +4,23 @@ import uuid
 
 from fastapi import HTTPException, status
 
-from app.models.share import PrincipalType, ResourceShare, ShareRole
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ShareRole, as_share_role
 
-# Ascending authority. Owner is deliberately absent: it is not a `ShareRole` but the *absence* of
-# one (see `effective_role`), so `rank` places it above every member here.
-_ROLE_RANK: dict[ShareRole, int] = {
-    ShareRole.viewer: 0,
-    ShareRole.editor: 1,
+# Ascending authority. Owner sits above every storable role because it is the creator, which no
+# share row can grant. A stored `ShareRole` is a member of `EffectiveRole`, so both rank directly.
+_ROLE_RANK: dict[EffectiveRole, int] = {
+    EffectiveRole.viewer: 0,
+    EffectiveRole.editor: 1,
+    EffectiveRole.owner: 2,
 }
 
 
-def rank(role: ShareRole | None) -> int:
-    """Comparable authority, owner (None) highest.
-
-    The single definition of "which role outranks which". It was previously written three times —
-    the iteration order picking a highest share, the membership test in `can_edit`, and anywhere
-    else that needed to compare — which is three chances for them to disagree when a role is added.
-    """
-    return len(_ROLE_RANK) if role is None else _ROLE_RANK[role]
+def rank(role: EffectiveRole) -> int:
+    """Comparable authority, owner highest — the single definition of which role outranks which."""
+    return _ROLE_RANK[role]
 
 
-def is_at_least(role: ShareRole | None, required: ShareRole | None) -> bool:
+def is_at_least(role: EffectiveRole, required: EffectiveRole) -> bool:
     """Whether `role` carries at least the authority of `required`."""
     return rank(role) >= rank(required)
 
@@ -32,9 +28,9 @@ def is_at_least(role: ShareRole | None, required: ShareRole | None) -> bool:
 def highest_role(roles: list[ShareRole]) -> ShareRole | None:
     """The strongest of some share roles, or None if there are none.
 
-    None here means "no roles given", not owner — callers that can be the owner establish that
-    before asking. Kept separate from `effective_role` because the invite path needs to know what
-    someone already holds *without* the 404 that means "no access at all".
+    None here means "no roles given" — it never means owner, which `effective_role` returns as a
+    value. Kept separate from that because the invite path needs to know what someone already
+    holds *without* the 404 that means "no access at all".
     """
     return max(roles, key=rank) if roles else None
 
@@ -43,16 +39,16 @@ def effective_role(
     resource_created_by: uuid.UUID,
     user_id: uuid.UUID,
     shares: list[ResourceShare],
-) -> ShareRole | None:
-    """Resolve a caller's role: owner is None, otherwise the highest direct share, else 404.
+) -> EffectiveRole:
+    """Resolve a caller's role: owner for the creator, otherwise the highest direct share, else 404.
 
     Everything resolving owner/viewer/editor goes through here, child resources included — they
     reach it through their dashboard's shares.
     """
     if resource_created_by == user_id:
-        return None
+        return EffectiveRole.owner
 
-    matching = [ShareRole(s.role) for s in shares if s.principal_type == PrincipalType.user and s.principal_id == user_id]
+    matching = [as_share_role(s.role) for s in shares if s.principal_type == PrincipalType.user and s.principal_id == user_id]
 
     strongest = highest_role(matching)
     if strongest is None:
@@ -60,35 +56,35 @@ def effective_role(
     return strongest
 
 
-def can_read(role: ShareRole | None) -> bool:  # noqa: ARG001
+def can_read(role: EffectiveRole) -> bool:  # noqa: ARG001
     return True
 
 
-def can_edit(role: ShareRole | None) -> bool:
+def can_edit(role: EffectiveRole) -> bool:
     """True for owner and editor. Covers all content mutations."""
-    return is_at_least(role, ShareRole.editor)
+    return is_at_least(role, EffectiveRole.editor)
 
 
-def can_delete(role: ShareRole | None) -> bool:
+def can_delete(role: EffectiveRole) -> bool:
     """Owner only — deleting the resource itself."""
-    return role is None
+    return role is EffectiveRole.owner
 
 
-def can_manage_shares(role: ShareRole | None) -> bool:
+def can_manage_shares(role: EffectiveRole) -> bool:
     """Owner only — adding/removing share entries."""
-    return role is None
+    return role is EffectiveRole.owner
 
 
-def assert_can_edit(role: ShareRole | None) -> None:
+def assert_can_edit(role: EffectiveRole) -> None:
     if not can_edit(role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Editor access required")
 
 
-def assert_can_delete(role: ShareRole | None) -> None:
+def assert_can_delete(role: EffectiveRole) -> None:
     if not can_delete(role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can delete")
 
 
-def assert_can_manage_shares(role: ShareRole | None) -> None:
+def assert_can_manage_shares(role: EffectiveRole) -> None:
     if not can_manage_shares(role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can manage sharing")

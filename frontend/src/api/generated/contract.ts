@@ -98,6 +98,9 @@ export const DashboardSummary = z.object({ access_description: z.string().nullab
 export type DashboardUpdate = z.infer<typeof DashboardUpdate>;
 export const DashboardUpdate = z.object({ name: z.string().min(1).max(100).nullable() }).partial();
 
+export type EffectiveRole = z.infer<typeof EffectiveRole>;
+export const EffectiveRole = z.enum(["viewer", "editor", "owner"]);
+
 export type ValidationError = z.infer<typeof ValidationError>;
 export const ValidationError = z.object({ ctx: z.record(z.string(), z.unknown()).optional(), input: z.unknown().optional(), loc: z.array(z.union([z.string(), z.number().int()])), msg: z.string(), type: z.string() });
 
@@ -111,7 +114,7 @@ export type InheritedDashboardAccessResponse = z.infer<typeof InheritedDashboard
 export const InheritedDashboardAccessResponse = z.object({ dashboard_id: z.uuid(), dashboard_name: z.string() });
 
 export type InviteAcceptResponse = z.infer<typeof InviteAcceptResponse>;
-export const InviteAcceptResponse = z.object({ dashboard_id: z.uuid(), dashboard_name: z.string(), role: ShareRole.nullable() });
+export const InviteAcceptResponse = z.object({ dashboard_id: z.uuid(), dashboard_name: z.string(), role: EffectiveRole });
 
 export type InviteCreate = z.infer<typeof InviteCreate>;
 export const InviteCreate = z.object({ role: ShareRole });

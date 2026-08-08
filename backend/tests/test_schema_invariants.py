@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.models.dashboard import Dashboard, DashboardWidget
-from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType
 from tests.helpers import (
     create_calendar_event,
     create_dashboard,
@@ -134,7 +134,7 @@ def _share(dashboard_id: uuid.UUID, principal_id: uuid.UUID, granted_by: uuid.UU
         resource_id=dashboard_id,
         principal_type=PrincipalType.user,
         principal_id=principal_id,
-        role=ShareRole.viewer,
+        role=EffectiveRole.viewer,
         granted_by=granted_by,
     )
 
