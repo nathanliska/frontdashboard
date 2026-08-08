@@ -30,31 +30,37 @@ import {
 import type { ShareCreate } from '../api/shares'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import {
-  isEchoSuppressible,
-  isFullyAppliedLocally,
-  isOnly,
-  movesDashboardRow,
-} from '../utils/dashboard/changedFields'
+  affectsTrash,
+  applyLocalDashboardSummaryUpdate,
+  canSkipDashboardSummaryReload,
+  canSuppressLocalDashboardEcho,
+  consumePendingDashboardMutationEcho,
+  getEventDashboardId,
+  isDashboardShareEvent,
+  isLayoutOnlyDashboardEvent,
+  patchWidgetConfig,
+  sortDashboardSummaries,
+} from '../utils/dashboard/dashboardEvents'
 import {
-  consumePendingDashboardMutation,
   createClientMutationId,
   forgetPendingDashboardMutation,
   recordPendingDashboardMutation,
   resetPendingDashboardMutations,
 } from '../utils/dashboard/dashboardMutation'
+import {
+  beginDashboardRequest,
+  dashboardLoadSatisfiesRequest,
+  isLatestDashboardRequest,
+  type LoadDashboardOptions,
+  mergeDashboardLoadOptions,
+  type NormalizedLoadDashboardOptions,
+  normalizeDashboardLoadOptions,
+  resetDashboardRequests,
+} from '../utils/dashboard/loadOptions'
+import { createDebouncedRefresh } from '../utils/debounce'
 import { useAuthStore } from './auth'
 import { bumpSessionGeneration, currentSessionGeneration } from './sessionGeneration'
 import { toast } from './toast'
-
-type LoadDashboardOptions = {
-  background?: boolean
-  surfaceAccessLoss?: boolean
-}
-
-type NormalizedLoadDashboardOptions = {
-  background: boolean
-  surfaceAccessLoss: boolean
-}
 
 type InFlightDashboardLoad = {
   id: string
@@ -68,69 +74,20 @@ type InFlightSummariesLoad = {
   promise: Promise<void>
 }
 
+type PendingLayoutSave = { dashboardId: string; layout: LayoutItem[]; retried?: boolean }
+
 let inFlightDashboardLoad: InFlightDashboardLoad | null = null
 let inFlightSummariesLoad: InFlightSummariesLoad | null = null
 // Layout saves are serialized: one PUT in flight at a time, plus at most one pending layout (the
 // latest wins). Drag/resize would otherwise fire unsequenced saves that all send the same base
 // version, so the second 409s against the user's own first save.
 let layoutSaveInFlight = false
-type PendingLayoutSave = { dashboardId: string; layout: LayoutItem[]; retried?: boolean }
 let pendingLayoutSave: PendingLayoutSave | null = null
 let queuedSummariesForceReload = false
 let inFlightTrashLoad: InFlightSummariesLoad | null = null
 let queuedTrashForceReload = false
-let latestDashboardRequest: { id: string; serial: number } | null = null
+
 const DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS = 100
-
-type DebouncedRefresh = {
-  schedule: (run: () => Promise<void>) => Promise<void>
-  cancel: () => void
-}
-
-/** Coalesce a burst of refresh requests into one call, resolving every caller with its result. */
-function createDebouncedRefresh(delayMs: number): DebouncedRefresh {
-  let timer: ReturnType<typeof setTimeout> | null = null
-  let promise: Promise<void> | null = null
-  let resolveOne: (() => void) | null = null
-  let rejectOne: ((error: unknown) => void) | null = null
-
-  return {
-    schedule(run) {
-      if (!promise) {
-        promise = new Promise<void>((resolve, reject) => {
-          resolveOne = resolve
-          rejectOne = reject
-        })
-      }
-      if (timer) clearTimeout(timer)
-
-      timer = setTimeout(() => {
-        timer = null
-        const resolve = resolveOne
-        const reject = rejectOne
-        promise = null
-        resolveOne = null
-        rejectOne = null
-        void run().then(
-          () => resolve?.(),
-          (error) => reject?.(error),
-        )
-      }, delayMs)
-
-      return promise
-    },
-    cancel() {
-      if (timer) clearTimeout(timer)
-      timer = null
-      // Settle any pending promise before dropping the handle, so a caller awaiting it across a
-      // sign-out does not hang forever.
-      resolveOne?.()
-      promise = null
-      resolveOne = null
-      rejectOne = null
-    },
-  }
-}
 
 const summariesRefresh = createDebouncedRefresh(DASHBOARD_SUMMARY_REFRESH_DEBOUNCE_MS)
 // A widget drag emits one layout event per save; without this each costs every other tab a full
@@ -139,192 +96,6 @@ const dashboardRefresh = createDebouncedRefresh(DASHBOARD_SUMMARY_REFRESH_DEBOUN
 
 const scheduleSummariesRefresh = (run: () => Promise<void>) => summariesRefresh.schedule(run)
 const scheduleDashboardRefresh = (run: () => Promise<void>) => dashboardRefresh.schedule(run)
-
-function getEventDashboardId(event: SseEvent): string | null {
-  if (event.entity_type === 'dashboard') {
-    return event.entity_id
-  }
-
-  return event.payload.dashboard_id ?? null
-}
-
-function getDashboardEventChangedFields(event: SseEvent): string[] {
-  return event.payload.changed_fields ?? []
-}
-
-function isDashboardShareEvent(event: SseEvent): boolean {
-  return (
-    event.event_type === 'dashboard.share_added' ||
-    event.event_type === 'dashboard.share_updated' ||
-    event.event_type === 'dashboard.share_removed'
-  )
-}
-
-function getDashboardEventClientMutationId(event: SseEvent): string | null {
-  return event.payload.client_mutation_id ?? null
-}
-
-function isLayoutOnlyDashboardEvent(event: SseEvent): boolean {
-  return (
-    event.event_type === 'dashboard.updated' &&
-    isOnly(getDashboardEventChangedFields(event), 'layout')
-  )
-}
-
-/**
- * Apply a widget-config change in place, returning whether it was handled.
- *
- * `dashboard.version` is deliberately untouched: only layout writes bump it, and it is what
- * `PUT /layout` compares to detect a concurrent edit. Writing it here would let a stale layout
- * save claim to be current. `changed_fields` being exactly `['widgets']` is what identifies a
- * config-only write — add and delete both carry `'layout'`.
- */
-function applyWidgetConfigPatch(
-  set: (updater: (state: DashboardState) => Partial<DashboardState> | DashboardState) => void,
-  event: SseEvent,
-): boolean {
-  if (!isOnly(getDashboardEventChangedFields(event), 'widgets')) return false
-
-  const widgetId = event.payload.widget_id
-  const config = event.payload.config
-  if (!widgetId || !config) return false
-
-  let patched = false
-  set((state) => {
-    if (!state.dashboard) return state
-    if (!state.dashboard.widgets.some((widget) => widget.id === widgetId)) return state
-    patched = true
-    return {
-      dashboard: {
-        ...state.dashboard,
-        widgets: state.dashboard.widgets.map((widget) =>
-          widget.id === widgetId ? { ...widget, config } : widget,
-        ),
-      },
-    }
-  })
-  return patched
-}
-
-function canSkipDashboardSummaryReload(event: SseEvent): boolean {
-  return (
-    event.event_type === 'dashboard.updated' &&
-    isFullyAppliedLocally(getDashboardEventChangedFields(event))
-  )
-}
-
-/**
- * A skipped reload still leaves a stale `updated_at`, but only where the write moved the row.
- * A widget-config change writes the widget alone, so there is nothing to touch.
- */
-function shouldApplyLocalDashboardSummaryTouch(event: SseEvent): boolean {
-  const changedFields = getDashboardEventChangedFields(event)
-  return (
-    event.event_type === 'dashboard.updated' &&
-    isFullyAppliedLocally(changedFields) &&
-    movesDashboardRow(changedFields)
-  )
-}
-
-function sortDashboardSummaries(summaries: DashboardSummary[]): DashboardSummary[] {
-  return [...summaries].sort((a, b) => {
-    if (a.is_favorite !== b.is_favorite) return Number(b.is_favorite) - Number(a.is_favorite)
-    return b.updated_at.localeCompare(a.updated_at)
-  })
-}
-
-function applyLocalDashboardSummaryUpdate(
-  summaries: DashboardSummary[],
-  event: SseEvent,
-): DashboardSummary[] {
-  if (!shouldApplyLocalDashboardSummaryTouch(event)) return summaries
-
-  const dashboardId = getEventDashboardId(event)
-  if (!dashboardId) return summaries
-
-  let didChange = false
-  const nextSummaries = summaries.map((summary) => {
-    if (summary.id !== dashboardId) return summary
-    const nextVersion =
-      event.entity_version > summary.version ? event.entity_version : summary.version
-    if (summary.version === nextVersion && summary.updated_at === event.created_at) {
-      return summary
-    }
-    didChange = true
-    return {
-      ...summary,
-      version: nextVersion,
-      updated_at: event.created_at,
-    }
-  })
-
-  return didChange ? sortDashboardSummaries(nextSummaries) : summaries
-}
-
-function consumePendingDashboardMutationEcho(event: SseEvent): boolean {
-  const currentUserId = useAuthStore.getState().user?.id
-  const clientMutationId = getDashboardEventClientMutationId(event)
-  if (!currentUserId || event.actor_id !== currentUserId || !clientMutationId) {
-    return false
-  }
-
-  return consumePendingDashboardMutation(clientMutationId)
-}
-
-function canSuppressLocalDashboardEcho(event: SseEvent): boolean {
-  if (event.event_type === 'dashboard.created' || event.event_type === 'dashboard.deleted') {
-    return true
-  }
-
-  // A role change alters nothing this client caches: summaries key access flags off share
-  // *existence* (is_shared/access_description), not role, and the settings modal already applied
-  // the PATCH response. Add/remove echoes still reload — they flip is_shared.
-  if (event.event_type === 'dashboard.share_updated') return true
-
-  if (event.event_type !== 'dashboard.updated') return false
-
-  return isEchoSuppressible(getDashboardEventChangedFields(event))
-}
-
-function normalizeDashboardLoadOptions(
-  options: LoadDashboardOptions = {},
-): NormalizedLoadDashboardOptions {
-  return {
-    background: options.background ?? false,
-    surfaceAccessLoss: options.surfaceAccessLoss ?? false,
-  }
-}
-
-function mergeDashboardLoadOptions(
-  current: NormalizedLoadDashboardOptions | null,
-  next: NormalizedLoadDashboardOptions,
-): NormalizedLoadDashboardOptions {
-  if (!current) return next
-  return {
-    background: current.background && next.background,
-    surfaceAccessLoss: current.surfaceAccessLoss || next.surfaceAccessLoss,
-  }
-}
-
-function dashboardLoadSatisfiesRequest(
-  current: NormalizedLoadDashboardOptions,
-  requested: NormalizedLoadDashboardOptions,
-): boolean {
-  return (
-    (requested.background || !current.background) &&
-    (!requested.surfaceAccessLoss || current.surfaceAccessLoss)
-  )
-}
-
-function beginDashboardRequest(id: string): number {
-  const serial = (latestDashboardRequest?.serial ?? 0) + 1
-  latestDashboardRequest = { id, serial }
-  return serial
-}
-
-function isLatestDashboardRequest(id: string, serial: number): boolean {
-  return latestDashboardRequest?.id === id && latestDashboardRequest.serial === serial
-}
 
 /**
  * Re-read the dashboard a conflicting save was based on, and replay this drag on top of it.
@@ -877,11 +648,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
 
       // Trash membership changed somewhere this client didn't see (own mutations update the
       // cache from their responses and suppress the echo, so this only fires for other sessions).
-      const affectsTrash =
-        event.event_type === 'dashboard.deleted' ||
-        (event.event_type === 'dashboard.updated' &&
-          getDashboardEventChangedFields(event).includes('restored'))
-      if (affectsTrash && !shouldSuppressLocalMutationReload && get().trashLoaded) {
+      if (affectsTrash(event) && !shouldSuppressLocalMutationReload && get().trashLoaded) {
         void get().loadTrash(true)
       }
 
@@ -918,7 +685,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           return
         }
 
-        if (applyWidgetConfigPatch(set, event)) {
+        // Read and write in the same tick: the patch is built against this snapshot, so an await
+        // in between would let it overwrite a dashboard someone else's frame had since replaced.
+        const patched = patchWidgetConfig(get().dashboard, event)
+        if (patched) {
+          set({ dashboard: patched })
           await summariesRefreshPromise
           return
         }
@@ -994,7 +765,7 @@ export function resetDashboardData(): void {
   layoutSaveInFlight = false
   pendingLayoutSave = null
   queuedSummariesForceReload = false
-  latestDashboardRequest = null
+  resetDashboardRequests()
   resetPendingDashboardMutations()
   useDashboardStore.setState({
     summaries: [],

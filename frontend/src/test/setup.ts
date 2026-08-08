@@ -5,6 +5,7 @@ import * as resetRegistry from '../resources/resetRegistry'
 import * as connectionStore from '../stores/connection'
 import * as toastStore from '../stores/toast'
 import * as dashboardMutation from '../utils/dashboard/dashboardMutation'
+import * as loadOptions from '../utils/dashboard/loadOptions'
 import * as listMutation from '../utils/lists/listMutation'
 
 /**
@@ -23,5 +24,6 @@ afterEach(() => {
   connectionStore.__resetConnectionStoreForTests?.()
   resetRegistry.resetAllResourceData?.()
   dashboardMutation.__resetPendingDashboardMutationsForTests?.()
+  loadOptions.resetDashboardRequests?.()
   listMutation.__resetPendingListMutationsForTests?.()
 })
