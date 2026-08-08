@@ -25,7 +25,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
-| 5 | Infra / CI / ops | #33◐, #35◐, #34◐, #20◐, #66 |
+| 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
 | — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58◐, #59, #60, #61, #63, #64, #65, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
@@ -41,11 +41,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   and need the box rather than this repo: an **off-host destination** (a copy on the machine that
   died is not a backup), and running the rehearsal against a **real production dump** — everything so
   far was proven against synthetic ones. *(Small — harness done)*
-- **#34◐ — Deploy a matched pair of images.** CI publishes both `:<short-sha>` tags before either
-  `latest` moves, so no failure order leaves the two describing different commits
-  ([rollback.md](runbooks/rollback.md)). Remaining is one step on the box: the GHCR packages are
-  private, so the host needs `docker login ghcr.io` with a `read:packages` token before its first
-  pull. *(Small — one login on the host)*
 - **#66 — The only external availability alert cannot fire.** `SiteDown` and
   `CertificateExpiringSoon` both name `probe_success{job="blackbox-public"}` and no
   `blackbox_exporter` is installed, so both stay silent forever — every other target is inside the
