@@ -13,9 +13,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dashboard import Dashboard
-from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType, as_share_role
 from app.models.user import User
-from app.schemas.shares import ShareCreate, ShareResponse
+from app.schemas.shares import DashboardMemberResponse, ShareCreate, ShareResponse
 from app.services import permissions
 
 
@@ -195,6 +195,26 @@ async def create_share(
     # role, and the returned row is the authoritative one.
     result = await db.execute(stmt, execution_options={"populate_existing": True})
     return result.scalars().one()
+
+
+async def resolve_member_responses(
+    dashboard: Dashboard,
+    shares: list[ResourceShare],
+    db: AsyncSession,
+) -> list[DashboardMemberResponse]:
+    """Everyone with access, named: the same set `dashboard_audience_user_ids` addresses.
+
+    Owner first, then members by display name — a stable order for a picker.
+    """
+    role_by_user = {s.principal_id: as_share_role(s.role) for s in shares if s.principal_type == PrincipalType.user}
+
+    names_result = await db.execute(select(User.id, User.display_name).where(User.id.in_([dashboard.user_id, *role_by_user])))
+    name_by_id = {row[0]: row[1] for row in names_result.all()}
+
+    members = [DashboardMemberResponse(user_id=user_id, display_name=name_by_id[user_id], role=role) for user_id, role in role_by_user.items()]
+    members.sort(key=lambda member: member.display_name.casefold())
+    owner = DashboardMemberResponse(user_id=dashboard.user_id, display_name=name_by_id[dashboard.user_id], role=EffectiveRole.owner)
+    return [owner, *members]
 
 
 async def resolve_share_responses(

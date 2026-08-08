@@ -32,7 +32,7 @@ from app.schemas.dashboards import (
     WidgetResponse,
     WidgetResponseAdapter,
 )
-from app.schemas.shares import ShareCreate, ShareResponse, ShareUpdate
+from app.schemas.shares import DashboardMemberResponse, ShareCreate, ShareResponse, ShareUpdate
 from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.notifications import stage_notification
@@ -47,6 +47,7 @@ from app.services.shares import (
     get_resource_shares,
     insert_shares,
     load_dashboard_access,
+    resolve_member_responses,
     resolve_share_responses,
 )
 from app.sse.choreography import Fanout, commit_and_broadcast
@@ -1037,6 +1038,21 @@ async def delete_widget(
         actor_id=current_user.id,
         fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
     )
+
+
+@router.get("/{dashboard_id}/members", response_model=list[DashboardMemberResponse])
+async def list_dashboard_members(
+    dashboard_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[DashboardMemberResponse]:
+    """Everyone with access to this dashboard, owner first.
+
+    Readable by any member, unlike `/shares`: the picker attaching people to events is an editor
+    surface, and display names are already mutually visible in the activity feed.
+    """
+    dashboard, shares, _role = await load_dashboard_access(dashboard_id, current_user, db)
+    return await resolve_member_responses(dashboard, shares, db)
 
 
 @router.get("/{dashboard_id}/shares", response_model=list[ShareResponse])

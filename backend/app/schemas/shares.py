@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.share import PrincipalType, ShareRole
+from app.models.share import EffectiveRole, PrincipalType, ShareRole
 
 
 class ShareCreate(BaseModel):
@@ -14,6 +14,14 @@ class ShareCreate(BaseModel):
 
 class ShareUpdate(BaseModel):
     role: ShareRole
+
+
+class DashboardMemberResponse(BaseModel):
+    """One person with access to a dashboard, owner included — a picker row, not a grant."""
+
+    user_id: uuid.UUID
+    display_name: str
+    role: EffectiveRole
 
 
 class ShareResponse(BaseModel):
