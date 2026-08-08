@@ -19,40 +19,17 @@ import pytest
 
 from app.models.activity import ChangedField
 from app.schemas.dashboards import DashboardUpdate
+from tests.conventions import dict_values_for_key, parsed_router_modules
 
-_ROUTERS = Path(__file__).resolve().parents[1] / "app" / "routers"
+_ROUTER_IDS = [path.name for path, _ in parsed_router_modules()]
+
 _VOCABULARY = {member.value for member in ChangedField}
 
 
-def _router_modules() -> list[Path]:
-    return sorted(p for p in _ROUTERS.glob("*.py") if p.name != "__init__.py")
-
-
-def _changed_fields_values(tree: ast.AST) -> list[tuple[int, str]]:
-    """Every literal string assigned into a `changed_fields` key, with its line number.
-
-    Only literals are reachable this way; a computed value (the PATCH body's field names) is
-    covered by `test_patchable_dashboard_fields_are_vocabulary` instead.
-    """
-    found: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Dict):
-            continue
-        for key, value in zip(node.keys, node.values, strict=True):
-            if not (isinstance(key, ast.Constant) and key.value == "changed_fields"):
-                continue
-            if not isinstance(value, (ast.List, ast.Tuple)):
-                continue
-            for element in value.elts:
-                if isinstance(element, ast.Constant) and isinstance(element.value, str):
-                    found.append((element.lineno, element.value))
-    return found
-
-
-@pytest.mark.parametrize("module", _router_modules(), ids=lambda p: p.name)
-def test_routers_emit_only_vocabulary_members(module: Path) -> None:
-    tree = ast.parse(module.read_text())
-    offenders = [f"{module.name}:{lineno} emits {value!r}" for lineno, value in _changed_fields_values(tree) if value not in _VOCABULARY]
+@pytest.mark.parametrize(("module", "tree"), parsed_router_modules(), ids=_ROUTER_IDS)
+def test_routers_emit_only_vocabulary_members(module: Path, tree: ast.AST) -> None:
+    emitted = dict_values_for_key(tree, "changed_fields")
+    offenders = [f"{module.name}:{lineno} emits {value!r}" for lineno, value in emitted if value not in _VOCABULARY]
     assert not offenders, (
         "changed_fields values outside the ChangedField vocabulary:\n  "
         + "\n  ".join(offenders)
@@ -60,11 +37,10 @@ def test_routers_emit_only_vocabulary_members(module: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("module", _router_modules(), ids=lambda p: p.name)
-def test_routers_reference_the_enum_rather_than_bare_strings(module: Path) -> None:
+@pytest.mark.parametrize(("module", "tree"), parsed_router_modules(), ids=_ROUTER_IDS)
+def test_routers_reference_the_enum_rather_than_bare_strings(module: Path, tree: ast.AST) -> None:
     """A bare string still passes the vocabulary check today and drifts silently tomorrow."""
-    tree = ast.parse(module.read_text())
-    offenders = [f"{module.name}:{lineno} hardcodes {value!r}" for lineno, value in _changed_fields_values(tree)]
+    offenders = [f"{module.name}:{lineno} hardcodes {value!r}" for lineno, value in dict_values_for_key(tree, "changed_fields")]
     assert not offenders, "changed_fields should be built from ChangedField members, not string literals:\n  " + "\n  ".join(offenders)
 
 

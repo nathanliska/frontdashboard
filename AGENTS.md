@@ -154,6 +154,37 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   generated from it (`make contracts`, committed, CI fails on drift) and every response body is
   validated at the network boundary. Never hand-write a client DTO.
 
+## Which Rules Fail the Build
+
+Most rules in this file are judgment you are trusted with. These nine are not — each has a test
+that fails CI, and its failure message tells you what to do. Everything else here is guidance,
+so if you are wondering whether a convention bites, this table is the answer.
+
+| Convention | Guard | Why |
+|---|---|---|
+| Mutating routes carry `@limiter.limit` | `test_rate_limit_coverage.py` | [ADR-013](docs/adr/ADR-013-rate-limit-cf-connecting-ip.md) |
+| Auth rejections raise `auth_failure(...)` | `test_auth_failure_coverage.py` | Below, *Backend Principles* |
+| Fan-out goes through `commit_and_broadcast` | `test_sse_choreography_coverage.py` | [ADR-015](docs/adr/ADR-015-sse-write-choreography.md) |
+| `changed_fields` stays inside its vocabulary | `test_changed_fields_coverage.py` | [FDR-008 §10](docs/fdr/FDR-008-realtime-sse.md) |
+| A labelled metric pre-creates its children | `test_observability_coverage.py` | Below, *Backend Principles* |
+| Every activity type has feed copy + a category | `test_activity.py` | Below, *Frontend Principles* |
+| Node is pinned once, in `.nvmrc` | `test_toolchain_coverage.py` | — |
+| Commit types are listed once | `test_commit_convention_coverage.py` | — |
+| `react-resizable` tracks react-grid-layout | `test_frontend_pin_coverage.py` | — |
+
+These guards read source, so a refactor can make one **pass having checked nothing** — the
+dangerous failure, because a silent guard looks exactly like a satisfied one. Three rules follow
+from that:
+
+- A guard that discovers what to check must fail when it discovers nothing. Parametrizing over the
+  discovery is how: `empty_parameter_set_mark = "fail_at_collect"` turns an empty set into a
+  collection error, where the default skips and exits 0. A guard that instead reads a fixed list
+  asserts on it directly, as `test_rate_limit_coverage.py` does.
+- Enumerate router sources through `backend/tests/conventions.py`, which walks with `rglob` so a
+  router that grows into a package stays covered. Another directory may be globbed directly.
+- Match the shape you mean. A guard scraping `case '...'` for event types must require the dotted
+  form, or an unrelated inner `switch` joins the result and a `default:` truncates the scan.
+
 ## Backend Principles
 
 - Every non-GET route needs `_csrf: None = Depends(require_csrf)` **and**
@@ -204,7 +235,8 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   echo obliges you to patch whatever the refetch would have refreshed.
 - A wire vocabulary the client branches on — `changed_fields`, resync `scopes` — is closed and
   generated from the backend enum, and an unrecognised value must **widen** the response: refetch,
-  don't suppress. A newer backend must never talk an older tab out of refreshing.
+  don't suppress. A newer backend must never talk an older tab out of refreshing;
+  `test_changed_fields_coverage.py` fails the build on a producer inventing a value.
 - A new activity event type needs a `formatActivityEvent` case **and** a place in one of
   `ACTIVITY_CATEGORIES`, or it renders as a raw string and no filter can reach it;
   `test_activity.py` fails the build on either.
