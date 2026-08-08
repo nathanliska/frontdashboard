@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.share import ShareRole
 
 
 class DashboardInvite(Base):
@@ -30,7 +31,7 @@ class DashboardInvite(Base):
         nullable=False,
     )
     code_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    role: Mapped[ShareRole] = mapped_column(String(20), nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
