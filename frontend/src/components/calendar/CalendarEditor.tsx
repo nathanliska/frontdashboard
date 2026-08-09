@@ -1,5 +1,6 @@
 import { Minus, Plus } from 'lucide-react'
 import { type FormEvent, memo, useEffect, useEffectEvent, useRef, useState } from 'react'
+import type { CalendarEventParticipantResponse } from '../../api/generated/contract'
 import {
   type CalendarEditorDraft,
   type EditorMode,
@@ -21,6 +22,7 @@ import {
   toLocalDateTimeValue,
 } from '../../utils/calendar/calendarEditorDurationUtils'
 import { cn } from '../../utils/shared/cn'
+import { CalendarEditorParticipantsSection } from './CalendarEditorParticipantsSection'
 import { CalendarEditorRepeatSection } from './CalendarEditorRepeatSection'
 
 type RepeatCadenceMode = Exclude<RecurrenceMode, 'none'>
@@ -30,6 +32,8 @@ export const CalendarEditor = memo(function CalendarEditor({
   initialDraft,
   selectedDate,
   activeDashboardName,
+  dashboardId = null,
+  initialParticipants = [],
   onClose,
   onSubmit,
 }: {
@@ -37,10 +41,13 @@ export const CalendarEditor = memo(function CalendarEditor({
   initialDraft: CalendarEditorDraft
   selectedDate?: Date | null
   activeDashboardName?: string
+  dashboardId?: string | null
+  initialParticipants?: CalendarEventParticipantResponse[]
   onClose: () => void
   onSubmit: (draft: CalendarEditorDraft) => Promise<void>
 }) {
   const [title, setTitle] = useState(initialDraft.title)
+  const [participants, setParticipants] = useState(initialDraft.participants)
   const [description, setDescription] = useState(initialDraft.description)
   const [eventLocation, setEventLocation] = useState(initialDraft.eventLocation)
   const [startsAt, setStartsAt] = useState(initialDraft.startsAt)
@@ -224,6 +231,7 @@ export const CalendarEditor = memo(function CalendarEditor({
         recurrenceInterval,
         recurrenceWeekdays,
         recurrenceEndsOn,
+        participants,
       })
     } finally {
       setSubmitting(false)
@@ -372,6 +380,20 @@ export const CalendarEditor = memo(function CalendarEditor({
             onToggleRecurrenceWeekday={toggleRecurrenceWeekday}
           />
         )}
+
+        {/* Participants */}
+        <CalendarEditorParticipantsSection
+          dashboardId={dashboardId}
+          selected={participants}
+          initialParticipants={initialParticipants}
+          onToggle={(userId) =>
+            setParticipants((current) =>
+              current.includes(userId)
+                ? current.filter((id) => id !== userId)
+                : [...current, userId],
+            )
+          }
+        />
 
         {/* Error / overlap warning */}
         {(scheduleError || overlapWarning) && (

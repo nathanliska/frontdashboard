@@ -16,6 +16,7 @@ function makeDraft(overrides: Partial<CalendarEditorDraft> = {}): CalendarEditor
     recurrenceInterval: '1',
     recurrenceWeekdays: [],
     recurrenceEndsOn: '',
+    participants: [],
     ...overrides,
   }
 }

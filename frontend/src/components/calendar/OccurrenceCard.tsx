@@ -2,6 +2,7 @@ import { Clock3, MapPin, Pencil, Repeat2, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { CalendarOccurrence } from '../../api/calendar'
 import { formatOccurrenceSpan, isMultiDayOccurrence } from '../../utils/calendar/calendarUtils'
+import { ParticipantDots } from './ParticipantDots'
 
 export function OccurrenceCard({
   occurrence,
@@ -21,6 +22,7 @@ export function OccurrenceCard({
             {occurrence.recurring && <EventBadge>Recurring</EventBadge>}
             {occurrence.is_exception && <EventBadge>Exception</EventBadge>}
             {isMultiDayOccurrence(occurrence) && <EventBadge>Multi-day</EventBadge>}
+            <ParticipantDots participants={occurrence.participants} />
           </div>
           <div className="mt-2 flex flex-col gap-1.5 text-sm text-zinc-400">
             <div className="flex items-center gap-2">

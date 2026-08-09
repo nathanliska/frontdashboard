@@ -119,3 +119,28 @@ async def test_an_unshared_member_stays_on_the_event_by_name(auth_client: AsyncC
     members = await auth_client.get(f"/api/dashboards/{dashboard['id']}/members")
     assert zoe_id not in {m["user_id"] for m in members.json()}
     await zoe.aclose()
+
+
+async def test_a_former_member_can_be_kept_but_not_newly_added(auth_client: AsyncClient) -> None:
+    """The first participant edit after a departure must not force dropping the departed member."""
+    dashboard = await create_dashboard(auth_client)
+    owner_id = await _member_id(auth_client)
+    zoe = await _join_as(auth_client, dashboard["id"], "zoe-kept@example.com", "Zoe")
+    zoe_id = await _member_id(zoe)
+    kept = await create_calendar_event(auth_client, dashboard["id"], title="Kept", participants=[zoe_id])
+    other = await create_calendar_event(auth_client, dashboard["id"], title="Other")
+
+    shares = await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")
+    share_id = next(s["id"] for s in shares.json() if s["principal_id"] == zoe_id)
+    set_csrf(auth_client)
+    assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}/shares/{share_id}")).status_code == 204
+
+    # Resubmitting the departed member alongside a newcomer is an ordinary edit, not a 422.
+    patched = await auth_client.patch(f"/api/calendar/events/{kept['id']}", json={"participants": [zoe_id, owner_id]})
+    assert patched.status_code == 200, patched.text
+    assert {p["user_id"] for p in patched.json()["participants"]} == {zoe_id, owner_id}
+
+    # But an event that never named them cannot gain them now.
+    refused = await auth_client.patch(f"/api/calendar/events/{other['id']}", json={"participants": [zoe_id]})
+    assert refused.status_code == 422, refused.text
+    await zoe.aclose()

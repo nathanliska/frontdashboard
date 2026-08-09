@@ -7,6 +7,7 @@ import {
   CalendarWidgetResponse,
   type ClockWidgetCreate,
   ClockWidgetResponse,
+  DashboardMemberResponse,
   DashboardResponse,
   DashboardSummary,
   type LayoutItem,
@@ -92,6 +93,15 @@ export async function apiListDashboards(): Promise<DashboardSummary[]> {
   const res = await apiFetch('/api/dashboards')
   if (!res.ok) throw new Error('Failed to load dashboards')
   return parseJson(res, z.array(DashboardSummary))
+}
+
+// Not single-flighted: fetched once per editor open, from a non-StrictMode-doubled handler.
+export async function apiListDashboardMembers(
+  dashboardId: string,
+): Promise<DashboardMemberResponse[]> {
+  const res = await apiFetch(`/api/dashboards/${dashboardId}/members`)
+  if (!res.ok) throw new Error('Failed to load members')
+  return parseJson(res, z.array(DashboardMemberResponse))
 }
 
 // Not single-flighted: the only caller is the dashboard store's loadDashboard, which coalesces by

@@ -63,12 +63,14 @@ async def _replace_participants(
     dashboard: Dashboard,
     shares: list[ResourceShare],
 ) -> None:
-    """Replace the event's participant set, refusing anyone who is not a member.
+    """Replace the event's participant set, refusing any newcomer who is not a member.
 
-    Membership is checked at write time only; a later unshare leaves rows in place on purpose,
-    so the event keeps naming its people (FDR-006).
+    Ids already on the event stay legal even after an unshare — otherwise the first edit after a
+    departure would force dropping the departed member, the silent rewrite FDR-006 rules out.
     """
-    outsiders = set(user_ids) - dashboard_audience_user_ids(dashboard, shares)
+    existing_result = await db.execute(select(CalendarEventParticipant.user_id).where(CalendarEventParticipant.calendar_event_id == event.id))
+    existing_ids = set(existing_result.scalars().all())
+    outsiders = set(user_ids) - existing_ids - dashboard_audience_user_ids(dashboard, shares)
     if outsiders:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
