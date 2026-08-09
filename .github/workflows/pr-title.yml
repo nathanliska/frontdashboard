@@ -2,10 +2,11 @@ name: PR title
 
 # Its own workflow because it needs `edited`, which CI must not have: a title or body tweak would
 # otherwise rebuild both images and rerun smoke. Nothing here checks out the repo, so it is seconds.
+# No `synchronize`: a push cannot change the title, and each run still bills a full minute.
 on:
   pull_request:
     branches: ["main"]
-    types: [opened, reopened, edited, synchronize]
+    types: [opened, reopened, edited]
 
 permissions:
   contents: read

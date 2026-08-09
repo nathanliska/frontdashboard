@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-08-07_
+_Last updated: 2026-08-09_
 
 ## What's built
 
@@ -322,11 +322,11 @@ _Last updated: 2026-08-07_
   validated at the network boundary, widgets are a discriminated union on `widget_type`, and SSE
   frames validate against generated frame schemas — so a new backend event type or widget type is a
   compile error in the client code that must handle it.
-- CI: independent parallel lanes, so one run reports every failure rather than the first — lint
-  (Ruff/Biome), dead-code and dependency gates (knip, deptry), workflow linting (actionlint), tests
-  (pytest, Vitest), `ty` + `tsc` type checks, contract drift, a dependency audit (osv-scanner over
-  both lockfiles), and both production image builds as a matrix. A **smoke job** then boots the two
-  images together against a throwaway database — [docker-compose.smoke.yml](docker-compose.smoke.yml)
+- CI: four grouped jobs, because Actions bills each job rounded up to a full minute and ten small
+  lanes cost double their compute — repo checks (actionlint, prod Compose structure, alert rules,
+  osv-scanner over both lockfiles, contract drift), backend (Ruff, `ty`, deptry, pytest), frontend
+  (Biome, knip, `tsc`, Vitest), and an **images & smoke** job that builds both production images
+  and boots them together against a throwaway database — [docker-compose.smoke.yml](docker-compose.smoke.yml)
   layered over the real prod Compose file, so a drift between it and the Caddy upstream fails here
   rather than at deploy — and asserts the serving contract of
   [ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md): readiness through the proxy,
