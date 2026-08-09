@@ -200,7 +200,10 @@ export function occursOnDate(occurrence: CalendarOccurrence, day: Date): boolean
 }
 
 export function isMultiDayOccurrence(occurrence: CalendarOccurrence): boolean {
-  return dateKey(occurrence.occurrence_start) !== dateKey(occurrence.occurrence_end)
+  // The end is exclusive — a one-day all-day event ends at the next midnight, and a timed event
+  // may end exactly on one. Compare the last covered instant, not the endpoint.
+  const lastCoveredMs = Date.parse(occurrence.occurrence_end) - 1
+  return dateKey(occurrence.occurrence_start) !== dateKey(new Date(lastCoveredMs))
 }
 
 export function occurrencesForDate(
