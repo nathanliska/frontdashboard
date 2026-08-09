@@ -118,7 +118,10 @@ export async function deleteCalendarEvent(
   }
 }
 
-export function handleCalendarResourceEvent(event: ResourceEvent): void {
+export function handleCalendarResourceEvent(
+  event: ResourceEvent,
+  { isOwnEcho = false }: { isOwnEcho?: boolean } = {},
+): void {
   if (event.event_type === 'resync') {
     invalidateAllOccurrences()
     calendarEventDetails.clear()
@@ -127,6 +130,10 @@ export function handleCalendarResourceEvent(event: ResourceEvent): void {
   }
 
   if (!event.event_type.startsWith('calendar.')) return
+
+  // The mutation path already refetched occurrences after the commit and cached the response as
+  // the event's truth — this frame adds nothing, and acting on it would throw that cache away.
+  if (isOwnEcho) return
 
   invalidateCalendarEvent(event.entity_id)
   invalidateDashboardOccurrences(getDashboardId(event))

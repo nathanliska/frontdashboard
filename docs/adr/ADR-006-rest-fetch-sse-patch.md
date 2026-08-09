@@ -1,6 +1,6 @@
 # ADR-006: REST for Initial Fetch, SSE for Incremental Patch
 
-**Date:** 2026-07-20
+**Date:** 2026-07-20 (amended 2026-08-09)
 
 ## Context
 
@@ -21,9 +21,10 @@ Every resource does an **initial REST fetch**; **SSE events then patch caches in
   only if the payload is absent (older events) or the patched result diverges from cache.
 - **Cold events invalidate-and-refetch.** Rarer events (create/delete) deliberately keep the
   self-healing invalidate-and-refetch path — correctness is worth more than bytes on cold paths.
-- **Echo suppression.** Mutations send a `clientMutationId`; the matching SSE echo is skipped via
-  `consumePending…MutationEcho`. On mutation *error* the client must `forgetPending…Mutation(id)` or
-  the bookkeeping leaks.
+- **Echo suppression.** Every mutation carries the tab's per-load id (`X-Client-Id`, stamped
+  centrally in `apiFetch`); the SSE payload echoes it back as `origin_client_id` and a frame
+  stamped with this tab's id is skipped. A pure comparison — no per-mutation bookkeeping.
+  (Amended 2026-08-09: a per-mutation id registry preceded this; FDR-008 records the trade.)
 - **Wiring is two-sided.** A new entity type needs both its event names in `hooks/useSSE.ts` and a
   `handleXResourceEvent` router in `resources/*` — miss either and the UI silently goes stale
   ([AGENTS.md](../../AGENTS.md)).
@@ -34,8 +35,8 @@ Every resource does an **initial REST fetch**; **SSE events then patch caches in
   single in-place patch, no round-trip.
 - **Self-healing on cold paths**: create/delete re-fetch, so a missed or malformed event
   can't leave the UI permanently wrong for those operations.
-- **Echo bookkeeping is a leak risk**: the `clientMutationId` map must be cleaned on both success and
-  error; the error-path `forgetPending…` is easy to forget and has no visible symptom until it
-  accumulates.
+- **A lost mutation response leaves the issuing tab stale**: its echo is suppressed regardless,
+  so recovery waits for the retried action, the next foreign event, or a resync. Accepted — a
+  per-mutation registry could not close the window either, and cost bookkeeping at every call site.
 - **Payload shape is part of the contract**: hot events must carry enough to patch; changing a
   payload to omit a field silently forces the divergence-refetch fallback.

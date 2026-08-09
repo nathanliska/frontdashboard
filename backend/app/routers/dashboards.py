@@ -1,8 +1,8 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import ValidationError
 from sqlalchemy import case, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -50,11 +50,10 @@ from app.services.shares import (
     resolve_member_responses,
     resolve_share_responses,
 )
-from app.sse.choreography import Fanout, commit_and_broadcast
+from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
-ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id", max_length=128)]
 _INVALID_SHARE_TARGET_DETAIL = "Share targets must be active verified users other than the owner"
 
 
@@ -278,13 +277,13 @@ async def _build_dashboard_event_message(
     entity_type: str = "dashboard",
     entity_id: uuid.UUID | None = None,
     entity_version: int | None = None,
-    client_mutation_id: str | None = None,
+    client_id: str | None = None,
 ) -> dict:
     # Name every dashboard event after its dashboard: the feed renders "You rearranged widgets on
     # X", and a layout or widget write has no other reason to carry the name.
     event_payload = {"dashboard_id": str(dashboard.id), "name": dashboard.name, **(payload or {})}
-    if client_mutation_id is not None:
-        event_payload["client_mutation_id"] = client_mutation_id
+    if client_id is not None:
+        event_payload["origin_client_id"] = client_id
     activity = log_event(
         db,
         event_type=event_type,
@@ -468,7 +467,7 @@ async def create_dashboard(
     body: DashboardCreate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
     """Create a dashboard and apply any initial shares."""
@@ -494,7 +493,7 @@ async def create_dashboard(
         current_user=current_user,
         dashboard=dashboard,
         payload={"name": dashboard.name},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -519,7 +518,7 @@ async def update_dashboard_meta(
     body: DashboardUpdate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
     """Update dashboard metadata (currently just the name)."""
@@ -538,7 +537,7 @@ async def update_dashboard_meta(
             # fails the build if one is ever added that isn't.
             "changed_fields": sorted(ChangedField(field) for field in body.model_fields_set),
         },
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -565,7 +564,7 @@ async def delete_dashboard(
     dashboard_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Move a dashboard to the trash.
@@ -596,7 +595,7 @@ async def delete_dashboard(
         current_user=current_user,
         dashboard=dashboard,
         payload={"name": dashboard.name},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -638,7 +637,7 @@ async def restore_dashboard(
     dashboard_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
     """Bring a trashed dashboard back, shares and children intact.
@@ -664,7 +663,7 @@ async def restore_dashboard(
         current_user=current_user,
         dashboard=dashboard,
         payload={"changed_fields": [ChangedField.restored]},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -709,7 +708,7 @@ async def update_layout(
     body: LayoutUpdate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
     """Replace dashboard layout coordinates with optimistic version checks."""
@@ -736,7 +735,7 @@ async def update_layout(
         current_user=current_user,
         dashboard=dashboard,
         payload={"version": dashboard.version, "changed_fields": [ChangedField.layout]},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -764,7 +763,7 @@ async def add_widget(
     body: WidgetCreate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
     """Add a widget to a dashboard, creating bound resources when needed."""
@@ -900,7 +899,7 @@ async def add_widget(
             "widget_action": "added",
             "changed_fields": [ChangedField.widgets, ChangedField.layout],
         },
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -928,7 +927,7 @@ async def update_widget(
     body: WidgetConfigUpdate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> WidgetResponse:
     """Update widget configuration on a dashboard."""
@@ -975,7 +974,7 @@ async def update_widget(
             "config": widget.config,
             "changed_fields": [ChangedField.widgets],
         },
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -994,7 +993,7 @@ async def delete_widget(
     widget_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete a widget and remove its layout entry from the dashboard."""
@@ -1031,7 +1030,7 @@ async def delete_widget(
             "widget_action": "removed",
             "changed_fields": [ChangedField.widgets, ChangedField.layout],
         },
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -1076,7 +1075,7 @@ async def add_dashboard_share(
     body: ShareCreate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> ShareResponse:
     """Create or upsert a direct share on a dashboard."""
@@ -1113,7 +1112,7 @@ async def add_dashboard_share(
             share,
             action=action,
         ),
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -1132,7 +1131,7 @@ async def update_dashboard_share(
     body: ShareUpdate,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> ShareResponse:
     """Change the role for an existing dashboard share."""
@@ -1161,7 +1160,7 @@ async def update_dashboard_share(
         current_user=current_user,
         dashboard=dashboard,
         payload=_dashboard_share_event_payload(dashboard, share, action="updated"),
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -1180,7 +1179,7 @@ async def delete_dashboard_share(
     share_id: uuid.UUID,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Remove a direct share from a dashboard."""
@@ -1205,7 +1204,7 @@ async def delete_dashboard_share(
         current_user=current_user,
         dashboard=dashboard,
         payload=_dashboard_share_event_payload(dashboard, share, action="removed"),
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     if share.principal_type == PrincipalType.user:
         user_result = await db.execute(select(User).where(User.id == share.principal_id))

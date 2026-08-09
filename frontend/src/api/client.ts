@@ -1,3 +1,5 @@
+import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
+
 // Both names, because only production can prefix the cookie (`__Host-` requires Secure). Ordered,
 // not optional: a browser holding a superseded `csrf_token` carries both, and one regex with an
 // optional prefix returns whichever came first — the stale one 403s every mutation.
@@ -68,10 +70,12 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   }
   if (MUTATING.has(method)) {
     headers.set('X-CSRF-Token', getCsrfToken())
+    // Stamped here so every mutation is covered by construction — a new call site cannot forget.
+    headers.set('X-Client-Id', CLIENT_INSTANCE_ID)
   }
 
-  // GET only — echo suppression, not idempotency: the pending `client_mutation_id` is consumed
-  // by the first SSE frame, so a retry's second frame reads as someone else's change.
+  // GET only: a retried write could double-apply a non-idempotent request. Echo suppression no
+  // longer constrains this — every frame carries the tab's id, retried or not.
   const maxAttempts = MUTATING.has(method) ? 1 : MAX_ATTEMPTS
 
   for (let attempt = 0; ; attempt++) {

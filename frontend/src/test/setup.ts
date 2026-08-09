@@ -4,9 +4,7 @@ import * as apiClient from '../api/client'
 import * as resetRegistry from '../resources/resetRegistry'
 import * as connectionStore from '../stores/connection'
 import * as toastStore from '../stores/toast'
-import * as dashboardMutation from '../utils/dashboard/dashboardMutation'
 import * as loadOptions from '../utils/dashboard/loadOptions'
-import * as listMutation from '../utils/lists/listMutation'
 
 /**
  * Cancel what a test armed and drop what it cached.
@@ -23,7 +21,5 @@ afterEach(() => {
   apiClient.__resetApiClientForTests?.()
   connectionStore.__resetConnectionStoreForTests?.()
   resetRegistry.resetAllResourceData?.()
-  dashboardMutation.__resetPendingDashboardMutationsForTests?.()
   loadOptions.resetDashboardRequests?.()
-  listMutation.__resetPendingListMutationsForTests?.()
 })

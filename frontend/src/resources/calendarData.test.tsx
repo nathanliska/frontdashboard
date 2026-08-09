@@ -2,10 +2,13 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CalendarOccurrence } from '../api/calendar'
+import { useAuthStore } from '../stores/auth'
+import { CLIENT_INSTANCE_ID, isOwnFrame } from '../utils/shared/clientInstance'
 import {
   getCalendarEvent,
   handleCalendarResourceEvent,
   resetCalendarData,
+  updateCalendarEvent,
   useCalendarOccurrences,
 } from './calendarData'
 
@@ -196,5 +199,58 @@ describe('calendarData', () => {
     const refreshed = await getCalendarEvent('event-1')
     expect(refreshed.title).toBe('Updated launch review')
     expect(apiGetEvent).toHaveBeenCalledTimes(2)
+  })
+
+  it('suppresses the echo of an own update: no refetch, caches kept', async () => {
+    useAuthStore.setState({ user: { id: 'user-1' } } as never)
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiUpdateEvent.mockResolvedValue(makeEvent({ title: 'Renamed' }))
+
+    render(<CalendarProbe />)
+    await screen.findByText('Launch review')
+    expect(apiListOccurrences).toHaveBeenCalledTimes(1)
+
+    // The mutation path itself refetches once — that is the sanctioned server-expansion fetch.
+    await act(async () => {
+      await updateCalendarEvent('event-1', { title: 'Renamed' })
+    })
+    await waitFor(() => expect(apiListOccurrences).toHaveBeenCalledTimes(2))
+
+    // The frame comes back stamped with this tab's id, as the backend echoes the header.
+    const echo = {
+      event_id: 2,
+      event_type: 'calendar.event.updated' as const,
+      entity_type: 'calendar_event',
+      entity_id: 'event-1',
+      entity_version: 2,
+      actor_id: 'user-1',
+      actor_display_name: 'Me',
+      payload: { dashboard_id: 'dash-1', origin_client_id: CLIENT_INSTANCE_ID },
+      created_at: '2026-04-05T00:00:01Z',
+    }
+    const isOwnEcho = isOwnFrame(echo, 'user-1')
+    expect(isOwnEcho).toBe(true)
+    act(() => {
+      handleCalendarResourceEvent(echo, { isOwnEcho })
+    })
+
+    // No third occurrences fetch, and the PATCH response is still the cached details truth.
+    expect(apiListOccurrences).toHaveBeenCalledTimes(2)
+    const cached = await getCalendarEvent('event-1')
+    expect(cached.title).toBe('Renamed')
+    expect(apiGetEvent).not.toHaveBeenCalled()
+
+    // Another tab's stamp is foreign — same user, different tab must still refetch.
+    const fromOtherTab = {
+      ...echo,
+      event_id: 3,
+      payload: { dashboard_id: 'dash-1', origin_client_id: 'another-tab' },
+    }
+    const foreign = isOwnFrame(fromOtherTab, 'user-1')
+    expect(foreign).toBe(false)
+    act(() => {
+      handleCalendarResourceEvent(fromOtherTab, { isOwnEcho: foreign })
+    })
+    await waitFor(() => expect(apiListOccurrences).toHaveBeenCalledTimes(3))
   })
 })

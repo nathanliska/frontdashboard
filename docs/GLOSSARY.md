@@ -116,7 +116,7 @@ cascade for real, as opposed to the `deleted_at` stamp that put it there. See
 
 **Zustand store** — Where singular app/session state lives (`auth`, `dashboards`, `notifications`, `toast`, `confirm`, `ui`). One of the two client state layers. See [ADR-005](adr/ADR-005-two-layer-client-state.md).
 
-**clientMutationId / echo suppression** — A mutation tags itself with a `clientMutationId`; the matching SSE echo is skipped so the client doesn't double-apply its own change. Must be forgotten on error or the bookkeeping leaks. See [ADR-006](adr/ADR-006-rest-fetch-sse-patch.md).
+**origin client id / echo suppression** — Every mutation carries the tab's per-load `X-Client-Id`; the SSE payload echoes it back as `origin_client_id`, and the issuing tab skips frames carrying its own stamp — its mutation response already applied the change. A pure comparison, stamped centrally in `apiFetch`. See [ADR-006](adr/ADR-006-rest-fetch-sse-patch.md), [FDR-008](fdr/FDR-008-realtime-sse.md).
 
 **Hot / cold events** — Hot SSE events (reorder, item check/update) carry new state for in-place patching; cold events (create/delete) invalidate-and-refetch. See [ADR-006](adr/ADR-006-rest-fetch-sse-patch.md).
 

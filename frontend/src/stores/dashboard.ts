@@ -34,19 +34,13 @@ import {
   applyLocalDashboardSummaryUpdate,
   canSkipDashboardSummaryReload,
   canSuppressLocalDashboardEcho,
-  consumePendingDashboardMutationEcho,
   getEventDashboardId,
   isDashboardShareEvent,
   isLayoutOnlyDashboardEvent,
+  isOwnDashboardEcho,
   patchWidgetConfig,
   sortDashboardSummaries,
 } from '../utils/dashboard/dashboardEvents'
-import {
-  createClientMutationId,
-  forgetPendingDashboardMutation,
-  recordPendingDashboardMutation,
-  resetPendingDashboardMutations,
-} from '../utils/dashboard/dashboardMutation'
 import {
   beginDashboardRequest,
   dashboardLoadSatisfiesRequest,
@@ -59,6 +53,7 @@ import {
 } from '../utils/dashboard/loadOptions'
 import { createDebouncedRefresh } from '../utils/debounce'
 import { useAuthStore } from './auth'
+import { useConnectionStore } from './connection'
 import { bumpSessionGeneration, currentSessionGeneration } from './sessionGeneration'
 import { toast } from './toast'
 
@@ -230,14 +225,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
 
     async createDashboard(data) {
       const guard = sessionGuard()
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
       try {
-        const summary = await apiCreateDashboard(data, { clientMutationId })
+        const summary = await apiCreateDashboard(data)
         guard.set((s) => ({ summaries: [summary, ...s.summaries] }))
         return summary
       } catch {
-        forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to create dashboard.')
         return null
       }
@@ -245,17 +237,14 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
 
     async deleteDashboard(id) {
       const guard = sessionGuard()
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
       try {
-        await apiDeleteDashboard(id, { clientMutationId })
+        await apiDeleteDashboard(id)
         guard.set((s) => ({ summaries: s.summaries.filter((d) => d.id !== id) }))
         // The row moved to the trash; the DELETE response carries no trash entry (purge_at), so
         // refresh the cache it just invalidated.
         if (guard.isCurrent() && get().trashLoaded) void get().loadTrash(true)
         return true
       } catch {
-        forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to delete dashboard.')
         return false
       }
@@ -294,10 +283,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
 
     async restoreDashboard(id) {
       const guard = sessionGuard()
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
       try {
-        const summary = await apiRestoreDashboard(id, { clientMutationId })
+        const summary = await apiRestoreDashboard(id)
         // The response is the restored summary, so both caches update locally — the SSE echo
         // (changed_fields ["restored"]) is suppressed instead of triggering a reload.
         guard.set((s) => ({
@@ -306,7 +293,6 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
         }))
         return summary
       } catch (err) {
-        forgetPendingDashboardMutation(clientMutationId)
         toast.error(err instanceof Error ? err.message : 'Failed to restore dashboard.')
         return null
       }
@@ -338,10 +324,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
 
     async renameDashboard(id, name) {
       const guard = sessionGuard()
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
       try {
-        const updated = await apiUpdateDashboardMeta(id, { name }, { clientMutationId })
+        const updated = await apiUpdateDashboardMeta(id, { name })
         guard.set((s) => ({
           summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
           dashboard:
@@ -355,7 +339,6 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
         }))
         return true
       } catch {
-        forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to rename dashboard.')
         return false
       }
@@ -366,6 +349,23 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     async loadDashboard(id, options = {}) {
       const guard = sessionGuard()
       const requestedOptions = normalizeDashboardLoadOptions(options)
+
+      // SSE keeps the held dashboard current while the stream is live (patches, background
+      // refreshes, resync on recovery), so a foreground re-open has nothing to fetch. Claiming
+      // the serial still invalidates any in-flight load for another dashboard.
+      if (
+        !requestedOptions.background &&
+        inFlightDashboardLoad?.id !== id &&
+        get().dashboard?.id === id &&
+        !get().loadError &&
+        !get().conflict &&
+        useConnectionStore.getState().status === 'connected'
+      ) {
+        beginDashboardRequest(id)
+        guard.set({ loading: false })
+        return
+      }
+
       const requestSerial = beginDashboardRequest(id)
 
       if (inFlightDashboardLoad?.id === id) {
@@ -482,19 +482,12 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           // Re-read the dashboard each pass: the previous save bumped its version, and the user
           // may have navigated to a different dashboard entirely.
           if (!current || current.id !== pending.dashboardId) continue
-
-          const clientMutationId = createClientMutationId()
-          recordPendingDashboardMutation(clientMutationId)
           try {
-            const result = await apiUpdateLayout(current.id, pending.layout, current.version, {
-              clientMutationId,
-            })
+            const result = await apiUpdateLayout(current.id, pending.layout, current.version)
             if (!guard.isCurrent()) {
-              forgetPendingDashboardMutation(clientMutationId)
               return
             }
             if (result.conflict) {
-              forgetPendingDashboardMutation(clientMutationId)
               if (pending.retried) {
                 // Beaten twice by a live co-editor. Stop rather than fight them for the grid.
                 pendingLayoutSave = null
@@ -531,7 +524,6 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
               conflict: false,
             }))
           } catch {
-            forgetPendingDashboardMutation(clientMutationId)
             pendingLayoutSave = null
             toast.error('Failed to save layout.')
             return
@@ -549,14 +541,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       const guard = sessionGuard()
       const { dashboard } = get()
       if (!dashboard) return false
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
       try {
-        const updated = await apiAddWidget(dashboard.id, widget, { clientMutationId })
+        const updated = await apiAddWidget(dashboard.id, widget)
         guard.set({ dashboard: updated })
         return true
       } catch (err) {
-        forgetPendingDashboardMutation(clientMutationId)
         toast.error(err instanceof Error ? err.message : 'Failed to add widget.')
         return false
       }
@@ -566,10 +555,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       const guard = sessionGuard()
       const { dashboard } = get()
       if (!dashboard) return false
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
       try {
-        await apiRemoveWidget(dashboard.id, widgetId, { clientMutationId })
+        await apiRemoveWidget(dashboard.id, widgetId)
         // Optimistic: remove from local state without a full refetch
         guard.set((s) => {
           if (!s.dashboard) return s
@@ -584,7 +571,6 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
         })
         return true
       } catch {
-        forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to remove widget.')
         return false
       }
@@ -594,10 +580,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       const guard = sessionGuard()
       const { dashboard } = get()
       if (!dashboard) return false
-      const clientMutationId = createClientMutationId()
-      recordPendingDashboardMutation(clientMutationId)
       try {
-        const updated = await apiUpdateWidget(dashboard.id, widgetId, config, { clientMutationId })
+        const updated = await apiUpdateWidget(dashboard.id, widgetId, config)
         guard.set((s) => {
           if (!s.dashboard) return s
           return {
@@ -611,7 +595,6 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
         })
         return true
       } catch {
-        forgetPendingDashboardMutation(clientMutationId)
         toast.error('Failed to update widget.')
         return false
       }
@@ -642,7 +625,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       const isLayoutOnlyEvent = isLayoutOnlyDashboardEvent(event)
       const shouldSkipSummaryReload = canSkipDashboardSummaryReload(event)
       const shouldSurfaceAccessLoss = isDashboardShareEvent(event)
-      const hasLocalMutationEcho = consumePendingDashboardMutationEcho(event)
+      const hasLocalMutationEcho = isOwnDashboardEcho(event)
       const shouldSuppressLocalMutationReload =
         hasLocalMutationEcho && canSuppressLocalDashboardEcho(event)
 
@@ -766,7 +749,6 @@ export function resetDashboardData(): void {
   pendingLayoutSave = null
   queuedSummariesForceReload = false
   resetDashboardRequests()
-  resetPendingDashboardMutations()
   useDashboardStore.setState({
     summaries: [],
     summariesLoaded: false,

@@ -23,7 +23,12 @@ vi.mock('../resources/listData', () => ({
 }))
 
 vi.mock('../resources/calendarData', () => ({
+  consumePendingCalendarMutationEcho: vi.fn(() => false),
   handleCalendarResourceEvent: vi.fn(),
+}))
+
+vi.mock('../resources/membersData', () => ({
+  handleMembersResourceEvent: vi.fn(),
 }))
 
 vi.mock('../resources/agendaData', () => ({
@@ -224,6 +229,7 @@ describe('useSSE', () => {
     await waitFor(() => {
       expect(handleCalendarResourceEvent).toHaveBeenCalledWith(
         expect.objectContaining({ event_type: 'calendar.event.updated' }),
+        { isOwnEcho: false },
       )
     })
   })

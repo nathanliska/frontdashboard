@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import { useAuthStore } from '../stores/auth'
 import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
+import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import {
   __resetListDataForTests,
   addListItem,
@@ -192,9 +193,6 @@ describe('listData', () => {
     apiGetLists.mockResolvedValueOnce([makeListSummary()])
     apiGetList.mockResolvedValueOnce(makeListDetail())
     apiUpdateItem.mockResolvedValueOnce(makeListItem({ checked: true }))
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
-      '11111111-1111-4111-8111-111111111111',
-    )
 
     render(<ListProbe />)
 
@@ -217,7 +215,7 @@ describe('listData', () => {
         payload: {
           list_id: 'list-1',
           dashboard_id: 'dash-1',
-          client_mutation_id: '11111111-1111-4111-8111-111111111111',
+          origin_client_id: CLIENT_INSTANCE_ID,
         },
         created_at: '2026-04-05T00:00:02Z',
       })
@@ -231,9 +229,6 @@ describe('listData', () => {
     apiGetLists.mockResolvedValueOnce([makeListSummary()])
     apiGetList.mockResolvedValueOnce(makeListDetail())
     apiUpdateList.mockResolvedValueOnce(makeListSummary({ name: 'Weekend groceries' }))
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
-      '22222222-2222-4222-8222-222222222222',
-    )
 
     render(<ListProbe />)
 
@@ -255,7 +250,7 @@ describe('listData', () => {
         actor_display_name: 'Example User',
         payload: {
           dashboard_id: 'dash-1',
-          client_mutation_id: '22222222-2222-4222-8222-222222222222',
+          origin_client_id: CLIENT_INSTANCE_ID,
         },
         created_at: '2026-04-05T00:00:03Z',
       })

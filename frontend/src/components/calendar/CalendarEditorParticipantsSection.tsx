@@ -1,9 +1,5 @@
-import { useEffect, useState } from 'react'
-import { apiListDashboardMembers } from '../../api/dashboards'
-import type {
-  CalendarEventParticipantResponse,
-  DashboardMemberResponse,
-} from '../../api/generated/contract'
+import type { CalendarEventParticipantResponse } from '../../api/generated/contract'
+import { useDashboardMembers } from '../../resources/membersData'
 import { participantColor, participantInitial } from '../../utils/participantPalette'
 
 /**
@@ -22,23 +18,10 @@ export function CalendarEditorParticipantsSection({
   initialParticipants: CalendarEventParticipantResponse[]
   onToggle: (userId: string) => void
 }) {
-  const [members, setMembers] = useState<DashboardMemberResponse[] | null>(null)
-
-  useEffect(() => {
-    if (!dashboardId) return
-    let cancelled = false
-    apiListDashboardMembers(dashboardId)
-      .then((loaded) => {
-        if (!cancelled) setMembers(loaded)
-      })
-      .catch(() => {
-        // Stay hidden on failure: with an empty member list every selected participant would
-        // read as "(former)", so no picker beats a lying one. The draft passes through untouched.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [dashboardId])
+  // Cached across editor opens; share events invalidate it. On failure `data` stays null and the
+  // section stays hidden: with an empty roster every selected participant would read as
+  // "(former)", so no picker beats a lying one. The draft passes through untouched.
+  const members = useDashboardMembers(dashboardId).data ?? null
 
   const memberIds = new Set((members ?? []).map((member) => member.user_id))
   const formerSelected = initialParticipants.filter(

@@ -7,13 +7,12 @@ vi.mock('./client', () => ({ apiFetch: vi.fn() }))
 import { apiReorderItems, apiReorderLists } from './lists'
 
 describe('reorder api', () => {
-  it('PUTs item order with the client mutation header', async () => {
-    await apiReorderItems('list-1', ['b', 'a'], { clientMutationId: 'm1' })
+  it('PUTs item order', async () => {
+    await apiReorderItems('list-1', ['b', 'a'])
     expect(requestVoid).toHaveBeenCalledWith(
       '/api/lists/list-1/items/order',
       expect.objectContaining({
         method: 'PUT',
-        headers: { 'X-Client-Mutation-Id': 'm1' },
         body: JSON.stringify({ item_ids: ['b', 'a'] }),
       }),
       expect.any(String),

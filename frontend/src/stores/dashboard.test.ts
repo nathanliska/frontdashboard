@@ -1,12 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dashboard, DashboardSummary, TrashedDashboard } from '../api/dashboards'
 import { RESYNC_SIGNAL, type SseEvent } from '../hooks/useSSE'
-import {
-  __resetPendingDashboardMutationsForTests,
-  consumePendingDashboardMutation,
-  recordPendingDashboardMutation,
-} from '../utils/dashboard/dashboardMutation'
+import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import { useAuthStore } from './auth'
+import { useConnectionStore } from './connection'
 import { resetDashboardData, useDashboardStore } from './dashboard'
 
 const { apiUpdatePreferences } = vi.hoisted(() => ({
@@ -128,7 +125,6 @@ function makeSseEvent(overrides: Partial<SseEvent> = {}): SseEvent {
 describe('useDashboardStore', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    __resetPendingDashboardMutationsForTests()
     // Clear module-level load/layout-drain state so an in-flight drain from a prior test can't leak.
     resetDashboardData()
     useAuthStore.setState({
@@ -352,8 +348,6 @@ describe('useDashboardStore', () => {
   })
 
   it('suppresses all reloads for a local share role-change echo (share_updated)', async () => {
-    recordPendingDashboardMutation('share-mut-2')
-
     useDashboardStore.setState({
       summaries: [makeSummary()],
       summariesLoaded: true,
@@ -366,7 +360,7 @@ describe('useDashboardStore', () => {
         entity_version: 2,
         payload: {
           dashboard_id: 'dash-1',
-          client_mutation_id: 'share-mut-2',
+          origin_client_id: CLIENT_INSTANCE_ID,
         },
       }),
     )
@@ -377,7 +371,6 @@ describe('useDashboardStore', () => {
   })
 
   it('still reloads summaries and the active dashboard for local share echoes', async () => {
-    recordPendingDashboardMutation('share-mut-1')
     apiListDashboards.mockResolvedValue([makeSummary({ is_shared: true })])
     apiGetDashboard.mockResolvedValue(makeDashboard({ is_shared: true }))
 
@@ -393,7 +386,7 @@ describe('useDashboardStore', () => {
         entity_version: 2,
         payload: {
           dashboard_id: 'dash-1',
-          client_mutation_id: 'share-mut-1',
+          origin_client_id: CLIENT_INSTANCE_ID,
         },
       }),
     )
@@ -474,7 +467,7 @@ describe('useDashboardStore', () => {
 
     const savePromise = useDashboardStore.getState().saveLayout(layoutA)
     await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
-    expect(apiUpdateLayout).toHaveBeenNthCalledWith(1, 'dash-1', layoutA, 1, expect.anything())
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(1, 'dash-1', layoutA, 1)
 
     // B then C arrive while A is still in flight: only the latest survives.
     void useDashboardStore.getState().saveLayout(layoutB)
@@ -484,7 +477,7 @@ describe('useDashboardStore', () => {
     resolvers[0]({ conflict: false, dashboard: makeDashboard({ version: 2, layout: layoutA }) })
     await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(2))
     // The follow-up PUT carries the bumped version and the coalesced latest layout (B dropped).
-    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutC, 2, expect.anything())
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutC, 2)
 
     resolvers[1]({ conflict: false, dashboard: makeDashboard({ version: 3, layout: layoutC }) })
     await savePromise
@@ -673,7 +666,7 @@ describe('useDashboardStore', () => {
         entity_version: 2,
         payload: {
           dashboard_id: 'dash-1',
-          client_mutation_id: '11111111-1111-4111-8111-111111111111',
+          origin_client_id: CLIENT_INSTANCE_ID,
           changed_fields: ['layout'],
         },
       }),
@@ -726,7 +719,7 @@ describe('useDashboardStore', () => {
       makeSseEvent({
         payload: {
           dashboard_id: 'dash-1',
-          client_mutation_id: '22222222-2222-4222-8222-222222222222',
+          origin_client_id: CLIENT_INSTANCE_ID,
           changed_fields: ['widgets'],
         },
       }),
@@ -761,7 +754,7 @@ describe('useDashboardStore', () => {
         entity_version: 2,
         payload: {
           dashboard_id: 'dash-1',
-          client_mutation_id: '33333333-3333-4333-8333-333333333333',
+          origin_client_id: CLIENT_INSTANCE_ID,
           changed_fields: ['name'],
           name: 'Renamed Dashboard',
         },
@@ -872,6 +865,60 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().dashboard?.name).toBe('Current Dashboard')
     expect(useDashboardStore.getState().loading).toBe(false)
     expect(useDashboardStore.getState().loadError).toBe(false)
+  })
+
+  it('skips the network when re-opening the held dashboard with the stream connected', async () => {
+    useConnectionStore.setState({ status: 'connected' })
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    await useDashboardStore.getState().loadDashboard('dash-1')
+
+    expect(apiGetDashboard).not.toHaveBeenCalled()
+    expect(useDashboardStore.getState().dashboard?.id).toBe('dash-1')
+    expect(useDashboardStore.getState().loading).toBe(false)
+  })
+
+  it('refetches the held dashboard while the stream is degraded', async () => {
+    useConnectionStore.setState({ status: 'reconnecting' })
+    apiGetDashboard.mockResolvedValue(makeDashboard({ name: 'Fresh Dashboard' }))
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    await useDashboardStore.getState().loadDashboard('dash-1')
+
+    expect(apiGetDashboard).toHaveBeenCalledTimes(1)
+    expect(useDashboardStore.getState().dashboard?.name).toBe('Fresh Dashboard')
+  })
+
+  it('background loads of the held dashboard always fetch, even while connected', async () => {
+    useConnectionStore.setState({ status: 'connected' })
+    apiGetDashboard.mockResolvedValue(makeDashboard({ name: 'Fresh Dashboard' }))
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    await useDashboardStore.getState().loadDashboard('dash-1', { background: true })
+
+    expect(apiGetDashboard).toHaveBeenCalledTimes(1)
+    expect(useDashboardStore.getState().dashboard?.name).toBe('Fresh Dashboard')
+  })
+
+  it('a skipped re-open still invalidates an in-flight load for another dashboard', async () => {
+    useConnectionStore.setState({ status: 'connected' })
+    let resolveOther!: (value: Dashboard) => void
+    apiGetDashboard.mockImplementation(
+      () =>
+        new Promise<Dashboard>((resolve) => {
+          resolveOther = resolve
+        }),
+    )
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    const otherLoad = useDashboardStore.getState().loadDashboard('dash-2')
+    await useDashboardStore.getState().loadDashboard('dash-1')
+
+    resolveOther(makeDashboard({ id: 'dash-2' }))
+    await otherLoad
+
+    expect(useDashboardStore.getState().dashboard?.id).toBe('dash-1')
+    expect(useDashboardStore.getState().loading).toBe(false)
   })
 
   it('ignores stale dashboard load errors after navigating to a different dashboard mid-load', async () => {
@@ -1127,18 +1174,13 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().trash).toHaveLength(0)
     expect(useDashboardStore.getState().summaries[0]?.id).toBe('dash-9')
 
-    const clientMutationId = (
-      apiRestoreDashboard.mock.calls[0]?.[1] as { clientMutationId?: string } | undefined
-    )?.clientMutationId
-    expect(clientMutationId).toBeTruthy()
-
     await useDashboardStore.getState().handleDashboardEvent(
       makeSseEvent({
         entity_id: 'dash-9',
         payload: {
           dashboard_id: 'dash-9',
           changed_fields: ['restored'],
-          client_mutation_id: clientMutationId,
+          origin_client_id: CLIENT_INSTANCE_ID,
         },
       }),
     )
@@ -1168,7 +1210,7 @@ describe('useDashboardStore', () => {
     await vi.waitFor(() => expect(useDashboardStore.getState().trash).toHaveLength(0))
   })
 
-  it('resetDashboardData clears store fields and the pending-mutation map', () => {
+  it('resetDashboardData clears store fields', () => {
     useDashboardStore.setState({
       summaries: [makeSummary()],
       summariesLoaded: true,
@@ -1176,7 +1218,6 @@ describe('useDashboardStore', () => {
       loadError: true,
       conflict: true,
     })
-    recordPendingDashboardMutation('m-1')
 
     resetDashboardData()
 
@@ -1186,8 +1227,6 @@ describe('useDashboardStore', () => {
     expect(s.dashboard).toBeNull()
     expect(s.loadError).toBe(false)
     expect(s.conflict).toBe(false)
-    // The stale account's pending-mutation id no longer suppresses an echo.
-    expect(consumePendingDashboardMutation('m-1')).toBe(false)
   })
 
   it('drops a summaries load that resolves after a reset', async () => {
@@ -1292,12 +1331,7 @@ describe('useDashboardStore', () => {
 
     await useDashboardStore.getState().saveLayout([])
 
-    expect(apiUpdateLayout).toHaveBeenCalledWith(
-      'dash-1',
-      [],
-      1,
-      expect.objectContaining({ clientMutationId: expect.any(String) }),
-    )
+    expect(apiUpdateLayout).toHaveBeenCalledWith('dash-1', [], 1)
     expect(useDashboardStore.getState().conflict).toBe(true)
     expect(useDashboardStore.getState().dashboard).toEqual(currentDashboard)
   })

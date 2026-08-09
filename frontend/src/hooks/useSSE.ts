@@ -10,11 +10,13 @@ import {
 } from '../api/generated/contract'
 import { handleAgendaResourceEvent } from '../resources/agendaData'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
-import { consumePendingListMutationEcho, handleListResourceEvent } from '../resources/listData'
+import { handleListResourceEvent } from '../resources/listData'
+import { handleMembersResourceEvent } from '../resources/membersData'
 import { useAuthStore } from '../stores/auth'
 import { useConnectionStore } from '../stores/connection'
 import { useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
+import { isOwnFrame } from '../utils/shared/clientInstance'
 
 /**
  * A server activity frame, straight from the contract.
@@ -235,9 +237,8 @@ export function useSSE(): void {
     function onListEvent(e: MessageEvent<string>) {
       const data = readActivityFrame(e)
       if (!data) return
-      // Asked once and passed down: the check consumes the pending mutation id, so whichever
-      // handler called it first would be the only one told the truth.
-      const isOwnEcho = consumePendingListMutationEcho(data)
+      // Decided once and passed down so every handler acts on the same verdict.
+      const isOwnEcho = isOwnFrame(data, userId)
       // Order is convention, not correctness — no handler reads another's writes.
       addActivity(data, userId)
       handleListResourceEvent(data, { isOwnEcho })
@@ -250,9 +251,10 @@ export function useSSE(): void {
     function onCalendarEvent(e: MessageEvent<string>) {
       const data = readActivityFrame(e)
       if (!data) return
+      const isOwnEcho = isOwnFrame(data, userId)
       addActivity(data, userId)
-      handleCalendarResourceEvent(data)
-      handleAgendaResourceEvent(data)
+      handleCalendarResourceEvent(data, { isOwnEcho })
+      handleAgendaResourceEvent(data, { isOwnEcho })
     }
 
     function onNotification(e: MessageEvent<string>) {
@@ -269,6 +271,7 @@ export function useSSE(): void {
       const data = readActivityFrame(e)
       if (!data) return
       addActivity(data, userId)
+      handleMembersResourceEvent(data)
       void handleDashboardEvent(data)
     }
 
@@ -280,7 +283,10 @@ export function useSSE(): void {
       if (wants('list')) handleListResourceEvent(RESYNC_SIGNAL)
       if (wants('calendar')) handleCalendarResourceEvent(RESYNC_SIGNAL)
       if (wants('list') || wants('calendar')) handleAgendaResourceEvent(RESYNC_SIGNAL)
-      if (wants('dashboard')) void handleDashboardEvent(RESYNC_SIGNAL)
+      if (wants('dashboard')) {
+        handleMembersResourceEvent(RESYNC_SIGNAL)
+        void handleDashboardEvent(RESYNC_SIGNAL)
+      }
       // Unconditional: notifications are not activity events, so no scope can rule them out.
       void loadUnreadCount()
       const { panelOpen, activityLoaded, loadActivity } = useNotificationsStore.getState()

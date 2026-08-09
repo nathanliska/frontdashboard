@@ -7,11 +7,6 @@ import {
 } from '../../api/dashboards'
 import type { ResourceShare, ShareRole } from '../../api/shares'
 import { toast } from '../../stores/toast'
-import {
-  createClientMutationId,
-  forgetPendingDashboardMutation,
-  recordPendingDashboardMutation,
-} from '../../utils/dashboard/dashboardMutation'
 import { cn } from '../../utils/shared/cn'
 import { Dialog } from '../ui/Dialog'
 import { SharePanel, type SharePanelItem, type ShareRoleOption } from '../ui/SharePanel'
@@ -120,18 +115,10 @@ export function DashboardSettingsModal({
 
     // Recorded so the dashboard store recognizes the SSE echo as ours — a role change alters
     // nothing the store caches, so recognizing it is what prevents a pointless summaries refetch.
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
     try {
-      const updated = await apiUpdateDashboardShare(
-        dashboard.id,
-        share.id,
-        { role },
-        { clientMutationId },
-      )
+      const updated = await apiUpdateDashboardShare(dashboard.id, share.id, { role })
       setShares((current) => current.map((entry) => (entry.id === share.id ? updated : entry)))
     } catch {
-      forgetPendingDashboardMutation(clientMutationId)
       toast.error('Failed to update permission.')
     }
   }
@@ -139,14 +126,10 @@ export function DashboardSettingsModal({
   async function handleRemoveShare(item: SharePanelItem) {
     const share = findShare(item)
     if (!share) return
-
-    const clientMutationId = createClientMutationId()
-    recordPendingDashboardMutation(clientMutationId)
     try {
-      await apiRemoveDashboardShare(dashboard.id, share.id, { clientMutationId })
+      await apiRemoveDashboardShare(dashboard.id, share.id)
       setShares((current) => current.filter((entry) => entry.id !== share.id))
     } catch {
-      forgetPendingDashboardMutation(clientMutationId)
       toast.error('Failed to remove permission.')
     }
   }
