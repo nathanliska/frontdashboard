@@ -145,7 +145,7 @@ export function formatCalendarOccurrenceCellLabel(
 
   const dayId = dateKey(day)
   const startId = dateKey(occurrence.occurrence_start)
-  const endId = dateKey(occurrence.occurrence_end)
+  const endId = lastCoveredDayKey(occurrence.occurrence_end)
 
   if (dayId === startId) {
     return `${variant === 'compact' ? 'Start' : 'Starts'} ${formatCellTime(occurrence.occurrence_start, variant)} ${occurrence.title}`
@@ -199,11 +199,14 @@ export function occursOnDate(occurrence: CalendarOccurrence, day: Date): boolean
   return start < dayEnd && end > dayStart
 }
 
+// The end is exclusive — a one-day all-day event ends at the next midnight, and a timed event
+// may end exactly on one. Day math against the end must use the last instant it covers.
+function lastCoveredDayKey(end: string): string {
+  return dateKey(new Date(Date.parse(end) - 1))
+}
+
 export function isMultiDayOccurrence(occurrence: CalendarOccurrence): boolean {
-  // The end is exclusive — a one-day all-day event ends at the next midnight, and a timed event
-  // may end exactly on one. Compare the last covered instant, not the endpoint.
-  const lastCoveredMs = Date.parse(occurrence.occurrence_end) - 1
-  return dateKey(occurrence.occurrence_start) !== dateKey(new Date(lastCoveredMs))
+  return dateKey(occurrence.occurrence_start) !== lastCoveredDayKey(occurrence.occurrence_end)
 }
 
 export function occurrencesForDate(
