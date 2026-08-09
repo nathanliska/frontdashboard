@@ -29,7 +29,6 @@ services:
     # Insurance, not a working limit: counters expire on their own and the stream is capped by
     # MAXLEN, so `noeviction` can never bite — and evicting a rate-limit key resets an abuse window.
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
-    mem_limit: 128m
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
