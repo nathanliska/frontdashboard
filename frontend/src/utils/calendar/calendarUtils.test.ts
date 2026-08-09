@@ -100,6 +100,58 @@ describe('calendar utils', () => {
     expect(isMultiDayOccurrence(sameDayOccurrence)).toBe(false)
   })
 
+  it('keeps a one-day all-day occurrence single-day despite its exclusive midnight end', () => {
+    // The all-day normalization stores "all of Apr 10" as [Apr 10 00:00, Apr 11 00:00) — the end
+    // instant is not covered, so it must not read as spilling into Apr 11.
+    const start = new Date(2026, 3, 10, 0, 0)
+    const end = new Date(2026, 3, 11, 0, 0)
+    const oneDayAllDay = {
+      event_id: 'event-4',
+      occurrence_start: start.toISOString(),
+      occurrence_end: end.toISOString(),
+      original_start: start.toISOString(),
+      title: 'Universal Studios',
+      description: null,
+      location: null,
+      timezone: 'UTC',
+      all_day: true,
+      created_by: 'user-1',
+      recurring: false,
+      is_exception: false,
+      participants: [],
+    }
+
+    expect(isMultiDayOccurrence(oneDayAllDay)).toBe(false)
+    expect(
+      isMultiDayOccurrence({
+        ...oneDayAllDay,
+        occurrence_end: new Date(2026, 3, 12, 0, 0).toISOString(),
+      }),
+    ).toBe(true)
+  })
+
+  it('keeps a timed occurrence ending exactly at midnight single-day', () => {
+    const start = new Date(2026, 3, 10, 20, 0)
+    const end = new Date(2026, 3, 11, 0, 0)
+    const eveningUntilMidnight = {
+      event_id: 'event-5',
+      occurrence_start: start.toISOString(),
+      occurrence_end: end.toISOString(),
+      original_start: start.toISOString(),
+      title: 'Game night',
+      description: null,
+      location: null,
+      timezone: 'UTC',
+      all_day: false,
+      created_by: 'user-1',
+      recurring: false,
+      is_exception: false,
+      participants: [],
+    }
+
+    expect(isMultiDayOccurrence(eveningUntilMidnight)).toBe(false)
+  })
+
   it('formats shared calendar cell labels for single-day events', () => {
     const start = new Date(2026, 3, 10, 14, 0)
     const end = new Date(2026, 3, 10, 15, 0)
