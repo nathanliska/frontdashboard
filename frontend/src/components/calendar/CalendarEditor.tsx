@@ -3,12 +3,16 @@ import { type FormEvent, memo, useEffect, useEffectEvent, useRef, useState } fro
 import type { CalendarEventParticipantResponse } from '../../api/generated/contract'
 import {
   type CalendarEditorDraft,
+  daysBetweenDateValues,
   type EditorMode,
+  exclusiveAllDayEnd,
   formatEndDateLabel,
   formatWeeklySelection,
   getRecurringOverlapWarning,
+  inclusiveAllDayEndDate,
   type RecurrenceMode,
   repeatUnitLabel,
+  shiftDateValue,
   syncCreateDraftToSelectedDate,
   toMondayWeekday,
 } from '../../utils/calendar/calendarEditorDraftUtils'
@@ -89,12 +93,13 @@ export const CalendarEditor = memo(function CalendarEditor({
       ? 'End time must be after the start time.'
       : null
   const durationMinutes = getDurationMinutes(startsAt, endsAt)
+  const allDayEndDate = inclusiveAllDayEndDate(startsAt, endsAt)
   const durationValue = durationDraft ?? formatDurationValue(durationMinutes, durationUnit)
   const overlapWarning = !isRepeating
     ? null
     : getRecurringOverlapWarning(
         startsAt,
-        allDay ? getAllDayEndDateTime(startsAt) : endsAt,
+        allDay ? exclusiveAllDayEnd(allDayEndDate) : endsAt,
         recurrenceMode,
         recurrenceInterval,
       )
@@ -144,6 +149,12 @@ export const CalendarEditor = memo(function CalendarEditor({
   }
 
   function handleStartsAtChange(value: string) {
+    // A cleared native date input reports '' — carry nothing from or into a valueless field.
+    if (allDay && isDateValue(value.slice(0, 10)) && isDateValue(allDayEndDate)) {
+      // Mirror the timed rule — moving the start carries the covered span with it.
+      const spanDays = daysBetweenDateValues(startsAt.slice(0, 10), allDayEndDate)
+      setEndsAt(exclusiveAllDayEnd(shiftDateValue(value.slice(0, 10), spanDays)))
+    }
     setStartsAt(value)
     ensureWeeklySelection(value)
     if (!allDay && durationMinutes != null && durationMinutes > 0) {
@@ -225,7 +236,7 @@ export const CalendarEditor = memo(function CalendarEditor({
         description,
         eventLocation,
         startsAt,
-        endsAt: allDay ? getAllDayEndDateTime(startsAt) : endsAt,
+        endsAt: allDay ? exclusiveAllDayEnd(allDayEndDate) : endsAt,
         allDay,
         recurrenceMode,
         recurrenceInterval,
@@ -301,14 +312,30 @@ export const CalendarEditor = memo(function CalendarEditor({
           <div className="flex items-center gap-2">
             <AllDayToggle allDay={allDay} onAllDayChange={handleAllDayChange} />
             {allDay && (
-              <input
-                type="date"
-                value={startsAt.slice(0, 10)}
-                onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
-                aria-label="Date"
-                className={cn(INPUT_CLASS, 'min-w-0 flex-1')}
-                required
-              />
+              <>
+                <input
+                  type="date"
+                  value={startsAt.slice(0, 10)}
+                  onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
+                  aria-label="Start date"
+                  className={cn(INPUT_CLASS, 'min-w-0 flex-1')}
+                  required
+                />
+                <span className="select-none text-zinc-600">–</span>
+                <input
+                  type="date"
+                  value={allDayEndDate}
+                  min={startsAt.slice(0, 10)}
+                  onChange={(event) => {
+                    if (isDateValue(event.target.value)) {
+                      setEndsAt(exclusiveAllDayEnd(event.target.value))
+                    }
+                  }}
+                  aria-label="End date"
+                  className={cn(INPUT_CLASS, 'min-w-0 flex-1')}
+                  required
+                />
+              </>
             )}
           </div>
 
@@ -493,6 +520,10 @@ function DurationControl({
   )
 }
 
+function isDateValue(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
 function AllDayToggle({
   allDay,
   onAllDayChange,
@@ -518,15 +549,6 @@ function AllDayToggle({
       All day
     </label>
   )
-}
-
-function getAllDayEndDateTime(startsAt: string): string {
-  const start = new Date(startsAt)
-  if (Number.isNaN(start.getTime())) return startsAt
-  const end = new Date(start)
-  end.setHours(0, 0, 0, 0)
-  end.setDate(end.getDate() + 1)
-  return toLocalDateTimeValue(end)
 }
 
 const INPUT_CLASS =

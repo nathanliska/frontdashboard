@@ -36,7 +36,7 @@ function renderEditor(draft: CalendarEditorDraft = makeDraft()) {
     onSubmit,
     endTime: () => (screen.getByLabelText('End time') as HTMLInputElement).value,
     duration: () => (screen.getByLabelText('Duration value') as HTMLInputElement).value,
-    unit: screen.getByLabelText('Duration unit') as HTMLSelectElement,
+    unit: () => screen.getByLabelText('Duration unit') as HTMLSelectElement,
     field: () => screen.getByLabelText('Duration value') as HTMLInputElement,
   }
 }
@@ -56,7 +56,7 @@ describe('duration unit', () => {
     const editor = renderEditor()
     expect(editor.duration()).toBe('90')
 
-    fireEvent.change(editor.unit, { target: { value: 'hours' } })
+    fireEvent.change(editor.unit(), { target: { value: 'hours' } })
 
     expect(editor.endTime()).toBe('2026-08-05T10:30')
     expect(editor.duration()).toBe('1.5')
@@ -65,8 +65,8 @@ describe('duration unit', () => {
   it('leaves the event alone through a round trip back to the original unit', () => {
     const editor = renderEditor()
 
-    fireEvent.change(editor.unit, { target: { value: 'days' } })
-    fireEvent.change(editor.unit, { target: { value: 'minutes' } })
+    fireEvent.change(editor.unit(), { target: { value: 'days' } })
+    fireEvent.change(editor.unit(), { target: { value: 'minutes' } })
 
     expect(editor.endTime()).toBe('2026-08-05T10:30')
     expect(editor.duration()).toBe('90')
@@ -75,7 +75,7 @@ describe('duration unit', () => {
   it('submits the unedited end time after a unit change', async () => {
     const editor = renderEditor()
 
-    fireEvent.change(editor.unit, { target: { value: 'hours' } })
+    fireEvent.change(editor.unit(), { target: { value: 'hours' } })
     fireEvent.submit(screen.getByLabelText('Event title').closest('form') as HTMLFormElement)
 
     expect(editor.onSubmit).toHaveBeenCalledTimes(1)
@@ -94,7 +94,7 @@ describe('duration value', () => {
 
   it('keeps a decimal point long enough to finish typing through it', () => {
     const editor = renderEditor()
-    fireEvent.change(editor.unit, { target: { value: 'hours' } })
+    fireEvent.change(editor.unit(), { target: { value: 'hours' } })
 
     fireEvent.change(editor.field(), { target: { value: '' } })
     type(editor.field, '1.5')
@@ -146,7 +146,7 @@ describe('duration value', () => {
 describe('duration stepper', () => {
   it('steps from the event rather than from the rounded value on screen', () => {
     const editor = renderEditor()
-    fireEvent.change(editor.unit, { target: { value: 'days' } })
+    fireEvent.change(editor.unit(), { target: { value: 'days' } })
     expect(editor.duration()).toBe('0.06')
 
     fireEvent.click(screen.getByLabelText('Increase duration'))
@@ -162,5 +162,71 @@ describe('duration stepper', () => {
     fireEvent.click(screen.getByLabelText('Increase duration'))
 
     expect(editor.endTime()).toBe('2026-08-05T10:45')
+  })
+})
+
+describe('all-day spans', () => {
+  it('shows the inclusive end date and round-trips an untouched multi-day event', async () => {
+    const editor = renderEditor(
+      makeDraft({ startsAt: '2026-08-14T00:00', endsAt: '2026-08-17T00:00', allDay: true }),
+    )
+
+    // Stored end is exclusive; the person is shown the last covered day.
+    expect((screen.getByLabelText('End date') as HTMLInputElement).value).toBe('2026-08-16')
+
+    fireEvent.submit(screen.getByLabelText('Event title').closest('form') as HTMLFormElement)
+    await vi.waitFor(() => expect(editor.onSubmit).toHaveBeenCalledTimes(1))
+    expect(editor.onSubmit.mock.calls[0][0]).toMatchObject({
+      endsAt: '2026-08-17T00:00',
+      allDay: true,
+    })
+  })
+
+  it('keeps the covered span when a timed event is toggled to all-day', async () => {
+    const editor = renderEditor(
+      makeDraft({ startsAt: '2026-08-05T09:00', endsAt: '2026-08-07T13:00' }),
+    )
+
+    fireEvent.click(screen.getByLabelText('All day'))
+    expect((screen.getByLabelText('End date') as HTMLInputElement).value).toBe('2026-08-07')
+
+    fireEvent.submit(screen.getByLabelText('Event title').closest('form') as HTMLFormElement)
+    await vi.waitFor(() => expect(editor.onSubmit).toHaveBeenCalledTimes(1))
+    expect(editor.onSubmit.mock.calls[0][0]).toMatchObject({
+      endsAt: '2026-08-08T00:00',
+      allDay: true,
+    })
+  })
+
+  it('extends the event when the end date is pushed out', async () => {
+    const editor = renderEditor(
+      makeDraft({ startsAt: '2026-08-14T00:00', endsAt: '2026-08-15T00:00', allDay: true }),
+    )
+
+    fireEvent.change(screen.getByLabelText('End date'), { target: { value: '2026-08-16' } })
+
+    fireEvent.submit(screen.getByLabelText('Event title').closest('form') as HTMLFormElement)
+    await vi.waitFor(() => expect(editor.onSubmit).toHaveBeenCalledTimes(1))
+    expect(editor.onSubmit.mock.calls[0][0]).toMatchObject({ endsAt: '2026-08-17T00:00' })
+  })
+
+  it('moving the start date carries the covered span, like duration for timed events', () => {
+    renderEditor(
+      makeDraft({ startsAt: '2026-08-14T00:00', endsAt: '2026-08-17T00:00', allDay: true }),
+    )
+
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-08-20' } })
+
+    expect((screen.getByLabelText('End date') as HTMLInputElement).value).toBe('2026-08-22')
+  })
+
+  it('a cleared start date carries nothing into the end date', () => {
+    renderEditor(
+      makeDraft({ startsAt: '2026-08-14T00:00', endsAt: '2026-08-17T00:00', allDay: true }),
+    )
+
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '' } })
+
+    expect((screen.getByLabelText('End date') as HTMLInputElement).value).toBe('2026-08-16')
   })
 })

@@ -251,6 +251,43 @@ function toLocalDateTimeValue(date: Date): string {
   ).padStart(2, '0')}`
 }
 
+function toLocalDateValue(date: Date): string {
+  return toLocalDateTimeValue(date).slice(0, 10)
+}
+
+/** `date` shifted by whole days, in local time — month/year rollover handled by Date itself. */
+export function shiftDateValue(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number)
+  return toLocalDateValue(new Date(year, month - 1, day + days))
+}
+
+export function daysBetweenDateValues(from: string, to: string): number {
+  const [fy, fm, fd] = from.split('-').map(Number)
+  const [ty, tm, td] = to.split('-').map(Number)
+  const ms = new Date(ty, tm - 1, td).getTime() - new Date(fy, fm - 1, fd).getTime()
+  return Math.round(ms / 86_400_000)
+}
+
+/**
+ * The last date an all-day span covers, for display: the stored end is exclusive, so the day
+ * before it is what a person means by "ends on". Clamped to the start date so an unusable end
+ * (mid-edit, or an inverted timed pair the toggle inherited) reads as a one-day event.
+ */
+export function inclusiveAllDayEndDate(startsAt: string, endsAt: string): string {
+  const startDate = startsAt.slice(0, 10)
+  const end = new Date(endsAt)
+  if (Number.isNaN(end.getTime())) return startDate
+  const lastCoveredDate = toLocalDateValue(new Date(end.getTime() - 1))
+  // Clamp only against a real start — a mid-edit cleared start must not eat a valid end.
+  const startIsDate = /^\d{4}-\d{2}-\d{2}$/.test(startDate)
+  return startIsDate && lastCoveredDate < startDate ? startDate : lastCoveredDate
+}
+
+/** The exclusive midnight end the wire wants, from the inclusive date the input shows. */
+export function exclusiveAllDayEnd(inclusiveEndDate: string): string {
+  return `${shiftDateValue(inclusiveEndDate, 1)}T00:00`
+}
+
 function syncWeeklySelectionWithStartDate(
   recurrenceMode: RecurrenceMode,
   previousStartsAt: string,
