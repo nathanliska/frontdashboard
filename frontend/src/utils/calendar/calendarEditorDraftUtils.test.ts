@@ -5,6 +5,10 @@ import {
   buildEventUpdateFromDraft,
   type CalendarEditorDraft,
   createCalendarEditorDraftFromEvent,
+  daysBetweenDateValues,
+  exclusiveAllDayEnd,
+  inclusiveAllDayEndDate,
+  shiftDateValue,
   syncCreateDraftToSelectedDate,
 } from './calendarEditorDraftUtils'
 
@@ -114,5 +118,32 @@ describe('buildEventUpdateFromDraft', () => {
     const body = buildEventUpdateFromDraft(draft({ eventLocation: '   ' }), null, 'UTC')
 
     expect(body.location).toBeNull()
+  })
+})
+
+describe('all-day end date conversion', () => {
+  it('round-trips the exclusive end through the inclusive display value', () => {
+    // Stored Aug 14–17(excl) = covers the 14th through the 16th.
+    expect(inclusiveAllDayEndDate('2026-08-14T00:00', '2026-08-17T00:00')).toBe('2026-08-16')
+    expect(exclusiveAllDayEnd('2026-08-16')).toBe('2026-08-17T00:00')
+  })
+
+  it('derives the covered day from a timed end, midnight-exclusive', () => {
+    // A timed end mid-day covers its own day; one exactly at midnight does not.
+    expect(inclusiveAllDayEndDate('2026-08-05T09:00', '2026-08-07T13:00')).toBe('2026-08-07')
+    expect(inclusiveAllDayEndDate('2026-08-05T09:00', '2026-08-07T00:00')).toBe('2026-08-06')
+  })
+
+  it('clamps an inverted or unusable end to a one-day event', () => {
+    expect(inclusiveAllDayEndDate('2026-08-14T00:00', '2026-08-10T00:00')).toBe('2026-08-14')
+    expect(inclusiveAllDayEndDate('2026-08-14T00:00', 'not-a-date')).toBe('2026-08-14')
+    // And never the reverse: a cleared start must not eat a valid end.
+    expect(inclusiveAllDayEndDate('T00:00', '2026-08-17T00:00')).toBe('2026-08-16')
+  })
+
+  it('does whole-day math across month ends', () => {
+    expect(shiftDateValue('2026-08-31', 1)).toBe('2026-09-01')
+    expect(shiftDateValue('2026-03-01', -1)).toBe('2026-02-28')
+    expect(daysBetweenDateValues('2026-08-30', '2026-09-02')).toBe(3)
   })
 })

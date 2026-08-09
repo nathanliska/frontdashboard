@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-08-08
+**Last reviewed:** 2026-08-09
 
 ## Overview
 
@@ -22,7 +22,9 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
   becomes 1.5 hours — because asking to see a duration differently is not an edit. While a value is
   being typed the field holds what was typed, including the empty and trailing-dot states a decimal
   passes through, and falls back to the event's real duration if what is left behind is unusable.
-- **All-day means whole local days.** Setting `all_day` snaps `starts_at` to local midnight and
+- **All-day means whole local days.** The editor takes a start and end date (shown inclusive —
+  "ends on the 16th" — while the stored end stays exclusive), and toggling a timed event to
+  all-day keeps the days it covered. Setting `all_day` snaps `starts_at` to local midnight and
   `ends_at` to local midnight after the last covered day, in the event's *own* timezone, so a day
   that runs 23 or 25 hours across a DST boundary is still exactly one day. The end is **exclusive**.
   The flag used to be a passthrough — whatever times the client sent were stored, which left
