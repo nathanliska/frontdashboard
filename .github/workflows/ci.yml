@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: ["main"]
+    # Docs-only changes skip the build entirely — nothing in CI reads these paths, and a skipped
+    # main run publishes nothing, which is right: prose changes ship no image. Title check still
+    # runs from its own workflow.
+    paths-ignore: ["docs/**", "**.md"]
   pull_request:
     branches: ["main"]
+    # Keep in step with the push list above.
+    paths-ignore: ["docs/**", "**.md"]
   # The only way to publish images for a commit whose own run never happened: a webhook dropped
   # during an Actions incident triggers nothing, and no event replays itself afterwards.
   workflow_dispatch:
@@ -25,6 +31,8 @@ jobs:
   checks:
     name: Repo checks
     runs-on: ubuntu-latest
+    # A hung step otherwise bills the 360-minute default.
+    timeout-minutes: 10
     env:
       # Nothing bumps these for you — Dependabot does not track a curl. Move both together.
       OSV_VERSION: v2.4.0
@@ -94,6 +102,8 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    # A hung step otherwise bills the 360-minute default.
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend
@@ -121,6 +131,8 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    # A hung step otherwise bills the 360-minute default.
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -147,6 +159,8 @@ jobs:
   images:
     name: Images & smoke
     runs-on: ubuntu-latest
+    # A hung step otherwise bills the 360-minute default.
+    timeout-minutes: 20
     env:
       DATABASE_URL: postgresql+asyncpg://ci:ci@db:5432/ci
       FRONTEND_BASE_URL: http://localhost:8080
@@ -294,6 +308,7 @@ jobs:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs: [checks, backend, frontend, images]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write

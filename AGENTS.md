@@ -119,7 +119,8 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   [docs/runbooks/deploy.md](docs/runbooks/deploy.md), read-only.
 - Backend integration tests need PostgreSQL: either a Docker socket (Testcontainers) or
   `TEST_DATABASE_URL` pointing at a dedicated test database. `make test-unit` needs neither.
-- CI runs lint, tests, `ty` type checking and the frontend build on every push and PR. Keep it
+- CI runs lint, tests, `ty` type checking and the frontend build on every push and PR — except
+  docs-only changes (`docs/**`, `*.md`), which skip it; the PR-title check still runs. Keep it
   green.
 - MCP servers are declared once per tool — `.mcp.json` for Claude Code, `.codex/config.toml` for
   Codex. Nothing syncs them; change both or one agent silently loses the server.
