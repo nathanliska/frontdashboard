@@ -329,7 +329,7 @@ _Last updated: 2026-08-09_
   compile error in the client code that must handle it.
 - CI: four grouped jobs (each with a tight `timeout-minutes`, and docs-only changes skip the
   workflow entirely), because Actions bills each job rounded up to a full minute and ten small
-  lanes cost double their compute — repo checks (actionlint, prod Compose structure, alert rules,
+  lanes cost double their compute — repo checks (actionlint, zizmor, prod Compose structure, alert rules,
   osv-scanner over both lockfiles, contract drift), backend (Ruff, `ty`, deptry, pytest), frontend
   (Biome, knip, `tsc`, Vitest), and an **images & smoke** job that builds both production images
   and boots them together against a throwaway database — [docker-compose.smoke.yml](docker-compose.smoke.yml)

@@ -34,11 +34,17 @@ jobs:
     # A hung step otherwise bills the 360-minute default.
     timeout-minutes: 10
     env:
-      # Nothing bumps these for you — Dependabot does not track a curl. Move both together.
+      # Nothing bumps these for you — Dependabot tracks neither a curl nor a uvx pin. Move the
+      # osv pair together.
       OSV_VERSION: v2.4.0
       OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
+      ZIZMOR_VERSION: "1.19.0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step talks to the remote, so no job needs the token sitting in .git/config
+          # where every transitive dependency's install hook could read it.
+          persist-credentials: false
       - name: Lint GitHub Actions workflows
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
         with:
@@ -85,6 +91,11 @@ jobs:
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
+      # actionlint above checks what a workflow says; this checks what it exposes — credential
+      # persistence, injection, dangerous triggers. Any finding fails, and --strict-collection
+      # keeps an unparseable workflow from being silently skipped as a pass.
+      - name: Audit workflow security posture
+        run: uvx zizmor=="${ZIZMOR_VERSION}" --strict-collection .github/workflows/
       - run: npm ci
         working-directory: frontend
       - run: uv sync --frozen
@@ -113,6 +124,10 @@ jobs:
       ENVIRONMENT: development
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step talks to the remote, so no job needs the token sitting in .git/config
+          # where every transitive dependency's install hook could read it.
+          persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
@@ -138,6 +153,10 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step talks to the remote, so no job needs the token sitting in .git/config
+          # where every transitive dependency's install hook could read it.
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -171,6 +190,10 @@ jobs:
       COMPOSE_FILE: docker-compose.prod.yml:docker-compose.smoke.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step talks to the remote, so no job needs the token sitting in .git/config
+          # where every transitive dependency's install hook could read it.
+          persist-credentials: false
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       # Every build sets `pull: true`, because the bases are floating tags: the layer cache would
@@ -317,6 +340,10 @@ jobs:
       FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/frontdashboard-frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step talks to the remote, so no job needs the token sitting in .git/config
+          # where every transitive dependency's install hook could read it.
+          persist-credentials: false
       - name: Resolve the short sha tag
         id: meta
         run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
