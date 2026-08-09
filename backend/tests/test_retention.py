@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models.activity import ActivityEvent
+from app.models.calendar import CalendarEvent, CalendarEventParticipant
 from app.models.dashboard import Dashboard
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.list import List
@@ -245,6 +246,33 @@ async def test_authoring_on_someone_elses_dashboard_disqualifies(db_session):
 
     assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
     assert (await db_session.execute(select(User).where(User.id == author.id))).scalar_one() is not None
+
+
+async def test_being_an_event_participant_disqualifies(db_session):
+    """A participant row alone must keep an account out of the purge.
+
+    `calendar_event_participants.user_id` has no ON DELETE: a missed sweep entry would roll back
+    the whole tick, same shape as authoring content elsewhere.
+    """
+    participant, _ = await _make_unverified_signup(db_session, age_days=settings.unverified_retention_days + 1)
+    owner = await make_db_user(db_session, label="owner")
+    dashboard = await make_db_dashboard(db_session, owner)
+    event = CalendarEvent(
+        dashboard_id=dashboard.id,
+        created_by=owner.id,
+        updated_by=owner.id,
+        title="Soccer",
+        starts_at=datetime(2026, 4, 10, 14, tzinfo=UTC),
+        ends_at=datetime(2026, 4, 10, 15, tzinfo=UTC),
+        timezone="UTC",
+    )
+    db_session.add(event)
+    await db_session.flush()
+    db_session.add(CalendarEventParticipant(calendar_event_id=event.id, user_id=participant.id))
+    await db_session.flush()
+
+    assert (await reap_abandoned_signups(db_session))["abandoned_signups"] == 0
+    assert (await db_session.execute(select(User).where(User.id == participant.id))).scalar_one() is not None
 
 
 async def test_having_granted_a_share_disqualifies(db_session):

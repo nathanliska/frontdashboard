@@ -77,6 +77,7 @@ function makeOccurrence(overrides: Partial<CalendarOccurrence> = {}): CalendarOc
     created_by: 'user-1',
     recurring: false,
     is_exception: false,
+    participants: [],
     ...overrides,
   }
 }

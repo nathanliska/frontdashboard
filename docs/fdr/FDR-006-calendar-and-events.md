@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-08-06
+**Last reviewed:** 2026-08-08
 
 ## Overview
 
@@ -34,6 +34,10 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
 - **Midnight correctness.** Day-dependent views re-derive "today" at local midnight (DST-safe) and on
   tab wake, so an always-on wall display never shows yesterday's calendar/agenda after midnight.
 - **Live updates.** Event create/update/delete and occurrence override/cancel propagate over SSE.
+- **Participants.** An event can name dashboard members it is *about* — a visual label, not an
+  invitation: no notification is sent and no access is granted or implied. Writes accept only
+  current members (422 otherwise); reads return participants with display names on events and on
+  every expanded occurrence. A member who later loses dashboard access stays named on the event.
 
 ## Design Decisions
 
@@ -104,6 +108,18 @@ dropping ranges furthest from what is displayed.
 **Decision:** `CalendarEvent` carries `deleted_at`, filtered in every query.
 **Why:** Calendar entries are durable user data worth a recovery path. See ADR-007.
 **Tradeoff:** Every event query must filter the tombstone.
+
+### 6. Participants are series-level labels, validated against membership at write time
+
+**Decision:** One participant set per event, never per-occurrence; rows cascade with the event.
+Writes accept only current dashboard members ([FDR-004](FDR-004-sharing-and-access.md)); an
+unshare leaves existing rows in place, and readers render the departed member from the user row.
+**Why:** "Whose thing is this" rarely varies by week, and revoking access should not silently
+rewrite what past or future events say about who they are for. Access continues to flow from the
+dashboard alone — a participant row grants nothing.
+**Tradeoff:** Naming one occurrence's stand-in needs a separate mechanism if it is ever wanted,
+and the picker must distinguish current members (from `/members`) from former ones (named only on
+the event).
 
 ## Access
 

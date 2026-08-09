@@ -69,6 +69,7 @@ describe('calendar utils', () => {
       created_by: 'user-1',
       recurring: false,
       is_exception: false,
+      participants: [],
     }
 
     expect(occursOnDate(overnightOccurrence, new Date(2026, 3, 10, 12))).toBe(true)
@@ -93,6 +94,7 @@ describe('calendar utils', () => {
       created_by: 'user-1',
       recurring: false,
       is_exception: false,
+      participants: [],
     }
 
     expect(isMultiDayOccurrence(sameDayOccurrence)).toBe(false)
@@ -114,6 +116,7 @@ describe('calendar utils', () => {
       created_by: 'user-1',
       recurring: false,
       is_exception: false,
+      participants: [],
     }
 
     expect(formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 10, 12))).toBe(
@@ -143,6 +146,7 @@ describe('calendar utils', () => {
       created_by: 'user-1',
       recurring: false,
       is_exception: false,
+      participants: [],
     }
 
     expect(formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 10, 12))).toBe(

@@ -8,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_csrf
 from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
-from app.models.calendar import CalendarEvent, CalendarEventOverride
+from app.models.calendar import CalendarEvent, CalendarEventOverride, CalendarEventParticipant
 from app.models.dashboard import Dashboard
 from app.models.share import EffectiveRole, ResourceShare
 from app.models.user import User
 from app.schemas.calendar import (
     CalendarEventCreate,
+    CalendarEventParticipantResponse,
     CalendarEventResponse,
     CalendarEventUpdate,
     CalendarOccurrenceMutationResponse,
@@ -55,7 +56,48 @@ async def _get_event_access(
     return event, dashboard, shares, role
 
 
-def _event_response(event: CalendarEvent) -> CalendarEventResponse:
+async def _replace_participants(
+    db: AsyncSession,
+    event: CalendarEvent,
+    user_ids: list[uuid.UUID],
+    dashboard: Dashboard,
+    shares: list[ResourceShare],
+) -> None:
+    """Replace the event's participant set, refusing anyone who is not a member.
+
+    Membership is checked at write time only; a later unshare leaves rows in place on purpose,
+    so the event keeps naming its people (FDR-006).
+    """
+    outsiders = set(user_ids) - dashboard_audience_user_ids(dashboard, shares)
+    if outsiders:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Participants must be members of the dashboard",
+        )
+    await db.execute(delete(CalendarEventParticipant).where(CalendarEventParticipant.calendar_event_id == event.id))
+    db.add_all(CalendarEventParticipant(calendar_event_id=event.id, user_id=user_id) for user_id in dict.fromkeys(user_ids))
+
+
+async def _participants_by_event(
+    db: AsyncSession,
+    event_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, list[CalendarEventParticipantResponse]]:
+    """Resolve participants with display names, ordered by name, for a batch of events."""
+    participants: dict[uuid.UUID, list[CalendarEventParticipantResponse]] = {}
+    if not event_ids:
+        return participants
+    rows = await db.execute(
+        select(CalendarEventParticipant.calendar_event_id, User.id, User.display_name)
+        .join(User, User.id == CalendarEventParticipant.user_id)
+        .where(CalendarEventParticipant.calendar_event_id.in_(event_ids))
+        .order_by(func.lower(User.display_name))
+    )
+    for event_id, user_id, display_name in rows.all():
+        participants.setdefault(event_id, []).append(CalendarEventParticipantResponse(user_id=user_id, display_name=display_name))
+    return participants
+
+
+def _event_response(event: CalendarEvent, participants: list[CalendarEventParticipantResponse]) -> CalendarEventResponse:
     return CalendarEventResponse(
         id=event.id,
         dashboard_id=event.dashboard_id,
@@ -69,12 +111,13 @@ def _event_response(event: CalendarEvent) -> CalendarEventResponse:
         created_by=event.created_by,
         updated_by=event.updated_by,
         recurrence=RecurrenceRule.model_validate(event.recurrence) if event.recurrence else None,
+        participants=participants,
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
 
 
-def _occurrence_response(occurrence) -> CalendarOccurrenceResponse:
+def _occurrence_response(occurrence, participants: list[CalendarEventParticipantResponse]) -> CalendarOccurrenceResponse:
     return CalendarOccurrenceResponse(
         event_id=occurrence.event_id,
         occurrence_start=occurrence.occurrence_start,
@@ -88,6 +131,7 @@ def _occurrence_response(occurrence) -> CalendarOccurrenceResponse:
         created_by=occurrence.created_by,
         recurring=occurrence.recurring,
         is_exception=occurrence.is_exception,
+        participants=participants,
     )
 
 
@@ -138,6 +182,7 @@ async def create_event(
     )
     db.add(event)
     await db.flush()
+    await _replace_participants(db, event, body.participants, dashboard, shares)
 
     activity = log_event(
         db,
@@ -155,7 +200,7 @@ async def create_event(
         fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
     )
     await db.refresh(event)
-    return _event_response(event)
+    return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
 
 
 @router.get("/events", response_model=list[CalendarOccurrenceResponse])
@@ -239,7 +284,8 @@ async def list_occurrences(
         )
 
     occurrences.sort(key=lambda occurrence: (occurrence.occurrence_start, occurrence.title.lower()))
-    return [_occurrence_response(occurrence) for occurrence in occurrences]
+    participants = await _participants_by_event(db, {occurrence.event_id for occurrence in occurrences})
+    return [_occurrence_response(occurrence, participants.get(occurrence.event_id, [])) for occurrence in occurrences]
 
 
 @router.get("/events/{event_id}", response_model=CalendarEventResponse)
@@ -250,7 +296,7 @@ async def get_event(
 ) -> CalendarEventResponse:
     """Return a single calendar event the caller can access."""
     event, _dashboard, _shares, _role = await _get_event_access(event_id, current_user, db)
-    return _event_response(event)
+    return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
 
 
 @router.patch("/events/{event_id}", response_model=CalendarEventResponse)
@@ -296,6 +342,8 @@ async def update_event(
             # An override identifies one occurrence of a series; with the series gone it is an
             # edit no code path can reach or remove.
             await db.execute(delete(CalendarEventOverride).where(CalendarEventOverride.calendar_event_id == event.id))
+    if body.participants is not None:
+        await _replace_participants(db, event, body.participants, dashboard, shares)
     event.updated_by = current_user.id
 
     activity = log_event(
@@ -314,7 +362,7 @@ async def update_event(
         fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
     )
     await db.refresh(event)
-    return _event_response(event)
+    return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
 
 
 @router.patch("/events/{event_id}/occurrences", response_model=CalendarOccurrenceMutationResponse)
@@ -386,7 +434,7 @@ async def update_occurrence(
         return CalendarOccurrenceMutationResponse(cancelled=True, occurrence=None)
     return CalendarOccurrenceMutationResponse(
         cancelled=False,
-        occurrence=_occurrence_response(occurrence[0]),
+        occurrence=_occurrence_response(occurrence[0], (await _participants_by_event(db, {event.id})).get(event.id, [])),
     )
 
 

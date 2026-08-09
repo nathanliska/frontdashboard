@@ -39,6 +39,7 @@ describe('calendar editor draft utils', () => {
       created_at: '2026-04-01T00:00',
       updated_at: '2026-04-01T00:00',
       recurrence: { frequency: 'daily' as const, interval: 1, count: 3 },
+      participants: [],
     } satisfies CalendarEvent
 
     const draft = createCalendarEditorDraftFromEvent(event)
