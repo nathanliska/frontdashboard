@@ -188,6 +188,14 @@ Capabilities deliberately not built. Each states the condition that would make i
 - **Dropping runtime response validation** — the generated types are free; the runtime half is
   ~14.5 kB gzip. Revisit if bundle size ever outweighs the guarantee — generating types without a
   runtime is a one-flag change ([ADR-018](adr/ADR-018-generated-validated-contracts.md)).
+- **Image provenance/SBOM attestations** — when the images gain a consumer that verifies them.
+  The publish job's matched-pair choreography (build with `load:`, push tags by hand so `:latest`
+  can never point at a split pair) cannot carry attestations; adopting them means reworking that
+  ordering, and today the only puller is the Unraid box, by hand, verifying nothing.
+- **Runner hardening beyond the zizmor gate** — pinning `ubuntu-latest` to a release trades
+  surprise label migrations for permanent manual bumps, and egress allowlisting
+  (StepSecurity harden-runner) is defense-in-depth at real weight. Revisit when the repo gains a
+  second maintainer or the workflows start handling secrets beyond `GITHUB_TOKEN`.
 
 ## Accepted risks / won't-do
 
