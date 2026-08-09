@@ -16,6 +16,7 @@ export type CalendarEditorDraft = {
   recurrenceInterval: string
   recurrenceWeekdays: number[]
   recurrenceEndsOn: string
+  participants: string[]
 }
 
 export const WEEKDAY_PICKER_OPTIONS = [
@@ -41,6 +42,7 @@ export function createDefaultCalendarEditorDraft(baseDate?: Date): CalendarEdito
     recurrenceInterval: '1',
     recurrenceWeekdays: [],
     recurrenceEndsOn: '',
+    participants: [],
   }
 }
 
@@ -58,6 +60,7 @@ export function createCalendarEditorDraftFromEvent(event: CalendarEvent): Calend
     recurrenceEndsOn: event.recurrence
       ? deriveRecurrenceEndDate(event.starts_at, event.recurrence)
       : '',
+    participants: event.participants.map((participant) => participant.user_id),
   }
 }
 
@@ -312,5 +315,6 @@ export function buildEventUpdateFromDraft(
     timezone,
     all_day: draft.allDay,
     recurrence,
+    participants: draft.participants,
   }
 }

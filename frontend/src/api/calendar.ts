@@ -27,6 +27,7 @@ export interface CreateCalendarEventInput {
   timezone: string
   all_day: boolean
   recurrence?: RecurrenceRule
+  participants?: string[]
   shares?: ShareCreate[]
 }
 

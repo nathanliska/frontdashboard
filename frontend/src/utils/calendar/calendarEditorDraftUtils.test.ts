@@ -81,6 +81,7 @@ describe('buildEventUpdateFromDraft', () => {
       recurrenceInterval: '1',
       recurrenceWeekdays: [],
       recurrenceEndsOn: '',
+      participants: [],
       ...overrides,
     }
   }

@@ -15,6 +15,7 @@ import {
 } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
 import { CalendarDayNumber } from '../../calendar/CalendarDayNumber'
+import { ParticipantDots, ParticipantMicroDots } from '../../calendar/ParticipantDots'
 import { type CalendarWidgetView, ViewTabButtons } from './CalendarWidgetViewTabs'
 
 const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
@@ -48,7 +49,10 @@ export const DayCalendarWidget = memo(function DayCalendarWidget({
               key={`${occurrence.event_id}:${occurrence.original_start}`}
               className="rounded-lg border border-zinc-800 bg-zinc-950/70 px-2.5 py-2"
             >
-              <p className="text-xs font-medium text-zinc-100 truncate">{occurrence.title}</p>
+              <div className="flex items-center justify-between gap-1.5">
+                <p className="text-xs font-medium text-zinc-100 truncate">{occurrence.title}</p>
+                <ParticipantDots participants={occurrence.participants} size="xs" />
+              </div>
               <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500">
                 <Clock3 size={11} className="shrink-0" />
                 <span className="truncate">
@@ -115,15 +119,18 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
                     key={`${occurrence.event_id}:${occurrence.original_start}`}
                     title={formatCalendarOccurrenceCellTitle(occurrence, day)}
                     className={cn(
-                      'rounded px-1.5 py-1 text-[10px] leading-tight truncate',
+                      'flex items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-tight',
                       occurrence.recurring
                         ? 'bg-emerald-500/12 text-emerald-300'
                         : 'bg-sky-500/12 text-sky-300',
                     )}
                   >
-                    {compact
-                      ? occurrence.title
-                      : formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                    <ParticipantMicroDots participants={occurrence.participants} />
+                    <span className="min-w-0 truncate">
+                      {compact
+                        ? occurrence.title
+                        : formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                    </span>
                   </div>
                 ))}
                 {dayOccurrences.length > (compact ? 2 : 3) && (
@@ -246,13 +253,16 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
                         key={`${occurrence.event_id}:${occurrence.original_start}`}
                         title={formatCalendarOccurrenceCellTitle(occurrence, day)}
                         className={cn(
-                          'rounded px-1 py-0.5 text-[10px] truncate',
+                          'flex items-center gap-1 rounded px-1 py-0.5 text-[10px]',
                           occurrence.recurring
                             ? 'bg-emerald-500/12 text-emerald-300'
                             : 'bg-sky-500/12 text-sky-300',
                         )}
                       >
-                        {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                        <ParticipantMicroDots participants={occurrence.participants} />
+                        <span className="min-w-0 truncate">
+                          {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                        </span>
                       </div>
                     ))}
                   </div>

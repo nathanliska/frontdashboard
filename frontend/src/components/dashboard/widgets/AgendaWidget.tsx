@@ -3,6 +3,7 @@ import type { AgendaItem } from '../../../resources/agendaData'
 import { useAgendaItems } from '../../../resources/agendaData'
 import { dateKey, formatOccurrenceTime } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
+import { ParticipantDots } from '../../calendar/ParticipantDots'
 import { WidgetErrorState } from '../WidgetErrorState'
 
 const MAX_ITEMS = 10
@@ -101,6 +102,9 @@ function AgendaRow({ item }: { item: AgendaItem }) {
             <span className="truncate">{formatAgendaMeta(item)}</span>
             {item.type === 'event' && item.recurring && (
               <Repeat2 size={10} className="shrink-0 text-emerald-300" />
+            )}
+            {item.type === 'event' && (
+              <ParticipantDots participants={item.participants} size="xs" />
             )}
           </div>
         </div>

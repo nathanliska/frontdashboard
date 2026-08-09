@@ -2,10 +2,12 @@ import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { CalendarOccurrence } from '../api/calendar'
+import type { CalendarEventParticipantResponse } from '../api/generated/contract'
 import { CalendarDayNumber } from '../components/calendar/CalendarDayNumber'
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialog'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
+import { ParticipantMicroDots } from '../components/calendar/ParticipantDots'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import { useLocalDay } from '../hooks/useLocalDay'
 import {
@@ -50,6 +52,7 @@ type CalendarEditorSession = {
   mode: EditorMode
   eventId: string | null
   initialDraft: CalendarEditorDraft
+  initialParticipants: CalendarEventParticipantResponse[]
 }
 
 const EMPTY_OCCURRENCES: CalendarOccurrence[] = []
@@ -125,6 +128,7 @@ export function CalendarPage() {
       mode: 'create',
       eventId: null,
       initialDraft: createDefaultCalendarEditorDraft(selectedDate),
+      initialParticipants: [],
     })
   }
 
@@ -144,6 +148,7 @@ export function CalendarPage() {
         mode: 'edit',
         eventId,
         initialDraft: createCalendarEditorDraftFromEvent(event),
+        initialParticipants: event.participants,
       })
     } catch {
       if (editorRequestId.current !== requestId) return
@@ -188,6 +193,7 @@ export function CalendarPage() {
             timezone: DEFAULT_TIMEZONE,
             all_day: draft.allDay,
             recurrence: recurrence ?? undefined,
+            participants: draft.participants,
           })
         }
       } catch {
@@ -354,14 +360,17 @@ export function CalendarPage() {
                             <div
                               key={`${occurrence.event_id}:${occurrence.original_start}`}
                               className={cn(
-                                'rounded px-1 py-0.5 text-[10px] truncate',
+                                'flex items-center gap-1 rounded px-1 py-0.5 text-[10px]',
                                 occurrence.recurring
                                   ? 'bg-emerald-500/12 text-emerald-300'
                                   : 'bg-sky-500/12 text-sky-300',
                               )}
                               title={formatCalendarOccurrenceCellTitle(occurrence, day)}
                             >
-                              {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                              <ParticipantMicroDots participants={occurrence.participants} />
+                              <span className="min-w-0 truncate">
+                                {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -457,6 +466,8 @@ export function CalendarPage() {
               key={editorSession.key}
               mode={editorSession.mode}
               initialDraft={editorSession.initialDraft}
+              dashboardId={effectiveActiveDashboardId}
+              initialParticipants={editorSession.initialParticipants}
               selectedDate={editorSession.mode === 'create' ? selectedDate : null}
               activeDashboardName={activeDashboard?.name}
               onClose={closeEditor}

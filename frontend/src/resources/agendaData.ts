@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { CalendarOccurrence } from '../api/calendar'
+import type { CalendarEventParticipantResponse } from '../api/generated/contract'
 import { apiGetListDetails, type ListItem, type ListSummary } from '../api/lists'
 import { useLocalDay } from '../hooks/useLocalDay'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
@@ -18,6 +19,7 @@ export type AgendaItem =
       endsAt: string
       allDay: boolean
       recurring: boolean
+      participants: CalendarEventParticipantResponse[]
     }
   | {
       id: string
@@ -67,6 +69,7 @@ function occurrenceToAgendaItem(occurrence: CalendarOccurrence): AgendaItem {
     endsAt: occurrence.occurrence_end,
     allDay: occurrence.all_day,
     recurring: occurrence.recurring,
+    participants: occurrence.participants,
   }
 }
 

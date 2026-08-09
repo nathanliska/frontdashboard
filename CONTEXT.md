@@ -116,6 +116,11 @@ _Last updated: 2026-08-07_
 - Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration
   toolbar, all-day, timezones; per-occurrence overrides and cancellation. Occurrence expansion
   over a required window (max 366 days).
+- **Participants**: events can name the members they are about — toggle-chips in the editor
+  (fed by `GET /dashboards/{id}/members`), colored initial-dots on cards and agenda rows, bare
+  micro-dots on month pills. Colors are hashed from the user id, zero configuration. A label only:
+  no notification, no access change; a member who leaves the dashboard stays named, greyed
+  "(former)" in the editor, keepable but not re-addable (FDR-006 §6).
 - **Day-dependent views refresh at local midnight.** A shared `useLocalDay()` hook re-renders at the
   next local midnight (DST-safe) and on tab wake (visibility/focus); the calendar widget and page
   re-derive "today" from it, and the agenda widget background-refetches on a day rollover — so an
