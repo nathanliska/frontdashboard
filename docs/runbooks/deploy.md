@@ -6,7 +6,7 @@ There is no deploy script. Merging to `main` is the deploy trigger; the box pull
 
 1. **Merge the PR.** That is a push to `main`, which runs CI.
 2. **CI publishes** — but only if every lane is green: lint, both test suites, type checks, contract
-   drift, the dependency audit, both image builds and the smoke job. Roughly 2–3 minutes. Both
+   drift, the dependency audit, both image builds and the smoke checks. Roughly 3–4 minutes — the grouped jobs trade ~1 minute of wall time for the billing. Both
    images build and load before anything is pushed, and both `:<short-sha>` tags go up before either
    `latest` moves, so the two tags can never describe different commits.
 3. **Check for Updates**, then **Update** the `frontdashboard` stack in Unraid's **Compose Manager**
