@@ -83,11 +83,8 @@ export const ShareCreate = z.object({ principal_id: z.uuid(), principal_type: Pr
 export type DashboardCreate = z.infer<typeof DashboardCreate>;
 export const DashboardCreate = z.object({ name: z.string().min(1).max(100), shares: z.array(ShareCreate).optional() });
 
-export type EffectiveRole = z.infer<typeof EffectiveRole>;
-export const EffectiveRole = z.enum(["viewer", "editor", "owner"]);
-
 export type DashboardMemberResponse = z.infer<typeof DashboardMemberResponse>;
-export const DashboardMemberResponse = z.object({ display_name: z.string(), role: EffectiveRole, user_id: z.uuid() });
+export const DashboardMemberResponse = z.object({ display_name: z.string(), user_id: z.uuid() });
 
 export type LayoutItem = z.infer<typeof LayoutItem>;
 export const LayoutItem = z.object({ h: z.number().int(), i: z.string(), w: z.number().int(), x: z.number().int(), y: z.number().int() });
@@ -106,6 +103,9 @@ export const DashboardSummary = z.object({ access_description: z.string().nullab
 
 export type DashboardUpdate = z.infer<typeof DashboardUpdate>;
 export const DashboardUpdate = z.object({ name: z.string().min(1).max(100).nullable() }).partial();
+
+export type EffectiveRole = z.infer<typeof EffectiveRole>;
+export const EffectiveRole = z.enum(["viewer", "editor", "owner"]);
 
 export type ValidationError = z.infer<typeof ValidationError>;
 export const ValidationError = z.object({ ctx: z.record(z.string(), z.unknown()).optional(), input: z.unknown().optional(), loc: z.array(z.union([z.string(), z.number().int()])), msg: z.string(), type: z.string() });
