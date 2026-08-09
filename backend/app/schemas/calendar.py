@@ -71,10 +71,13 @@ class CalendarEventBase(BaseModel):
 
 class CalendarEventCreate(CalendarEventBase):
     dashboard_id: uuid.UUID
+    participants: list[uuid.UUID] = Field(default_factory=list, max_length=50)
 
 
 class CalendarEventUpdate(PatchModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    # The full replacement set; absent leaves participants untouched, `[]` clears them.
+    participants: list[uuid.UUID] | None = Field(default=None, max_length=50)
     description: str | None = Field(default=None, max_length=5000)
     location: str | None = Field(default=None, max_length=200)
     starts_at: datetime | None = None
@@ -123,6 +126,13 @@ class CalendarOccurrenceUpdate(BaseModel):
         return self
 
 
+class CalendarEventParticipantResponse(BaseModel):
+    """A participant with their name resolved, so rendering never needs a second request."""
+
+    user_id: uuid.UUID
+    display_name: str
+
+
 class CalendarEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -138,6 +148,7 @@ class CalendarEventResponse(BaseModel):
     created_by: uuid.UUID
     updated_by: uuid.UUID
     recurrence: RecurrenceRule | None
+    participants: list[CalendarEventParticipantResponse] = []
     created_at: datetime
     updated_at: datetime
 
@@ -155,6 +166,7 @@ class CalendarOccurrenceResponse(BaseModel):
     created_by: uuid.UUID
     recurring: bool
     is_exception: bool
+    participants: list[CalendarEventParticipantResponse] = []
 
 
 class CalendarOccurrenceMutationResponse(BaseModel):

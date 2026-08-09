@@ -30,16 +30,19 @@ export type RecurrenceRule = z.infer<typeof RecurrenceRule>;
 export const RecurrenceRule = z.object({ by_weekday: z.array(z.number().int()).nullable().optional(), count: z.number().int().min(1).max(1000).nullable().optional(), frequency: z.enum(["daily", "weekly", "monthly", "yearly"]), interval: z.number().int().min(1).max(366).default(1), until: z.iso.datetime().nullable().optional() });
 
 export type CalendarEventCreate = z.infer<typeof CalendarEventCreate>;
-export const CalendarEventCreate = z.object({ all_day: z.boolean().default(false), dashboard_id: z.uuid(), description: z.string().max(5000).nullable().optional(), ends_at: z.iso.datetime(), location: z.string().max(200).nullable().optional(), recurrence: RecurrenceRule.nullable().optional(), starts_at: z.iso.datetime(), timezone: z.string().min(1).max(100), title: z.string().min(1).max(200) });
+export const CalendarEventCreate = z.object({ all_day: z.boolean().default(false), dashboard_id: z.uuid(), description: z.string().max(5000).nullable().optional(), ends_at: z.iso.datetime(), location: z.string().max(200).nullable().optional(), participants: z.array(z.uuid()).max(50).optional(), recurrence: RecurrenceRule.nullable().optional(), starts_at: z.iso.datetime(), timezone: z.string().min(1).max(100), title: z.string().min(1).max(200) });
+
+export type CalendarEventParticipantResponse = z.infer<typeof CalendarEventParticipantResponse>;
+export const CalendarEventParticipantResponse = z.object({ display_name: z.string(), user_id: z.uuid() });
 
 export type CalendarEventResponse = z.infer<typeof CalendarEventResponse>;
-export const CalendarEventResponse = z.object({ all_day: z.boolean(), created_at: z.iso.datetime(), created_by: z.uuid(), dashboard_id: z.uuid(), description: z.string().nullable(), ends_at: z.iso.datetime(), id: z.uuid(), location: z.string().nullable(), recurrence: RecurrenceRule.nullable(), starts_at: z.iso.datetime(), timezone: z.string(), title: z.string(), updated_at: z.iso.datetime(), updated_by: z.uuid() });
+export const CalendarEventResponse = z.object({ all_day: z.boolean(), created_at: z.iso.datetime(), created_by: z.uuid(), dashboard_id: z.uuid(), description: z.string().nullable(), ends_at: z.iso.datetime(), id: z.uuid(), location: z.string().nullable(), participants: z.array(CalendarEventParticipantResponse).default([]), recurrence: RecurrenceRule.nullable(), starts_at: z.iso.datetime(), timezone: z.string(), title: z.string(), updated_at: z.iso.datetime(), updated_by: z.uuid() });
 
 export type CalendarEventUpdate = z.infer<typeof CalendarEventUpdate>;
-export const CalendarEventUpdate = z.object({ all_day: z.boolean().nullable(), description: z.string().max(5000).nullable(), ends_at: z.iso.datetime().nullable(), location: z.string().max(200).nullable(), recurrence: RecurrenceRule.nullable(), starts_at: z.iso.datetime().nullable(), timezone: z.string().min(1).max(100).nullable(), title: z.string().min(1).max(200).nullable() }).partial();
+export const CalendarEventUpdate = z.object({ all_day: z.boolean().nullable(), description: z.string().max(5000).nullable(), ends_at: z.iso.datetime().nullable(), location: z.string().max(200).nullable(), participants: z.array(z.uuid()).max(50).nullable(), recurrence: RecurrenceRule.nullable(), starts_at: z.iso.datetime().nullable(), timezone: z.string().min(1).max(100).nullable(), title: z.string().min(1).max(200).nullable() }).partial();
 
 export type CalendarOccurrenceResponse = z.infer<typeof CalendarOccurrenceResponse>;
-export const CalendarOccurrenceResponse = z.object({ all_day: z.boolean(), created_by: z.uuid(), description: z.string().nullable(), event_id: z.uuid(), is_exception: z.boolean(), location: z.string().nullable(), occurrence_end: z.iso.datetime(), occurrence_start: z.iso.datetime(), original_start: z.iso.datetime(), recurring: z.boolean(), timezone: z.string(), title: z.string() });
+export const CalendarOccurrenceResponse = z.object({ all_day: z.boolean(), created_by: z.uuid(), description: z.string().nullable(), event_id: z.uuid(), is_exception: z.boolean(), location: z.string().nullable(), occurrence_end: z.iso.datetime(), occurrence_start: z.iso.datetime(), original_start: z.iso.datetime(), participants: z.array(CalendarEventParticipantResponse).default([]), recurring: z.boolean(), timezone: z.string(), title: z.string() });
 
 export type CalendarOccurrenceMutationResponse = z.infer<typeof CalendarOccurrenceMutationResponse>;
 export const CalendarOccurrenceMutationResponse = z.object({ cancelled: z.boolean(), occurrence: CalendarOccurrenceResponse.nullable().optional() });

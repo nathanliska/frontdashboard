@@ -17,7 +17,7 @@ from app import metrics
 from app.config import settings
 from app.database import async_session_factory
 from app.models.activity import ActivityEvent
-from app.models.calendar import CalendarEvent, CalendarEventOverride
+from app.models.calendar import CalendarEvent, CalendarEventOverride, CalendarEventParticipant
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.dashboard_invite import DashboardInvite
 from app.models.email_verification_token import EmailVerificationToken
@@ -154,6 +154,7 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
                 CalendarEvent.updated_by,
                 CalendarEventOverride.created_by,
                 CalendarEventOverride.updated_by,
+                CalendarEventParticipant.user_id,
                 ResourceShare.granted_by,
             )
         ),

@@ -82,6 +82,28 @@ class CalendarEventOverride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     all_day: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
+class CalendarEventParticipant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A household member attached to an event — a label for "whose thing is this", not a grant.
+
+    Series-level on purpose: one set for the whole recurring event, never per-occurrence
+    (FDR-006). Access still flows from the dashboard alone; rows survive an unshare so the
+    event keeps naming its people, and the reader renders a departed member from the user row.
+    """
+
+    __tablename__ = "calendar_event_participants"
+    __table_args__ = (
+        UniqueConstraint("calendar_event_id", "user_id", name="uq_calendar_event_participants_member"),
+        Index("ix_calendar_event_participants_event", "calendar_event_id"),
+    )
+
+    calendar_event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("calendar_events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+
+
 class CalendarReminder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Reserved schema for a not-yet-built "notify me N minutes before" feature.
 

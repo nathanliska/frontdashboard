@@ -55,6 +55,8 @@ in the abstract) are not defined here.
 
 **Member** — Anyone with access to a dashboard: the owner plus every user holding a share row — the same set SSE fan-out addresses. `GET /dashboards/{id}/members` lists them, owner first, readable by any member. See [FDR-004](fdr/FDR-004-sharing-and-access.md).
 
+**Participant** — A member named on a calendar event as who it is *about*. A visual label only: grants no access, sends no notification, and survives the member losing dashboard access. See [FDR-006](fdr/FDR-006-calendar-and-events.md).
+
 **Owner** — The creator of a resource. Stored as the **absence** of a share row, but resolved as a named role: `effective_role` returns `EffectiveRole.owner`. Full control including delete and share. See [FDR-004](fdr/FDR-004-sharing-and-access.md).
 
 **Editor** *(role)* — A shared user who can edit the resource and its children.
