@@ -23,17 +23,6 @@ export type {
   TrashedListSummary as TrashedList,
 } from './generated/contract'
 
-export interface ListMutationOptions {
-  clientMutationId?: string
-}
-
-function buildListMutationHeaders(
-  options?: ListMutationOptions,
-): Record<string, string> | undefined {
-  if (!options?.clientMutationId) return undefined
-  return { 'X-Client-Mutation-Id': options.clientMutationId }
-}
-
 export async function apiGetLists(dashboardId?: string | null): Promise<ListResponse[]> {
   const query = new URLSearchParams()
   if (dashboardId) query.set('dashboard_id', dashboardId)
@@ -77,17 +66,13 @@ export async function apiGetList(id: string): Promise<ListDetailResponse> {
   return request
 }
 
-export async function apiCreateList(
-  body: {
-    name: string
-    list_type: ListType
-    dashboard_id: string
-  },
-  options?: ListMutationOptions,
-): Promise<ListResponse> {
+export async function apiCreateList(body: {
+  name: string
+  list_type: ListType
+  dashboard_id: string
+}): Promise<ListResponse> {
   const res = await apiFetch('/api/lists', {
     method: 'POST',
-    headers: buildListMutationHeaders(options),
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -97,26 +82,17 @@ export async function apiCreateList(
   return parseJson(res, ListResponse)
 }
 
-export async function apiUpdateList(
-  id: string,
-  body: { name?: string },
-  options?: ListMutationOptions,
-): Promise<ListResponse> {
+export async function apiUpdateList(id: string, body: { name?: string }): Promise<ListResponse> {
   const res = await apiFetch(`/api/lists/${id}`, {
     method: 'PATCH',
-    headers: buildListMutationHeaders(options),
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to update list')
   return parseJson(res, ListResponse)
 }
 
-export async function apiDeleteList(id: string, options?: ListMutationOptions): Promise<void> {
-  await requestVoid(
-    `/api/lists/${id}`,
-    { method: 'DELETE', headers: buildListMutationHeaders(options) },
-    'Failed to delete list',
-  )
+export async function apiDeleteList(id: string): Promise<void> {
+  await requestVoid(`/api/lists/${id}`, { method: 'DELETE' }, 'Failed to delete list')
 }
 
 export async function apiGetListTrash(dashboardId: string): Promise<TrashedListSummary[]> {
@@ -125,13 +101,9 @@ export async function apiGetListTrash(dashboardId: string): Promise<TrashedListS
   return parseJson(res, z.array(TrashedListSummary))
 }
 
-export async function apiRestoreList(
-  id: string,
-  options?: ListMutationOptions,
-): Promise<ListResponse> {
+export async function apiRestoreList(id: string): Promise<ListResponse> {
   const res = await apiFetch(`/api/lists/${id}/restore`, {
     method: 'POST',
-    headers: buildListMutationHeaders(options),
   })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { detail?: string }
@@ -140,14 +112,9 @@ export async function apiRestoreList(
   return parseJson(res, ListResponse)
 }
 
-export async function apiCreateItem(
-  listId: string,
-  text: string,
-  options?: ListMutationOptions,
-): Promise<ListItemResponse> {
+export async function apiCreateItem(listId: string, text: string): Promise<ListItemResponse> {
   const res = await apiFetch(`/api/lists/${listId}/items`, {
     method: 'POST',
-    headers: buildListMutationHeaders(options),
     body: JSON.stringify({ text }),
   })
   if (!res.ok) throw new Error('Failed to add item')
@@ -160,55 +127,39 @@ export async function apiUpdateItem(
   // `due_date` is a plain YYYY-MM-DD calendar day, not a timestamp — it is what the agenda's
   // TODAY/OVERDUE split compares against, so it must not carry a time or a zone. `null` clears it.
   body: { text?: string; checked?: boolean; due_date?: string | null },
-  options?: ListMutationOptions,
 ): Promise<ListItemResponse> {
   const res = await apiFetch(`/api/lists/${listId}/items/${itemId}`, {
     method: 'PATCH',
-    headers: buildListMutationHeaders(options),
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to update item')
   return parseJson(res, ListItemResponse)
 }
 
-export async function apiDeleteItem(
-  listId: string,
-  itemId: string,
-  options?: ListMutationOptions,
-): Promise<void> {
+export async function apiDeleteItem(listId: string, itemId: string): Promise<void> {
   await requestVoid(
     `/api/lists/${listId}/items/${itemId}`,
-    { method: 'DELETE', headers: buildListMutationHeaders(options) },
+    { method: 'DELETE' },
     'Failed to delete item',
   )
 }
 
-export async function apiReorderItems(
-  listId: string,
-  itemIds: string[],
-  options?: ListMutationOptions,
-): Promise<void> {
+export async function apiReorderItems(listId: string, itemIds: string[]): Promise<void> {
   await requestVoid(
     `/api/lists/${listId}/items/order`,
     {
       method: 'PUT',
-      headers: buildListMutationHeaders(options),
       body: JSON.stringify({ item_ids: itemIds }),
     },
     'Failed to reorder items',
   )
 }
 
-export async function apiReorderLists(
-  dashboardId: string,
-  listIds: string[],
-  options?: ListMutationOptions,
-): Promise<void> {
+export async function apiReorderLists(dashboardId: string, listIds: string[]): Promise<void> {
   await requestVoid(
     `/api/lists/order`,
     {
       method: 'PUT',
-      headers: buildListMutationHeaders(options),
       body: JSON.stringify({ dashboard_id: dashboardId, list_ids: listIds }),
     },
     'Failed to reorder lists',

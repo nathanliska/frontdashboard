@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // jsdom is required, not incidental: both the stub and `client.ts` use `document.cookie`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import { __resetApiClientForTests, apiFetch, setSessionExpiredHandler } from './client'
 
 // Stubbed rather than writing real cookies, so no cookie state leaks between cases.
@@ -40,6 +41,22 @@ describe('apiFetch', () => {
     vi.unstubAllGlobals()
     restoreCookies()
     __resetApiClientForTests()
+  })
+
+  describe('echo stamp', () => {
+    it('stamps every mutation with this tab’s X-Client-Id, and no GET', async () => {
+      vi.mocked(fetch).mockResolvedValue(response(200))
+
+      await apiFetch('/api/lists', { method: 'POST', body: '{}' })
+      await apiFetch('/api/lists')
+
+      const [, mutationInit] = vi.mocked(fetch).mock.calls[0]
+      const [, getInit] = vi.mocked(fetch).mock.calls[1]
+      // Stamped centrally so a new mutation call site cannot forget it; the SSE payload echoes
+      // it back as origin_client_id, which is the whole own-echo check.
+      expect(headerOf(mutationInit, 'X-Client-Id')).toBe(CLIENT_INSTANCE_ID)
+      expect(headerOf(getInit, 'X-Client-Id')).toBeNull()
+    })
   })
 
   describe('CSRF', () => {

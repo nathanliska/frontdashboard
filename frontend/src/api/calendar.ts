@@ -101,7 +101,9 @@ export async function apiUpdateEvent(
 }
 
 export async function apiDeleteEvent(eventId: string): Promise<void> {
-  const res = await apiFetch(`/api/calendar/events/${eventId}`, { method: 'DELETE' })
+  const res = await apiFetch(`/api/calendar/events/${eventId}`, {
+    method: 'DELETE',
+  })
   if (!res.ok) throw await readError(res, 'Failed to delete event')
 }
 

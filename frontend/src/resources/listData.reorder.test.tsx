@@ -5,7 +5,7 @@ import { ApiError } from '../api/http'
 import type { ListDetail } from '../api/lists'
 import { useAuthStore } from '../stores/auth'
 import { makeListDetail, makeListSummary } from '../test/fixtures'
-import { consumePendingListMutation } from '../utils/lists/listMutation'
+import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import {
   __resetListDataForTests,
   __seedListDetailForTests,
@@ -155,7 +155,7 @@ describe.each(REORDER_KINDS)(
 
       // The cache must move before the request settles — that is the whole point of optimistic.
       expect(screen.getByTestId('order')).toHaveTextContent('c,a,b')
-      expect(reorderApi).toHaveBeenCalledWith(scope, ['c', 'a', 'b'], expect.any(Object))
+      expect(reorderApi).toHaveBeenCalledWith(scope, ['c', 'a', 'b'])
 
       await act(async () => {
         await pending
@@ -192,9 +192,7 @@ describe.each(REORDER_KINDS)(
     })
 
     it('rolls back and refetches exactly once on a 409, forgetting the pending mutation', async () => {
-      const mutationId = '44444444-4444-4444-8444-444444444444'
       seed(['a', 'b', 'c'])
-      vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(mutationId)
       reorderApi.mockRejectedValueOnce(new ApiError('conflict', 409))
       refetchApi.mockResolvedValueOnce(resolveRefetchWith(['a', 'b', 'c']))
 
@@ -206,14 +204,10 @@ describe.each(REORDER_KINDS)(
 
       expect(screen.getByTestId('order')).toHaveTextContent('a,b,c')
       await waitFor(() => expect(refetchApi).toHaveBeenCalledTimes(1))
-      // Nothing left to consume — the bookkeeping was released rather than leaked.
-      expect(consumePendingListMutation(mutationId)).toBe(false)
     })
 
-    it('rolls back with zero refetches on a non-409 error, forgetting the pending mutation', async () => {
-      const mutationId = '55555555-5555-4555-8555-555555555555'
+    it('rolls back with zero refetches on a non-409 error', async () => {
       seed(['a', 'b', 'c'])
-      vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(mutationId)
       reorderApi.mockRejectedValueOnce(new ApiError('server error', 500))
 
       render(<Probe />)
@@ -224,8 +218,6 @@ describe.each(REORDER_KINDS)(
 
       expect(screen.getByTestId('order')).toHaveTextContent('a,b,c')
       expect(refetchApi).not.toHaveBeenCalled()
-      // Nothing left to consume — the bookkeeping was released rather than leaked.
-      expect(consumePendingListMutation(mutationId)).toBe(false)
     })
   },
 )
@@ -264,9 +256,6 @@ describe('reorderListItems / list.item.reordered — item-specific behavior', ()
   it('does not double-apply a self-echoed reorder event over optimistic state', async () => {
     __seedListDetailForTests('list-1', makeListDetail({ itemIds: ['a', 'b', 'c'] }))
     apiReorderItems.mockResolvedValueOnce(undefined)
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
-      '33333333-3333-4333-8333-333333333333',
-    )
 
     render(<ItemsProbe />)
 
@@ -288,7 +277,7 @@ describe('reorderListItems / list.item.reordered — item-specific behavior', ()
           dashboard_id: 'dash-1',
           list_id: 'list-1',
           item_ids: ['a', 'b', 'c'],
-          client_mutation_id: '33333333-3333-4333-8333-333333333333',
+          origin_client_id: CLIENT_INSTANCE_ID,
         },
         created_at: '2026-04-05T00:00:02Z',
       })

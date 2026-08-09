@@ -1,7 +1,7 @@
 # FDR-008: Real-Time Delivery (SSE)
 
 **Status:** Active
-**Last reviewed:** 2026-08-07
+**Last reviewed:** 2026-08-09
 
 ## Overview
 
@@ -37,6 +37,14 @@ it is in their FDRs.
 - **The UI admits when the stream is down.** An amber dot appears in the sidebar while reconnecting
   and nothing is drawn otherwise. A tab brought back to the foreground reopens a stream the browser
   closed while it was hidden.
+- **Own echoes are recognized by a per-tab id.** Every mutation carries the tab's per-load
+  `X-Client-Id`, the frame's payload echoes it back as `origin_client_id`, and the issuing tab
+  skips invalidating what its own response already applied — everyone else's tabs, the same user's
+  included, still act on the frame. The frame itself always arrives: it advances the reconnect mark
+  and feeds the activity feed, so suppression gates only the cache work. The accepted trade: if a
+  write commits but its response is lost, that tab stays stale until the error is retried or the
+  next foreign event or resync. A per-mutation registry cannot close that window either — the echo
+  outruns the failed response — and it costs bookkeeping at every call site, so the constant wins.
 
 ## Design Decisions
 

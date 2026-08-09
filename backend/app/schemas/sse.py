@@ -22,7 +22,7 @@ class ActivitySsePayload(BaseModel):
 
     dashboard_id: str | None = None
     list_id: str | None = None
-    client_mutation_id: str | None = None
+    origin_client_id: str | None = None
     # Closed vocabulary: makes the enum generate into the frontend contract, so a consumer can
     # no longer test for a value no producer emits.
     changed_fields: list[ChangedField] | None = None

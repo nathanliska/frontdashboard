@@ -216,14 +216,14 @@ async def test_dashboard_names_are_trimmed_and_bounded(auth_client: AsyncClient)
     assert (await auth_client.patch(f"/api/dashboards/{dashboard_id}", json={"name": None})).status_code == 422
 
 
-async def test_client_mutation_id_header_is_bounded(auth_client: AsyncClient) -> None:
+async def test_client_id_header_is_bounded(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
 
     set_csrf(auth_client)
     resp = await auth_client.patch(
         f"/api/dashboards/{dashboard['id']}",
         json={"name": "Renamed"},
-        headers={"X-Client-Mutation-Id": "x" * 129},
+        headers={"X-Client-Id": "x" * 129},
     )
 
     assert resp.status_code == 422
@@ -781,7 +781,7 @@ async def test_dashboard_mutations_emit_activity_events(
     assert event_types.count("dashboard.updated") >= 4
 
 
-async def test_dashboard_update_events_include_current_version_and_client_mutation_id(
+async def test_dashboard_update_events_include_current_version_and_origin_client_id(
     auth_client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
@@ -809,7 +809,7 @@ async def test_dashboard_update_events_include_current_version_and_client_mutati
         set_csrf(auth_client)
         rename_resp = await auth_client.patch(
             f"/api/dashboards/{dashboard['id']}",
-            headers={"X-Client-Mutation-Id": "rename-123"},
+            headers={"X-Client-Id": "rename-123"},
             json={"name": "Contract Board Renamed"},
         )
         assert rename_resp.status_code == 200
@@ -817,7 +817,7 @@ async def test_dashboard_update_events_include_current_version_and_client_mutati
         set_csrf(auth_client)
         update_widget_resp = await auth_client.patch(
             f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
-            headers={"X-Client-Mutation-Id": "widget-123"},
+            headers={"X-Client-Id": "widget-123"},
             json={"config": {"title": "Updated Clock"}},
         )
         assert update_widget_resp.status_code == 200
@@ -825,7 +825,7 @@ async def test_dashboard_update_events_include_current_version_and_client_mutati
         set_csrf(auth_client)
         add_share_resp = await auth_client.post(
             f"/api/dashboards/{dashboard['id']}/shares",
-            headers={"X-Client-Mutation-Id": "share-123"},
+            headers={"X-Client-Id": "share-123"},
             json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "viewer"},
         )
         assert add_share_resp.status_code == 201
@@ -840,9 +840,9 @@ async def test_dashboard_update_events_include_current_version_and_client_mutati
         )
         events = result.scalars().all()
 
-        rename_event = next(event for event in events if event.payload.get("client_mutation_id") == "rename-123")
-        widget_event = next(event for event in events if event.payload.get("client_mutation_id") == "widget-123")
-        share_event = next(event for event in events if event.payload.get("client_mutation_id") == "share-123")
+        rename_event = next(event for event in events if event.payload.get("origin_client_id") == "rename-123")
+        widget_event = next(event for event in events if event.payload.get("origin_client_id") == "widget-123")
+        share_event = next(event for event in events if event.payload.get("origin_client_id") == "share-123")
 
         assert rename_event.entity_version == 2
         assert rename_event.payload["changed_fields"] == ["name"]

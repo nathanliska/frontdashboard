@@ -2,22 +2,19 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Dashboard, DashboardSummary } from '../../api/dashboards'
 import type { SseEvent } from '../../hooks/useSSE'
 import { useAuthStore } from '../../stores/auth'
+import { CLIENT_INSTANCE_ID } from '../shared/clientInstance'
 import {
   affectsTrash,
   applyLocalDashboardSummaryUpdate,
   canSkipDashboardSummaryReload,
   canSuppressLocalDashboardEcho,
-  consumePendingDashboardMutationEcho,
   getEventDashboardId,
   isDashboardShareEvent,
   isLayoutOnlyDashboardEvent,
+  isOwnDashboardEcho,
   patchWidgetConfig,
   sortDashboardSummaries,
 } from './dashboardEvents'
-import {
-  __resetPendingDashboardMutationsForTests,
-  recordPendingDashboardMutation,
-} from './dashboardMutation'
 
 function event(overrides: Partial<SseEvent> = {}): SseEvent {
   return {
@@ -151,24 +148,28 @@ describe('local summary touch', () => {
 
 describe('echo suppression', () => {
   beforeEach(() => {
-    __resetPendingDashboardMutationsForTests()
     useAuthStore.setState({ user: { id: 'user-1' } as never })
   })
 
-  it('consumes the entry, so a second ask is false', () => {
-    recordPendingDashboardMutation('cm-1')
-    const frame = event({ payload: { client_mutation_id: 'cm-1' } })
-    expect(consumePendingDashboardMutationEcho(frame)).toBe(true)
-    expect(consumePendingDashboardMutationEcho(frame)).toBe(false)
+  it('recognizes this tab’s stamp, repeatedly — the check is pure', () => {
+    const frame = event({ payload: { origin_client_id: CLIENT_INSTANCE_ID } })
+    expect(isOwnDashboardEcho(frame)).toBe(true)
+    expect(isOwnDashboardEcho(frame)).toBe(true)
   })
 
-  it('ignores a frame from another actor even with a matching id', () => {
-    recordPendingDashboardMutation('cm-1')
+  it('treats another tab’s stamp as foreign, same user or not', () => {
+    expect(isOwnDashboardEcho(event({ payload: { origin_client_id: 'some-other-tab' } }))).toBe(
+      false,
+    )
     expect(
-      consumePendingDashboardMutationEcho(
-        event({ actor_id: 'user-2', payload: { client_mutation_id: 'cm-1' } }),
+      isOwnDashboardEcho(
+        event({ actor_id: 'user-2', payload: { origin_client_id: CLIENT_INSTANCE_ID } }),
       ),
     ).toBe(false)
+  })
+
+  it('never matches an unstamped frame', () => {
+    expect(isOwnDashboardEcho(event({ payload: {} }))).toBe(false)
   })
 
   it('suppresses created, deleted and share_updated outright', () => {

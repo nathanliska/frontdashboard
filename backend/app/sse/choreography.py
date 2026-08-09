@@ -11,11 +11,17 @@ See [ADR-015](../../../docs/adr/ADR-015-sse-write-choreography.md).
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Annotated
 
+from fastapi import Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.sse import broker
 from app.sse.manager import manager
+
+# Round-trips a write to its SSE echo: the tab stamps every mutation with its per-load id, the
+# payload carries it back, and the issuing tab alone suppresses frames its responses already covered.
+ClientIdHeader = Annotated[str | None, Header(alias="X-Client-Id", max_length=128)]
 
 
 @dataclass(frozen=True)

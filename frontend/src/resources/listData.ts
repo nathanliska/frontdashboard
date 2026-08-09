@@ -14,20 +14,13 @@ import {
   apiUpdateList,
   type ListDetail,
   type ListItem,
-  type ListMutationOptions,
   type ListSummary,
   type ListType,
 } from '../api/lists'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { useAuthStore } from '../stores/auth'
 import { toast } from '../stores/toast'
-import {
-  __resetPendingListMutationsForTests,
-  consumePendingListMutation,
-  createClientMutationId,
-  forgetPendingListMutation,
-  recordPendingListMutation,
-} from '../utils/lists/listMutation'
+import { isOwnFrame } from '../utils/shared/clientInstance'
 import {
   applyAgendaItemUpdate,
   invalidateAgendaReminders,
@@ -81,26 +74,6 @@ function getAffectedListId(event: SseEvent): string | null {
   }
 
   return event.payload.list_id ?? null
-}
-
-function getListEventClientMutationId(event: SseEvent): string | null {
-  return event.payload.client_mutation_id ?? null
-}
-
-export function consumePendingListMutationEcho(event: SseEvent): boolean {
-  const currentUserId = useAuthStore.getState().user?.id
-  const clientMutationId = getListEventClientMutationId(event)
-  if (!currentUserId || event.actor_id !== currentUserId || !clientMutationId) {
-    return false
-  }
-
-  return consumePendingListMutation(clientMutationId)
-}
-
-function nextListMutationOptions(): { clientMutationId: string; options: ListMutationOptions } {
-  const clientMutationId = createClientMutationId('list')
-  recordPendingListMutation(clientMutationId)
-  return { clientMutationId, options: { clientMutationId } }
 }
 
 function patchListSummaryById(
@@ -174,17 +147,10 @@ export async function createList(
   listType: ListType,
   dashboardId: string,
 ): Promise<ListSummary> {
-  const { clientMutationId, options } = nextListMutationOptions()
-  const list = await apiCreateList(
-    {
-      name,
-      list_type: listType,
-      dashboard_id: dashboardId,
-    },
-    options,
-  ).catch((error) => {
-    forgetPendingListMutation(clientMutationId)
-    throw error
+  const list = await apiCreateList({
+    name,
+    list_type: listType,
+    dashboard_id: dashboardId,
   })
 
   listSummariesQuery.updateWhere(
@@ -200,9 +166,8 @@ export async function createList(
 }
 
 export async function updateListName(id: string, name: string): Promise<void> {
-  const { clientMutationId, options } = nextListMutationOptions()
   try {
-    const updated = await apiUpdateList(id, { name }, options)
+    const updated = await apiUpdateList(id, { name })
     patchListSummaryById(id, () => updated)
     patchListDetailById(id, (detail) => ({
       ...detail,
@@ -212,29 +177,25 @@ export async function updateListName(id: string, name: string): Promise<void> {
     // Each agenda reminder displays its list's name, so a rename has to reach them too.
     renameAgendaListEntries(id, updated.name)
   } catch (error) {
-    forgetPendingListMutation(clientMutationId)
     toast.error('Failed to rename list.')
     throw error instanceof Error ? error : new Error('Failed to rename list.')
   }
 }
 
 export async function deleteList(id: string): Promise<void> {
-  const { clientMutationId, options } = nextListMutationOptions()
   try {
-    await apiDeleteList(id, options)
+    await apiDeleteList(id)
     removeListFromCaches(id)
     removeAgendaItemsForList(id)
   } catch (error) {
-    forgetPendingListMutation(clientMutationId)
     toast.error('Failed to move list to trash.')
     throw error instanceof Error ? error : new Error('Failed to move list to trash.')
   }
 }
 
 export async function restoreList(id: string, dashboardId: string): Promise<ListSummary | null> {
-  const { clientMutationId, options } = nextListMutationOptions()
   try {
-    const restored = await apiRestoreList(id, options)
+    const restored = await apiRestoreList(id)
     // The response is the restored row, so the summaries cache is patched from it rather than
     // refetched; the SSE echo for our own mutation is suppressed.
     listSummariesQuery.updateWhere(
@@ -249,16 +210,14 @@ export async function restoreList(id: string, dashboardId: string): Promise<List
     invalidateAgendaReminders(dashboardId)
     return restored
   } catch (error) {
-    forgetPendingListMutation(clientMutationId)
     toast.error(error instanceof Error ? error.message : 'Failed to restore list.')
     return null
   }
 }
 
 export async function addListItem(listId: string, text: string): Promise<void> {
-  const { clientMutationId, options } = nextListMutationOptions()
   try {
-    const item = await apiCreateItem(listId, text, options)
+    const item = await apiCreateItem(listId, text)
     patchListDetailById(listId, (detail) => ({
       ...detail,
       items: [...detail.items, item],
@@ -273,7 +232,6 @@ export async function addListItem(listId: string, text: string): Promise<void> {
     // one, rather than silently dropping it.
     patchAgendaFromListDetail(listId, item)
   } catch (error) {
-    forgetPendingListMutation(clientMutationId)
     toast.error('Failed to add item.')
     throw error instanceof Error ? error : new Error('Failed to add item.')
   }
@@ -297,9 +255,8 @@ export async function updateListItem(
   itemId: string,
   body: { text?: string; checked?: boolean; due_date?: string | null },
 ): Promise<void> {
-  const { clientMutationId, options } = nextListMutationOptions()
   try {
-    const item: ListItem = await apiUpdateItem(listId, itemId, body, options)
+    const item: ListItem = await apiUpdateItem(listId, itemId, body)
     patchListDetailById(listId, (detail) => ({
       ...detail,
       items: detail.items.map((current) => (current.id === itemId ? item : current)),
@@ -309,7 +266,6 @@ export async function updateListItem(
     // Read after the patch so the detail is the post-mutation one.
     patchAgendaFromListDetail(listId, item)
   } catch (error) {
-    forgetPendingListMutation(clientMutationId)
     toast.error(body.text != null ? 'Failed to rename item.' : 'Failed to update item.')
     if (body.text != null) {
       throw error instanceof Error ? error : new Error('Failed to rename item.')
@@ -318,9 +274,8 @@ export async function updateListItem(
 }
 
 export async function deleteListItem(listId: string, itemId: string): Promise<void> {
-  const { clientMutationId, options } = nextListMutationOptions()
   try {
-    await apiDeleteItem(listId, itemId, options)
+    await apiDeleteItem(listId, itemId)
     patchListDetailById(listId, (detail) => ({
       ...detail,
       items: detail.items.filter((item) => item.id !== itemId),
@@ -332,14 +287,12 @@ export async function deleteListItem(listId: string, itemId: string): Promise<vo
       item_count: Math.max(0, list.item_count - 1),
     }))
   } catch {
-    forgetPendingListMutation(clientMutationId)
     toast.error('Failed to delete item.')
   }
 }
 
 export async function reorderListItems(listId: string, orderedIds: string[]): Promise<void> {
   const previous = listDetailQuery.getState({ listId }).data?.items ?? null
-  const { clientMutationId, options } = nextListMutationOptions()
 
   patchListDetailById(listId, (detail) => {
     const items = orderByIds(detail.items, orderedIds)
@@ -347,9 +300,8 @@ export async function reorderListItems(listId: string, orderedIds: string[]): Pr
   })
 
   try {
-    await apiReorderItems(listId, orderedIds, options)
+    await apiReorderItems(listId, orderedIds)
   } catch (error) {
-    forgetPendingListMutation(clientMutationId)
     if (previous) {
       patchListDetailById(listId, (detail) => ({ ...detail, items: previous }))
     }
@@ -364,7 +316,6 @@ export async function reorderListItems(listId: string, orderedIds: string[]): Pr
 
 export async function reorderLists(dashboardId: string, orderedIds: string[]): Promise<void> {
   const previous = listSummariesQuery.getState({ dashboardId }).data ?? null
-  const { clientMutationId, options } = nextListMutationOptions()
 
   listSummariesQuery.updateWhere(
     (scope) => scope.dashboardId === dashboardId,
@@ -376,9 +327,8 @@ export async function reorderLists(dashboardId: string, orderedIds: string[]): P
   )
 
   try {
-    await apiReorderLists(dashboardId, orderedIds, options)
+    await apiReorderLists(dashboardId, orderedIds)
   } catch (error) {
-    forgetPendingListMutation(clientMutationId)
     if (previous) {
       listSummariesQuery.updateWhere(
         (scope) => scope.dashboardId === dashboardId,
@@ -416,9 +366,8 @@ function pickPatchableItemFields(values: Record<string, unknown>): Partial<ListI
 
 export function handleListResourceEvent(
   event: ResourceEvent,
-  // Decided once by the SSE router and shared, because `consumePendingListMutationEcho` deletes
-  // the pending id — only the first handler to ask can learn the truth, and there are three.
-  // Defaults to asking directly so a lone caller (tests, a direct dispatch) still behaves.
+  // Decided once by the SSE router and shared with the other handlers; the check is a pure
+  // comparison now, so the default exists only so a lone caller (tests) still behaves.
   { isOwnEcho }: { isOwnEcho?: boolean } = {},
 ): void {
   if (event.event_type === 'resync') {
@@ -431,7 +380,7 @@ export function handleListResourceEvent(
 
   const dashboardId = getEventDashboardId(event)
   const affectedListId = getAffectedListId(event)
-  if (isOwnEcho ?? consumePendingListMutationEcho(event)) {
+  if (isOwnEcho ?? isOwnFrame(event, useAuthStore.getState().user?.id)) {
     return
   }
 
@@ -547,7 +496,6 @@ registerResourceReset(resetListData)
 
 export function __resetListDataForTests(): void {
   resetListData()
-  __resetPendingListMutationsForTests()
 }
 
 export function __seedListDetailForTests(listId: string, detail: ListDetail): void {

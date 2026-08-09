@@ -3,7 +3,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../../api/dashboards'
 import type { ResourceShare } from '../../api/shares'
-import { __resetPendingDashboardMutationsForTests } from '../../utils/dashboard/dashboardMutation'
 import { DashboardSettingsModal } from './DashboardSettingsModal'
 
 const { apiGetDashboard, apiGetDashboardShares, apiRemoveDashboardShare, apiUpdateDashboardShare } =
@@ -74,7 +73,6 @@ describe('DashboardSettingsModal', () => {
   afterEach(() => {
     vi.clearAllMocks()
     vi.useRealTimers()
-    __resetPendingDashboardMutationsForTests()
   })
 
   it('passes client mutation ids for share updates and removals', async () => {
@@ -92,22 +90,13 @@ describe('DashboardSettingsModal', () => {
     fireEvent.change(shareRoleSelect, { target: { value: 'editor' } })
 
     await waitFor(() => {
-      expect(apiUpdateDashboardShare).toHaveBeenCalledWith(
-        'dash-1',
-        'share-1',
-        { role: 'editor' },
-        expect.objectContaining({ clientMutationId: expect.any(String) }),
-      )
+      expect(apiUpdateDashboardShare).toHaveBeenCalledWith('dash-1', 'share-1', { role: 'editor' })
     })
 
     fireEvent.click(screen.getByLabelText('Remove Viewer One'))
 
     await waitFor(() => {
-      expect(apiRemoveDashboardShare).toHaveBeenCalledWith(
-        'dash-1',
-        'share-1',
-        expect.objectContaining({ clientMutationId: expect.any(String) }),
-      )
+      expect(apiRemoveDashboardShare).toHaveBeenCalledWith('dash-1', 'share-1')
     })
   })
 

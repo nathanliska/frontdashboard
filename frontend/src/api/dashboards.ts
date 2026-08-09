@@ -74,19 +74,8 @@ export type UpdateLayoutResult =
   | { conflict: false; dashboard: Dashboard }
   | { conflict: true; detail?: string }
 
-export interface DashboardMutationOptions {
-  clientMutationId?: string
-}
-
 async function parseDashboard(res: Response): Promise<Dashboard> {
   return parseJson(res, DashboardSchema)
-}
-
-function buildDashboardMutationHeaders(
-  options?: DashboardMutationOptions,
-): Record<string, string> | undefined {
-  if (!options?.clientMutationId) return undefined
-  return { 'X-Client-Mutation-Id': options.clientMutationId }
 }
 
 export async function apiListDashboards(): Promise<DashboardSummary[]> {
@@ -120,16 +109,12 @@ export async function apiGetDashboard(id: string): Promise<Dashboard> {
   return parseDashboard(res)
 }
 
-export async function apiCreateDashboard(
-  data: {
-    name: string
-    shares?: ShareCreate[]
-  },
-  options?: DashboardMutationOptions,
-): Promise<DashboardSummary> {
+export async function apiCreateDashboard(data: {
+  name: string
+  shares?: ShareCreate[]
+}): Promise<DashboardSummary> {
   const res = await apiFetch('/api/dashboards', {
     method: 'POST',
-    headers: buildDashboardMutationHeaders(options),
     body: JSON.stringify(data),
   })
   if (!res.ok) throw new Error('Failed to create dashboard')
@@ -139,24 +124,18 @@ export async function apiCreateDashboard(
 export async function apiUpdateDashboardMeta(
   id: string,
   data: { name?: string },
-  options?: DashboardMutationOptions,
 ): Promise<DashboardSummary> {
   const res = await apiFetch(`/api/dashboards/${id}`, {
     method: 'PATCH',
-    headers: buildDashboardMutationHeaders(options),
     body: JSON.stringify(data),
   })
   if (!res.ok) throw new Error('Failed to update dashboard')
   return parseJson(res, DashboardSummary)
 }
 
-export async function apiDeleteDashboard(
-  id: string,
-  options?: DashboardMutationOptions,
-): Promise<void> {
+export async function apiDeleteDashboard(id: string): Promise<void> {
   const res = await apiFetch(`/api/dashboards/${id}`, {
     method: 'DELETE',
-    headers: buildDashboardMutationHeaders(options),
   })
   if (!res.ok) throw new Error('Failed to delete dashboard')
 }
@@ -167,13 +146,9 @@ export async function apiGetTrash(): Promise<TrashedDashboardSummary[]> {
   return parseJson(res, z.array(TrashedDashboardSummary))
 }
 
-export async function apiRestoreDashboard(
-  id: string,
-  options?: DashboardMutationOptions,
-): Promise<DashboardSummaryType> {
+export async function apiRestoreDashboard(id: string): Promise<DashboardSummaryType> {
   const res = await apiFetch(`/api/dashboards/${id}/restore`, {
     method: 'POST',
-    headers: buildDashboardMutationHeaders(options),
   })
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { detail?: string }
@@ -186,11 +161,9 @@ export async function apiUpdateLayout(
   dashboardId: string,
   layout: LayoutItem[],
   version: number,
-  options?: DashboardMutationOptions,
 ): Promise<UpdateLayoutResult> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/layout`, {
     method: 'PUT',
-    headers: buildDashboardMutationHeaders(options),
     body: JSON.stringify({ layout, version }),
   })
   if (res.status === 409) {
@@ -204,14 +177,9 @@ export async function apiUpdateLayout(
   return { conflict: false, dashboard: await parseDashboard(res) }
 }
 
-export async function apiAddWidget(
-  dashboardId: string,
-  widget: WidgetCreate,
-  options?: DashboardMutationOptions,
-): Promise<Dashboard> {
+export async function apiAddWidget(dashboardId: string, widget: WidgetCreate): Promise<Dashboard> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/widgets`, {
     method: 'POST',
-    headers: buildDashboardMutationHeaders(options),
     body: JSON.stringify(widget),
   })
   if (!res.ok) {
@@ -225,25 +193,18 @@ export async function apiUpdateWidget(
   dashboardId: string,
   widgetId: string,
   config: Record<string, unknown>,
-  options?: DashboardMutationOptions,
 ): Promise<DashboardWidget> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/widgets/${widgetId}`, {
     method: 'PATCH',
-    headers: buildDashboardMutationHeaders(options),
     body: JSON.stringify({ config }),
   })
   if (!res.ok) throw new Error('Failed to update widget')
   return parseJson(res, DashboardWidgetSchema)
 }
 
-export async function apiRemoveWidget(
-  dashboardId: string,
-  widgetId: string,
-  options?: DashboardMutationOptions,
-): Promise<void> {
+export async function apiRemoveWidget(dashboardId: string, widgetId: string): Promise<void> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/widgets/${widgetId}`, {
     method: 'DELETE',
-    headers: buildDashboardMutationHeaders(options),
   })
   if (!res.ok) throw new Error('Failed to remove widget')
 }
@@ -268,25 +229,18 @@ export async function apiUpdateDashboardShare(
   dashboardId: string,
   shareId: string,
   body: ShareUpdate,
-  options?: DashboardMutationOptions,
 ): Promise<ResourceShare> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/shares/${shareId}`, {
     method: 'PATCH',
-    headers: buildDashboardMutationHeaders(options),
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error('Failed to update dashboard share')
   return parseJson(res, ShareResponse)
 }
 
-export async function apiRemoveDashboardShare(
-  dashboardId: string,
-  shareId: string,
-  options?: DashboardMutationOptions,
-): Promise<void> {
+export async function apiRemoveDashboardShare(dashboardId: string, shareId: string): Promise<void> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/shares/${shareId}`, {
     method: 'DELETE',
-    headers: buildDashboardMutationHeaders(options),
   })
   if (!res.ok) throw new Error('Failed to remove dashboard share')
 }

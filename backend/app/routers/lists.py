@@ -1,8 +1,8 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,11 +35,10 @@ from app.services.shares import (
     list_accessible_dashboard_ids,
     load_dashboard_access,
 )
-from app.sse.choreography import Fanout, commit_and_broadcast
+from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict
 
 router = APIRouter(prefix="/lists", tags=["lists"])
-ClientMutationIdHeader = Annotated[str | None, Header(alias="X-Client-Mutation-Id", max_length=128)]
 
 
 def _dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
@@ -56,11 +55,11 @@ async def _build_list_event_message(
     entity_type: str,
     entity_id: uuid.UUID,
     payload: dict[str, Any] | None = None,
-    client_mutation_id: str | None = None,
+    client_id: str | None = None,
 ) -> dict:
     event_payload = {"dashboard_id": str(dashboard.id), **(payload or {})}
-    if client_mutation_id is not None:
-        event_payload["client_mutation_id"] = client_mutation_id
+    if client_id is not None:
+        event_payload["origin_client_id"] = client_id
     activity = log_event(
         db,
         event_type=event_type,
@@ -136,7 +135,7 @@ def _raise_dashboard_managed_permissions_error() -> None:
 async def create_list(
     request: Request,
     body: ListCreate,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -181,7 +180,7 @@ async def create_list(
         entity_type="list",
         entity_id=lst.id,
         payload={"name": lst.name, "list_type": str(lst.list_type)},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -233,7 +232,7 @@ async def list_lists(
 async def reorder_lists(
     request: Request,
     body: ListReorder,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -272,7 +271,7 @@ async def reorder_lists(
             "dashboard_name": dashboard.name,
             "list_ids": [str(i) for i in body.list_ids],
         },
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -377,7 +376,7 @@ async def list_trash(
 async def restore_list(
     request: Request,
     list_id: uuid.UUID,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -406,7 +405,7 @@ async def restore_list(
         entity_type="list",
         entity_id=lst.id,
         payload={"name": lst.name, "restored": True},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -449,7 +448,7 @@ async def update_list(
     request: Request,
     list_id: uuid.UUID,
     body: ListUpdate,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -470,7 +469,7 @@ async def update_list(
         entity_type="list",
         entity_id=lst.id,
         payload={"name": lst.name},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -486,7 +485,7 @@ async def update_list(
 async def delete_list(
     request: Request,
     list_id: uuid.UUID,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -508,7 +507,7 @@ async def delete_list(
         entity_type="list",
         entity_id=lst.id,
         payload={"name": lst.name},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     lst.deleted_at = datetime.now(UTC)
     await commit_and_broadcast(
@@ -524,7 +523,7 @@ async def create_item(
     request: Request,
     list_id: uuid.UUID,
     body: ListItemCreate,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -562,7 +561,7 @@ async def create_item(
         entity_type="list_item",
         entity_id=item.id,
         payload={"text": item.text, "list_id": str(list_id), "list_name": lst.name},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -579,7 +578,7 @@ async def update_item(
     list_id: uuid.UUID,
     item_id: uuid.UUID,
     body: ListItemUpdate,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -621,7 +620,7 @@ async def update_item(
             "fields": list(body.model_fields_set),
             "values": changed_values,
         },
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,
@@ -637,7 +636,7 @@ async def delete_item(
     request: Request,
     list_id: uuid.UUID,
     item_id: uuid.UUID,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -665,7 +664,7 @@ async def delete_item(
         entity_type="list_item",
         entity_id=item.id,
         payload={"list_id": str(list_id), "list_name": lst.name, "text": item.text},
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     item.deleted_at = datetime.now(UTC)
     await commit_and_broadcast(
@@ -681,7 +680,7 @@ async def reorder_items(
     request: Request,
     list_id: uuid.UUID,
     body: ItemReorder,
-    client_mutation_id: ClientMutationIdHeader = None,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -713,7 +712,7 @@ async def reorder_items(
             "list_name": lst.name,
             "item_ids": [str(i) for i in body.item_ids],
         },
-        client_mutation_id=client_mutation_id,
+        client_id=client_id,
     )
     await commit_and_broadcast(
         db,

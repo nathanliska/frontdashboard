@@ -12,7 +12,7 @@ export type ChangedField = z.infer<typeof ChangedField>;
 export const ChangedField = z.enum(["layout", "widgets", "name", "restored", "shares"]);
 
 export type ActivitySsePayload = z.infer<typeof ActivitySsePayload>;
-export const ActivitySsePayload = z.object({ changed_fields: z.array(ChangedField).nullable(), client_mutation_id: z.string().nullable(), config: z.record(z.string(), z.unknown()).nullable(), dashboard_id: z.string().nullable(), item_ids: z.array(z.string()).nullable(), list_id: z.string().nullable(), list_ids: z.array(z.string()).nullable(), values: z.record(z.string(), z.unknown()).nullable(), widget_id: z.string().nullable() }).partial().catchall(z.unknown());
+export const ActivitySsePayload = z.object({ changed_fields: z.array(ChangedField).nullable(), config: z.record(z.string(), z.unknown()).nullable(), dashboard_id: z.string().nullable(), item_ids: z.array(z.string()).nullable(), list_id: z.string().nullable(), list_ids: z.array(z.string()).nullable(), origin_client_id: z.string().nullable(), values: z.record(z.string(), z.unknown()).nullable(), widget_id: z.string().nullable() }).partial().catchall(z.unknown());
 
 export type ActivitySseEvent = z.infer<typeof ActivitySseEvent>;
 export const ActivitySseEvent = z.object({ actor_display_name: z.string(), actor_id: z.string(), created_at: z.string(), entity_id: z.string(), entity_type: z.string(), entity_version: z.number().int(), event_id: z.number().int(), event_type: EventType, payload: ActivitySsePayload });

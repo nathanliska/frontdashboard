@@ -26,7 +26,7 @@ feature does*, [CONTEXT.md](../../CONTEXT.md) is the current-state snapshot, and
 | [ADR-003](ADR-003-first-class-sessions.md) | First-class sessions with immediate revocation | 2026-07-20 |
 | [ADR-004](ADR-004-sse-over-websocket.md) | SSE (not WebSocket), one multiplexed connection per user | 2026-08-07 |
 | [ADR-005](ADR-005-two-layer-client-state.md) | Two-layer client state — Zustand stores + scoped-query caches | 2026-07-20 |
-| [ADR-006](ADR-006-rest-fetch-sse-patch.md) | REST for initial fetch, SSE for incremental patch | 2026-07-20 |
+| [ADR-006](ADR-006-rest-fetch-sse-patch.md) | REST for initial fetch, SSE for incremental patch | 2026-08-09 |
 | [ADR-007](ADR-007-soft-delete-boundary.md) | Soft delete for lists/items/events; dashboards trash then purge | 2026-07-27 |
 | [ADR-008](ADR-008-layout-version-occ.md) | Layout version integer for optimistic concurrency control | 2026-07-20 |
 | [ADR-009](ADR-009-canonical-layout-mobile-projection.md) | Persisted layout is canonical, mobile view is a derived projection | 2026-07-20 |

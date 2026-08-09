@@ -31,10 +31,15 @@ from app.services.shares import (
     list_accessible_dashboard_ids,
     load_dashboard_access,
 )
-from app.sse.choreography import Fanout, commit_and_broadcast
+from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
+
+
+def _echo_stamp(client_id: str | None) -> dict[str, str]:
+    """The payload field the issuing tab matches its own echo on; absent when the write carried none."""
+    return {} if client_id is None else {"origin_client_id": client_id}
 
 
 def _dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
@@ -156,6 +161,7 @@ def _raise_dashboard_managed_permissions_error() -> None:
 async def create_event(
     request: Request,
     body: CalendarEventCreate,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -193,7 +199,7 @@ async def create_event(
         actor_display_name=current_user.display_name,
         entity_type="calendar_event",
         entity_id=event.id,
-        payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)},
+        payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)} | _echo_stamp(client_id),
     )
     event_message = await build_activity_sse_dict(db, activity)
     await commit_and_broadcast(
@@ -307,6 +313,7 @@ async def update_event(
     request: Request,
     event_id: uuid.UUID,
     body: CalendarEventUpdate,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -355,7 +362,7 @@ async def update_event(
         actor_display_name=current_user.display_name,
         entity_type="calendar_event",
         entity_id=event.id,
-        payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)},
+        payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)} | _echo_stamp(client_id),
     )
     event_message = await build_activity_sse_dict(db, activity)
     await commit_and_broadcast(
@@ -373,6 +380,7 @@ async def update_occurrence(
     request: Request,
     event_id: uuid.UUID,
     body: CalendarOccurrenceUpdate,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -416,7 +424,8 @@ async def update_occurrence(
         actor_display_name=current_user.display_name,
         entity_type="calendar_event",
         entity_id=event.id,
-        payload={"title": event.title, "occurrence_start": body.occurrence_start.astimezone(UTC).isoformat(), "dashboard_id": str(dashboard.id)},
+        payload={"title": event.title, "occurrence_start": body.occurrence_start.astimezone(UTC).isoformat(), "dashboard_id": str(dashboard.id)}
+        | _echo_stamp(client_id),
     )
     event_message = await build_activity_sse_dict(db, activity)
     await commit_and_broadcast(
@@ -445,6 +454,7 @@ async def update_occurrence(
 async def delete_event(
     request: Request,
     event_id: uuid.UUID,
+    client_id: ClientIdHeader = None,
     _csrf: None = Depends(require_csrf),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -460,7 +470,7 @@ async def delete_event(
         actor_display_name=current_user.display_name,
         entity_type="calendar_event",
         entity_id=event.id,
-        payload={"title": event.title, "dashboard_id": str(dashboard.id)},
+        payload={"title": event.title, "dashboard_id": str(dashboard.id)} | _echo_stamp(client_id),
     )
     event.deleted_at = datetime.now(UTC)
     event.updated_by = current_user.id

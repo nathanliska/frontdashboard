@@ -87,6 +87,25 @@ describe('CalendarEditorParticipantsSection', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('serves an editor reopen from cache instead of refetching', async () => {
+    mockedList.mockResolvedValue([member('Owner'), member('Zoe')])
+    const props = {
+      dashboardId: 'd1',
+      selected: [],
+      initialParticipants: [],
+      onToggle: vi.fn(),
+    }
+
+    const first = render(<CalendarEditorParticipantsSection {...props} />)
+    await screen.findByRole('button', { name: /Zoe/ })
+    first.unmount()
+
+    render(<CalendarEditorParticipantsSection {...props} />)
+    await screen.findByRole('button', { name: /Zoe/ })
+
+    expect(mockedList).toHaveBeenCalledTimes(1)
+  })
+
   it('renders nothing when the caller is alone on the dashboard', async () => {
     mockedList.mockResolvedValue([member('Owner')])
     const { container } = render(

@@ -266,10 +266,9 @@ export function handleAgendaResourceEvent(
     return
   }
 
-  // `applyAgendaItemUpdate` already patched this cache, so our own echo has nothing to add.
-  // Calendar events are excluded on purpose: occurrence expansion is server-derived, so
-  // refetching after a calendar mutation is the sanctioned exception.
-  if (isOwnEcho && event.event_type.startsWith('list.')) return
+  // Own echoes have nothing to add: `applyAgendaItemUpdate` already patched list reminders, and
+  // a calendar mutation's own path refetched the shared occurrence store after its commit.
+  if (isOwnEcho) return
 
   const dashboardId = getDashboardId(event)
   const invalidateMatching = (invalidate: (predicate: (scope: AgendaScope) => boolean) => void) => {

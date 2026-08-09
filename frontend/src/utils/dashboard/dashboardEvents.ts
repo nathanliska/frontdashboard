@@ -2,8 +2,7 @@
  * Reading a dashboard SSE frame: what it refers to, and what the client owes it.
  *
  * Each takes a frame and returns an answer, so they can be exercised without a store. All are
- * pure but one: `consumePendingDashboardMutationEcho` reads the auth store and *consumes* from
- * the shared echo map, so it answers a given frame only once.
+ * pure but one: `isOwnDashboardEcho` reads the auth store for the signed-in user.
  *
  * Which fields imply what is the vocabulary table's job
  * ([FDR-008 §10](../../../../docs/fdr/FDR-008-realtime-sse.md)); this layer decides what the
@@ -12,13 +11,13 @@
 import type { Dashboard, DashboardSummary } from '../../api/dashboards'
 import type { SseEvent } from '../../hooks/useSSE'
 import { useAuthStore } from '../../stores/auth'
+import { isOwnFrame } from '../shared/clientInstance'
 import {
   isEchoSuppressible,
   isFullyAppliedLocally,
   isOnly,
   movesDashboardRow,
 } from './changedFields'
-import { consumePendingDashboardMutation } from './dashboardMutation'
 
 export function getEventDashboardId(event: SseEvent): string | null {
   if (event.entity_type === 'dashboard') {
@@ -104,15 +103,9 @@ export function applyLocalDashboardSummaryUpdate(
   return didChange ? sortDashboardSummaries(nextSummaries) : summaries
 }
 
-/** Consumes the pending-mutation entry, so ask once per frame and pass the verdict down. */
-export function consumePendingDashboardMutationEcho(event: SseEvent): boolean {
-  const currentUserId = useAuthStore.getState().user?.id
-  const clientMutationId = event.payload.client_mutation_id ?? null
-  if (!currentUserId || event.actor_id !== currentUserId || !clientMutationId) {
-    return false
-  }
-
-  return consumePendingDashboardMutation(clientMutationId)
+/** True when the frame echoes a write this tab issued; a pure check, safe to ask repeatedly. */
+export function isOwnDashboardEcho(event: SseEvent): boolean {
+  return isOwnFrame(event, useAuthStore.getState().user?.id)
 }
 
 /**

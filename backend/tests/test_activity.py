@@ -19,7 +19,7 @@ from app.models.activity import ActivityEvent, EventType
 from app.services.activity import log_event
 from app.services.notifications import stage_notification
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
-from tests.helpers import CSRF, create_dashboard, create_list, create_list_item, make_db_user, register_user, set_csrf
+from tests.helpers import CSRF, create_calendar_event, create_dashboard, create_list, create_list_item, make_db_user, register_user, set_csrf
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -97,7 +97,7 @@ async def test_list_updated_event(db_client: AsyncClient, db_session: AsyncSessi
 
 
 @pytest.mark.asyncio
-async def test_list_events_include_client_mutation_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_list_events_include_origin_client_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
     await register_user(db_client, "alice-client-mutation@example.com", display_name="Alice")
     dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
@@ -106,16 +106,16 @@ async def test_list_events_include_client_mutation_id_in_payload(db_client: Asyn
     resp = await db_client.patch(
         f"/api/lists/{lst['id']}",
         json={"name": "Renamed"},
-        headers={"X-Client-Mutation-Id": "list-rename-123", "x-csrf-token": CSRF},
+        headers={"X-Client-Id": "list-rename-123", "x-csrf-token": CSRF},
     )
     assert resp.status_code == 200
 
     event = await _latest_event(db_session)
-    assert event.payload["client_mutation_id"] == "list-rename-123"
+    assert event.payload["origin_client_id"] == "list-rename-123"
 
 
 @pytest.mark.asyncio
-async def test_list_item_events_include_client_mutation_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_list_item_events_include_origin_client_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
     await register_user(db_client, "alice-item-client-mutation@example.com", display_name="Alice")
     dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
@@ -125,12 +125,46 @@ async def test_list_item_events_include_client_mutation_id_in_payload(db_client:
     resp = await db_client.patch(
         f"/api/lists/{lst['id']}/items/{item['id']}",
         json={"checked": True},
-        headers={"X-Client-Mutation-Id": "item-check-123", "x-csrf-token": CSRF},
+        headers={"X-Client-Id": "item-check-123", "x-csrf-token": CSRF},
     )
     assert resp.status_code == 200
 
     event = await _latest_event(db_session)
-    assert event.payload["client_mutation_id"] == "item-check-123"
+    assert event.payload["origin_client_id"] == "item-check-123"
+
+
+@pytest.mark.asyncio
+async def test_calendar_events_include_origin_client_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    await register_user(db_client, "alice-calendar-mutation@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
+    event_row = await create_calendar_event(db_client, dashboard["id"])
+
+    set_csrf(db_client)
+    resp = await db_client.patch(
+        f"/api/calendar/events/{event_row['id']}",
+        json={"title": "Renamed"},
+        headers={"X-Client-Id": "calendar-rename-123", "x-csrf-token": CSRF},
+    )
+    assert resp.status_code == 200
+
+    event = await _latest_event(db_session)
+    assert event.event_type == EventType.calendar_event_updated
+    assert event.payload["origin_client_id"] == "calendar-rename-123"
+
+
+@pytest.mark.asyncio
+async def test_calendar_events_omit_origin_client_id_when_not_sent(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    """A tab that stamped nothing must not have other tabs' suppression logic find a stray value."""
+    await register_user(db_client, "alice-calendar-unstamped@example.com", display_name="Alice")
+    dashboard = await create_dashboard(db_client)
+    event_row = await create_calendar_event(db_client, dashboard["id"])
+
+    set_csrf(db_client)
+    resp = await db_client.patch(f"/api/calendar/events/{event_row['id']}", json={"title": "Renamed"})
+    assert resp.status_code == 200
+
+    event = await _latest_event(db_session)
+    assert "origin_client_id" not in event.payload
 
 
 @pytest.mark.asyncio

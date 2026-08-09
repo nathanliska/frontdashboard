@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import { useAuthStore } from '../stores/auth'
 import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
+import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import {
   __resetListDataForTests,
   __seedListDetailForTests,
@@ -235,9 +236,6 @@ describe('list.item.checked / list.item.updated patching', () => {
 
   it('does not double-apply a self-echoed checked event over optimistic state', async () => {
     __seedListDetailForTests('list-1', makeListDetail(['a', 'b']))
-    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
-      '11111111-1111-4111-8111-111111111111',
-    )
     apiUpdateItem.mockResolvedValueOnce(makeListItem('a', { checked: true }))
 
     render(<ItemsProbe listId="list-1" />)
@@ -260,7 +258,7 @@ describe('list.item.checked / list.item.updated patching', () => {
           list_id: 'list-1',
           dashboard_id: 'dash-1',
           values: { checked: false },
-          client_mutation_id: '11111111-1111-4111-8111-111111111111',
+          origin_client_id: CLIENT_INSTANCE_ID,
         },
         created_at: '2026-04-05T00:00:05Z',
       })
