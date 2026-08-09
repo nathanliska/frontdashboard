@@ -211,4 +211,33 @@ describe('calendar utils', () => {
       'Ends 1:00 AM Late shift (Apr 10, 11:30 PM - Apr 11, 1:00 AM)',
     )
   })
+
+  it('labels a midnight-ending multi-day event as ending on its last covered day', () => {
+    // Ends exactly at midnight Apr 12 (exclusive) — Apr 11 is the final day the grid shows it
+    // on, so Apr 11 must say "Ends", not "Continues".
+    const start = new Date(2026, 3, 10, 20, 0)
+    const end = new Date(2026, 3, 12, 0, 0)
+    const occurrence = {
+      event_id: 'event-6',
+      occurrence_start: start.toISOString(),
+      occurrence_end: end.toISOString(),
+      original_start: start.toISOString(),
+      title: 'Retreat',
+      description: null,
+      location: null,
+      timezone: 'UTC',
+      all_day: false,
+      created_by: 'user-1',
+      recurring: false,
+      is_exception: false,
+      participants: [],
+    }
+
+    expect(
+      formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 11, 12), 'compact'),
+    ).toBe('End 12AM Retreat')
+    expect(formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 10, 12))).toBe(
+      'Starts 8:00 PM Retreat',
+    )
+  })
 })
