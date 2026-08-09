@@ -11,8 +11,8 @@ import { apiListDashboardMembers } from '../../api/dashboards'
 
 const mockedList = vi.mocked(apiListDashboardMembers)
 
-function member(name: string, role = 'editor') {
-  return { user_id: `id-${name}`, display_name: name, role: role as 'owner' | 'editor' | 'viewer' }
+function member(name: string) {
+  return { user_id: `id-${name}`, display_name: name }
 }
 
 beforeEach(() => {
@@ -21,7 +21,7 @@ beforeEach(() => {
 
 describe('CalendarEditorParticipantsSection', () => {
   it('lists members as toggle chips and reports toggles', async () => {
-    mockedList.mockResolvedValue([member('Owner', 'owner'), member('Zoe')])
+    mockedList.mockResolvedValue([member('Owner'), member('Zoe')])
     const onToggle = vi.fn()
     render(
       <CalendarEditorParticipantsSection
@@ -39,7 +39,7 @@ describe('CalendarEditorParticipantsSection', () => {
   })
 
   it('renders a selected former member as a removable greyed chip', async () => {
-    mockedList.mockResolvedValue([member('Owner', 'owner'), member('Ada')])
+    mockedList.mockResolvedValue([member('Owner'), member('Ada')])
     const onToggle = vi.fn()
     render(
       <CalendarEditorParticipantsSection
@@ -57,7 +57,7 @@ describe('CalendarEditorParticipantsSection', () => {
   })
 
   it('a deselected former member disappears rather than becoming addable', async () => {
-    mockedList.mockResolvedValue([member('Owner', 'owner'), member('Ada')])
+    mockedList.mockResolvedValue([member('Owner'), member('Ada')])
     render(
       <CalendarEditorParticipantsSection
         dashboardId="d1"
@@ -88,7 +88,7 @@ describe('CalendarEditorParticipantsSection', () => {
   })
 
   it('renders nothing when the caller is alone on the dashboard', async () => {
-    mockedList.mockResolvedValue([member('Owner', 'owner')])
+    mockedList.mockResolvedValue([member('Owner')])
     const { container } = render(
       <CalendarEditorParticipantsSection
         dashboardId="d1"

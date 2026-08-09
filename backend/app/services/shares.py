@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dashboard import Dashboard
-from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType, as_share_role
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
 from app.schemas.shares import DashboardMemberResponse, ShareCreate, ShareResponse
 from app.services import permissions
@@ -206,14 +206,14 @@ async def resolve_member_responses(
 
     Owner first, then members by display name — a stable order for a picker.
     """
-    role_by_user = {s.principal_id: as_share_role(s.role) for s in shares if s.principal_type == PrincipalType.user}
+    member_ids = {s.principal_id for s in shares if s.principal_type == PrincipalType.user}
 
-    names_result = await db.execute(select(User.id, User.display_name).where(User.id.in_([dashboard.user_id, *role_by_user])))
+    names_result = await db.execute(select(User.id, User.display_name).where(User.id.in_([dashboard.user_id, *member_ids])))
     name_by_id = {row[0]: row[1] for row in names_result.all()}
 
-    members = [DashboardMemberResponse(user_id=user_id, display_name=name_by_id[user_id], role=role) for user_id, role in role_by_user.items()]
+    members = [DashboardMemberResponse(user_id=user_id, display_name=name_by_id[user_id]) for user_id in member_ids]
     members.sort(key=lambda member: member.display_name.casefold())
-    owner = DashboardMemberResponse(user_id=dashboard.user_id, display_name=name_by_id[dashboard.user_id], role=EffectiveRole.owner)
+    owner = DashboardMemberResponse(user_id=dashboard.user_id, display_name=name_by_id[dashboard.user_id])
     return [owner, *members]
 
 
