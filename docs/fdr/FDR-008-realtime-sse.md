@@ -45,6 +45,11 @@ it is in their FDRs.
   write commits but its response is lost, that tab stays stale until the error is retried or the
   next foreign event or resync. A per-mutation registry cannot close that window either — the echo
   outruns the failed response — and it costs bookkeeping at every call site, so the constant wins.
+- **A held cache is trusted while the stream is live.** Re-opening a dashboard the store already
+  holds fetches nothing while the connection is `connected` — the same cached-and-not-stale rule
+  the scoped resource caches apply. A degraded stream, a load error, or an unresolved conflict
+  still fetches, and background (event- and resync-driven) reloads always do. The trade: the
+  §5 out-of-order-commit hole is no longer papered over by mount refetches — for any cache.
 
 ## Design Decisions
 

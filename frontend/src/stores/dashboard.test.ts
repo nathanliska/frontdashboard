@@ -3,6 +3,7 @@ import type { Dashboard, DashboardSummary, TrashedDashboard } from '../api/dashb
 import { RESYNC_SIGNAL, type SseEvent } from '../hooks/useSSE'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import { useAuthStore } from './auth'
+import { useConnectionStore } from './connection'
 import { resetDashboardData, useDashboardStore } from './dashboard'
 
 const { apiUpdatePreferences } = vi.hoisted(() => ({
@@ -864,6 +865,60 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().dashboard?.name).toBe('Current Dashboard')
     expect(useDashboardStore.getState().loading).toBe(false)
     expect(useDashboardStore.getState().loadError).toBe(false)
+  })
+
+  it('skips the network when re-opening the held dashboard with the stream connected', async () => {
+    useConnectionStore.setState({ status: 'connected' })
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    await useDashboardStore.getState().loadDashboard('dash-1')
+
+    expect(apiGetDashboard).not.toHaveBeenCalled()
+    expect(useDashboardStore.getState().dashboard?.id).toBe('dash-1')
+    expect(useDashboardStore.getState().loading).toBe(false)
+  })
+
+  it('refetches the held dashboard while the stream is degraded', async () => {
+    useConnectionStore.setState({ status: 'reconnecting' })
+    apiGetDashboard.mockResolvedValue(makeDashboard({ name: 'Fresh Dashboard' }))
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    await useDashboardStore.getState().loadDashboard('dash-1')
+
+    expect(apiGetDashboard).toHaveBeenCalledTimes(1)
+    expect(useDashboardStore.getState().dashboard?.name).toBe('Fresh Dashboard')
+  })
+
+  it('background loads of the held dashboard always fetch, even while connected', async () => {
+    useConnectionStore.setState({ status: 'connected' })
+    apiGetDashboard.mockResolvedValue(makeDashboard({ name: 'Fresh Dashboard' }))
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    await useDashboardStore.getState().loadDashboard('dash-1', { background: true })
+
+    expect(apiGetDashboard).toHaveBeenCalledTimes(1)
+    expect(useDashboardStore.getState().dashboard?.name).toBe('Fresh Dashboard')
+  })
+
+  it('a skipped re-open still invalidates an in-flight load for another dashboard', async () => {
+    useConnectionStore.setState({ status: 'connected' })
+    let resolveOther!: (value: Dashboard) => void
+    apiGetDashboard.mockImplementation(
+      () =>
+        new Promise<Dashboard>((resolve) => {
+          resolveOther = resolve
+        }),
+    )
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+
+    const otherLoad = useDashboardStore.getState().loadDashboard('dash-2')
+    await useDashboardStore.getState().loadDashboard('dash-1')
+
+    resolveOther(makeDashboard({ id: 'dash-2' }))
+    await otherLoad
+
+    expect(useDashboardStore.getState().dashboard?.id).toBe('dash-1')
+    expect(useDashboardStore.getState().loading).toBe(false)
   })
 
   it('ignores stale dashboard load errors after navigating to a different dashboard mid-load', async () => {

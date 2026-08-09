@@ -53,6 +53,7 @@ import {
 } from '../utils/dashboard/loadOptions'
 import { createDebouncedRefresh } from '../utils/debounce'
 import { useAuthStore } from './auth'
+import { useConnectionStore } from './connection'
 import { bumpSessionGeneration, currentSessionGeneration } from './sessionGeneration'
 import { toast } from './toast'
 
@@ -348,6 +349,22 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     async loadDashboard(id, options = {}) {
       const guard = sessionGuard()
       const requestedOptions = normalizeDashboardLoadOptions(options)
+
+      // SSE keeps the held dashboard current while the stream is live (patches, background
+      // refreshes, resync on recovery), so a foreground re-open has nothing to fetch. Claiming
+      // the serial still invalidates any in-flight load for another dashboard.
+      if (
+        !requestedOptions.background &&
+        inFlightDashboardLoad?.id !== id &&
+        get().dashboard?.id === id &&
+        !get().loadError &&
+        !get().conflict &&
+        useConnectionStore.getState().status === 'connected'
+      ) {
+        beginDashboardRequest(id)
+        guard.set({ loading: false })
+        return
+      }
 
       const requestSerial = beginDashboardRequest(id)
 
