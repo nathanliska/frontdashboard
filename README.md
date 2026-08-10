@@ -132,3 +132,9 @@ See [CONTEXT.md](CONTEXT.md) for current project state, the [ADRs](docs/adr/INDE
 - Work on a branch and open a pull request, in logically grouped commits — a `pre-push` hook refuses
   a push to `main`.
 - CI (lint, tests, build) runs on every push and must stay green.
+
+---
+
+## License
+
+[MIT](LICENSE). Security reports go through [SECURITY.md](SECURITY.md), not public issues.
