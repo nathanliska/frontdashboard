@@ -8,7 +8,7 @@ not restate what already shipped — that is in git history, and the durable dec
 [ADRs](adr/INDEX.md) / [FDRs](fdr/INDEX.md), with current behavior in [CONTEXT.md](../CONTEXT.md).
 Phases 1–4 shipped.
 
-**Scale:** ~100 users, a few concurrent, one Compose stack, one backend replica. Machinery that only
+**Scale:** a small user base, one Compose stack, one backend replica. Machinery that only
 pays off at fleet scale stays deferred — prefer the fix that deletes lines. Scale is by replica, not
 by uvicorn worker; shared state (rate limits, SSE fan-out) is already on Redis, so what a second
 replica still needs is routing. The ceilings that bind first are the DB pool and the Argon2 limiter,
@@ -72,10 +72,10 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   persistence, activity, notification and SSE, repeating the same transaction/broadcast dance per
   handler. Worth doing as the deletion it implies — one unit of work plus a staged outbox, routers as
   thin adapters — not as a speculative layer. *(Large)*
-- **#52 — SSE overflow eviction is attacker-inducible.** A co-member driving >256 rapid mutations can
-  pin a victim in a reconnect/resync/refetch loop. Stays low even under open registration: reaching a
-  victim needs an invite to a dashboard they share, so a stranger who merely signs up cannot trigger
-  it. Coalesce evictions into a single resync and cap resyncs per connection if it ever shows up.
+- **#52 — Coalesce SSE overflow evictions.** A rapid mutation burst can overflow a slow consumer's
+  queue, costing that stream a reconnect/resync cycle per overflow instead of one coalesced resync.
+  Only reachable between members of a shared dashboard, and the stream recovers by design. Coalesce
+  evictions into a single resync and cap resyncs per connection if it ever shows up.
   *(Medium, Low severity)*
 - **#56 — Account deletion is wanted and unbuilt, and the schema pretends otherwise.**
   `User.deleted_at` is filtered in 8 places across 4 modules but **nothing sets it**. Every `NOT
@@ -116,9 +116,9 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   `session_idle_days + 1s` boundary. Did not recur across ten runs; both paths take their own
   `datetime.now(UTC)` so clock skew was ruled out, and the mechanism is unknown. A fixed clock
   injected into `_live` would make the question unaskable. *(Small, Low severity)*
-- **#64 — The rate limiter blocks the event loop while Redis is unreachable.** slowapi's storage is a
-  synchronous Redis client called per rate-limited request; against a stopped Redis it froze the loop
-  for 7.7s, so the unit of damage is a stalled worker rather than a slow write
+- **#64 — Move the rate limiter off its synchronous Redis client.** slowapi's storage is a
+  synchronous client called per rate-limited request, so with Redis unreachable the connect cost is
+  paid on the event loop rather than beside it
   ([ADR-013](adr/ADR-013-rate-limit-cf-connecting-ip.md) records the measurement). No configuration
   reaches it and `asyncio.wait_for` cannot either, a timeout callback being unable to fire on a
   frozen loop. The fix is dropping slowapi for `limits.aio`, which also costs the `@limiter.limit`
