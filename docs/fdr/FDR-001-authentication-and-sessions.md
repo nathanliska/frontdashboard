@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-07-30
+**Last reviewed:** 2026-08-13
 
 ## Overview
 
@@ -18,6 +18,11 @@ multi-user account model with immediate, per-device session control — not just
   non-empty, and ≤100 characters.
 - **Login is uniform on failure.** A wrong password and an unknown account return the same 401, with
   no observable timing difference.
+- **A password must not be one attackers already spray.** At registration, reset and change, the
+  chosen password is screened against the breach-derived common-password list and refused with a
+  422 naming the reason. The answer depends on the password alone, so it stays uniform across known
+  and unknown addresses. Existing passwords are never re-screened — nobody is locked out by the
+  policy arriving, and the check only binds the next time one is set.
 - **Sessions are per-login and revocable.** Each login is its own session. Logging out ends that
   session immediately. Changing your password ends every *other* session but keeps the one you're
   using; a password reset ends sessions accordingly.

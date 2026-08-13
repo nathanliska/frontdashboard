@@ -40,7 +40,7 @@ def test_client_ip_key_ignores_cf_header_from_untrusted_public_peer() -> None:
 
 
 async def test_rate_limit_buckets_are_per_client_ip(db_client: AsyncClient) -> None:
-    body = {"email": "nobody@example.com", "password": "whatever"}
+    body = {"email": "nobody@example.com", "password": "whatever-passphrase-1"}
 
     # login is 10/minute: ten attempts from one client IP are allowed (401), the eleventh is blocked.
     for _ in range(10):

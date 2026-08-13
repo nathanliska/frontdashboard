@@ -27,7 +27,9 @@ _Last updated: 2026-08-09_
   failure during a deploy signed users out, and reuse detection that read a *lost response* as
   theft. Both were observed in production. The trade taken knowingly: no theft detection.
 - Password reset via email; authenticated password change and profile rename. Rate limits on all
-  auth endpoints.
+  auth endpoints. A new password is screened against the breach-derived common-password list
+  (`services/passwords.py`) at registration, reset and change — length alone let `password123`
+  through. Existing passwords are not re-screened.
 - **A link that changes who you are says so first.** The reset page checks its token before
   offering a form (`POST /auth/password-reset/check`, which reports validity only and never
   consumes), so a dead, spent or unknown link says so instead of failing after a password is

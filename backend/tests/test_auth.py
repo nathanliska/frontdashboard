@@ -49,7 +49,7 @@ def test_the_session_cookie_is_unguessable() -> None:
 async def test_register(db_client: AsyncClient) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
-        json={"email": "new@example.com", "password": "password123", "display_name": "New User"},
+        json={"email": "new@example.com", "password": "test-password-123", "display_name": "New User"},
     )
     assert resp.status_code == 201
     data = resp.json()
@@ -60,7 +60,7 @@ async def test_register(db_client: AsyncClient) -> None:
 
 
 async def test_register_duplicate_email_is_indistinguishable_from_a_new_signup(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    payload = {"email": "dup@example.com", "password": "password123", "display_name": "Dup"}
+    payload = {"email": "dup@example.com", "password": "test-password-123", "display_name": "Dup"}
     first = await db_client.post(_REGISTER_URL, json=payload)
     assert first.status_code == 201
 
@@ -81,7 +81,7 @@ async def test_register_duplicate_email_is_indistinguishable_from_a_new_signup(d
 
 
 async def test_register_duplicate_still_pays_for_a_password_hash(db_client: AsyncClient, monkeypatch) -> None:
-    payload = {"email": "timing@example.com", "password": "password123", "display_name": "T"}
+    payload = {"email": "timing@example.com", "password": "test-password-123", "display_name": "T"}
     assert (await db_client.post(_REGISTER_URL, json=payload)).status_code == 201
 
     calls = 0
@@ -107,7 +107,7 @@ async def test_register_case_variant_collision_does_not_leak(db_client: AsyncCli
 
     resp = await db_client.post(
         _REGISTER_URL,
-        json={"email": "edge@example.com", "password": "password123", "display_name": "Edge2"},
+        json={"email": "edge@example.com", "password": "test-password-123", "display_name": "Edge2"},
     )
     # The backstop must absorb into the same success shape, not surface the collision as a 409.
     assert resp.status_code == 201
@@ -118,7 +118,7 @@ async def test_register_case_variant_collision_does_not_leak(db_client: AsyncCli
 async def test_register_rejects_blank_display_name(db_client: AsyncClient) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
-        json={"email": "blankname@example.com", "password": "password123", "display_name": "   "},
+        json={"email": "blankname@example.com", "password": "test-password-123", "display_name": "   "},
     )
     assert resp.status_code == 422
 
@@ -126,7 +126,7 @@ async def test_register_rejects_blank_display_name(db_client: AsyncClient) -> No
 async def test_register_rejects_overlong_display_name(db_client: AsyncClient) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
-        json={"email": "longname@example.com", "password": "password123", "display_name": "x" * 101},
+        json={"email": "longname@example.com", "password": "test-password-123", "display_name": "x" * 101},
     )
     assert resp.status_code == 422
 
@@ -134,7 +134,7 @@ async def test_register_rejects_overlong_display_name(db_client: AsyncClient) ->
 async def test_register_accepts_max_length_display_name(db_client: AsyncClient) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
-        json={"email": "boundary100@example.com", "password": "password123", "display_name": "x" * 100},
+        json={"email": "boundary100@example.com", "password": "test-password-123", "display_name": "x" * 100},
     )
     assert resp.status_code == 201
 
@@ -142,7 +142,7 @@ async def test_register_accepts_max_length_display_name(db_client: AsyncClient) 
 async def test_register_trims_display_name(db_client: AsyncClient) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
-        json={"email": "trimname@example.com", "password": "password123", "display_name": "  Bob  "},
+        json={"email": "trimname@example.com", "password": "test-password-123", "display_name": "  Bob  "},
     )
     assert resp.status_code == 201
     token = app.state.email_verification_tokens["trimname@example.com"]
@@ -153,13 +153,13 @@ async def test_register_trims_display_name(db_client: AsyncClient) -> None:
 async def test_login(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "login@example.com", "password": "mypassword", "display_name": "L"},
+        json={"email": "login@example.com", "password": "my-test-password-1", "display_name": "L"},
     )
     token = app.state.email_verification_tokens["login@example.com"]
     verify = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
     assert verify.status_code == 200
 
-    resp = await db_client.post(_LOGIN_URL, json={"email": "login@example.com", "password": "mypassword"})
+    resp = await db_client.post(_LOGIN_URL, json={"email": "login@example.com", "password": "my-test-password-1"})
     assert resp.status_code == 200
     assert "session" in resp.cookies
     assert "csrf_token" in resp.cookies
@@ -173,14 +173,14 @@ async def test_a_successful_login_is_counted(db_client: AsyncClient) -> None:
     """
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "counted@example.com", "password": "mypassword", "display_name": "C"},
+        json={"email": "counted@example.com", "password": "my-test-password-1", "display_name": "C"},
     )
     token = app.state.email_verification_tokens["counted@example.com"]
     await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
     before = REGISTRY.get_sample_value("frontdashboard_login_successes_total")
     assert before is not None, "no series until the first login, so increase() would start from 1"
 
-    resp = await db_client.post(_LOGIN_URL, json={"email": "counted@example.com", "password": "mypassword"})
+    resp = await db_client.post(_LOGIN_URL, json={"email": "counted@example.com", "password": "my-test-password-1"})
 
     assert resp.status_code == 200
     assert REGISTRY.get_sample_value("frontdashboard_login_successes_total") == before + 1
@@ -194,7 +194,7 @@ async def test_a_rejected_login_leaves_the_success_count_alone(db_client: AsyncC
     before = REGISTRY.get_sample_value("frontdashboard_login_successes_total")
 
     await db_client.post(_LOGIN_URL, json={"email": "notcounted@example.com", "password": "incorrect"})
-    await db_client.post(_LOGIN_URL, json={"email": "nobody@example.com", "password": "whatever"})
+    await db_client.post(_LOGIN_URL, json={"email": "nobody@example.com", "password": "whatever-passphrase-1"})
 
     assert REGISTRY.get_sample_value("frontdashboard_login_successes_total") == before
 
@@ -202,10 +202,10 @@ async def test_a_rejected_login_leaves_the_success_count_alone(db_client: AsyncC
 async def test_login_requires_email_verification(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "unverified@example.com", "password": "mypassword", "display_name": "U"},
+        json={"email": "unverified@example.com", "password": "my-test-password-1", "display_name": "U"},
     )
     first_token = app.state.email_verification_tokens["unverified@example.com"]
-    resp = await db_client.post(_LOGIN_URL, json={"email": "unverified@example.com", "password": "mypassword"})
+    resp = await db_client.post(_LOGIN_URL, json={"email": "unverified@example.com", "password": "my-test-password-1"})
     assert resp.status_code == 403
     assert resp.json()["detail"] == "Email verification required"
     assert app.state.email_verification_tokens["unverified@example.com"] == first_token
@@ -214,7 +214,7 @@ async def test_login_requires_email_verification(db_client: AsyncClient) -> None
 async def test_verify_email_authenticates_user(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "verify@example.com", "password": "mypassword", "display_name": "Verify"},
+        json={"email": "verify@example.com", "password": "my-test-password-1", "display_name": "Verify"},
     )
     token = app.state.email_verification_tokens["verify@example.com"]
 
@@ -229,7 +229,7 @@ async def test_verify_email_authenticates_user(db_client: AsyncClient) -> None:
 async def test_verify_email_rejects_consumed_token_replay(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "replay@example.com", "password": "mypassword", "display_name": "Replay"},
+        json={"email": "replay@example.com", "password": "my-test-password-1", "display_name": "Replay"},
     )
     token = app.state.email_verification_tokens["replay@example.com"]
 
@@ -247,7 +247,7 @@ async def test_verify_email_rejects_consumed_token_replay(db_client: AsyncClient
 async def test_verify_email_rejects_invalidated_token_after_resend(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "invalidated@example.com", "password": "mypassword", "display_name": "Invalidated"},
+        json={"email": "invalidated@example.com", "password": "my-test-password-1", "display_name": "Invalidated"},
     )
     first_token = app.state.email_verification_tokens["invalidated@example.com"]
 
@@ -262,7 +262,7 @@ async def test_verify_email_rejects_invalidated_token_after_resend(db_client: As
 async def test_verify_email_rejects_expired_token(db_client: AsyncClient, db_session: AsyncSession) -> None:
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "expired@example.com", "password": "mypassword", "display_name": "Expired"},
+        json={"email": "expired@example.com", "password": "my-test-password-1", "display_name": "Expired"},
     )
     token = app.state.email_verification_tokens["expired@example.com"]
 
@@ -279,7 +279,7 @@ async def test_verify_email_rejects_expired_token(db_client: AsyncClient, db_ses
 async def test_resend_verification_issues_new_token(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "resend@example.com", "password": "mypassword", "display_name": "Resend"},
+        json={"email": "resend@example.com", "password": "my-test-password-1", "display_name": "Resend"},
     )
     first_token = app.state.email_verification_tokens["resend@example.com"]
 
@@ -309,7 +309,7 @@ async def test_login_nonexistent_email_still_performs_verify(db_client: AsyncCli
 
     monkeypatch.setattr(auth_router, "verify_password", spy)
 
-    resp = await db_client.post(_LOGIN_URL, json={"email": "ghost@example.com", "password": "whatever"})
+    resp = await db_client.post(_LOGIN_URL, json={"email": "ghost@example.com", "password": "whatever-passphrase-1"})
     assert resp.status_code == 401
     # The oracle is closed: a miss must still pay exactly one verify (against the dummy hash).
     assert len(calls) == 1
@@ -899,7 +899,7 @@ async def test_password_reset_revokes_every_session(auth_client: AsyncClient, db
 async def test_register_normalizes_email(db_client: AsyncClient) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
-        json={"email": "Mixed@Example.COM ", "password": "password123", "display_name": "M"},
+        json={"email": "Mixed@Example.COM ", "password": "test-password-123", "display_name": "M"},
     )
     assert resp.status_code == 201
     assert resp.json()["email"] == "mixed@example.com"
@@ -908,19 +908,19 @@ async def test_register_normalizes_email(db_client: AsyncClient) -> None:
 async def test_login_is_case_insensitive(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "Case@Example.com", "password": "mypassword", "display_name": "C"},
+        json={"email": "Case@Example.com", "password": "my-test-password-1", "display_name": "C"},
     )
     token = app.state.email_verification_tokens["case@example.com"]
     await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
 
-    resp = await db_client.post(_LOGIN_URL, json={"email": "CASE@example.COM", "password": "mypassword"})
+    resp = await db_client.post(_LOGIN_URL, json={"email": "CASE@example.COM", "password": "my-test-password-1"})
     assert resp.status_code == 200
 
 
 async def test_register_case_variant_duplicate_creates_nothing(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    payload = {"email": "dupe@example.com", "password": "password123", "display_name": "D"}
+    payload = {"email": "dupe@example.com", "password": "test-password-123", "display_name": "D"}
     assert (await db_client.post(_REGISTER_URL, json=payload)).status_code == 201
-    variant = {"email": "Dupe@Example.com", "password": "password123", "display_name": "D2"}
+    variant = {"email": "Dupe@Example.com", "password": "test-password-123", "display_name": "D2"}
     assert (await db_client.post(_REGISTER_URL, json=variant)).status_code == 201
 
     # Normalization means the variant hits the same account — it must not become a second one.

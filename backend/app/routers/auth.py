@@ -44,6 +44,7 @@ from app.schemas.auth import (
 )
 from app.services.email import send_existing_account_email, send_password_reset_email, send_verification_email
 from app.services.password_reset import consume_password_reset_token, reset_token_is_live
+from app.services.passwords import assert_password_not_common
 from app.services.sessions import (
     drop_session_streams,
     revoke_session,
@@ -233,6 +234,9 @@ async def register(
     Answers identically whether or not the address already has an account (ADR-011). The owner
     still learns of the attempt — by email, which only they can read.
     """
+    # Refused before hashing: the answer depends only on the password, so it leaks nothing about
+    # the address and the equal-cost reasoning below is untouched.
+    assert_password_not_common(body.password)
     # Hash before the existence check so both branches pay the same dominant cost. Skipping the
     # verify on the duplicate path would reopen through timing exactly what the response closes.
     password_hash = await hash_password(body.password)
@@ -373,6 +377,10 @@ async def confirm_password_reset(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Consume a reset token and replace the user's password."""
+    # Screened before the token is spent, so a refusal cannot cost the user their one-time link.
+    # Relying on the 422 rolling the consumption back would work but only by accident of session
+    # lifetime, and it says nothing about the token, so nothing is leaked by checking first.
+    assert_password_not_common(body.new_password)
     token_user_id = await consume_password_reset_token(body.token, db)
     if token_user_id is None:
         raise auth_failure("password_reset", "invalid_token", status_code=status.HTTP_400_BAD_REQUEST, detail=_RESET_DETAIL)
@@ -518,6 +526,7 @@ async def change_password(
             detail="New password must be different from the current password",
         )
 
+    assert_password_not_common(body.new_password)
     current_user.password_hash = await hash_password(body.new_password)
     revoked_ids = await revoke_user_sessions(current_user.id, db, except_session_id=session.id)
     await db.commit()
