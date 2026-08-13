@@ -318,7 +318,9 @@ _Last updated: 2026-08-09_
   lowered cap keeps everything and simply adds nothing more. Counts include trashed rows, since
   those hold storage until the reaper takes them and a live-only count would be bypassed by
   deleting and recreating; caps sit far above plausible use precisely because nothing reclaims
-  trash early ([ADR-020](docs/adr/ADR-020-resource-quotas.md)). Refusals are visible as
+  trash early ([ADR-020](docs/adr/ADR-020-resource-quotas.md)) — though the trash view offers a
+  **permanent delete** that purges a dashboard or list and its cascade immediately, which is how
+  a full account reclaims its allowance. Refusals are visible as
   `frontdashboard_quota_rejections_total`.
 - **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address

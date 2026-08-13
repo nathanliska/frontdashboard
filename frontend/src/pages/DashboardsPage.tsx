@@ -24,6 +24,7 @@ export function DashboardsPage() {
   const trash = useDashboardStore((s) => s.trash)
   const loadTrash = useDashboardStore((s) => s.loadTrash)
   const restoreDashboard = useDashboardStore((s) => s.restoreDashboard)
+  const purgeDashboard = useDashboardStore((s) => s.purgeDashboard)
   const user = useAuthStore((s) => s.user)
   const updatePreferences = useAuthStore((s) => s.updatePreferences)
   const homeDashboardId = user?.preferences?.home_dashboard_id ?? null
@@ -31,6 +32,7 @@ export function DashboardsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [showTrash, setShowTrash] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [purgingId, setPurgingId] = useState<string | null>(null)
   const [editingDashboardId, setEditingDashboardId] = useState<string | null>(null)
   const navigate = useNavigate()
   const closeEditingDashboard = useEffectEvent(() => {
@@ -101,6 +103,20 @@ export function DashboardsPage() {
       }
     } finally {
       setRestoringId(null)
+    }
+  }
+
+  async function handlePurge(trashed: TrashedDashboard) {
+    // The one irreversible action in this view, so it says so plainly before doing it.
+    const message = `Permanently delete "${trashed.name}"? Its lists and calendar events go with it. This cannot be undone.`
+    if (!(await confirm(message, { confirmLabel: 'Delete permanently' }))) return
+    setPurgingId(trashed.id)
+    try {
+      if (await purgeDashboard(trashed.id)) {
+        toast.success(`Permanently deleted "${trashed.name}".`)
+      }
+    } finally {
+      setPurgingId(null)
     }
   }
 
@@ -205,14 +221,24 @@ export function DashboardsPage() {
                             : `Permanently deleted in ${days} day${days === 1 ? '' : 's'}`}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleRestore(trashed)}
-                        disabled={restoringId === trashed.id}
-                        className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
-                      >
-                        {restoringId === trashed.id ? 'Restoring…' : 'Restore'}
-                      </button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void handleRestore(trashed)}
+                          disabled={restoringId === trashed.id || purgingId === trashed.id}
+                          className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
+                        >
+                          {restoringId === trashed.id ? 'Restoring…' : 'Restore'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handlePurge(trashed)}
+                          disabled={restoringId === trashed.id || purgingId === trashed.id}
+                          className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-500 transition-colors hover:border-red-900 hover:text-red-400 disabled:opacity-50"
+                        >
+                          {purgingId === trashed.id ? 'Deleting…' : 'Delete permanently'}
+                        </button>
+                      </div>
                     </div>
                   )
                 })}

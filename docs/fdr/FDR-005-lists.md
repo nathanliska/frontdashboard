@@ -74,6 +74,8 @@ divergence-refetch fallback.
 Creating a list or an item is refused once the creator holds the configured ceiling of either,
 with a message naming the limit. Trashed lists and items still count toward it until the reaper
 purges them ([ADR-020](../adr/ADR-020-resource-quotas.md)); editing and deleting are never gated.
+A trashed list can be purged outright by anyone who can edit its dashboard, which is what reclaims
+the allowance early.
 
 ## Access
 

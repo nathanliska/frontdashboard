@@ -15,6 +15,7 @@ import {
   apiGetDashboard,
   apiGetTrash,
   apiListDashboards,
+  apiPurgeDashboard,
   apiRemoveWidget,
   apiRestoreDashboard,
   apiUpdateDashboardMeta,
@@ -148,6 +149,7 @@ export interface DashboardState {
   renameDashboard: (id: string, name: string) => Promise<boolean>
   loadTrash: (force?: boolean) => Promise<void>
   restoreDashboard: (id: string) => Promise<DashboardSummary | null>
+  purgeDashboard: (id: string) => Promise<boolean>
 
   // ── Editor actions ─────────────────────────────────────────────────────────
   loadDashboard: (id: string, options?: LoadDashboardOptions) => Promise<void>
@@ -295,6 +297,19 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to restore dashboard.')
         return null
+      }
+    },
+
+    async purgeDashboard(id) {
+      const guard = sessionGuard()
+      try {
+        await apiPurgeDashboard(id)
+        // 204 carries no body, and the row is only ever in the trash cache — drop it there.
+        guard.set((s) => ({ trash: s.trash.filter((t) => t.id !== id) }))
+        return true
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to permanently delete dashboard.')
+        return false
       }
     },
 

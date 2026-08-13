@@ -31,6 +31,7 @@ from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.dashboard_widgets import remove_resource_widgets
 from app.services.quota import assert_under_quota, limit_message
+from app.services.retention import purge_list
 from app.services.shares import (
     dashboard_audience_user_ids,
     list_accessible_dashboard_ids,
@@ -431,6 +432,33 @@ async def restore_list(
     )
     count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == lst.id, ListItem.deleted_at.is_(None)))
     return await _mutated_list_response(db, lst, count_result.scalar_one())
+
+
+@router.delete("/{list_id}/trash", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
+async def purge_trashed_list(
+    request: Request,
+    list_id: uuid.UUID,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a trashed list and its items, ahead of the reaper.
+
+    Needs edit on the live parent dashboard, so a list under a trashed dashboard cannot be purged
+    alone — purge the dashboard and it goes with it. Broadcasts nothing; the list is already gone
+    from every view but the trash.
+    """
+    result = await db.execute(select(List).where(List.id == list_id, List.deleted_at.is_not(None)))
+    lst = result.scalar_one_or_none()
+    if lst is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="List not found")
+
+    _dashboard, _shares, role = await load_dashboard_access(lst.dashboard_id, current_user, db)
+    permissions.assert_can_edit(role)
+
+    await purge_list(db, lst)
+    await db.commit()
 
 
 @router.get("/{list_id}", response_model=ListDetailResponse)

@@ -91,7 +91,8 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
     """Purge trash past `trash_retention_days`. Caller owns the commit.
 
     Children go before dashboards: their `dashboard_id` FKs have no ON DELETE cascade, while
-    `resource_shares.resource_id` does, so share rows need no sweep of their own.
+    `resource_shares.resource_id` does, so share rows need no sweep of their own. `purge_dashboard`
+    below encodes the same FK knowledge for a single row; a coverage test ties the two together.
     """
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=settings.trash_retention_days)
@@ -126,6 +127,26 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
     )
     counts["dashboards"] = dashboard_result.rowcount
     return counts
+
+
+async def purge_dashboard(db: AsyncSession, dashboard: Dashboard) -> None:
+    """Delete one trashed dashboard and its cascade now. Caller owns the commit.
+
+    Same FK ordering as `reap_expired_trash`, for one row rather than a horizon: lists, items and
+    events are swept by hand because their `dashboard_id` carries no ON DELETE, while widgets,
+    invites and share rows cascade.
+    """
+    doomed_list_ids = select(List.id).where(List.dashboard_id == dashboard.id).scalar_subquery()
+    await db.execute(delete(ListItem).where(ListItem.list_id.in_(doomed_list_ids)))
+    await db.execute(delete(List).where(List.dashboard_id == dashboard.id))
+    await db.execute(delete(CalendarEvent).where(CalendarEvent.dashboard_id == dashboard.id))
+    await db.delete(dashboard)
+
+
+async def purge_list(db: AsyncSession, lst: List) -> None:
+    """Delete one trashed list and its items now. Caller owns the commit."""
+    await db.execute(delete(ListItem).where(ListItem.list_id == lst.id))
+    await db.delete(lst)
 
 
 async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:

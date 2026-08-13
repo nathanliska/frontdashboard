@@ -54,10 +54,10 @@ migration and no backfill.
 - **`list_items` gained an index on `created_by`.** The per-creator count filters on that column
   alone — trashed rows count, so it cannot ride the existing `deleted_at` composites — and without
   it the check would sequentially scan on the path of every item create.
-- **Reaching a cap has no immediate remedy.** Deleting moves rows to the trash, where they still
-  count for up to `trash_retention_days`. A purge-from-trash action is the natural follow-on and is
-  deliberately not in this change: the access helpers refuse trashed rows by design, so it needs its
-  own routes rather than a rider here.
+- **Reclaiming space is explicit.** Deleting moves rows to the trash, where they still count; the
+  trash view carries a permanent-delete that purges the cascade ahead of the reaper, loaded by
+  ownership because the access door cannot see trashed rows. Without it a full account would wait
+  out `trash_retention_days`.
 - **Per-account, not per-attacker.** Someone willing to burn verified email addresses multiplies
   their ceiling by registering again. What bounds that is the edge — a challenge on registration —
   not this. The two are complementary; neither substitutes for the other.
