@@ -312,7 +312,14 @@ _Last updated: 2026-08-09_
 - **Every mutating route is rate-limited**, not just the auth ones: `WRITE_LIMIT` (300/min) is
   applied per route because slowapi's app-wide limit cannot see through included-router nesting,
   and `test_rate_limit_coverage.py` fails the build if a route is added without one. Caddy caps
-  request bodies at 1MB. Neither bounds *total* storage — that is #61.
+  request bodies at 1MB.
+- **Per-creator quotas bound what rate limits deliberately do not — the total.** Dashboards, lists,
+  items and events each carry a ceiling per creator, checked on create only, so an account over a
+  lowered cap keeps everything and simply adds nothing more. Counts include trashed rows, since
+  those hold storage until the reaper takes them and a live-only count would be bypassed by
+  deleting and recreating; caps sit far above plausible use precisely because nothing reclaims
+  trash early ([ADR-020](docs/adr/ADR-020-resource-quotas.md)). Refusals are visible as
+  `frontdashboard_quota_rejections_total`.
 - **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets

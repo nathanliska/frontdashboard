@@ -232,8 +232,11 @@ export async function addListItem(listId: string, text: string): Promise<void> {
     // one, rather than silently dropping it.
     patchAgendaFromListDetail(listId, item)
   } catch (error) {
-    toast.error('Failed to add item.')
-    throw error instanceof Error ? error : new Error('Failed to add item.')
+    // Say what the server said — a refusal the caller can act on (a quota, say) is useless as
+    // "Failed to add item".
+    const message = error instanceof Error ? error.message : 'Failed to add item.'
+    toast.error(message)
+    throw error instanceof Error ? error : new Error(message)
   }
 }
 

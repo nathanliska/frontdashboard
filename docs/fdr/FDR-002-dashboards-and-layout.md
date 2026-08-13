@@ -1,7 +1,7 @@
 # FDR-002: Dashboards & Layout Editor
 
 **Status:** Active
-**Last reviewed:** 2026-07-26
+**Last reviewed:** 2026-08-12
 
 ## Overview
 
@@ -90,8 +90,12 @@ only on a truthy result.
 
 See [FDR-004](FDR-004-sharing-and-access.md) for how roles are granted.
 
+Creating a dashboard is refused once the owner holds the configured ceiling, and adding a widget
+once the dashboard does. Trashed dashboards count until the reaper purges them
+([ADR-020](../adr/ADR-020-resource-quotas.md)).
+
 ## Related
 
 - **ADRs:** ADR-007 (soft/hard delete boundary), ADR-008 (layout version OCC), ADR-009 (canonical
-  layout / mobile projection), ADR-001 (per-resource sharing)
+  layout / mobile projection), ADR-001 (per-resource sharing), ADR-020 (resource quotas)
 - **FDRs:** FDR-003 (Widgets), FDR-004 (Sharing & Access)

@@ -40,6 +40,7 @@ from app.services.preferences import (
     favorite_dashboard_ids_from_preferences,
     remove_dashboard_from_preferences,
 )
+from app.services.quota import assert_under_quota, limit_message
 from app.services.shares import (
     create_share,
     dashboard_audience_user_ids,
@@ -471,6 +472,14 @@ async def create_dashboard(
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
     """Create a dashboard and apply any initial shares."""
+    await assert_under_quota(
+        db,
+        model=Dashboard,
+        resource="dashboards",
+        cap=settings.quota_dashboards_per_user,
+        scope=Dashboard.user_id == current_user.id,
+        detail=limit_message("dashboards", settings.quota_dashboards_per_user),
+    )
     await _validate_share_targets(body.shares, current_user.id, db)
     dashboard = Dashboard(user_id=current_user.id, name=body.name)
     db.add(dashboard)
@@ -775,6 +784,14 @@ async def add_widget(
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
+    await assert_under_quota(
+        db,
+        model=DashboardWidget,
+        resource="widgets",
+        cap=settings.quota_widgets_per_dashboard,
+        scope=DashboardWidget.dashboard_id == dashboard.id,
+        detail=limit_message("widgets on this dashboard", settings.quota_widgets_per_dashboard),
+    )
     is_shared_dashboard = bool(shares)
     # exclude_unset so omitted fields stay absent rather than landing as explicit nulls; extras
     # survive because every config model is extra="allow".

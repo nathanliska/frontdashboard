@@ -40,3 +40,4 @@ feature does*, [CONTEXT.md](../../CONTEXT.md) is the current-state snapshot, and
 | [ADR-017](ADR-017-google-calendar-two-way-sync.md) | Google Calendar two-way sync (per-user OAuth) — *design, not yet implemented* | 2026-07-25 |
 | [ADR-018](ADR-018-generated-validated-contracts.md) | Backend schema is the API contract — generated types, validated boundaries | 2026-07-25 |
 | [ADR-019](ADR-019-static-asset-serving-contract.md) | Static asset serving contract — honest 404s and a revalidated shell | 2026-07-30 |
+| [ADR-020](ADR-020-resource-quotas.md) | Per-creator resource quotas, counted over non-purged rows | 2026-08-12 |

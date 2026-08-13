@@ -30,6 +30,7 @@ from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessR
 from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.dashboard_widgets import remove_resource_widgets
+from app.services.quota import assert_under_quota, limit_message
 from app.services.shares import (
     dashboard_audience_user_ids,
     list_accessible_dashboard_ids,
@@ -150,6 +151,22 @@ async def create_list(
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
+    await assert_under_quota(
+        db,
+        model=List,
+        resource="lists",
+        cap=settings.quota_lists_per_user,
+        scope=List.created_by == current_user.id,
+        detail=limit_message("lists", settings.quota_lists_per_user),
+    )
+    await assert_under_quota(
+        db,
+        model=List,
+        resource="lists",
+        cap=settings.quota_lists_per_dashboard,
+        scope=List.dashboard_id == dashboard.id,
+        detail=limit_message("lists on this dashboard", settings.quota_lists_per_dashboard),
+    )
 
     # GET /lists orders all non-deleted lists, so the append position must be
     # computed over that same set to land truly last.
@@ -537,6 +554,22 @@ async def create_item(
         lock_for_update=True,
     )
     permissions.assert_can_edit(role)
+    await assert_under_quota(
+        db,
+        model=ListItem,
+        resource="items",
+        cap=settings.quota_items_per_user,
+        scope=ListItem.created_by == current_user.id,
+        detail=limit_message("list items", settings.quota_items_per_user),
+    )
+    await assert_under_quota(
+        db,
+        model=ListItem,
+        resource="items",
+        cap=settings.quota_items_per_list,
+        scope=ListItem.list_id == list_id,
+        detail=limit_message("items on this list", settings.quota_items_per_list),
+    )
     max_order_result = await db.execute(select(func.max(ListItem.sort_order)).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)))
     next_order = (max_order_result.scalar_one() or -1) + 1
 

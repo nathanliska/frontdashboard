@@ -70,6 +70,21 @@ class Settings(BaseSettings):
     health_ready_timeout_seconds: float = 3.0
     # Shared limit windows today, SSE fan-out next: a per-process limit multiplies by N replicas.
     redis_url: str = "redis://redis:6379/0"
+    # Per-creator ceilings on the tables that grow without a retention horizon (finding #61). Rate
+    # limits bound writes per minute; these bound the total, which is what turns a patient script
+    # into a bounded one. Sized from measured worst-case row cost (ADR-020) — the ceiling is
+    # ~115 MB per account, which is several times over what a heavy household reaches in years.
+    # Set well above any plausible human use, because a trashed row counts until it is purged and
+    # nothing reclaims it early: a cap a person could actually reach would strand them for 30 days.
+    quota_dashboards_per_user: int = 100
+    quota_lists_per_user: int = 1_000
+    quota_items_per_user: int = 25_000
+    quota_events_per_user: int = 5_000
+    # Container ceilings keep one view renderable; they are not the storage bound above.
+    quota_widgets_per_dashboard: int = 100
+    quota_lists_per_dashboard: int = 200
+    quota_items_per_list: int = 5_000
+    quota_events_per_dashboard: int = 10_000
 
     @field_validator("frontend_base_url", mode="before")
     @classmethod

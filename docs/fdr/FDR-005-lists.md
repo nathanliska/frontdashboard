@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-07-30
+**Last reviewed:** 2026-08-12
 
 ## Overview
 
@@ -71,6 +71,10 @@ divergence-refetch fallback.
 **Why:** List content is durable user data worth a recovery path. See ADR-007.
 **Tradeoff:** Every list/item query must filter the tombstone or it leaks deleted rows.
 
+Creating a list or an item is refused once the creator holds the configured ceiling of either,
+with a message naming the limit. Trashed lists and items still count toward it until the reaper
+purges them ([ADR-020](../adr/ADR-020-resource-quotas.md)); editing and deleting are never gated.
+
 ## Access
 
 Lists inherit access from the dashboard whose widget binds them (owner / editor / viewer). Their own
@@ -79,5 +83,5 @@ Lists inherit access from the dashboard whose widget binds them (owner / editor 
 ## Related
 
 - **ADRs:** ADR-006 (REST fetch + SSE patch), ADR-007 (soft delete), ADR-015 (SSE write
-  choreography), ADR-001 (per-resource sharing)
+  choreography), ADR-001 (per-resource sharing), ADR-020 (resource quotas)
 - **FDRs:** FDR-003 (Widgets), FDR-004 (Sharing & Access)

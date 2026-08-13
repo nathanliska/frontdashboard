@@ -77,7 +77,8 @@ it silently exempts everything. Per-route decoration is the only form that actua
   so the limiter still works without special-casing.
 - **Rate is bounded; volume is not.** `WRITE_LIMIT` is generous on purpose — the key is a client IP
   a whole household shares behind one NAT — so it stops a runaway client or a crude script, not a
-  patient one. Total storage per account needs a quota, which is a separate open finding (#61).
+  patient one. Total storage per account is bounded separately, by the quotas in
+  [ADR-020](ADR-020-resource-quotas.md).
 - **A forgotten decorator is a build failure, not a silent hole**, because the coverage test
   enumerates mutating routes rather than trusting review. Note the same nesting quirk defeats any
   audit written over `app.routes`, which sees four docs routes and one `_IncludedRouter`.
