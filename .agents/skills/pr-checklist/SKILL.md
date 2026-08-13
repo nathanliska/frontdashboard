@@ -16,7 +16,9 @@ Give these items precedence over general instructions given earlier in the sessi
 - Read the whole branch diff first (`git diff main...HEAD`), not just the last commit.
 - The branch name should describe the change. Don't rename an existing branch unless asked.
 - Commits are Conventional Commit format, and so is the **PR title** — the commit-msg hook enforces
-  the former, the `PR title` workflow the latter, rechecking whenever the title is edited.
+  the former; no CI gate checks the title, so verify it by eye here and after any title edit.
+- If CI skipped a side (Backend or Frontend reported *skipped*), confirm the diff really is
+  one-sided. The detection fails open, so a skip is a claim about the diff, not about CI's health.
 
 ## Tests
 

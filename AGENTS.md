@@ -79,7 +79,8 @@ Standing user constraints. Do not violate these.
   unmerged branch introduced is an amend — pushed or not, a reviewer should never meet a bug and
   its fix in one PR.
 - Use Conventional Commit messages (`type(scope): description`, hook-normalized and enforced).
-  The **PR title** is Conventional too, checked by CI because a squash merge keeps it. Never add a
+  The **PR title** is Conventional too — a squash merge keeps it as the subject on `main`, and no
+  CI gate checks it, so verify it by eye before merging. Never add a
   `Co-Authored-By` or attribution trailer.
 - Never run `docker compose down -v` — it wipes the database volume. Target volumes by name if one
   must be removed.
@@ -120,8 +121,8 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - Backend integration tests need PostgreSQL: either a Docker socket (Testcontainers) or
   `TEST_DATABASE_URL` pointing at a dedicated test database. `make test-unit` needs neither.
 - CI runs lint, tests, `ty` type checking and the frontend build on every push and PR — except
-  docs-only changes (`docs/**`, `**.md` at any depth), which skip it; the PR-title check still
-  runs. Keep it green.
+  docs-only changes (`docs/**`, `**.md` at any depth), which skip it. On a PR touching only one
+  side, the other side's job is skipped. Keep it green.
 - MCP servers are declared once per tool — `.mcp.json` for Claude Code, `.codex/config.toml` for
   Codex. Nothing syncs them; change both or one agent silently loses the server.
 
@@ -157,7 +158,7 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 
 ## Which Rules Fail the Build
 
-Most rules in this file are judgment you are trusted with. These nine are not — each has a test
+Most rules in this file are judgment you are trusted with. These eight are not — each has a test
 that fails CI, and its failure message tells you what to do. Everything else here is guidance,
 so if you are wondering whether a convention bites, this table is the answer.
 
@@ -170,7 +171,6 @@ so if you are wondering whether a convention bites, this table is the answer.
 | A labelled metric pre-creates its children | `test_observability_coverage.py` | Below, *Backend Principles* |
 | Every activity type has feed copy + a category | `test_activity.py` | Below, *Frontend Principles* |
 | Node is pinned once, in `.nvmrc` | `test_toolchain_coverage.py` | — |
-| Commit types are listed once | `test_commit_convention_coverage.py` | — |
 | `react-resizable` tracks react-grid-layout | `test_frontend_pin_coverage.py` | — |
 
 These guards read source, so a refactor can make one **pass having checked nothing** — the
