@@ -193,6 +193,10 @@ from that:
   middleware, and slowapi's app-wide limit cannot see through included-router nesting — so both
   are per route, and `test_rate_limit_coverage.py` fails the build on a missing limit. Beware that
   same nesting in any audit over `app.routes`, which passes having checked nothing.
+- A route creating a row in a table with no retention horizon takes `assert_under_quota(...)` first.
+  Counts include trashed rows on purpose — a live-only count is bypassed by delete-and-recreate
+  ([ADR-020](docs/adr/ADR-020-resource-quotas.md)). No guard enforces this; adding one wants a
+  registry of quota-bearing tables rather than a scrape.
 - Reject an authentication attempt with `raise auth_failure(...)`, never a bare `HTTPException`:
   building the 401/403 and counting it are one call, and `test_auth_failure_coverage.py` fails the
   build on a bare raise in the auth layer. Authorization refusals are a different thing and stay out.

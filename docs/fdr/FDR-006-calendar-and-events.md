@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-08-09
+**Last reviewed:** 2026-08-12
 
 ## Overview
 
@@ -125,6 +125,10 @@ dashboard alone — a participant row grants nothing.
 and the picker must distinguish current members (from `/members`) from former ones (named only on
 the event).
 
+Creating an event is refused once the creator holds the configured ceiling, or once the dashboard
+does. Trashed events count until the reaper purges them ([ADR-020](../adr/ADR-020-resource-quotas.md));
+editing and deleting are never gated.
+
 ## Access
 
 Events inherit access from the dashboard whose widget binds them (owner / editor / viewer). Their own
@@ -144,5 +148,6 @@ Events inherit access from the dashboard whose widget binds them (owner / editor
 
 ## Related
 
-- **ADRs:** ADR-006 (REST fetch + SSE patch), ADR-007 (soft delete), ADR-015 (SSE write choreography)
+- **ADRs:** ADR-006 (REST fetch + SSE patch), ADR-007 (soft delete), ADR-015 (SSE write choreography),
+  ADR-020 (resource quotas)
 - **FDRs:** FDR-003 (Widgets), FDR-004 (Sharing & Access)

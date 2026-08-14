@@ -117,7 +117,10 @@ export async function apiCreateDashboard(data: {
     method: 'POST',
     body: JSON.stringify(data),
   })
-  if (!res.ok) throw new Error('Failed to create dashboard')
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(data.detail ?? 'Failed to create dashboard')
+  }
   return parseJson(res, DashboardSummary)
 }
 

@@ -56,6 +56,9 @@ class ListItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_list_items_list_id", "list_id", "sort_order", "deleted_at"),
         Index("ix_list_items_assigned_to", "assigned_to", "checked", "deleted_at"),
+        # The per-creator quota counts every row a user owns, trashed included, so it carries no
+        # `deleted_at` and the other two indexes cannot serve it.
+        Index("ix_list_items_created_by", "created_by"),
         CheckConstraint("sort_order >= 0", name="ck_list_items_sort_order_nonneg"),
     )
 

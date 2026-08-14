@@ -82,6 +82,11 @@ executes per tick. Referenced throughout as "the retention reaper".
 **abandoned-signup sweep**. All four share a single transaction — one failing sweep rolls back the
 whole tick.
 
+**Quota** — A ceiling on how many rows one creator may hold, checked on create and never on read,
+edit or delete (`services/quota.py`, [ADR-020](adr/ADR-020-resource-quotas.md)). Counts every row
+not yet purged, trash included, because a trashed row still occupies storage until the reaper takes
+it. Distinct from a **rate limit**, which bounds writes per minute rather than the total.
+
 **Horizon** — The age past which a sweep acts, always a `*_retention_days` setting: 30 days for
 trash, 90 for history, 30 for unverified signups. "Past the horizon" means overdue for removal, so
 a non-zero count of it is a sign the reaper has stopped rather than that the data is wrong.

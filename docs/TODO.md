@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58◐, #59, #60, #61, #63, #64, #65, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58◐, #59, #60, #63, #64, #65◐, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -111,13 +111,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   the single choke point), so this is two endpoints and a panel. To settle first: `ip_hash` needs a
   **keyed** hash, since a plain SHA-256 of an IPv4 is brute-forceable in seconds and so anonymises
   nothing; and `device_name` has no trustworthy source. *(Small-Medium)*
-- **#61 — No per-user resource quota.** A verified account can create unlimited dashboards, lists,
-  items and events. Rate limits bound the *rate* but deliberately not the *total* — a patient script
-  stays under any sane rate limit forever. It bites more than it looks because activity and
-  notifications are pruned at 90 days while **lists, items, events and dashboards have no horizon at
-  all**. The decisions are product ones: what the numbers are, what the error says, and what happens
-  to a user already over a new cap (grandfathering beats a dashboard nobody can open). *(Small once
-  the numbers are decided)*
 - **#63 — `test_the_liveness_predicate_is_shared` failed once, unreproduced.** `resolve_session`
   treated a session as expired while `session_is_live` still called it live, at the
   `session_idle_days + 1s` boundary. Did not recur across ten runs; both paths take their own
@@ -131,12 +124,12 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   frozen loop. The fix is dropping slowapi for `limits.aio`, which also costs the `@limiter.limit`
   decorator and the coverage test that enforces it — so it wants a trigger: Redis restarting often
   enough to notice, or a second replica. *(Medium, no trigger yet)*
-- **#65 — Occurrence expansion is bounded per event, not per request.** Every per-event axis is
-  capped, but **the number of events is not** — the query has no `LIMIT`, so the work is
-  `events × iterations` and a dashboard set holding thousands of recurring events makes one GET
-  expensive. Same shape as #61 and blocked on the same decision. Worth measuring before building:
-  `frontdashboard_http_request_seconds` on `/api/calendar/events` is where it would first show.
-  *(Small once #61's numbers are settled)*
+- **#65◐ — Occurrence expansion is bounded per event and per dashboard, not per request.** Every
+  per-event axis is capped, and `quota_events_per_dashboard` now bounds how many events one
+  dashboard can hold ([ADR-020](adr/ADR-020-resource-quotas.md)). Remaining: the query still has no
+  `LIMIT`, so a request spanning many accessible dashboards multiplies that ceiling by their number.
+  Worth measuring before building: `frontdashboard_http_request_seconds` on `/api/calendar/events`
+  is where it would first show. *(Small, no trigger yet)*
 - **#16◐ — Make calendar work proportional to the requested window.** The router no longer loads
   every event on every accessible dashboard. Remaining, and only worth it if a calendar is ever
   actually slow: series with a `count` limit and no `until` still load unbounded, since finding their

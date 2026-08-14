@@ -117,7 +117,10 @@ export async function apiCreateItem(listId: string, text: string): Promise<ListI
     method: 'POST',
     body: JSON.stringify({ text }),
   })
-  if (!res.ok) throw new Error('Failed to add item')
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(data.detail ?? 'Failed to add item')
+  }
   return parseJson(res, ListItemResponse)
 }
 

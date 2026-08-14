@@ -32,6 +32,19 @@ REAPER_SWEEPS = Counter(f"{_PREFIX}reaper_sweeps", "Retention sweeps that comple
 REAPER_FAILURES = Counter(f"{_PREFIX}reaper_failures", "Retention sweeps that raised and will retry.")
 RATE_LIMITED = Counter(f"{_PREFIX}rate_limited", "Requests rejected by the rate limiter.")
 
+# Rejections are the only outward sign a quota binds: the rate limiter counts bursts, this counts
+# accounts that ran out of room. Labelled by what was refused, never by user — that is unbounded.
+QuotaResource = Literal["dashboards", "lists", "items", "events", "widgets"]
+
+QUOTA_REJECTIONS = Counter(
+    f"{_PREFIX}quota_rejections",
+    "Creates refused because a resource quota was already full.",
+    ["resource"],
+)
+
+for _resource in get_args(QuotaResource):
+    QUOTA_REJECTIONS.labels(resource=_resource)
+
 # Unlabelled twin of the 5xx slice below, and the only one an alert can be built on: route is
 # unbounded, so the labelled counter has no 5xx series until the first one — born already at 1,
 # where `increase()` has nothing behind it to diff against. See docs/runbooks/rollback.md.

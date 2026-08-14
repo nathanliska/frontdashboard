@@ -15,6 +15,8 @@ import {
   useListSummaries,
 } from './listData'
 
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }))
+
 const {
   apiCreateItem,
   apiCreateList,
@@ -46,7 +48,9 @@ vi.mock('../api/lists', () => ({
   apiUpdateList,
 }))
 
-vi.mock('../stores/toast', async () => (await import('../test/toast')).toastMock())
+vi.mock('../stores/toast', async () =>
+  (await import('../test/toast')).toastMock({ error: toastError }),
+)
 
 // These names are not incidental — assertions below read "Groceries" and "Buy milk" back out of
 // the rendered output, so they belong to the tests. Only the surrounding field completeness comes
@@ -266,5 +270,14 @@ describe('listData', () => {
 
     await expect(addListItem('list-1', 'Buy eggs')).rejects.toThrow('nope')
     expect(apiCreateItem).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells the user what the server said, not a generic failure', async () => {
+    // A quota refusal names the limit and how to free it; "Failed to add item" is unactionable.
+    toastError.mockClear()
+    apiCreateItem.mockRejectedValueOnce(new Error('You have reached the limit of 3 list items.'))
+
+    await expect(addListItem('list-1', 'Buy eggs')).rejects.toThrow()
+    expect(toastError).toHaveBeenCalledWith('You have reached the limit of 3 list items.')
   })
 })

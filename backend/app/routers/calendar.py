@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, and_, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
+from app.config import settings
 from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
 from app.models.calendar import CalendarEvent, CalendarEventOverride, CalendarEventParticipant
@@ -26,6 +27,7 @@ from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessR
 from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.calendar import expand_event_occurrences, normalize_all_day_bounds
+from app.services.quota import assert_under_quota, limit_message
 from app.services.shares import (
     dashboard_audience_user_ids,
     list_accessible_dashboard_ids,
@@ -169,6 +171,22 @@ async def create_event(
     """Create a calendar event on an accessible dashboard."""
     dashboard, shares, role = await load_dashboard_access(body.dashboard_id, current_user, db)
     permissions.assert_can_edit(role)
+    await assert_under_quota(
+        db,
+        model=CalendarEvent,
+        resource="events",
+        cap=settings.quota_events_per_user,
+        scope=CalendarEvent.created_by == current_user.id,
+        detail=limit_message("calendar events", settings.quota_events_per_user),
+    )
+    await assert_under_quota(
+        db,
+        model=CalendarEvent,
+        resource="events",
+        cap=settings.quota_events_per_dashboard,
+        scope=CalendarEvent.dashboard_id == dashboard.id,
+        detail=limit_message("events on this dashboard", settings.quota_events_per_dashboard),
+    )
 
     starts_at = body.starts_at.astimezone(UTC)
     ends_at = body.ends_at.astimezone(UTC)
