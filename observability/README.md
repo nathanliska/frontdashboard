@@ -81,8 +81,8 @@ scrape_configs:
       module: [http_2xx]
     static_configs:
       - targets:
-          - https://dash.zalis.app/
-          - https://dash.zalis.app/api/health/ready
+          - https://dash.example.com/
+          - https://dash.example.com/api/health/ready
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

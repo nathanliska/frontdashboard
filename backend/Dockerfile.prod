@@ -16,6 +16,11 @@ RUN uv sync --frozen --no-dev --no-cache
 # land at the path it was built at — console scripts embed that in their shebangs.
 FROM python:3.14-slim
 
+# CI stamps source and revision at build; these statics complete the OCI set for any builder.
+LABEL org.opencontainers.image.source="https://github.com/nathanliska/frontdashboard" \
+      org.opencontainers.image.description="FrontDashboard backend — FastAPI API server" \
+      org.opencontainers.image.licenses="MIT"
+
 WORKDIR /app
 
 COPY --from=build /app/.venv .venv
