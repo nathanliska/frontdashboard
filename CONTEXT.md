@@ -93,7 +93,8 @@ _Last updated: 2026-08-09_
 - Master/detail lists UI with nested routes + mobile slide nav; items support check, due date,
   priority, category, assignee, manual sort order. Delete moves a list to the trash in one action
   (no archive-first gate) — it unbinds the widgets that showed it and is restorable for 30 days via
-  `GET /lists/trash` + `POST /lists/{id}/restore`. Soft delete throughout.
+  `GET /lists/trash` + `POST /lists/{id}/restore`. Items carry no tombstone — deleting one removes
+  the row, so it frees its quota at once (ADR-007).
 - **Drag-and-drop reorder** (dnd-kit) of items within a list and of lists in the sidebar, via
   drag handles with keyboard support. Order persists through two transactional endpoints
   (`PUT /lists/{id}/items/order`, `PUT /lists/order`) that renumber `sort_order` to `0..n-1`
@@ -116,6 +117,10 @@ _Last updated: 2026-08-09_
 - Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration
   toolbar, all-day, timezones; per-occurrence overrides and cancellation. Occurrence expansion
   over a required window (max 366 days).
+- **Delete is undoable.** The confirmation toast carries a Restore action backed by
+  `POST /calendar/events/{id}/restore`, which brings back recurrence, overrides and participants
+  rather than recreating the event. There is no event trash — the failure being guarded is a
+  misclick (ADR-007).
 - **Participants**: events can name the members they are about — toggle-chips in the editor
   (fed by `GET /dashboards/{id}/members`, cached per dashboard and refreshed by the
   `dashboard.share_*` events), colored initial-dots on cards and agenda rows, bare

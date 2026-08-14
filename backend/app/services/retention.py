@@ -103,11 +103,10 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
     # Lists die if individually trashed past the horizon OR owned by a purging dashboard.
     doomed_lists = or_(List.deleted_at < cutoff, List.dashboard_id.in_(expired_dashboard_ids))
     doomed_list_ids = select(List.id).where(doomed_lists).scalar_subquery()
-    await db.execute(delete(ListItem).where(ListItem.list_id.in_(doomed_list_ids)))
-    # Items individually soft-deleted inside lists that live on.
+    # Only as a list's cascade: an item deleted on its own is already gone (ADR-007).
     item_result = cast(
         "CursorResult[Any]",
-        await db.execute(delete(ListItem).where(ListItem.deleted_at < cutoff)),
+        await db.execute(delete(ListItem).where(ListItem.list_id.in_(doomed_list_ids))),
     )
     list_result = cast("CursorResult[Any]", await db.execute(delete(List).where(doomed_lists)))
     counts["lists"] = list_result.rowcount

@@ -107,6 +107,15 @@ export async function apiDeleteEvent(eventId: string): Promise<void> {
   if (!res.ok) throw await readError(res, 'Failed to delete event')
 }
 
+/** Undo a delete. Returns the event as it was, recurrence and participants included. */
+export async function apiRestoreEvent(eventId: string): Promise<CalendarEvent> {
+  const res = await apiFetch(`/api/calendar/events/${eventId}/restore`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw await readError(res, 'Failed to restore event')
+  return parseEvent(res)
+}
+
 /**
  * @knipignore Child-resource sharing is dashboard-inherited: the backend
  * `/calendar/events/{id}/shares` endpoints are deliberate 409 stubs, so these wrappers are

@@ -38,6 +38,18 @@ export function Toaster() {
           >
             <Icon size={15} className="shrink-0 mt-0.5" />
             <span className="flex-1">{t.message}</span>
+            {t.action ? (
+              <button
+                type="button"
+                onClick={() => {
+                  dismiss(t.id)
+                  t.action?.onAction()
+                }}
+                className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80 transition-opacity"
+              >
+                {t.action.label}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => dismiss(t.id)}

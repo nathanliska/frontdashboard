@@ -177,7 +177,7 @@ async def create_event(
         resource="events",
         cap=settings.quota_events_per_user,
         scope=CalendarEvent.created_by == current_user.id,
-        detail=limit_message("calendar events", settings.quota_events_per_user),
+        detail=limit_message("calendar events", settings.quota_events_per_user, reclaim="expiry"),
     )
     await assert_under_quota(
         db,
@@ -185,7 +185,7 @@ async def create_event(
         resource="events",
         cap=settings.quota_events_per_dashboard,
         scope=CalendarEvent.dashboard_id == dashboard.id,
-        detail=limit_message("events on this dashboard", settings.quota_events_per_dashboard),
+        detail=limit_message("events on this dashboard", settings.quota_events_per_dashboard, reclaim="expiry"),
     )
 
     starts_at = body.starts_at.astimezone(UTC)
@@ -477,7 +477,11 @@ async def delete_event(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Soft-delete a calendar event and notify dashboard subscribers."""
+    """Soft-delete a calendar event and notify dashboard subscribers.
+
+    Recoverable through `restore_event` until the reaper purges it; the client surfaces that as an
+    undo on the confirmation toast.
+    """
     event, dashboard, shares, role = await _get_event_access(event_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -498,6 +502,51 @@ async def delete_event(
         actor_id=current_user.id,
         fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
     )
+
+
+@router.post("/events/{event_id}/restore", response_model=CalendarEventResponse)
+@limiter.limit(WRITE_LIMIT)
+async def restore_event(
+    request: Request,
+    event_id: uuid.UUID,
+    client_id: ClientIdHeader = None,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CalendarEventResponse:
+    """Bring a deleted event back until the reaper purges it.
+
+    Restores rather than recreates, so recurrence, per-occurrence overrides and participants return
+    with it — the reason an event is tombstoned where a list item is not (ADR-007). Loaded here
+    rather than through `_get_event_access`, which cannot see a deleted row.
+    """
+    result = await db.execute(select(CalendarEvent).where(CalendarEvent.id == event_id, CalendarEvent.deleted_at.is_not(None)))
+    event = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    dashboard, shares, role = await load_dashboard_access(event.dashboard_id, current_user, db)
+    permissions.assert_can_edit(role)
+
+    event.deleted_at = None
+    event.updated_by = current_user.id
+    activity = log_event(
+        db,
+        event_type=EventType.calendar_event_created,
+        actor_id=current_user.id,
+        actor_display_name=current_user.display_name,
+        entity_type="calendar_event",
+        entity_id=event.id,
+        payload={"title": event.title, "restored": True, "dashboard_id": str(dashboard.id)} | _echo_stamp(client_id),
+    )
+    event_message = await build_activity_sse_dict(db, activity)
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
+    )
+    await db.refresh(event)
+    return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
 
 
 @router.get("/events/{event_id}/shares", response_model=ResourceAccessResponse)

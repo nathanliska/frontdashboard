@@ -158,7 +158,7 @@ async def create_list(
         resource="lists",
         cap=settings.quota_lists_per_user,
         scope=List.created_by == current_user.id,
-        detail=limit_message("lists", settings.quota_lists_per_user),
+        detail=limit_message("lists", settings.quota_lists_per_user, reclaim="purge"),
     )
     await assert_under_quota(
         db,
@@ -166,7 +166,7 @@ async def create_list(
         resource="lists",
         cap=settings.quota_lists_per_dashboard,
         scope=List.dashboard_id == dashboard.id,
-        detail=limit_message("lists on this dashboard", settings.quota_lists_per_dashboard),
+        detail=limit_message("lists on this dashboard", settings.quota_lists_per_dashboard, reclaim="purge"),
     )
 
     # GET /lists orders all non-deleted lists, so the append position must be
@@ -237,9 +237,7 @@ async def list_lists(
 
     list_ids = [lst.id for lst in lists]
     counts_result = await db.execute(
-        select(ListItem.list_id, func.count(ListItem.id))
-        .where(ListItem.list_id.in_(list_ids), ListItem.deleted_at.is_(None))
-        .group_by(ListItem.list_id)
+        select(ListItem.list_id, func.count(ListItem.id)).where(ListItem.list_id.in_(list_ids)).group_by(ListItem.list_id)
     )
     counts = {row[0]: row[1] for row in counts_result.all()}
     return [_list_response(lst, counts.get(lst.id, 0)) for lst in lists]
@@ -322,9 +320,7 @@ async def list_list_details(
         return []
 
     items_result = await db.execute(
-        select(ListItem)
-        .where(ListItem.list_id.in_([lst.id for lst in lists]), ListItem.deleted_at.is_(None))
-        .order_by(ListItem.sort_order, ListItem.created_at)
+        select(ListItem).where(ListItem.list_id.in_([lst.id for lst in lists])).order_by(ListItem.sort_order, ListItem.created_at)
     )
     items_by_list: dict[uuid.UUID, list[ListItemResponse]] = {lst.id: [] for lst in lists}
     for item in items_result.scalars().all():
@@ -430,7 +426,7 @@ async def restore_list(
         actor_id=current_user.id,
         fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
     )
-    count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == lst.id, ListItem.deleted_at.is_(None)))
+    count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == lst.id))
     return await _mutated_list_response(db, lst, count_result.scalar_one())
 
 
@@ -469,9 +465,7 @@ async def get_list(
 ) -> ListDetailResponse:
     """Return one list with its active items."""
     lst, _dashboard, _shares, _role = await _get_list_access(list_id, current_user, db)
-    items_result = await db.execute(
-        select(ListItem).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)).order_by(ListItem.sort_order, ListItem.created_at)
-    )
+    items_result = await db.execute(select(ListItem).where(ListItem.list_id == list_id).order_by(ListItem.sort_order, ListItem.created_at))
     items = list(items_result.scalars().all())
     return ListDetailResponse(
         id=lst.id,
@@ -521,7 +515,7 @@ async def update_list(
         actor_id=current_user.id,
         fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
     )
-    count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)))
+    count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == list_id))
     return await _mutated_list_response(db, lst, count_result.scalar_one())
 
 
@@ -588,7 +582,7 @@ async def create_item(
         resource="items",
         cap=settings.quota_items_per_user,
         scope=ListItem.created_by == current_user.id,
-        detail=limit_message("list items", settings.quota_items_per_user),
+        detail=limit_message("list items", settings.quota_items_per_user, reclaim="immediate"),
     )
     await assert_under_quota(
         db,
@@ -596,9 +590,9 @@ async def create_item(
         resource="items",
         cap=settings.quota_items_per_list,
         scope=ListItem.list_id == list_id,
-        detail=limit_message("items on this list", settings.quota_items_per_list),
+        detail=limit_message("items on this list", settings.quota_items_per_list, reclaim="immediate"),
     )
-    max_order_result = await db.execute(select(func.max(ListItem.sort_order)).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)))
+    max_order_result = await db.execute(select(func.max(ListItem.sort_order)).where(ListItem.list_id == list_id))
     next_order = (max_order_result.scalar_one() or -1) + 1
 
     item = ListItem(
@@ -650,7 +644,6 @@ async def update_item(
         select(ListItem).where(
             ListItem.id == item_id,
             ListItem.list_id == list_id,
-            ListItem.deleted_at.is_(None),
         )
     )
     item = item_result.scalar_one_or_none()
@@ -702,7 +695,11 @@ async def delete_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Soft-delete a list item and broadcast the change."""
+    """Delete a list item and broadcast the change.
+
+    Items are removed outright rather than tombstoned: an item is a line of text, so recreating one
+    costs less than carrying a recovery path nobody can reach ([ADR-007](../../docs/adr/ADR-007-soft-delete-boundary.md)).
+    """
     lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
     permissions.assert_can_edit(role)
 
@@ -710,7 +707,6 @@ async def delete_item(
         select(ListItem).where(
             ListItem.id == item_id,
             ListItem.list_id == list_id,
-            ListItem.deleted_at.is_(None),
         )
     )
     item = item_result.scalar_one_or_none()
@@ -727,7 +723,7 @@ async def delete_item(
         payload={"list_id": str(list_id), "list_name": lst.name, "text": item.text},
         client_id=client_id,
     )
-    item.deleted_at = datetime.now(UTC)
+    await db.delete(item)
     await commit_and_broadcast(
         db,
         actor_id=current_user.id,
@@ -750,7 +746,7 @@ async def reorder_items(
     lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db, lock_for_update=True)
     permissions.assert_can_edit(role)
 
-    items_result = await db.execute(select(ListItem).where(ListItem.list_id == list_id, ListItem.deleted_at.is_(None)))
+    items_result = await db.execute(select(ListItem).where(ListItem.list_id == list_id))
     items = {item.id: item for item in items_result.scalars().all()}
 
     if set(body.item_ids) != set(items.keys()):

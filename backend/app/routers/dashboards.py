@@ -479,7 +479,7 @@ async def create_dashboard(
         resource="dashboards",
         cap=settings.quota_dashboards_per_user,
         scope=Dashboard.user_id == current_user.id,
-        detail=limit_message("dashboards", settings.quota_dashboards_per_user),
+        detail=limit_message("dashboards", settings.quota_dashboards_per_user, reclaim="purge"),
     )
     await _validate_share_targets(body.shares, current_user.id, db)
     dashboard = Dashboard(user_id=current_user.id, name=body.name)
@@ -821,7 +821,7 @@ async def add_widget(
         resource="widgets",
         cap=settings.quota_widgets_per_dashboard,
         scope=DashboardWidget.dashboard_id == dashboard.id,
-        detail=limit_message("widgets on this dashboard", settings.quota_widgets_per_dashboard),
+        detail=limit_message("widgets on this dashboard", settings.quota_widgets_per_dashboard, reclaim="immediate"),
     )
     is_shared_dashboard = bool(shares)
     # exclude_unset so omitted fields stay absent rather than landing as explicit nulls; extras

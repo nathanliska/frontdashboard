@@ -2,6 +2,7 @@ import {
   apiCreateEvent,
   apiDeleteEvent,
   apiGetEvent,
+  apiRestoreEvent,
   apiUpdateEvent,
   type CalendarEvent,
   type CreateCalendarEventInput,
@@ -110,11 +111,32 @@ export async function deleteCalendarEvent(
     await apiDeleteEvent(eventId)
     invalidateCalendarEvent(eventId)
     invalidateDashboardOccurrences(dashboardId)
-    toast.success('Event deleted.')
+    toast.success('Event deleted.', {
+      label: 'Undo',
+      onAction: () => void restoreCalendarEvent(eventId, dashboardId),
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to delete event.'
     toast.error(message)
     throw error
+  }
+}
+
+/**
+ * Undo a delete, restoring the event with its recurrence, overrides and participants intact.
+ *
+ * Occurrences are invalidated rather than patched: the server expands recurrence, so what the
+ * restored event contributes to a window is not something the client can compute.
+ */
+async function restoreCalendarEvent(eventId: string, dashboardId: string | null): Promise<void> {
+  try {
+    const event = await apiRestoreEvent(eventId)
+    calendarEventDetails.set(eventId, event)
+    invalidateDashboardOccurrences(dashboardId)
+    toast.success('Event restored.')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to restore event.'
+    toast.error(message)
   }
 }
 

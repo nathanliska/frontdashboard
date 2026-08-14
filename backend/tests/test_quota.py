@@ -28,22 +28,24 @@ async def test_creating_past_the_cap_is_refused(auth_client: AsyncClient, tiny_q
 
 
 async def test_trashed_rows_still_occupy_the_quota(auth_client: AsyncClient, tiny_quota: None) -> None:
-    """The property the whole ceiling rests on.
+    """The property the whole ceiling rests on, for the resources that keep a tombstone.
 
     Counting live rows only would let anyone create, delete and recreate forever, and a trashed row
-    holds its storage until the reaper takes it — so the cap would bound nothing.
+    holds its storage until it is purged — so the cap would bound nothing. List items are exempt
+    because they carry no tombstone at all: theirs is gone the moment it is deleted (ADR-007).
     """
     dashboard = await create_dashboard(auth_client)
-    lst = await create_list(auth_client, dashboard["id"])
-    first = await create_list_item(auth_client, lst["id"], text="one")
-    await create_list_item(auth_client, lst["id"], text="two")
+    first = await create_list(auth_client, dashboard["id"], name="one")
+    await create_list(auth_client, dashboard["id"], name="two")
 
     set_csrf(auth_client)
-    deleted = await auth_client.delete(f"/api/lists/{lst['id']}/items/{first['id']}")
-    assert deleted.status_code == 204
+    assert (await auth_client.delete(f"/api/lists/{first['id']}")).status_code == 204
 
     set_csrf(auth_client)
-    resp = await auth_client.post(f"/api/lists/{lst['id']}/items", json={"text": "three"})
+    resp = await auth_client.post(
+        "/api/lists",
+        json={"name": "three", "list_type": "checklist", "dashboard_id": dashboard["id"]},
+    )
     assert resp.status_code == 422
 
 
