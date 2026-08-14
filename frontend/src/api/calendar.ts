@@ -8,7 +8,7 @@ import {
   ResourceAccessResponse,
   ShareResponse,
 } from './generated/contract'
-import { parseJson } from './http'
+import { parseJson, readError } from './http'
 import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
 const occurrenceRequests = new Map<string, Promise<CalendarOccurrence[]>>()
@@ -36,11 +36,6 @@ export interface CreateCalendarEventInput {
  * field is unsendable, since PATCH reads an omitted key as "leave unchanged" (ADR-018).
  */
 export type UpdateCalendarEventInput = CalendarEventUpdate
-
-async function readError(res: Response, fallback: string): Promise<Error> {
-  const data = (await res.json().catch(() => ({}))) as { detail?: string }
-  return new Error(data.detail ?? fallback)
-}
 
 async function parseEvent(res: Response): Promise<CalendarEvent> {
   return parseJson(res, CalendarEventResponse)

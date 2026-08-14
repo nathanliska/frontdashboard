@@ -28,6 +28,7 @@ import {
   type TrashedDashboard,
   type WidgetCreate,
 } from '../api/dashboards'
+import { ApiError } from '../api/http'
 import type { ShareCreate } from '../api/shares'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import {
@@ -434,10 +435,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
                 ...(showLoading ? { loading: false } : {}),
               })
             } catch (error) {
-              const status =
-                typeof (error as { status?: unknown }).status === 'number'
-                  ? (error as { status: number }).status
-                  : null
+              const status = error instanceof ApiError ? error.status : null
               const shouldSurfaceBackgroundAccessLoss =
                 !showLoading &&
                 currentOptions.surfaceAccessLoss &&

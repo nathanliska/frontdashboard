@@ -9,7 +9,7 @@ import {
   ShareResponse,
   TrashedListSummary,
 } from './generated/contract'
-import { parseJson, requestVoid } from './http'
+import { parseJson, readError, requestVoid } from './http'
 import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } from './shares'
 
 const listDetailRequests = new Map<string, Promise<ListDetailResponse>>()
@@ -75,10 +75,7 @@ export async function apiCreateList(body: {
     method: 'POST',
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(data.detail ?? 'Failed to create list')
-  }
+  if (!res.ok) throw await readError(res, 'Failed to create list')
   return parseJson(res, ListResponse)
 }
 
@@ -105,10 +102,7 @@ export async function apiRestoreList(id: string): Promise<ListResponse> {
   const res = await apiFetch(`/api/lists/${id}/restore`, {
     method: 'POST',
   })
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(data.detail ?? 'Failed to restore list')
-  }
+  if (!res.ok) throw await readError(res, 'Failed to restore list')
   return parseJson(res, ListResponse)
 }
 
@@ -116,10 +110,7 @@ export async function apiPurgeList(id: string): Promise<void> {
   const res = await apiFetch(`/api/lists/${id}/trash`, {
     method: 'DELETE',
   })
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(data.detail ?? 'Failed to permanently delete list')
-  }
+  if (!res.ok) throw await readError(res, 'Failed to permanently delete list')
 }
 
 export async function apiCreateItem(listId: string, text: string): Promise<ListItemResponse> {
@@ -127,10 +118,7 @@ export async function apiCreateItem(listId: string, text: string): Promise<ListI
     method: 'POST',
     body: JSON.stringify({ text }),
   })
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { detail?: string }
-    throw new Error(data.detail ?? 'Failed to add item')
-  }
+  if (!res.ok) throw await readError(res, 'Failed to add item')
   return parseJson(res, ListItemResponse)
 }
 
