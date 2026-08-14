@@ -6,7 +6,7 @@ import {
   NotificationResponse,
   UnreadCountResponse,
 } from './generated/contract'
-import { parseJson } from './http'
+import { parseJson, readError } from './http'
 
 export type {
   ActivityEventResponse as ActivityEvent,
@@ -19,7 +19,7 @@ export async function apiGetNotifications(
   // Keyset-paginated: pass the previous page's next_cursor to walk older history.
   const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
   const res = await apiFetch(`/api/notifications${q}`)
-  if (!res.ok) throw new Error('Failed to load notifications')
+  if (!res.ok) throw await readError(res, 'Failed to load notifications')
   return parseJson(res, NotificationPageResponse)
 }
 
@@ -31,13 +31,13 @@ export async function apiGetUnreadCount(): Promise<number> {
 
 export async function apiMarkRead(id: string): Promise<NotificationResponse> {
   const res = await apiFetch(`/api/notifications/${id}/read`, { method: 'PATCH' })
-  if (!res.ok) throw new Error('Failed to mark notification read')
+  if (!res.ok) throw await readError(res, 'Failed to mark notification read')
   return parseJson(res, NotificationResponse)
 }
 
 export async function apiMarkAllRead(): Promise<void> {
   const res = await apiFetch('/api/notifications/read-all', { method: 'PATCH' })
-  if (!res.ok) throw new Error('Failed to mark all read')
+  if (!res.ok) throw await readError(res, 'Failed to mark all read')
 }
 
 export async function apiGetActivity(params?: {
@@ -49,6 +49,6 @@ export async function apiGetActivity(params?: {
   for (const eventType of params?.eventTypes ?? []) q.append('event_type', eventType)
   if (params?.before_event_id != null) q.set('before_event_id', String(params.before_event_id))
   const res = await apiFetch(`/api/activity${q.size ? `?${q}` : ''}`)
-  if (!res.ok) throw new Error('Failed to load activity')
+  if (!res.ok) throw await readError(res, 'Failed to load activity')
   return parseJson(res, z.array(ActivityEventResponse))
 }

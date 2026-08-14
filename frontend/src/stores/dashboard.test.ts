@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dashboard, DashboardSummary, TrashedDashboard } from '../api/dashboards'
+import { ApiError } from '../api/http'
 import { RESYNC_SIGNAL, type SseEvent } from '../hooks/useSSE'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import { useAuthStore } from './auth'
@@ -773,11 +774,7 @@ describe('useDashboardStore', () => {
 
   it('surfaces access loss when a share change removes the active dashboard from view', async () => {
     apiListDashboards.mockResolvedValue([])
-    apiGetDashboard.mockRejectedValue(
-      Object.assign(new Error('Dashboard not found'), {
-        status: 404,
-      }),
-    )
+    apiGetDashboard.mockRejectedValue(new ApiError('Dashboard not found', 404))
 
     useDashboardStore.setState({
       summaries: [makeSummary()],
@@ -809,11 +806,7 @@ describe('useDashboardStore', () => {
             resolveFirstRequest = resolve
           }),
       )
-      .mockRejectedValueOnce(
-        Object.assign(new Error('Dashboard not found'), {
-          status: 404,
-        }),
-      )
+      .mockRejectedValueOnce(new ApiError('Dashboard not found', 404))
 
     useDashboardStore.setState({
       dashboard: makeDashboard(),
@@ -943,7 +936,7 @@ describe('useDashboardStore', () => {
     const firstLoad = useDashboardStore.getState().loadDashboard('dash-1')
     const secondLoad = useDashboardStore.getState().loadDashboard('dash-2')
 
-    rejectFirstRequest(Object.assign(new Error('Dashboard not found'), { status: 404 }))
+    rejectFirstRequest(new ApiError('Dashboard not found', 404))
     await firstLoad
 
     expect(useDashboardStore.getState().loading).toBe(true)
@@ -959,11 +952,7 @@ describe('useDashboardStore', () => {
   })
 
   it('surfaces access loss on resync when the active dashboard is no longer accessible', async () => {
-    apiGetDashboard.mockRejectedValue(
-      Object.assign(new Error('Dashboard not found'), {
-        status: 404,
-      }),
-    )
+    apiGetDashboard.mockRejectedValue(new ApiError('Dashboard not found', 404))
 
     useDashboardStore.setState({
       summariesLoaded: false,
