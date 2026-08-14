@@ -33,7 +33,7 @@ first, and terms that only make sense together sit together.
 
 ```markdown
 **Term** — Definition in one or two sentences, stating the invariant a reader could get wrong.
-See [FDR-004](fdr/FDR-004-sharing-and-access.md).
+See [FDR-004](../../../docs/fdr/FDR-004-sharing-and-access.md).
 ```
 
 A role or type may carry a parenthetical qualifier — `**Editor** *(role)*`. Link the FDR or ADR that
