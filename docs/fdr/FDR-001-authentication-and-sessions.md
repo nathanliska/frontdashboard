@@ -41,6 +41,10 @@ multi-user account model with immediate, per-device session control — not just
 - **Emails.** Verification and reset emails send in the background via Resend; without an API key the
   link is written to `backend/.dev-mail/` (how you get tokens in local dev).
 - **Profile page.** Display name, password change, and home-dashboard preference.
+- **A refused password change keeps you signed in, and says which field was wrong.** Mistyping the
+  current password answers **403**, not 401 — a 401 is the client's only signal that a session is
+  gone, so it signed people out of the form they were using. Both refusals, the wrong current
+  password and a breached new one, attach to the field that caused them rather than raising a toast.
 
 ## Design Decisions
 

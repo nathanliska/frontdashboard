@@ -727,13 +727,19 @@ async def test_change_password_updates_login_credentials(auth_client: AsyncClien
 
 
 async def test_change_password_rejects_wrong_current_password(auth_client: AsyncClient) -> None:
+    """403, and the session survives it.
+
+    A 401 is the client's only signal for "logged out", so answering a mistyped current password
+    with one signed the user out of a form they were still using.
+    """
     set_csrf(auth_client)
     resp = await auth_client.patch(
         _PASSWORD_URL,
         json={"current_password": "wrong-password", "new_password": "betterpassword456"},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 403
     assert resp.json()["detail"] == "Current password is incorrect"
+    assert (await auth_client.get(_ME_URL)).status_code == 200, "a wrong password must not end the session"
 
 
 async def test_update_preferences_accepts_accessible_dashboard(auth_client: AsyncClient) -> None:

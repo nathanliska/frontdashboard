@@ -513,10 +513,12 @@ async def change_password(
     on a credential change, and a session only ever exists after authentication.
     """
     if not await verify_password(body.current_password, current_user.password_hash):
+        # 403, not 401: the session is valid and this is a re-authentication for one operation.
+        # A 401 here means "logged out" to the client, which signed the user out for a typo.
         raise auth_failure(
             "password_change",
             "bad_password",
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Current password is incorrect",
         )
 
