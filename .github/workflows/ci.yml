@@ -4,8 +4,7 @@ on:
   push:
     branches: ["main"]
     # Docs-only changes skip the build entirely — nothing in CI reads these paths, and a skipped
-    # main run publishes nothing, which is right: prose changes ship no image. Title check still
-    # runs from its own workflow.
+    # main run publishes nothing, which is right: prose changes ship no image.
     paths-ignore: ["docs/**", "**.md"]
   pull_request:
     branches: ["main"]
@@ -17,6 +16,8 @@ on:
 
 permissions:
   contents: read
+  # The side-detection step in Repo checks lists the PR's files over the API.
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -39,7 +40,38 @@ jobs:
       OSV_VERSION: v2.4.0
       OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
       ZIZMOR_VERSION: "1.19.0"
+    outputs:
+      backend: ${{ steps.sides.outputs.backend }}
+      frontend: ${{ steps.sides.outputs.frontend }}
     steps:
+      # Computed here rather than in its own job: a detector job would bill a full minute every
+      # run, which is more than the skip saves. The cost is Backend/Frontend waiting on this job.
+      - name: Determine which sides the change touches
+        id: sides
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Fails open, deliberately. A detection that goes wrong and skips both sides would
+          # report success having run no tests at all — the one outcome worse than running them
+          # needlessly. So anything unexpected (API error, empty list) keeps both.
+          backend=true; frontend=true
+          if [ -n "$PR" ] && files=$(gh api "repos/${REPO}/pulls/${PR}/files" --paginate --jq '.[].filename') && [ -n "$files" ]; then
+            backend=false; frontend=false
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              case "$f" in
+                backend/*) backend=true ;;
+                frontend/*|.nvmrc) frontend=true ;;
+                docs/*|*.md) ;;
+                *) backend=true; frontend=true ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "detected backend=$backend frontend=$frontend"
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step talks to the remote, so no job needs the token sitting in .git/config
@@ -112,6 +144,12 @@ jobs:
 
   backend:
     name: Backend
+    # Skipped via `if` rather than workflow `paths` so the check still reports (as skipped),
+    # which a future required-checks ruleset treats as satisfied where a missing run blocks.
+    # `!cancelled()` keeps this running when Repo checks fails: masking test failures behind a
+    # lint error costs a whole extra run to discover, which is what this change exists to avoid.
+    needs: checks
+    if: ${{ !cancelled() && needs.checks.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     # A hung step otherwise bills the 360-minute default.
     timeout-minutes: 10
@@ -145,6 +183,8 @@ jobs:
 
   frontend:
     name: Frontend
+    needs: checks
+    if: ${{ !cancelled() && needs.checks.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     # A hung step otherwise bills the 360-minute default.
     timeout-minutes: 10

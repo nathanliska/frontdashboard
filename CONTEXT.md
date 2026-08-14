@@ -343,8 +343,8 @@ _Last updated: 2026-08-09_
   production pulls — there is no path that builds and pushes without passing them first. Backend tests build their
   schema with `alembic upgrade head`, so **migrations run on every backend test run** and
   `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the Docker-free subset.
-  Pre-commit hooks incl. Conventional Commit enforcement, and CI checks the PR title by the same
-  grammar. Dependabot is grouped and **monthly**, majors included: weekly churn was noise, and
+  Pre-commit hooks incl. Conventional Commit enforcement; the PR title a squash merge keeps is
+  checked by eye. Dependabot is grouped and **monthly**, majors included: weekly churn was noise, and
   batching keeps upgrades incremental rather than deferring them into one forced jump.
 
 ## In flight
