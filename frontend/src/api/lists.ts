@@ -32,7 +32,7 @@ export async function apiGetLists(dashboardId?: string | null): Promise<ListResp
 
   const request = (async () => {
     const res = await apiFetch(`/api/lists${query.size ? `?${query.toString()}` : ''}`)
-    if (!res.ok) throw new Error('Failed to load lists')
+    if (!res.ok) throw await readError(res, 'Failed to load lists')
     return parseJson(res, z.array(ListResponse))
   })().finally(() => {
     listSummaryRequests.delete(key)
@@ -46,7 +46,7 @@ export async function apiGetListDetails(dashboardId: string): Promise<ListDetail
   // The agenda's batch fetch: every list on the dashboard with its items, one request.
   // No single-flight map: its only caller is a scopedQuery fetcher, which already dedupes.
   const res = await apiFetch(`/api/lists/details?dashboard_id=${dashboardId}`)
-  if (!res.ok) throw new Error('Failed to load lists')
+  if (!res.ok) throw await readError(res, 'Failed to load lists')
   return parseJson(res, z.array(ListDetailResponse))
 }
 
@@ -56,7 +56,7 @@ export async function apiGetList(id: string): Promise<ListDetailResponse> {
 
   const request = (async () => {
     const res = await apiFetch(`/api/lists/${id}`)
-    if (!res.ok) throw new Error('List not found')
+    if (!res.ok) throw await readError(res, 'List not found')
     return parseJson(res, ListDetailResponse)
   })().finally(() => {
     listDetailRequests.delete(id)
@@ -84,7 +84,7 @@ export async function apiUpdateList(id: string, body: { name?: string }): Promis
     method: 'PATCH',
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Failed to update list')
+  if (!res.ok) throw await readError(res, 'Failed to update list')
   return parseJson(res, ListResponse)
 }
 
@@ -94,7 +94,7 @@ export async function apiDeleteList(id: string): Promise<void> {
 
 export async function apiGetListTrash(dashboardId: string): Promise<TrashedListSummary[]> {
   const res = await apiFetch(`/api/lists/trash?dashboard_id=${dashboardId}`)
-  if (!res.ok) throw new Error('Failed to load trashed lists')
+  if (!res.ok) throw await readError(res, 'Failed to load trashed lists')
   return parseJson(res, z.array(TrashedListSummary))
 }
 
@@ -133,7 +133,7 @@ export async function apiUpdateItem(
     method: 'PATCH',
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Failed to update item')
+  if (!res.ok) throw await readError(res, 'Failed to update item')
   return parseJson(res, ListItemResponse)
 }
 
@@ -174,7 +174,7 @@ export async function apiReorderLists(dashboardId: string, listIds: string[]): P
  */
 export async function apiGetListShares(listId: string): Promise<ResourceAccessSummary> {
   const res = await apiFetch(`/api/lists/${listId}/shares`)
-  if (!res.ok) throw new Error('Failed to load list shares')
+  if (!res.ok) throw await readError(res, 'Failed to load list shares')
   return parseJson(res, ResourceAccessResponse)
 }
 
@@ -184,7 +184,7 @@ export async function apiAddListShare(listId: string, body: ShareCreate): Promis
     method: 'POST',
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Failed to add list share')
+  if (!res.ok) throw await readError(res, 'Failed to add list share')
   return parseJson(res, ShareResponse)
 }
 
@@ -198,12 +198,12 @@ export async function apiUpdateListShare(
     method: 'PATCH',
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Failed to update list share')
+  if (!res.ok) throw await readError(res, 'Failed to update list share')
   return parseJson(res, ShareResponse)
 }
 
 /** @knipignore Unused scaffolding — see the note on apiGetListShares above. */
 export async function apiRemoveListShare(listId: string, shareId: string): Promise<void> {
   const res = await apiFetch(`/api/lists/${listId}/shares/${shareId}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error('Failed to remove list share')
+  if (!res.ok) throw await readError(res, 'Failed to remove list share')
 }

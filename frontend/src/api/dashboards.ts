@@ -80,7 +80,7 @@ async function parseDashboard(res: Response): Promise<Dashboard> {
 
 export async function apiListDashboards(): Promise<DashboardSummary[]> {
   const res = await apiFetch('/api/dashboards')
-  if (!res.ok) throw new Error('Failed to load dashboards')
+  if (!res.ok) throw await readError(res, 'Failed to load dashboards')
   return parseJson(res, z.array(DashboardSummary))
 }
 
@@ -89,7 +89,7 @@ export async function apiListDashboardMembers(
   dashboardId: string,
 ): Promise<DashboardMemberResponse[]> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/members`)
-  if (!res.ok) throw new Error('Failed to load members')
+  if (!res.ok) throw await readError(res, 'Failed to load members')
   return parseJson(res, z.array(DashboardMemberResponse))
 }
 
@@ -122,7 +122,7 @@ export async function apiUpdateDashboardMeta(
     method: 'PATCH',
     body: JSON.stringify(data),
   })
-  if (!res.ok) throw new Error('Failed to update dashboard')
+  if (!res.ok) throw await readError(res, 'Failed to update dashboard')
   return parseJson(res, DashboardSummary)
 }
 
@@ -130,12 +130,12 @@ export async function apiDeleteDashboard(id: string): Promise<void> {
   const res = await apiFetch(`/api/dashboards/${id}`, {
     method: 'DELETE',
   })
-  if (!res.ok) throw new Error('Failed to delete dashboard')
+  if (!res.ok) throw await readError(res, 'Failed to delete dashboard')
 }
 
 export async function apiGetTrash(): Promise<TrashedDashboardSummary[]> {
   const res = await apiFetch('/api/dashboards/trash')
-  if (!res.ok) throw new Error('Failed to load trash')
+  if (!res.ok) throw await readError(res, 'Failed to load trash')
   return parseJson(res, z.array(TrashedDashboardSummary))
 }
 
@@ -189,7 +189,7 @@ export async function apiUpdateWidget(
     method: 'PATCH',
     body: JSON.stringify({ config }),
   })
-  if (!res.ok) throw new Error('Failed to update widget')
+  if (!res.ok) throw await readError(res, 'Failed to update widget')
   return parseJson(res, DashboardWidgetSchema)
 }
 
@@ -197,7 +197,7 @@ export async function apiRemoveWidget(dashboardId: string, widgetId: string): Pr
   const res = await apiFetch(`/api/dashboards/${dashboardId}/widgets/${widgetId}`, {
     method: 'DELETE',
   })
-  if (!res.ok) throw new Error('Failed to remove widget')
+  if (!res.ok) throw await readError(res, 'Failed to remove widget')
 }
 
 export async function apiGetDashboardShares(dashboardId: string): Promise<ResourceShare[]> {
@@ -206,7 +206,7 @@ export async function apiGetDashboardShares(dashboardId: string): Promise<Resour
 
   const request = (async () => {
     const res = await apiFetch(`/api/dashboards/${dashboardId}/shares`)
-    if (!res.ok) throw new Error('Failed to load dashboard shares')
+    if (!res.ok) throw await readError(res, 'Failed to load dashboard shares')
     return parseJson(res, z.array(ShareResponse))
   })().finally(() => {
     dashboardShareRequests.delete(dashboardId)
@@ -225,7 +225,7 @@ export async function apiUpdateDashboardShare(
     method: 'PATCH',
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error('Failed to update dashboard share')
+  if (!res.ok) throw await readError(res, 'Failed to update dashboard share')
   return parseJson(res, ShareResponse)
 }
 
@@ -233,5 +233,5 @@ export async function apiRemoveDashboardShare(dashboardId: string, shareId: stri
   const res = await apiFetch(`/api/dashboards/${dashboardId}/shares/${shareId}`, {
     method: 'DELETE',
   })
-  if (!res.ok) throw new Error('Failed to remove dashboard share')
+  if (!res.ok) throw await readError(res, 'Failed to remove dashboard share')
 }
