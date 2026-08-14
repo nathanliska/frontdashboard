@@ -21,7 +21,7 @@ Citations flow **one direction: FDR → ADR**. When you cite an ADR you don't ed
 |---|---------|--------|---------------|
 | [FDR-001](FDR-001-authentication-and-sessions.md) | Authentication & Sessions | Active | 2026-08-13 |
 | [FDR-002](FDR-002-dashboards-and-layout.md) | Dashboards & Layout Editor | Active | 2026-08-12 |
-| [FDR-003](FDR-003-widgets.md) | Widgets | Active | 2026-07-31 |
+| [FDR-003](FDR-003-widgets.md) | Widgets | Active | 2026-08-07 |
 | [FDR-004](FDR-004-sharing-and-access.md) | Sharing & Access | Active | 2026-08-08 |
 | [FDR-005](FDR-005-lists.md) | Lists | Active | 2026-08-14 |
 | [FDR-006](FDR-006-calendar-and-events.md) | Calendar & Events | Active | 2026-08-14 |
