@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-08-12
+**Last reviewed:** 2026-08-14
 
 ## Overview
 
@@ -65,15 +65,18 @@ refetch. See ADR-006.
 **Tradeoff:** Hot-event payloads are part of the contract; a missing field silently forces the
 divergence-refetch fallback.
 
-### 4. Everything is soft-deleted
+### 4. Lists are recoverable; items are not
 
-**Decision:** `List` and `ListItem` carry `deleted_at`, filtered in every query.
-**Why:** List content is durable user data worth a recovery path. See ADR-007.
-**Tradeoff:** Every list/item query must filter the tombstone or it leaks deleted rows.
+**Decision:** `List` carries `deleted_at` and a trash; `ListItem` is deleted outright.
+**Why:** An item is a line of text, so retyping it costs less than any path that could return it —
+and the path it used to have was unreachable. See [ADR-007](../adr/ADR-007-soft-delete-boundary.md).
+**Tradeoff:** A misclicked item is gone at once, with no server-side window to recover it from.
 
-Creating a list or an item is refused once the creator holds the configured ceiling of either,
-with a message naming the limit. Trashed lists and items still count toward it until the reaper
-purges them ([ADR-020](../adr/ADR-020-resource-quotas.md)); editing and deleting are never gated.
+Creating a list or an item is refused once the creator holds the configured ceiling of either, with
+a message naming the limit and what actually frees room. A trashed list keeps its space until it is
+purged, which anyone who can edit its dashboard may do outright to reclaim the allowance early;
+deleted items free theirs immediately ([ADR-020](../adr/ADR-020-resource-quotas.md)). Editing and
+deleting are never gated.
 
 ## Access
 
@@ -82,6 +85,6 @@ Lists inherit access from the dashboard whose widget binds them (owner / editor 
 
 ## Related
 
-- **ADRs:** ADR-006 (REST fetch + SSE patch), ADR-007 (soft delete), ADR-015 (SSE write
+- **ADRs:** ADR-006 (REST fetch + SSE patch), ADR-007 (the delete boundary), ADR-015 (SSE write
   choreography), ADR-001 (per-resource sharing), ADR-020 (resource quotas)
 - **FDRs:** FDR-003 (Widgets), FDR-004 (Sharing & Access)

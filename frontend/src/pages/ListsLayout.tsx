@@ -2,7 +2,13 @@ import { Plus } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet, useMatch, useNavigate, useSearchParams } from 'react-router'
-import { apiGetListTrash, type ListSummary, type ListType, type TrashedList } from '../api/lists'
+import {
+  apiGetListTrash,
+  apiPurgeList,
+  type ListSummary,
+  type ListType,
+  type TrashedList,
+} from '../api/lists'
 import { CreateListModal } from '../components/lists/CreateListModal'
 import { ListSidebarRow } from '../components/lists/ListSidebarRow'
 import { SortableList, useSortableRow } from '../components/lists/SortableList'
@@ -16,6 +22,7 @@ import {
   useListSummaries,
 } from '../resources/listData'
 import { ROUTES } from '../routes'
+import { confirm } from '../stores/confirm'
 import { useDashboardStore } from '../stores/dashboard'
 import { toast } from '../stores/toast'
 import { cn } from '../utils/shared/cn'
@@ -64,6 +71,7 @@ export function ListsLayout() {
   const [trash, setTrash] = useState<TrashedList[]>(EMPTY_TRASH)
   const [trashLoading, setTrashLoading] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [purgingId, setPurgingId] = useState<string | null>(null)
 
   const requestedDashboardId = searchParams.get('dashboard_id')
   const [dashboardId, setDashboardId, dashboardsReady] = useInitialDashboardSelection(
@@ -172,6 +180,22 @@ export function ListsLayout() {
       }
     } finally {
       setRestoringId(null)
+    }
+  }
+
+  async function handlePurgeList(trashed: TrashedList) {
+    // Irreversible, and the only action here that is — say so before doing it.
+    const message = `Permanently delete "${trashed.name}"? Its items go with it. This cannot be undone.`
+    if (!(await confirm(message, { confirmLabel: 'Delete permanently' }))) return
+    setPurgingId(trashed.id)
+    try {
+      await apiPurgeList(trashed.id)
+      setTrash((current) => current.filter((l) => l.id !== trashed.id))
+      toast.success(`Permanently deleted "${trashed.name}".`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to permanently delete list.')
+    } finally {
+      setPurgingId(null)
     }
   }
 
@@ -293,14 +317,24 @@ export function ListsLayout() {
                           : `Permanently deleted in ${days} day${days === 1 ? '' : 's'}`}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleRestoreList(trashed)}
-                      disabled={restoringId === trashed.id}
-                      className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
-                    >
-                      {restoringId === trashed.id ? 'Restoring…' : 'Restore'}
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void handleRestoreList(trashed)}
+                        disabled={restoringId === trashed.id || purgingId === trashed.id}
+                        className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
+                      >
+                        {restoringId === trashed.id ? 'Restoring…' : 'Restore'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handlePurgeList(trashed)}
+                        disabled={restoringId === trashed.id || purgingId === trashed.id}
+                        className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-500 transition-colors hover:border-red-900 hover:text-red-400 disabled:opacity-50"
+                      >
+                        {purgingId === trashed.id ? 'Deleting…' : 'Delete permanently'}
+                      </button>
+                    </div>
                   </div>
                 )
               })

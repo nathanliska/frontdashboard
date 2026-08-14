@@ -54,10 +54,8 @@ class List(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class ListItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "list_items"
     __table_args__ = (
-        Index("ix_list_items_list_id", "list_id", "sort_order", "deleted_at"),
-        Index("ix_list_items_assigned_to", "assigned_to", "checked", "deleted_at"),
-        # The per-creator quota counts every row a user owns, trashed included, so it carries no
-        # `deleted_at` and the other two indexes cannot serve it.
+        Index("ix_list_items_list_id", "list_id", "sort_order"),
+        Index("ix_list_items_assigned_to", "assigned_to", "checked"),
         Index("ix_list_items_created_by", "created_by"),
         CheckConstraint("sort_order >= 0", name="ck_list_items_sort_order_nonneg"),
     )
@@ -72,4 +70,3 @@ class ListItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     assigned_to: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     updated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

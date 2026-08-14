@@ -8,16 +8,25 @@ import { create } from 'zustand'
 
 export type ToastType = 'success' | 'error' | 'info'
 
+/** A single button offered alongside the message, such as undoing the action that raised it. */
+export interface ToastAction {
+  label: string
+  onAction: () => void
+}
+
 interface Toast {
   id: number
   type: ToastType
   message: string
+  action?: ToastAction
 }
 
 // Module-level counter so IDs are stable across re-renders and store resets.
 let _nextId = 0
 
 const AUTO_DISMISS_MS = 4000
+// An action has to be read and clicked, not just read, so it gets longer than a plain message.
+const ACTION_DISMISS_MS = 8000
 
 /**
  * Pending auto-dismiss timers, keyed by toast id.
@@ -39,23 +48,26 @@ function clearDismissTimer(id: number): void {
 
 interface ToastState {
   toasts: Toast[]
-  toast: (message: string, type?: ToastType) => void
+  toast: (message: string, type?: ToastType, action?: ToastAction) => void
   dismiss: (id: number) => void
 }
 
 export const useToastStore = create<ToastState>()((set) => ({
   toasts: [],
 
-  toast(message, type = 'info') {
+  toast(message, type = 'info', action) {
     const id = ++_nextId
-    set((s) => ({ toasts: [...s.toasts, { id, type, message }] }))
+    set((s) => ({ toasts: [...s.toasts, { id, type, message, action }] }))
     // Schedule auto-dismiss. The closure captures `id` so only this toast is removed.
     dismissTimers.set(
       id,
-      setTimeout(() => {
-        dismissTimers.delete(id)
-        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
-      }, AUTO_DISMISS_MS),
+      setTimeout(
+        () => {
+          dismissTimers.delete(id)
+          set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
+        },
+        action ? ACTION_DISMISS_MS : AUTO_DISMISS_MS,
+      ),
     )
   },
 
@@ -84,7 +96,8 @@ export function __resetToastStoreForTests(): void {
  * Prefer these over `useToastStore` in non-component code (stores, utils, etc.).
  */
 export const toast = {
-  success: (msg: string) => useToastStore.getState().toast(msg, 'success'),
+  success: (msg: string, action?: ToastAction) =>
+    useToastStore.getState().toast(msg, 'success', action),
   error: (msg: string) => useToastStore.getState().toast(msg, 'error'),
-  info: (msg: string) => useToastStore.getState().toast(msg, 'info'),
+  info: (msg: string, action?: ToastAction) => useToastStore.getState().toast(msg, 'info', action),
 }

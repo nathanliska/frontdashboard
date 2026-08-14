@@ -138,9 +138,11 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - **Sharing model**: per-resource `ResourceShare` rows. Dashboards are shared directly with users
   (viewer/editor, owner = creator); lists and calendar events **inherit** access from the
   dashboard whose widget binds them, so their `/shares` endpoints are deliberate 409 stubs.
-- **Soft delete**: `deleted_at` on lists/items/events; dashboards and lists go to a trash on
-  DELETE, restorable for 30 days before the reaper purges the cascade. There is no archive state —
-  one recoverable put-away action ([ADR-007](docs/adr/ADR-007-soft-delete-boundary.md)).
+- **Delete boundary**: recoverable where reconstruction is expensive. Dashboards and lists go to a
+  trash on DELETE, restorable for 30 days or purgeable on demand; a calendar event is tombstoned and
+  undoable from its deletion toast; list items and widgets are removed outright. Every tombstone has
+  an endpoint that clears it — one without is a bug
+  ([ADR-007](docs/adr/ADR-007-soft-delete-boundary.md)).
 - **Auth**: one opaque session cookie (HttpOnly, `__Host-` prefixed in prod) resolved against a
   `sessions` row on every request, plus an `Origin` check and CSRF double-submit. No JWT, no
   refresh token, no `/auth/refresh`, no localStorage tokens

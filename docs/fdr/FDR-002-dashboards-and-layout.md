@@ -92,7 +92,9 @@ See [FDR-004](FDR-004-sharing-and-access.md) for how roles are granted.
 
 Creating a dashboard is refused once the owner holds the configured ceiling, and adding a widget
 once the dashboard does. Trashed dashboards count until the reaper purges them
-([ADR-020](../adr/ADR-020-resource-quotas.md)).
+([ADR-020](../adr/ADR-020-resource-quotas.md)). The trash view offers **Delete permanently**
+alongside Restore, which takes the dashboard and its cascade at once and asks first; it is the only
+irreversible action there.
 
 ## Related
 

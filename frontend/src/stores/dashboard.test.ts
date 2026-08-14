@@ -18,6 +18,7 @@ const {
   apiGetTrash,
   apiListDashboards,
   apiRemoveWidget,
+  apiPurgeDashboard,
   apiRestoreDashboard,
   apiUpdateDashboardMeta,
   apiUpdateLayout,
@@ -30,6 +31,7 @@ const {
   apiGetTrash: vi.fn(),
   apiListDashboards: vi.fn(),
   apiRemoveWidget: vi.fn(),
+  apiPurgeDashboard: vi.fn(),
   apiRestoreDashboard: vi.fn(),
   apiUpdateDashboardMeta: vi.fn(),
   apiUpdateLayout: vi.fn(),
@@ -56,6 +58,7 @@ vi.mock('../api/dashboards', () => ({
   apiGetTrash,
   apiListDashboards,
   apiRemoveWidget,
+  apiPurgeDashboard,
   apiRestoreDashboard,
   apiUpdateDashboardMeta,
   apiUpdateLayout,
@@ -1157,6 +1160,21 @@ describe('useDashboardStore', () => {
     expect(await useDashboardStore.getState().deleteDashboard('dash-1')).toBe(true)
     expect(useDashboardStore.getState().summaries).toHaveLength(0)
     await vi.waitFor(() => expect(useDashboardStore.getState().trash).toHaveLength(1))
+  })
+
+  it('purgeDashboard drops the row from the trash cache without refetching', async () => {
+    apiPurgeDashboard.mockResolvedValue(undefined)
+    useDashboardStore.setState({
+      summaries: [],
+      summariesLoaded: true,
+      trash: [makeTrashed({ id: 'dash-9' }), makeTrashed({ id: 'dash-7' })],
+      trashLoaded: true,
+    })
+
+    expect(await useDashboardStore.getState().purgeDashboard('dash-9')).toBe(true)
+    expect(useDashboardStore.getState().trash.map((t) => t.id)).toEqual(['dash-7'])
+    // A 204 carries no body and nothing else holds the row, so a reload would be the bug.
+    expect(apiGetTrash).not.toHaveBeenCalled()
   })
 
   it('restoreDashboard updates both caches locally and suppresses its SSE echo', async () => {

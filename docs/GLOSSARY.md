@@ -91,11 +91,11 @@ it. Distinct from a **rate limit**, which bounds writes per minute rather than t
 trash, 90 for history, 30 for unverified signups. "Past the horizon" means overdue for removal, so
 a non-zero count of it is a sign the reaper has stopped rather than that the data is wrong.
 
-**Purge** — The destructive half of the trash lifecycle: the reaper deleting a trashed row and its
-cascade for real, as opposed to the `deleted_at` stamp that put it there. See
-[ADR-007](adr/ADR-007-soft-delete-boundary.md).
+**Purge** — The destructive half of the trash lifecycle: deleting a trashed row and its cascade for
+real, as opposed to the `deleted_at` stamp that put it there. Done on demand from the trash, or by
+the reaper at the retention horizon. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
 
-**Soft delete** — Marking a row deleted via `deleted_at` (on `User`/`List`/`ListItem`/`CalendarEvent`, and since #40 on `Dashboard`, where it means "in the trash") and filtering it in every query, rather than removing it. Widgets are hard-deleted; the retention reaper purges trashed dashboards and lingering soft-deleted content after 30 days. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
+**Soft delete** — Marking a row deleted via `deleted_at` and filtering it in every query, rather than removing it. Carried by `User`, `Dashboard`, `List` and `CalendarEvent`; list items and widgets are removed outright, because a tombstone earns its cost only where reconstructing the row by hand would be a real loss. Every tombstone has a reachable way to clear it — restore, purge, or the reaper at 30 days. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
 
 **Layout version** — The `dashboard.version` integer used for optimistic concurrency on layout saves; a client/server mismatch is a 409. See [ADR-008](adr/ADR-008-layout-version-occ.md).
 

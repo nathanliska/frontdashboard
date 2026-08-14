@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-08-12
+**Last reviewed:** 2026-08-14
 
 ## Overview
 
@@ -106,11 +106,20 @@ screen — mounted windows are registered as well as fetched, or an SSE event wo
 that nothing reloads. Retained coverage is capped at 366 days (the backend's own window ceiling),
 dropping ranges furthest from what is displayed.
 
-### 5. Everything is soft-deleted
+### 5. Deleting an event is undoable
 
-**Decision:** `CalendarEvent` carries `deleted_at`, filtered in every query.
-**Why:** Calendar entries are durable user data worth a recovery path. See ADR-007.
-**Tradeoff:** Every event query must filter the tombstone.
+**Decision:** `CalendarEvent` carries `deleted_at`, filtered in every query, and the deletion toast
+offers Restore — a real restore, so recurrence, per-occurrence overrides and participants come back
+with the event rather than being retyped.
+**Why:** An event is expensive to reconstruct by hand, which is the test for recoverability in
+[ADR-007](../adr/ADR-007-soft-delete-boundary.md). There is no event trash: the failure worth
+protecting against is a misclick, and undo answers that where a listing would be ceremony.
+**Tradeoff:** Every event query must filter the tombstone. Once the toast is gone the event is only
+recoverable by someone who kept its id, and it keeps occupying the owner's quota until the reaper
+purges it ([ADR-020](../adr/ADR-020-resource-quotas.md)).
+
+Restore takes edit access on the parent dashboard, so a viewer cannot undo someone else's delete,
+and an event whose dashboard is itself trashed cannot be restored alone — restore the dashboard.
 
 ### 6. Participants are series-level labels, validated against membership at write time
 
@@ -148,6 +157,6 @@ Events inherit access from the dashboard whose widget binds them (owner / editor
 
 ## Related
 
-- **ADRs:** ADR-006 (REST fetch + SSE patch), ADR-007 (soft delete), ADR-015 (SSE write choreography),
+- **ADRs:** ADR-006 (REST fetch + SSE patch), ADR-007 (the delete boundary), ADR-015 (SSE write choreography),
   ADR-020 (resource quotas)
 - **FDRs:** FDR-003 (Widgets), FDR-004 (Sharing & Access)

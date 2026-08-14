@@ -112,6 +112,16 @@ export async function apiRestoreList(id: string): Promise<ListResponse> {
   return parseJson(res, ListResponse)
 }
 
+export async function apiPurgeList(id: string): Promise<void> {
+  const res = await apiFetch(`/api/lists/${id}/trash`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(data.detail ?? 'Failed to permanently delete list')
+  }
+}
+
 export async function apiCreateItem(listId: string, text: string): Promise<ListItemResponse> {
   const res = await apiFetch(`/api/lists/${listId}/items`, {
     method: 'POST',

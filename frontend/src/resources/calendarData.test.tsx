@@ -5,6 +5,7 @@ import type { CalendarOccurrence } from '../api/calendar'
 import { useAuthStore } from '../stores/auth'
 import { CLIENT_INSTANCE_ID, isOwnFrame } from '../utils/shared/clientInstance'
 import {
+  deleteCalendarEvent,
   getCalendarEvent,
   handleCalendarResourceEvent,
   resetCalendarData,
@@ -12,24 +13,35 @@ import {
   useCalendarOccurrences,
 } from './calendarData'
 
-const { apiCreateEvent, apiDeleteEvent, apiGetEvent, apiListOccurrences, apiUpdateEvent } =
-  vi.hoisted(() => ({
-    apiCreateEvent: vi.fn(),
-    apiDeleteEvent: vi.fn(),
-    apiGetEvent: vi.fn(),
-    apiListOccurrences: vi.fn(),
-    apiUpdateEvent: vi.fn(),
-  }))
+const {
+  apiCreateEvent,
+  apiDeleteEvent,
+  apiGetEvent,
+  apiListOccurrences,
+  apiRestoreEvent,
+  apiUpdateEvent,
+} = vi.hoisted(() => ({
+  apiCreateEvent: vi.fn(),
+  apiDeleteEvent: vi.fn(),
+  apiGetEvent: vi.fn(),
+  apiListOccurrences: vi.fn(),
+  apiRestoreEvent: vi.fn(),
+  apiUpdateEvent: vi.fn(),
+}))
 
 vi.mock('../api/calendar', () => ({
   apiCreateEvent,
   apiDeleteEvent,
   apiGetEvent,
   apiListOccurrences,
+  apiRestoreEvent,
   apiUpdateEvent,
 }))
 
-vi.mock('../stores/toast', async () => (await import('../test/toast')).toastMock())
+const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }))
+vi.mock('../stores/toast', async () =>
+  (await import('../test/toast')).toastMock({ success: toastSuccess }),
+)
 
 function makeOccurrence(overrides: Partial<CalendarOccurrence> = {}): CalendarOccurrence {
   return {
@@ -252,5 +264,26 @@ describe('calendarData', () => {
       handleCalendarResourceEvent(fromOtherTab, { isOwnEcho: foreign })
     })
     await waitFor(() => expect(apiListOccurrences).toHaveBeenCalledTimes(3))
+  })
+})
+
+describe('deleting an event', () => {
+  it('offers an undo that restores it rather than recreating it', async () => {
+    toastSuccess.mockClear()
+    apiDeleteEvent.mockResolvedValue(undefined)
+    apiRestoreEvent.mockResolvedValue({ id: 'event-1', title: 'Trash pickup' })
+
+    await deleteCalendarEvent('event-1', 'dash-1')
+
+    // Assert on the action the toast carries, not the message: the recovery path is the feature,
+    // and a success toast reads identically with or without it.
+    const [, action] = toastSuccess.mock.calls[0]
+    expect(action).toMatchObject({ label: 'Undo' })
+
+    await act(async () => {
+      action.onAction()
+    })
+    expect(apiRestoreEvent).toHaveBeenCalledWith('event-1')
+    expect(apiCreateEvent).not.toHaveBeenCalled()
   })
 })

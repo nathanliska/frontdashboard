@@ -41,6 +41,7 @@ from app.services.preferences import (
     remove_dashboard_from_preferences,
 )
 from app.services.quota import assert_under_quota, limit_message
+from app.services.retention import purge_dashboard
 from app.services.shares import (
     create_share,
     dashboard_audience_user_ids,
@@ -478,7 +479,7 @@ async def create_dashboard(
         resource="dashboards",
         cap=settings.quota_dashboards_per_user,
         scope=Dashboard.user_id == current_user.id,
-        detail=limit_message("dashboards", settings.quota_dashboards_per_user),
+        detail=limit_message("dashboards", settings.quota_dashboards_per_user, reclaim="purge"),
     )
     await _validate_share_targets(body.shares, current_user.id, db)
     dashboard = Dashboard(user_id=current_user.id, name=body.name)
@@ -690,6 +691,36 @@ async def restore_dashboard(
     )
 
 
+@router.delete("/{dashboard_id}/trash", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
+async def purge_trashed_dashboard(
+    request: Request,
+    dashboard_id: uuid.UUID,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a trashed dashboard and everything under it, ahead of the reaper.
+
+    Owner-only and trashed-only, loaded like restore does because the access door cannot see
+    trashed rows. Broadcasts nothing: the row is already invisible everywhere but this owner's
+    trash view, so no other tab holds state this could stale.
+    """
+    result = await db.execute(
+        select(Dashboard).where(
+            Dashboard.id == dashboard_id,
+            Dashboard.user_id == current_user.id,
+            Dashboard.deleted_at.is_not(None),
+        )
+    )
+    dashboard = result.scalar_one_or_none()
+    if dashboard is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
+
+    await purge_dashboard(db, dashboard)
+    await db.commit()
+
+
 @router.get("/{dashboard_id}", response_model=DashboardResponse)
 async def get_dashboard(
     dashboard_id: uuid.UUID,
@@ -790,7 +821,7 @@ async def add_widget(
         resource="widgets",
         cap=settings.quota_widgets_per_dashboard,
         scope=DashboardWidget.dashboard_id == dashboard.id,
-        detail=limit_message("widgets on this dashboard", settings.quota_widgets_per_dashboard),
+        detail=limit_message("widgets on this dashboard", settings.quota_widgets_per_dashboard, reclaim="immediate"),
     )
     is_shared_dashboard = bool(shares)
     # exclude_unset so omitted fields stay absent rather than landing as explicit nulls; extras

@@ -160,6 +160,16 @@ export async function apiRestoreDashboard(id: string): Promise<DashboardSummaryT
   return parseJson(res, DashboardSummary)
 }
 
+export async function apiPurgeDashboard(id: string): Promise<void> {
+  const res = await apiFetch(`/api/dashboards/${id}/trash`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { detail?: string }
+    throw new Error(data.detail ?? 'Failed to permanently delete dashboard')
+  }
+}
+
 export async function apiUpdateLayout(
   dashboardId: string,
   layout: LayoutItem[],
