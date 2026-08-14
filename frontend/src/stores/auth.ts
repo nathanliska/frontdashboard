@@ -120,13 +120,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }
   },
 
+  // No toast here, unlike its neighbours: every way this fails names a field the form is showing,
+  // so the caller attaches the message to that input instead (AGENTS.md — validate through
+  // FormField, never a toast).
   async changePassword(input) {
-    try {
-      await apiChangePassword(input)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update password.')
-      throw err
-    }
+    await apiChangePassword(input)
   },
 }))
 

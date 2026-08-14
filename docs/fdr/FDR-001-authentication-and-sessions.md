@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-07-30
+**Last reviewed:** 2026-08-13
 
 ## Overview
 
@@ -18,6 +18,11 @@ multi-user account model with immediate, per-device session control — not just
   non-empty, and ≤100 characters.
 - **Login is uniform on failure.** A wrong password and an unknown account return the same 401, with
   no observable timing difference.
+- **A password must not be one attackers already spray.** At registration, reset and change, the
+  chosen password is screened against the breach-derived common-password list and refused with a
+  422 naming the reason. The answer depends on the password alone, so it stays uniform across known
+  and unknown addresses. Existing passwords are never re-screened — nobody is locked out by the
+  policy arriving, and the check only binds the next time one is set.
 - **Sessions are per-login and revocable.** Each login is its own session. Logging out ends that
   session immediately. Changing your password ends every *other* session but keeps the one you're
   using; a password reset ends sessions accordingly.
@@ -36,6 +41,10 @@ multi-user account model with immediate, per-device session control — not just
 - **Emails.** Verification and reset emails send in the background via Resend; without an API key the
   link is written to `backend/.dev-mail/` (how you get tokens in local dev).
 - **Profile page.** Display name, password change, and home-dashboard preference.
+- **A refused password change keeps you signed in, and says which field was wrong.** Mistyping the
+  current password answers **403**, not 401 — a 401 is the client's only signal that a session is
+  gone, so it signed people out of the form they were using. Both refusals, the wrong current
+  password and a breached new one, attach to the field that caused them rather than raising a toast.
 
 ## Design Decisions
 

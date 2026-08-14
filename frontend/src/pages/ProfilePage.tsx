@@ -1,6 +1,7 @@
 import { Check, Home, LockKeyhole, Pencil, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
+import { ApiError } from '../api/http'
 import { FormField } from '../components/ui/FormField'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
@@ -114,6 +115,12 @@ export function ProfilePage() {
       })
       cancelPasswordEdit()
       toast.success('Password updated.')
+    } catch (err) {
+      // 403 is the re-authentication failing, so it belongs on the current-password field;
+      // anything else the server refused is about the password being chosen.
+      const status = err instanceof ApiError ? err.status : 0
+      const message = err instanceof Error ? err.message : 'Failed to update password.'
+      setPasswordErrors(status === 403 ? { current: message } : { next: message })
     } finally {
       setSavingPassword(false)
     }

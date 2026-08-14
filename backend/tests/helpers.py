@@ -21,7 +21,7 @@ async def register_user(
     email: str,
     *,
     display_name: str = "Member",
-    password: str = "password123",
+    password: str = "test-password-123",
 ) -> dict:
     """Register + verify on an *existing* client (register_client below spins up a new one)."""
     resp = await client.post(
@@ -70,7 +70,7 @@ async def register_client(
     email: str,
     *,
     display_name: str = "Member",
-    password: str = "password123",
+    password: str = "test-password-123",
 ) -> AsyncClient:
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
     await client.__aenter__()
