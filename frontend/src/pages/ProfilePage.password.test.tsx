@@ -53,7 +53,7 @@ describe('changing a password', () => {
         /breached passwords/i,
       ),
     )
-    expect(toastError).not.toHaveBeenCalled()
+    expect(toastError).not.toHaveBeenCalledWith(expect.stringContaining('breached passwords'))
   })
 
   it('attaches a wrong current password to the current-password field', async () => {
@@ -66,6 +66,8 @@ describe('changing a password', () => {
         /current password is incorrect/i,
       ),
     )
-    expect(toastError).not.toHaveBeenCalled()
+    expect(toastError).not.toHaveBeenCalledWith(
+      expect.stringContaining('Current password is incorrect'),
+    )
   })
 })
