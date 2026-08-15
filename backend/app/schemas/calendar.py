@@ -169,6 +169,42 @@ class CalendarOccurrenceResponse(BaseModel):
     participants: list[CalendarEventParticipantResponse] = []
 
 
+class TrashedEventSummary(BaseModel):
+    """An event in the trash: enough to recognise it and restore it. Mirrors the list trash.
+
+    Carries `starts_at` because a title alone rarely identifies an event — several weeks of
+    "Trash pickup" look identical without the date.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    dashboard_id: uuid.UUID
+    title: str
+    starts_at: datetime
+    recurring: bool
+    deleted_at: datetime
+    purge_at: datetime
+
+
+class TrashedEventCursor(BaseModel):
+    """Where the next page starts. Opaque to the client, which only hands it back."""
+
+    deleted_at: datetime
+    id: uuid.UUID
+
+
+class TrashedEventPage(BaseModel):
+    """A page of the trash, and how to ask for the one after it.
+
+    `next_cursor` is null at the end. The server decides that rather than the client comparing the
+    page against a page size it would have to keep in step with.
+    """
+
+    items: list[TrashedEventSummary]
+    next_cursor: TrashedEventCursor | None = None
+
+
 class CalendarOccurrenceMutationResponse(BaseModel):
     cancelled: bool
     occurrence: CalendarOccurrenceResponse | None = None

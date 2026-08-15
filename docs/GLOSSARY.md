@@ -33,7 +33,7 @@ in the abstract) are not defined here.
 
 **Favorite** — A user-flagged dashboard, surfaced on the listing page.
 
-**Trash** — The one "put away" state, for dashboards and lists alike: delete stamps `deleted_at`, the row disappears from every listing and access path, and it stays restorable until the reaper purges it 30 days later. Replaced the separate **Archive** flag (removed 2026-07-27) — two overlapping hide-this states with different promises was one too many. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
+**Trash** — The one "put away" state, for dashboards, lists and calendar events alike: delete stamps `deleted_at`, the row disappears from every listing and access path, and it stays restorable — from its trash view, or from an Undo on the deletion toast — until purged on demand or by the reaper 30 days later. Replaced the separate **Archive** flag (removed 2026-07-27) — two overlapping hide-this states with different promises was one too many. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
 
 **List** — A checklist/task list of items. See [FDR-005](fdr/FDR-005-lists.md).
 

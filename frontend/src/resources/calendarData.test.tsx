@@ -9,6 +9,7 @@ import {
   getCalendarEvent,
   handleCalendarResourceEvent,
   resetCalendarData,
+  restoreCalendarEvent,
   updateCalendarEvent,
   useCalendarOccurrences,
 } from './calendarData'
@@ -268,8 +269,12 @@ describe('calendarData', () => {
 })
 
 describe('deleting an event', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetCalendarData()
+  })
+
   it('offers an undo that restores it rather than recreating it', async () => {
-    toastSuccess.mockClear()
     apiDeleteEvent.mockResolvedValue(undefined)
     apiRestoreEvent.mockResolvedValue({ id: 'event-1', title: 'Trash pickup' })
 
@@ -285,5 +290,22 @@ describe('deleting an event', () => {
     })
     expect(apiRestoreEvent).toHaveBeenCalledWith('event-1')
     expect(apiCreateEvent).not.toHaveBeenCalled()
+  })
+
+  it('refetches occurrences after a restore, for every caller of it', async () => {
+    // The invalidation lives here rather than at the call site because both callers need it — the
+    // toast undo and the trash panel — and only one of them is a component that could do it.
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    render(<CalendarProbe />)
+    await waitFor(() => expect(apiListOccurrences).toHaveBeenCalledTimes(1))
+
+    apiRestoreEvent.mockResolvedValue(makeEvent())
+    await act(async () => {
+      await restoreCalendarEvent('event-1', 'dash-1')
+    })
+
+    // The count, not the rendered result: the server expands recurrence, so a restored event shows
+    // up only if a fetch happened. Asserting on what is on screen passes either way.
+    await waitFor(() => expect(apiListOccurrences).toHaveBeenCalledTimes(2))
   })
 })

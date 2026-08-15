@@ -236,6 +236,15 @@ export const ShareUpdate = z.object({ role: ShareRole });
 export type TrashedDashboardSummary = z.infer<typeof TrashedDashboardSummary>;
 export const TrashedDashboardSummary = z.object({ deleted_at: z.iso.datetime(), id: z.uuid(), name: z.string(), purge_at: z.iso.datetime() });
 
+export type TrashedEventCursor = z.infer<typeof TrashedEventCursor>;
+export const TrashedEventCursor = z.object({ deleted_at: z.iso.datetime(), id: z.uuid() });
+
+export type TrashedEventSummary = z.infer<typeof TrashedEventSummary>;
+export const TrashedEventSummary = z.object({ dashboard_id: z.uuid(), deleted_at: z.iso.datetime(), id: z.uuid(), purge_at: z.iso.datetime(), recurring: z.boolean(), starts_at: z.iso.datetime(), title: z.string() });
+
+export type TrashedEventPage = z.infer<typeof TrashedEventPage>;
+export const TrashedEventPage = z.object({ items: z.array(TrashedEventSummary), next_cursor: TrashedEventCursor.nullable().optional() });
+
 export type TrashedListSummary = z.infer<typeof TrashedListSummary>;
 export const TrashedListSummary = z.object({ dashboard_id: z.uuid(), deleted_at: z.iso.datetime(), id: z.uuid(), list_type: ListType, name: z.string(), purge_at: z.iso.datetime() });
 

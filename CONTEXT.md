@@ -121,10 +121,11 @@ _Last updated: 2026-08-14_
 - Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration
   toolbar, all-day, timezones; per-occurrence overrides and cancellation. Occurrence expansion
   over a required window (max 366 days).
-- **Delete is undoable.** The confirmation toast carries a Restore action backed by
-  `POST /calendar/events/{id}/restore`, which brings back recurrence, overrides and participants
-  rather than recreating the event. There is no event trash — the failure being guarded is a
-  misclick (ADR-007).
+- **Delete is undoable, then recoverable.** The confirmation toast carries a Restore action backed
+  by `POST /calendar/events/{id}/restore`, which brings back recurrence, overrides and participants
+  rather than recreating the event. After the toast, a **Trash** view on the calendar panel lists
+  deleted events with their purge deadline, offering Restore and a confirmed Delete permanently
+  (ADR-007).
 - **Participants**: events can name the members they are about — toggle-chips in the editor
   (fed by `GET /dashboards/{id}/members`, cached per dashboard and refreshed by the
   `dashboard.share_*` events), colored initial-dots on cards and agenda rows, bare

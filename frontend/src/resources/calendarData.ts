@@ -2,6 +2,7 @@ import {
   apiCreateEvent,
   apiDeleteEvent,
   apiGetEvent,
+  apiPurgeEvent,
   apiRestoreEvent,
   apiUpdateEvent,
   type CalendarEvent,
@@ -128,15 +129,32 @@ export async function deleteCalendarEvent(
  * Occurrences are invalidated rather than patched: the server expands recurrence, so what the
  * restored event contributes to a window is not something the client can compute.
  */
-async function restoreCalendarEvent(eventId: string, dashboardId: string | null): Promise<void> {
+export async function restoreCalendarEvent(
+  eventId: string,
+  dashboardId: string | null,
+): Promise<boolean> {
   try {
     const event = await apiRestoreEvent(eventId)
     calendarEventDetails.set(eventId, event)
     invalidateDashboardOccurrences(dashboardId)
     toast.success('Event restored.')
+    return true
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to restore event.'
     toast.error(message)
+    return false
+  }
+}
+
+/** Delete a trashed event outright. Occurrences already exclude it, so nothing is invalidated. */
+export async function purgeCalendarEvent(eventId: string): Promise<boolean> {
+  try {
+    await apiPurgeEvent(eventId)
+    calendarEventDetails.delete(eventId)
+    return true
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'Failed to permanently delete event.')
+    return false
   }
 }
 
