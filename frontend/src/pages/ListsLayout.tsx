@@ -158,6 +158,10 @@ export function ListsLayout() {
   }
 
   async function handleDeleteList(deleteListId: string) {
+    const name = lists.find((l) => l.id === deleteListId)?.name
+    // Read now, not on the undo click: restoring has to patch the cache of the dashboard the list
+    // came from, which may not be the one on screen by then.
+    const fromDashboardId = effectiveDashboardId
     try {
       await deleteList(deleteListId)
       // The trash gained a row; refresh it only if the user has it open (or has looked).
@@ -165,8 +169,30 @@ export function ListsLayout() {
       if (listId === deleteListId) {
         navigate(indexUrl(), { replace: true })
       }
+      // The trash is the way back after this toast; the undo is here because finding it requires
+      // knowing it exists.
+      toast.success(
+        name ? `Moved "${name}" to the trash.` : 'Moved to the trash.',
+        fromDashboardId
+          ? {
+              label: 'Undo',
+              onAction: () => void handleUndoDeleteList(deleteListId, fromDashboardId, name),
+            }
+          : undefined,
+      )
     } catch {
       // deleteList already reports the failure
+    }
+  }
+
+  async function handleUndoDeleteList(
+    undoListId: string,
+    fromDashboardId: string,
+    name: string | undefined,
+  ) {
+    if (await restoreList(undoListId, fromDashboardId)) {
+      if (trash !== EMPTY_TRASH) void loadTrash()
+      toast.success(name ? `Restored "${name}".` : 'Restored.')
     }
   }
 

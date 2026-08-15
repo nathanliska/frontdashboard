@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-08-14
+**Last reviewed:** 2026-08-15
 
 ## Overview
 
@@ -27,7 +27,9 @@ master/detail UI and surfaced on dashboards via the list widget ([FDR-003](FDR-0
 - **Active/Trash selector.** The sidebar defaults to Active (reorderable); Trash lists what has been
   deleted, with its purge deadline and a Restore action. Trash is fetched only when opened.
 - **Move to trash.** Delete is a single action on any list — it stamps `deleted_at`, unbinds the
-  widgets that showed the list, and is restorable for 30 days. There is no archive state and no
+  widgets that showed the list, and is restorable for 30 days. The confirmation toast carries
+  **Undo**, which restores the same list rather than recreating one, so recovering a misclick does
+  not require knowing the Trash view exists. There is no archive state and no
   archive-before-delete gate ([ADR-007](../adr/ADR-007-soft-delete-boundary.md)).
 - **Live updates.** Item checks/updates and reorders from another client patch in place with no
   refetch.

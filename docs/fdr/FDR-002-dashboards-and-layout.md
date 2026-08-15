@@ -1,7 +1,7 @@
 # FDR-002: Dashboards & Layout Editor
 
 **Status:** Active
-**Last reviewed:** 2026-08-12
+**Last reviewed:** 2026-08-15
 
 ## Overview
 
@@ -13,7 +13,8 @@ sharing is [FDR-004](FDR-004-sharing-and-access.md).
 ## Behavior
 
 - **Multiple dashboards per user.** A default "My Dashboard" is created at registration. A listing
-  page shows all of them with favorites, a create modal, and a Trash view.
+  page shows all of them with favorites, a create modal, and a Trash view. Deleting one confirms
+  first, then offers **Undo** on the toast — the trash remains the way back after that.
 - **Favorites and home.** Dashboards can be favorited; a user picks a home dashboard in their profile.
 - **Trash is the only put-away state.** There is no archive: a dashboard is either live or in the
   trash. Trashed dashboards are filtered out of every listing and out of child-resource access

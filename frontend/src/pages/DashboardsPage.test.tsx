@@ -4,10 +4,16 @@ import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../api/dashboards'
 import { useAuthStore } from '../stores/auth'
+import { useConfirmStore } from '../stores/confirm'
 import { resetDashboardData, useDashboardStore } from '../stores/dashboard'
 import { stubDashboardStore } from '../test/dashboard-store'
 import { makeDashboardSummary as makeSummary } from '../test/fixtures'
 import { DashboardsPage } from './DashboardsPage'
+
+const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }))
+vi.mock('../stores/toast', async () =>
+  (await import('../test/toast')).toastMock({ success: toastSuccess }),
+)
 
 vi.mock('../components/dashboard/DashboardSettingsModal', () => ({
   DashboardSettingsModal: ({
@@ -88,5 +94,40 @@ describe('DashboardsPage', () => {
     await waitFor(() => {
       expect(screen.queryByText('Editing Renamed Dashboard')).not.toBeInTheDocument()
     })
+  })
+})
+
+describe('deleting a dashboard', () => {
+  it('offers an undo that restores it, without a trip to the Trash view', async () => {
+    const deleteDashboard = vi.fn().mockResolvedValue(true)
+    const restoreDashboard = vi.fn().mockResolvedValue(makeSummary({ id: 'dash-1' }))
+    stubDashboardStore({
+      summaries: [makeSummary({ id: 'dash-1', name: 'Household' })],
+      deleteDashboard,
+      restoreDashboard,
+    })
+
+    render(
+      <MemoryRouter>
+        <DashboardsPage />
+      </MemoryRouter>,
+    )
+
+    // Radix opens the menu on pointerdown, which jsdom does not synthesise from a click; the
+    // keyboard path is supported and is what a keyboard user takes anyway.
+    const trigger = await screen.findByRole('button', { name: 'Actions for Household' })
+    fireEvent.keyDown(trigger, { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: /move to trash/i }))
+    act(() => useConfirmStore.getState()._accept())
+
+    await waitFor(() => expect(deleteDashboard).toHaveBeenCalledWith('dash-1'))
+
+    // The action, not the wording: recovering from the toast is the point, and the message reads
+    // the same with or without it.
+    const action = toastSuccess.mock.calls.at(-1)?.[1] as { label: string; onAction: () => void }
+    await waitFor(() => expect(action).toMatchObject({ label: 'Undo' }))
+
+    action.onAction()
+    await waitFor(() => expect(restoreDashboard).toHaveBeenCalledWith('dash-1'))
   })
 })
