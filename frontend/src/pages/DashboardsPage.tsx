@@ -90,8 +90,18 @@ export function DashboardsPage() {
   async function handleDelete(dashboard: DashboardSummary) {
     // Honest copy: it goes to the trash with everything on it, and it is recoverable.
     const message = `Move "${dashboard.name}" to the trash? Its lists and calendar events go with it. You can restore it from the trash for 30 days.`
-    if (await confirm(message, { confirmLabel: 'Move to trash' })) {
-      void deleteDashboard(dashboard.id)
+    if (!(await confirm(message, { confirmLabel: 'Move to trash' }))) return
+    if (await deleteDashboard(dashboard.id)) {
+      toast.success(`Moved "${dashboard.name}" to the trash.`, {
+        label: 'Undo',
+        onAction: () => void handleUndoDelete(dashboard),
+      })
+    }
+  }
+
+  async function handleUndoDelete(dashboard: DashboardSummary) {
+    if (await restoreDashboard(dashboard.id)) {
+      toast.success(`Restored "${dashboard.name}".`)
     }
   }
 

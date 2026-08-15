@@ -20,10 +20,10 @@ Citations flow **one direction: FDR → ADR**. When you cite an ADR you don't ed
 | # | Feature | Status | Last reviewed |
 |---|---------|--------|---------------|
 | [FDR-001](FDR-001-authentication-and-sessions.md) | Authentication & Sessions | Active | 2026-08-13 |
-| [FDR-002](FDR-002-dashboards-and-layout.md) | Dashboards & Layout Editor | Active | 2026-08-12 |
+| [FDR-002](FDR-002-dashboards-and-layout.md) | Dashboards & Layout Editor | Active | 2026-08-15 |
 | [FDR-003](FDR-003-widgets.md) | Widgets | Active | 2026-08-07 |
 | [FDR-004](FDR-004-sharing-and-access.md) | Sharing & Access | Active | 2026-08-08 |
-| [FDR-005](FDR-005-lists.md) | Lists | Active | 2026-08-14 |
+| [FDR-005](FDR-005-lists.md) | Lists | Active | 2026-08-15 |
 | [FDR-006](FDR-006-calendar-and-events.md) | Calendar & Events | Active | 2026-08-14 |
 | [FDR-007](FDR-007-notifications-and-activity.md) | Notifications & Activity Feed | Active | 2026-08-03 |
 | [FDR-008](FDR-008-realtime-sse.md) | Real-Time Delivery (SSE) | Active | 2026-08-09 |

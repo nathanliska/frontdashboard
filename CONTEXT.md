@@ -61,7 +61,9 @@ _Last updated: 2026-08-14_
 **Dashboards & widgets**
 - Multiple dashboards per user; default "My Dashboard" created on registration. Listing page
   with favorites, a create modal, and a **Trash** view (#40): delete moves the dashboard (with its
-  lists/events) to the owner's trash, restorable for 30 days with the deadline shown; the retention
+  lists/events) to the owner's trash, restorable for 30 days with the deadline shown — and from an
+  **Undo** on the confirmation toast, for both dashboards and lists, so a misclick is recovered where
+  it happened rather than in the Trash view; the retention
   reaper then purges the full cascade. Restore brings shares and children back intact. **Archive was
   removed (2026-07-27)** — trash is the only put-away state, for dashboards and lists alike.
 - Editor: react-grid-layout drag/resize, saves with optimistic version. A 409 is resolved in the
