@@ -135,6 +135,13 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 
 Capabilities deliberately not built. Each states the condition that would make it worth the weight.
 
+- **Conflict-free list reorders** — when a concurrent drag is ever actually lost and missed. Two
+  members reordering the same list at the same moment each send the full new ordering, and the
+  later write silently replaces the earlier one; the loser sees the true order a moment later over
+  SSE and a re-drag costs seconds. The fix to build is fractional indexing (Figma, Jira's
+  LexoRank): each item carries its own position key, a drag writes one row, and concurrent drags
+  of different items merge instead of colliding — not a layout-style version column, whose 409
+  would punish the common non-conflicting case. Accepted as last-write-wins at household scale.
 - **Paginating the dashboard and list trashes** — when a trash response is ever observed at a
   size that matters. The event trash pages by cursor because its quota is 10,000 per dashboard;
   the other two return complete listings (quota-bounded at 100 dashboards, 200 lists/dashboard,
