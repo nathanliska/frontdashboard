@@ -98,7 +98,7 @@ one path already covered.
 ### Cap the disk, not just the age
 
 The container ships `--storage.tsdb.retention.time=15d` with `retention.size` unset, so runaway
-cardinality fills the array rather than evicting. Add to **Extra Parameters** in the Unraid
+cardinality fills the array rather than evicting. Add to **Extra Parameters** in the host's
 template:
 
 ```

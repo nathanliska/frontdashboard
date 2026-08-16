@@ -67,6 +67,8 @@ Sweep these against the diff and update what the change made untrue:
 - **AGENTS.md** for a new standing rule or gotcha. Edit it by that name — `CLAUDE.md` is a symlink
   and tools refuse to write through it.
 - After removing a concept, grep its vocabulary repo-wide. Recall misses FDRs and ADR titles.
+- Outward text names roles, not identities (AGENTS.md): grep the diff — and the PR body before
+  submitting — for personal names, emails, hostnames, and deployment-platform branding.
 
 ## User-facing UI
 

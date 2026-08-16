@@ -19,7 +19,7 @@ has no target and still has to be rebuilt from its commit.
 1. **Find the sha you want.** `git log --oneline` — the tag is the short sha of the commit the
    image was built from. The one you want is usually the deploy before the bad one.
 
-2. **Pin it** in the Unraid compose. Both images move together — a frontend and backend from
+2. **Pin it** in the prod compose. Both images move together — a frontend and backend from
    different commits is the one runtime failure the contract gate cannot catch
    ([ADR-018](../adr/ADR-018-generated-validated-contracts.md)).
 

@@ -63,6 +63,10 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
   scoped exceptions before adding them.
 - Never log bearer credentials: verification and reset URLs, session or CSRF tokens, invite codes,
   or password material.
+- Name roles, not identities. Outward text — docs, code, comments, commit messages, PR bodies —
+  carries no personal names or emails, no hostnames, and no deployment-platform branding: "the prod
+  host", "the maintainer". The LICENSE line and the repository's own URLs are the deliberate
+  exceptions.
 
 ## Hard Rules
 
@@ -97,7 +101,7 @@ Standing user constraints. Do not violate these.
 - CI runs on every PR to `main`, and merging is what publishes images. Check CI after opening and
   fix failures that are regressions from `main`.
 - Deploying is [docs/runbooks/deploy.md](docs/runbooks/deploy.md): merge, wait for the publish,
-  then **check for updates and update** the stack in Unraid's Compose Manager. Production is driven
+  then **check for updates and update** the stack in the host's Compose Manager. Production is driven
   through that plugin's UI, not `docker compose` on the host.
 
 ## Tooling

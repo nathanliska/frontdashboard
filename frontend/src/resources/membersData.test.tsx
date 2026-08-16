@@ -33,25 +33,25 @@ describe('membersData', () => {
   })
 
   it('serves reopens from cache: one fetch across two mounts', async () => {
-    apiListDashboardMembers.mockResolvedValue([member('Nathan'), member('Lilo')])
+    apiListDashboardMembers.mockResolvedValue([member('Miranda'), member('Lilo')])
 
     const first = render(<MembersProbe />)
-    await screen.findByText('Nathan')
+    await screen.findByText('Miranda')
     first.unmount()
 
     render(<MembersProbe />)
-    await screen.findByText('Nathan')
+    await screen.findByText('Miranda')
 
     expect(apiListDashboardMembers).toHaveBeenCalledTimes(1)
   })
 
   it('refetches the roster when a share event names the dashboard', async () => {
     apiListDashboardMembers
-      .mockResolvedValueOnce([member('Nathan')])
-      .mockResolvedValueOnce([member('Nathan'), member('Newcomer')])
+      .mockResolvedValueOnce([member('Miranda')])
+      .mockResolvedValueOnce([member('Miranda'), member('Newcomer')])
 
     render(<MembersProbe />)
-    await screen.findByText('Nathan')
+    await screen.findByText('Miranda')
 
     act(() => {
       handleMembersResourceEvent({
@@ -72,10 +72,10 @@ describe('membersData', () => {
   })
 
   it('leaves other dashboards’ rosters alone', async () => {
-    apiListDashboardMembers.mockResolvedValue([member('Nathan')])
+    apiListDashboardMembers.mockResolvedValue([member('Miranda')])
 
     render(<MembersProbe />)
-    await screen.findByText('Nathan')
+    await screen.findByText('Miranda')
 
     act(() => {
       handleMembersResourceEvent({
