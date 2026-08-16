@@ -16,6 +16,7 @@ from tests.helpers import (
     create_list_item,
     register_client,
     set_csrf,
+    share_dashboard,
 )
 
 
@@ -336,13 +337,7 @@ async def test_reorder_lists_forbidden_for_viewer(
 
     viewer = await register_client("viewer-reorder-lists@example.com")
     try:
-        viewer_id = (await viewer.get("/api/auth/me")).json()["id"]
-        set_csrf(auth_client)
-        share_resp = await auth_client.post(
-            f"/api/dashboards/{dash_id}/shares",
-            json={"principal_type": "user", "principal_id": viewer_id, "role": "viewer"},
-        )
-        assert share_resp.status_code == 201
+        await share_dashboard(auth_client, dash_id, viewer, "viewer")
 
         set_csrf(viewer)
         res = await viewer.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": list_ids})
@@ -378,13 +373,7 @@ async def test_reorder_items_forbidden_for_viewer(
 
     viewer = await register_client("viewer-reorder-items@example.com")
     try:
-        viewer_id = (await viewer.get("/api/auth/me")).json()["id"]
-        set_csrf(auth_client)
-        share_resp = await auth_client.post(
-            f"/api/dashboards/{dash_id}/shares",
-            json={"principal_type": "user", "principal_id": viewer_id, "role": "viewer"},
-        )
-        assert share_resp.status_code == 201
+        await share_dashboard(auth_client, dash_id, viewer, "viewer")
 
         set_csrf(viewer)
         res = await viewer.put(f"/api/lists/{list_id}/items/order", json={"item_ids": item_ids})

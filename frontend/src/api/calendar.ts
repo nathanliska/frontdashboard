@@ -33,7 +33,6 @@ export interface CreateCalendarEventInput {
   all_day: boolean
   recurrence?: RecurrenceRule
   participants?: string[]
-  shares?: ShareCreate[]
 }
 
 /**

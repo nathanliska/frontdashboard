@@ -4,7 +4,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.routers import calendar as calendar_router
-from tests.helpers import create_calendar_event, create_dashboard, register_client, set_csrf
+from tests.helpers import create_calendar_event, create_dashboard, register_client, set_csrf, share_dashboard
 
 
 async def test_create_private_calendar_event(auth_client: AsyncClient) -> None:
@@ -20,12 +20,7 @@ async def test_shared_dashboard_event_visible_to_shared_user(auth_client: AsyncC
 
     viewer = await register_client("calendar-viewer@example.com")
     try:
-        me = await viewer.get("/api/auth/me")
-        set_csrf(auth_client)
-        await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": me.json()["id"], "role": "viewer"},
-        )
+        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
         resp = await viewer.get(
             "/api/calendar/events",
@@ -99,11 +94,7 @@ async def test_viewer_cannot_edit_event(auth_client: AsyncClient) -> None:
     try:
         me = await client.get("/api/auth/me")
         assert me.status_code == 200
-        set_csrf(auth_client)
-        await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": me.json()["id"], "role": "viewer"},
-        )
+        await share_dashboard(auth_client, dashboard["id"], client, "viewer")
 
         set_csrf(client)
         update_resp = await client.patch(

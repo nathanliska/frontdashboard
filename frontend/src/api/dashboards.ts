@@ -17,7 +17,7 @@ import {
   TrashedDashboardSummary,
 } from './generated/contract'
 import { parseJson, readError } from './http'
-import type { ResourceShare, ShareCreate, ShareUpdate } from './shares'
+import type { ResourceShare, ShareUpdate } from './shares'
 
 // Share reads are the one place a single-flight earns its keep: the settings modal fetches them
 // from an effect with no coalescing layer above it, and StrictMode double-invokes that effect in
@@ -102,10 +102,7 @@ export async function apiGetDashboard(id: string): Promise<Dashboard> {
   return parseDashboard(res)
 }
 
-export async function apiCreateDashboard(data: {
-  name: string
-  shares?: ShareCreate[]
-}): Promise<DashboardSummary> {
+export async function apiCreateDashboard(data: { name: string }): Promise<DashboardSummary> {
   const res = await apiFetch('/api/dashboards', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -131,6 +128,14 @@ export async function apiDeleteDashboard(id: string): Promise<void> {
     method: 'DELETE',
   })
   if (!res.ok) throw await readError(res, 'Failed to delete dashboard')
+}
+
+/** Leave a dashboard someone shared with the caller. The server finds the caller's own share. */
+export async function apiLeaveDashboard(id: string): Promise<void> {
+  const res = await apiFetch(`/api/dashboards/${id}/membership`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw await readError(res, 'Failed to leave dashboard')
 }
 
 export async function apiGetTrash(): Promise<TrashedDashboardSummary[]> {

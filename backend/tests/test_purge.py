@@ -16,6 +16,7 @@ from tests.helpers import (
     create_list_item,
     register_client,
     set_csrf,
+    share_dashboard,
 )
 
 
@@ -110,13 +111,7 @@ async def test_a_viewer_cannot_purge_a_list(auth_client: AsyncClient) -> None:
 
     viewer = await register_client("purge-viewer@example.com")
     try:
-        me = await viewer.get("/api/auth/me")
-        set_csrf(auth_client)
-        shared = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": me.json()["id"], "role": "viewer"},
-        )
-        assert shared.status_code == 201
+        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
         set_csrf(auth_client)
         assert (await auth_client.delete(f"/api/lists/{lst['id']}")).status_code == 204

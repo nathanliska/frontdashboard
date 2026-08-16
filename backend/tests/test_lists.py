@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent, EventType
-from tests.helpers import create_dashboard, create_list, create_list_item, register_client, set_csrf
+from tests.helpers import create_dashboard, create_list, create_list_item, register_client, set_csrf, share_dashboard
 
 
 async def test_private_list_is_only_visible_to_owner(auth_client: AsyncClient) -> None:
@@ -30,14 +30,7 @@ async def test_shared_dashboard_editor_can_add_items(auth_client: AsyncClient) -
 
     other = await register_client("editor@example.com")
     try:
-        me = await other.get("/api/auth/me")
-        # Share dashboard with other as editor
-        set_csrf(auth_client)
-        share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": me.json()["id"], "role": "editor"},
-        )
-        assert share_resp.status_code == 201
+        await share_dashboard(auth_client, dashboard["id"], other, "editor")
 
         # Other can see the list
         resp = await other.get("/api/lists", params={"dashboard_id": dashboard["id"]})
@@ -64,12 +57,7 @@ async def test_shared_dashboard_viewer_cannot_mutate(auth_client: AsyncClient) -
 
     other = await register_client("viewer@example.com")
     try:
-        me = await other.get("/api/auth/me")
-        set_csrf(auth_client)
-        await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": me.json()["id"], "role": "viewer"},
-        )
+        await share_dashboard(auth_client, dashboard["id"], other, "viewer")
 
         # Can read the list
         resp = await other.get(f"/api/lists/{lst['id']}")
@@ -101,18 +89,12 @@ async def test_dashboard_share_crud_endpoints(auth_client: AsyncClient) -> None:
 
     other = await register_client("share-crud@example.com")
     try:
-        me = await other.get("/api/auth/me")
-        set_csrf(auth_client)
-        share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": me.json()["id"], "role": "viewer"},
-        )
-        assert share_resp.status_code == 201
-        share = share_resp.json()
+        await share_dashboard(auth_client, dashboard["id"], other, "viewer")
 
+        # The grant happens by invite now, so the share id comes from the owner's listing.
         resp = await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")
         assert resp.status_code == 200
-        assert any(item["id"] == share["id"] for item in resp.json())
+        (share,) = resp.json()
 
         set_csrf(auth_client)
         updated = await auth_client.patch(
@@ -231,12 +213,7 @@ async def test_viewer_empty_item_patch_is_rejected_not_written(auth_client: Asyn
 
     other = await register_client("viewer-empty@example.com")
     try:
-        me = await other.get("/api/auth/me")
-        set_csrf(auth_client)
-        await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": me.json()["id"], "role": "viewer"},
-        )
+        await share_dashboard(auth_client, dashboard["id"], other, "viewer")
 
         set_csrf(other)
         empty = await other.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={})

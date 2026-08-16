@@ -21,6 +21,7 @@ export function stubDashboardStore(overrides: Partial<DashboardState> = {}): voi
     loadSummaries: vi.fn().mockResolvedValue(undefined),
     createDashboard: vi.fn(),
     deleteDashboard: vi.fn(),
+    leaveDashboard: vi.fn(),
     toggleFavorite: vi.fn(),
     renameDashboard: vi.fn(),
     loadDashboard: vi.fn(),

@@ -14,6 +14,7 @@ from tests.helpers import (
     current_user,
     register_client,
     set_csrf,
+    share_dashboard,
 )
 
 
@@ -94,13 +95,7 @@ async def test_an_editor_sees_and_can_purge_what_the_owner_trashed(auth_client: 
 
     editor = await register_client("event-trash-editor@example.com")
     try:
-        me = await current_user(editor)
-        set_csrf(auth_client)
-        shared = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": me["id"], "role": "editor"},
-        )
-        assert shared.status_code == 201
+        await share_dashboard(auth_client, dashboard["id"], editor, "editor")
 
         set_csrf(auth_client)
         assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
@@ -120,14 +115,7 @@ async def test_a_viewer_cannot_purge(auth_client: AsyncClient) -> None:
 
     viewer = await register_client("event-trash-viewer@example.com")
     try:
-        me = await current_user(viewer)
-        set_csrf(auth_client)
-        assert (
-            await auth_client.post(
-                f"/api/dashboards/{dashboard['id']}/shares",
-                json={"principal_type": "user", "principal_id": me["id"], "role": "viewer"},
-            )
-        ).status_code == 201
+        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
         set_csrf(auth_client)
         assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204

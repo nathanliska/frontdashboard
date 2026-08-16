@@ -186,6 +186,27 @@ describe('echo suppression', () => {
       ).toBe(false)
   })
 
+  it('suppresses the echo of leaving — the store already dropped the summary', () => {
+    // share_action distinguishes the sides: the leaver has nothing left to fetch, while the same
+    // event type from an owner's removal still flips is_shared and must reload.
+    expect(
+      canSuppressLocalDashboardEcho(
+        event({
+          event_type: 'dashboard.share_removed' as SseEvent['event_type'],
+          payload: { share_action: 'left' },
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      canSuppressLocalDashboardEcho(
+        event({
+          event_type: 'dashboard.share_removed' as SseEvent['event_type'],
+          payload: { share_action: 'removed' },
+        }),
+      ),
+    ).toBe(false)
+  })
+
   it('refuses to suppress an updated frame carrying a value this build does not know', () => {
     // The cast is the point: ChangedField stops a *consumer* naming a value no producer emits,
     // but a newer backend can still put one on the wire, and types do not reach that.

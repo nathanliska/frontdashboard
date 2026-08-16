@@ -131,36 +131,6 @@ async def get_resource_share(
     return result.scalar_one_or_none()
 
 
-async def insert_shares(
-    resource_type: ResourceType,
-    resource_id: uuid.UUID,
-    share_inputs: list[ShareCreate],
-    granted_by: uuid.UUID,
-    db: AsyncSession,
-) -> None:
-    """Bulk-insert share rows. Silently ignores duplicates via ON CONFLICT DO NOTHING."""
-    from datetime import UTC, datetime
-
-    if not share_inputs:
-        return
-
-    rows = [
-        {
-            "id": uuid.uuid4(),
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "principal_type": s.principal_type,
-            "principal_id": s.principal_id,
-            "role": s.role,
-            "granted_by": granted_by,
-            "created_at": datetime.now(UTC),
-        }
-        for s in share_inputs
-    ]
-    stmt = pg_insert(ResourceShare).values(rows).on_conflict_do_nothing(constraint="uq_resource_shares_target")
-    await db.execute(stmt)
-
-
 async def create_share(
     resource_type: ResourceType,
     resource_id: uuid.UUID,

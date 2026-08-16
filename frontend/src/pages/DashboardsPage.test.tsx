@@ -131,3 +131,58 @@ describe('deleting a dashboard', () => {
     await waitFor(() => expect(restoreDashboard).toHaveBeenCalledWith('dash-1'))
   })
 })
+
+describe('leaving a shared dashboard', () => {
+  it('offers Leave instead of trash on a dashboard the user does not own', async () => {
+    const leaveDashboard = vi.fn().mockResolvedValue(true)
+    stubDashboardStore({
+      summaries: [
+        makeSummary({
+          id: 'dash-2',
+          name: 'Roommates',
+          user_id: 'someone-else',
+          access_description: 'Shared with you',
+          can_manage_shares: false,
+        }),
+      ],
+      leaveDashboard,
+    })
+
+    render(
+      <MemoryRouter>
+        <DashboardsPage />
+      </MemoryRouter>,
+    )
+
+    const trigger = await screen.findByRole('button', { name: 'Actions for Roommates' })
+    fireEvent.keyDown(trigger, { key: 'Enter' })
+
+    // Trash would 403 for a non-owner; the way out of a shared dashboard is leaving it.
+    expect(screen.queryByRole('menuitem', { name: /move to trash/i })).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /leave dashboard/i }))
+
+    // Leaving is not undoable from this side, so it must ask first.
+    await waitFor(() => expect(useConfirmStore.getState().open).toBe(true))
+    act(() => useConfirmStore.getState()._accept())
+
+    await waitFor(() => expect(leaveDashboard).toHaveBeenCalledWith('dash-2'))
+  })
+
+  it('never offers Leave on a dashboard the user owns', async () => {
+    stubDashboardStore({
+      summaries: [makeSummary({ id: 'dash-1', name: 'Household' })],
+    })
+
+    render(
+      <MemoryRouter>
+        <DashboardsPage />
+      </MemoryRouter>,
+    )
+
+    const trigger = await screen.findByRole('button', { name: 'Actions for Household' })
+    fireEvent.keyDown(trigger, { key: 'Enter' })
+
+    expect(await screen.findByRole('menuitem', { name: /move to trash/i })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /leave dashboard/i })).not.toBeInTheDocument()
+  })
+})
