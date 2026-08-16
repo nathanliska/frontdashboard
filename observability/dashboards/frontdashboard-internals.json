@@ -934,8 +934,8 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(frontdashboard_sse_evictions_total[1h]))",
-          "legendFormat": "evictions (slow client)",
+          "expr": "sum(increase(frontdashboard_sse_overflow_resyncs_total[1h]))",
+          "legendFormat": "overflow resyncs (slow client)",
           "range": true,
           "refId": "C"
         },
@@ -1039,7 +1039,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Events delivered & backpressure",
-      "description": "Frames actually delivered, and the queue depth that precedes an eviction.",
+      "description": "Frames actually delivered, and the queue depth that precedes an overflow resync.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

@@ -157,8 +157,9 @@ _Last updated: 2026-08-14_
   those caches; an unknown or absent scope widens back to all of them. Frontend routes events to
   Zustand stores / scoped-query resource caches with per-tab origin-id echo suppression
   (FDR-008).
-- A client whose queue overflows is evicted with a closed sentinel, so its stream ends with a
-  `resync` and reconnects — rather than staying connected and silently deaf.
+- A client whose queue overflows keeps its stream: the backlog collapses into one in-place
+  `resync`, and frames arriving before it goes out are dropped as covered by the refetch it
+  orders — rather than the client staying connected and silently deaf.
 - A stream rejected with an HTTP error status (`readyState === CLOSED`, which `EventSource`
   never retries) reconnects on jittered exponential backoff (1s → 30s cap, indefinitely) and
   never logs anyone out; every fourth attempt probes `/auth/me`, so a genuinely signed-out tab
@@ -225,7 +226,7 @@ _Last updated: 2026-08-14_
   falls through to the SPA and gets `index.html` — verified, zero series in the body — and the prod
   backend publishes no port, leaving the Docker network as the only route in.
   Built on `prometheus_client`, so the exposition, the label handling and the multiprocess path
-  are the library's rather than ours. Series: SSE connects / resyncs / evictions / lifetime
+  are the library's rather than ours. Series: SSE connects / resyncs / overflow resyncs / lifetime
   expiries, open streams (each browser tab is one, so this counts streams rather than people) and
   deepest queue, retention sweeps plus the unix time of the last
   successful one, rate-limit rejections, DB pool checked-out / size / overflow / limit, and

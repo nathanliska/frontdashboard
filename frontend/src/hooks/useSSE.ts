@@ -276,8 +276,15 @@ export function useSSE(): void {
     }
 
     function onResync(e?: MessageEvent<string>) {
+      const frame = e ? parseFrame(e.data, ResyncSseEvent) : null
+      // The ordered refetch covers everything up to the head the frame names, so the mark moves
+      // with it — otherwise the next reconnect re-orders a resync this refetch already answered.
+      const head = frame?.last_event_id
+      if (typeof head === 'number' && head > (watermarkRef.current ?? 0)) {
+        watermarkRef.current = head
+      }
       // Agenda merges list reminders with calendar occurrences, so either scope reaches it.
-      const routes = e ? resyncRoutes(parseFrame(e.data, ResyncSseEvent)?.scopes) : null
+      const routes = e ? resyncRoutes(frame?.scopes) : null
       const wants = (route: EventRoute) => routes === null || routes.has(route)
 
       if (wants('list')) handleListResourceEvent(RESYNC_SIGNAL)

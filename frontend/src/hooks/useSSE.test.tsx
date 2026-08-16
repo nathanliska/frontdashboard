@@ -720,6 +720,33 @@ describe('useSSE reconnect backoff', () => {
     expect(MockEventSource.instances[1].url).toBe('/api/sse?last_event_id=77')
   })
 
+  it('advances its mark from a stamped resync, so the refetch it ordered is not re-ordered', async () => {
+    render(<TestHarness />)
+    act(() => {
+      MockEventSource.instances[0].dispatch('connected', '{"last_event_id":41}')
+      // An overflow resync names the head its refetch covers.
+      latestStream().dispatch('resync', '{"reason":"refresh_required","last_event_id":90}')
+    })
+
+    await failLatest(1000)
+
+    expect(MockEventSource.instances[1].url).toBe('/api/sse?last_event_id=90')
+  })
+
+  it('keeps its mark through an unstamped or stale resync frame', async () => {
+    render(<TestHarness />)
+    act(() => {
+      MockEventSource.instances[0].dispatch('connected', '{"last_event_id":41}')
+      // No head offered, then one behind the mark: neither may move it — backwards least of all.
+      latestStream().dispatch('resync', '{"reason":"refresh_required"}')
+      latestStream().dispatch('resync', '{"reason":"refresh_required","last_event_id":7}')
+    })
+
+    await failLatest(1000)
+
+    expect(MockEventSource.instances[1].url).toBe('/api/sse?last_event_id=41')
+  })
+
   it('narrows a scoped resync to the handlers the named scopes reach', async () => {
     render(<TestHarness />)
 

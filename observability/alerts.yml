@@ -150,14 +150,14 @@ groups:
           __dashboardUid__: frontdashboard-internals
           __panelId__: "3"
 
-      - alert: SSEClientsEvicted
-        expr: sum(increase(frontdashboard_sse_evictions_total[1h])) > 0
+      - alert: SSEStreamsOverflowed
+        expr: sum(increase(frontdashboard_sse_overflow_resyncs_total[1h])) > 0
         labels:
           severity: warning
-          __grafana_alert_rule_uid__: sseclientsevicted
+          __grafana_alert_rule_uid__: ssestreamsoverflowed
         annotations:
-          summary: SSE clients dropped for falling behind their queue
-          description: Backpressure became eviction. Those clients lost real-time until they reconnected.
+          summary: SSE streams overflowed and were resynced in place
+          description: A burst outran a client's queue; recovery is one coalesced refetch. Frequent firing means chronically slow consumers.
           __dashboardUid__: frontdashboard-internals
           __panelId__: "5"
 

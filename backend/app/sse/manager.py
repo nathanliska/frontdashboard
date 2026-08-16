@@ -18,13 +18,12 @@ from app import metrics
 
 _QUEUE_MAX = 256
 
-# Pushed onto a client's queue when it is evicted for falling too far behind.
-# The stream generator ends the response on this, so the client reconnects and the resync it is
-# sent restores consistency — its mark is stale by definition once events have been dropped.
-CLOSED_SENTINEL = object()
+# Replaces a full queue's backlog. The stream generator turns it into one in-place resync frame;
+# until that is dequeued, further frames are dropped — the refetch it orders covers their content.
+OVERFLOW_SENTINEL = object()
 
 # Pushed onto a client's queue when its session is revoked. Distinct from
-# CLOSED_SENTINEL: that means "you fell behind, resync", which is wrong here — a
+# OVERFLOW_SENTINEL: that means "you fell behind, resync", which is wrong here — a
 # revoked client that resynced would fire a burst of GETs that all 401 and end at
 # /login anyway. This ends the stream with no resync frame, so the client
 # reconnects, 401s, fails to refresh, and goes to /login directly.
@@ -37,6 +36,8 @@ class _Client:
     session_id: uuid.UUID
     manager: SseManager
     queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=_QUEUE_MAX))
+    # True from overflow until the generator dequeues the sentinel; broadcast drops frames while set.
+    resync_pending: bool = False
 
 
 class SseManager:
@@ -50,7 +51,7 @@ class SseManager:
 
     @property
     def max_queue_depth(self) -> int:
-        """Deepest queue across open streams — backpressure, visible before it becomes eviction."""
+        """Deepest queue across open streams — backpressure, visible before it becomes overflow."""
         return max((client.queue.qsize() for client in self._clients), default=0)
 
     def connect(self, user_id: uuid.UUID, *, session_id: uuid.UUID) -> _Client:
@@ -75,8 +76,10 @@ class SseManager:
         for client in list(self._clients):
             if client.session_id != session_id:
                 continue
-            with contextlib.suppress(asyncio.QueueFull):
-                client.queue.put_nowait(REVOKED_SENTINEL)
+            # Drained first so the sentinel always fits: a revoked stream's backlog is worthless,
+            # and a full queue would otherwise swallow the one frame that ends it promptly.
+            self._drain(client)
+            client.queue.put_nowait(REVOKED_SENTINEL)
             self.disconnect(client)
 
     def deliver_to_all(self, message: dict) -> None:
@@ -85,14 +88,16 @@ class SseManager:
         Only the fan-out reader uses this, to tell everyone here to resync after it may have
         missed frames. Ordinary events address an audience and go through `broadcast`.
 
-        A full queue is evicted rather than skipped: dropping this frame would strand the one
-        client already behind enough to need it, still connected and quietly stale.
+        A pending overflow already queues the same instruction, so those clients are skipped
+        rather than told twice; a queue this frame overflows converts to that pending state.
         """
         for client in list(self._clients):
+            if client.resync_pending:
+                continue
             try:
                 client.queue.put_nowait(message)
             except asyncio.QueueFull:
-                self._evict(client)
+                self._overflow(client)
 
     async def broadcast(
         self,
@@ -113,25 +118,32 @@ class SseManager:
                     continue
             elif client.user_id != actor_id:
                 continue
+            if client.resync_pending:
+                continue
             try:
                 client.queue.put_nowait(message)
                 metrics.SSE_QUEUE_PEAK.record(client.queue.qsize())
             except asyncio.QueueFull:
-                self._evict(client)
+                self._overflow(client)
 
-    def _evict(self, client: _Client) -> None:
-        """Drop a client too far behind to catch up.
-
-        The backlog goes and only a close sentinel remains, so the generator ends the stream and
-        the client reconnects + resyncs instead of silently receiving nothing.
-        """
+    @staticmethod
+    def _drain(client: _Client) -> None:
         while not client.queue.empty():
             with contextlib.suppress(asyncio.QueueEmpty):
                 client.queue.get_nowait()
-        with contextlib.suppress(asyncio.QueueFull):
-            client.queue.put_nowait(CLOSED_SENTINEL)
-        self.disconnect(client)
-        metrics.SSE_EVICTIONS.inc()
+
+    def _overflow(self, client: _Client) -> None:
+        """Coalesce a client too far behind into a single in-place resync.
+
+        The backlog goes and only the overflow sentinel remains; the stream stays open and the
+        generator turns the sentinel into one resync frame. Frames arriving before that clears
+        are dropped — the refetch it orders covers them — so a burst costs one refetch, not a
+        reconnect loop.
+        """
+        self._drain(client)
+        client.queue.put_nowait(OVERFLOW_SENTINEL)
+        client.resync_pending = True
+        metrics.SSE_OVERFLOW_RESYNCS.inc()
 
 
 # Module-level singleton used by routers (Step 12 wires this up)

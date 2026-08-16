@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58◐, #59, #60, #63, #64, #65◐, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #60, #63, #64, #65◐, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -72,11 +72,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   persistence, activity, notification and SSE, repeating the same transaction/broadcast dance per
   handler. Worth doing as the deletion it implies — one unit of work plus a staged outbox, routers as
   thin adapters — not as a speculative layer. *(Large)*
-- **#52 — Coalesce SSE overflow evictions.** A rapid mutation burst can overflow a slow consumer's
-  queue, costing that stream a reconnect/resync cycle per overflow instead of one coalesced resync.
-  Only reachable between members of a shared dashboard, and the stream recovers by design. Coalesce
-  evictions into a single resync and cap resyncs per connection if it ever shows up.
-  *(Medium, Low severity)*
 - **#56 — Account deletion is wanted and unbuilt, and the schema pretends otherwise.**
   `User.deleted_at` is filtered in 8 places across 4 modules but **nothing sets it**. Every `NOT
   NULL` FK to `users.id` blocks the row and none carry `ON DELETE`, so deletion has to *resolve*

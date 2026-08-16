@@ -1,7 +1,7 @@
 # FDR-008: Real-Time Delivery (SSE)
 
 **Status:** Active
-**Last reviewed:** 2026-08-09
+**Last reviewed:** 2026-08-16
 
 ## Overview
 
@@ -15,13 +15,16 @@ it is in their FDRs.
 
 - **One connection per user.** A single `EventSource('/api/sse')` multiplexes all event types.
 - **Priming and resync.** The stream opens with a `connected` event carrying the activity log's
-  current high-water mark. The client remembers that mark, advances it past every activity frame,
-  and hands it back on reconnect; the server resyncs only if the log has moved past it.
+  current high-water mark. The client remembers that mark, advances it past every activity frame
+  and any head-stamped resync, and hands it back on reconnect; the server resyncs only if the log
+  has moved past it.
 - **A resync says what changed.** When one is needed, the frame names the kinds of thing that
   changed on dashboards the client can see, so it refetches only those caches rather than all of
   them. An unknown or absent scope widens back to refetching everything.
-- **Overflow doesn't go silent.** A client whose queue overflows is disconnected with a closed
-  sentinel, so it reconnects and resyncs rather than staying connected but deaf.
+- **Overflow doesn't go silent.** A client whose queue overflows keeps its stream: the backlog is
+  replaced by one resync frame delivered in place, and frames arriving before it goes out are
+  dropped as covered by the refetch it orders. A burst therefore costs one coalesced refetch, not
+  a reconnect per overflow.
 - **A worker's own clients see its writes even when the fan-out is broken.** Frames are delivered
   locally first and published to the other workers after, and publishing never fails a write that
   has already committed. When a worker's reader reaches the stream again it resyncs its own clients
@@ -65,13 +68,19 @@ since a shared dashboard fans out to users on *other* workers. Two invariants ke
 than a rewrite, and both are stated in ADR-004 because a change breaking either looks harmless on one
 worker: fan-out has a single choke point, and resync is ordering-free.
 
-### 2. Overflow evicts with a resync sentinel
+### 2. Overflow coalesces into an in-place resync
 
-**Decision:** An overflowing client is evicted with a closed sentinel so its stream ends in a resync
-and reconnect.
+**Decision:** An overflowing client's backlog is dropped and replaced with a single resync frame on
+the same stream, stamped with the log's head so the client's mark moves with the refetch it orders;
+until that frame is delivered, further frames for that client are dropped too.
 **Why:** A slow client that just kept its connection would silently miss events and diverge forever;
-forcing a resync guarantees it knows it fell behind. See ADR-004.
-**Tradeoff:** A slow consumer gets a full resync rather than backpressure.
+the resync guarantees it knows it fell behind. Ending the stream instead was rejected: a still-slow
+client reconnects into the same burst that overflowed it and loops through disconnect/refetch
+cycles, each costing a full refetch of every cache. See ADR-004.
+**Tradeoff:** The resync is unscoped — nothing tracked what the dropped backlog held — so the
+refetch covers every cache. The stamp is best-effort: read on its own short-lived session, and an
+unreadable head costs one redundant scoped resync at the next reconnect rather than the stream.
+A slow consumer still gets a refetch rather than backpressure.
 
 ### 3. HTTP-error reconnect just reconnects, and periodically asks whether the session is alive
 

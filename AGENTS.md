@@ -273,7 +273,9 @@ from that:
   passed against the unfixed code. Assert on the mechanism instead — `getState` rather than the
   DOM, a counter on what reached the expander rather than the response body.
 - Prove a test by breaking the thing back: stash the change, watch it fail, restore. A performance
-  or caching test that has never been seen to fail is not evidence.
+  or caching test that has never been seen to fail is not evidence. Restore by reversing the edit
+  or with `git stash pop` — never `git checkout <file>` while the real change is uncommitted,
+  which "restores" HEAD and destroys the work it sat on.
 - **A closed port is not an outage.** Timing a failure path against `connection refused` measures
   nothing: a downed host blackholes instead, and the same connect cost 0.26s one way and 45s the
   other. Stop the real service, or assert on the setting that bounds it rather than on the clock.
