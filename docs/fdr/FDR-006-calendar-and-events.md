@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-08-14
+**Last reviewed:** 2026-08-15
 
 ## Overview
 
@@ -106,17 +106,32 @@ screen — mounted windows are registered as well as fetched, or an SSE event wo
 that nothing reloads. Retained coverage is capped at 366 days (the backend's own window ceiling),
 dropping ranges furthest from what is displayed.
 
-### 5. Deleting an event is undoable
+### 5. Deleting an event is undoable, and recoverable after that
 
 **Decision:** `CalendarEvent` carries `deleted_at`, filtered in every query, and the deletion toast
 offers Restore — a real restore, so recurrence, per-occurrence overrides and participants come back
 with the event rather than being retyped.
 **Why:** An event is expensive to reconstruct by hand, which is the test for recoverability in
-[ADR-007](../adr/ADR-007-soft-delete-boundary.md). There is no event trash: the failure worth
-protecting against is a misclick, and undo answers that where a listing would be ceremony.
-**Tradeoff:** Every event query must filter the tombstone. Once the toast is gone the event is only
-recoverable by someone who kept its id, and it keeps occupying the owner's quota until the reaper
-purges it ([ADR-020](../adr/ADR-020-resource-quotas.md)).
+[ADR-007](../adr/ADR-007-soft-delete-boundary.md). Undo alone is not enough, because it expires with
+the toast while the tombstone lasts 30 days — a row recoverable in principle and unreachable in fact.
+**Tradeoff:** Every event query must filter the tombstone. A trashed event keeps occupying the
+owner's quota until it is purged ([ADR-020](../adr/ADR-020-resource-quotas.md)).
+
+The calendar panel has a **Trash** view listing deleted events with their purge deadline, offering
+Restore and a confirmed Delete permanently — the same shape the dashboard and list trashes have. The
+undo on the toast covers the seconds after a misclick; the trash is what can still be found a week
+later.
+
+Unlike those two, the event trash **pages**: their quotas cap them at 100 and 200 rows, small enough
+to list whole, while a dashboard may hold 10,000 events. Paging is by cursor rather than offset,
+because the user restores and purges from this very list — under an offset, a row that crossed the
+page boundary between requests would never be shown again, which is the one failure a recovery list
+may not have. Nothing is hidden behind a cap.
+
+Each page carries the cursor for the next one, or null at the end. The client hands that value back
+untouched and never derives it: a client that decided "there is more" by measuring the page against
+a page size would have to keep that number in step with the server, and would silently truncate
+again the day the two disagreed.
 
 Restore takes edit access on the parent dashboard, so a viewer cannot undo someone else's delete,
 and an event whose dashboard is itself trashed cannot be restored alone — restore the dashboard.

@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { CalendarOccurrence } from '../api/calendar'
@@ -6,6 +6,7 @@ import type { CalendarEventParticipantResponse } from '../api/generated/contract
 import { CalendarDayNumber } from '../components/calendar/CalendarDayNumber'
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialog'
+import { CalendarTrashPanel } from '../components/calendar/CalendarTrashPanel'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
 import { ParticipantMicroDots } from '../components/calendar/ParticipantDots'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
@@ -64,6 +65,7 @@ export function CalendarPage() {
   const [editorSession, setEditorSession] = useState<CalendarEditorSession | null>(null)
   const [editorLoading, setEditorLoading] = useState(false)
   const editorRequestId = useRef(0)
+  const [showTrash, setShowTrash] = useState(false)
   const [monthCursor, setMonthCursor] = useState(() => startOfDay(new Date()))
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
   const requestedDashboardId = searchParams.get('dashboard_id')
@@ -394,40 +396,57 @@ export function CalendarPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-semibold text-zinc-100">
-                    {formatHeadingDate(selectedDate)}
+                    {showTrash ? 'Trash' : formatHeadingDate(selectedDate)}
                   </h2>
-                  {dateKey(selectedDate) === dateKey(today) && (
+                  {!showTrash && dateKey(selectedDate) === dateKey(today) && (
                     <span className="rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-400">
                       Today
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-zinc-500">
-                  {selectedOccurrences.length === 0
-                    ? 'No scheduled events'
-                    : `${selectedOccurrences.length} event${selectedOccurrences.length === 1 ? '' : 's'}`}
+                  {showTrash
+                    ? 'Deleted events, restorable for 30 days'
+                    : selectedOccurrences.length === 0
+                      ? 'No scheduled events'
+                      : `${selectedOccurrences.length} event${selectedOccurrences.length === 1 ? '' : 's'}`}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (editorSession?.mode === 'create') {
-                    closeEditor()
-                    return
-                  }
-                  openCreateEditor()
-                }}
-                disabled={dashboardsLoading || !effectiveActiveDashboardId}
-                className="shrink-0 flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-600"
-              >
-                <Plus size={14} />
-                {editorSession?.mode === 'create' ? 'Close' : 'Add event'}
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowTrash((value) => !value)}
+                  disabled={dashboardsLoading || !effectiveActiveDashboardId}
+                  aria-pressed={showTrash}
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-600 aria-pressed:border-zinc-700 aria-pressed:text-zinc-100"
+                >
+                  <Trash2 size={14} />
+                  {showTrash ? 'Back' : 'Trash'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editorSession?.mode === 'create') {
+                      closeEditor()
+                      return
+                    }
+                    setShowTrash(false)
+                    openCreateEditor()
+                  }}
+                  disabled={dashboardsLoading || !effectiveActiveDashboardId}
+                  className="shrink-0 flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-600"
+                >
+                  <Plus size={14} />
+                  {editorSession?.mode === 'create' ? 'Close' : 'Add event'}
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
-            {selectedOccurrences.length > 0 ? (
+            {showTrash ? (
+              <CalendarTrashPanel dashboardId={effectiveActiveDashboardId} />
+            ) : selectedOccurrences.length > 0 ? (
               <div className="space-y-3">
                 {selectedOccurrences.map((occurrence) => (
                   <OccurrenceCard

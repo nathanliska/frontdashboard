@@ -7,6 +7,9 @@ import {
   type RecurrenceRule,
   ResourceAccessResponse,
   ShareResponse,
+  type TrashedEventCursor,
+  TrashedEventPage,
+  type TrashedEventSummary,
 } from './generated/contract'
 import { parseJson, readError } from './http'
 import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } from './shares'
@@ -15,6 +18,8 @@ const occurrenceRequests = new Map<string, Promise<CalendarOccurrence[]>>()
 
 // The generated response shapes, aliased to the names this module's callers already use.
 export type CalendarEvent = CalendarEventResponse
+export type TrashedEvent = TrashedEventSummary
+export type EventTrashCursor = TrashedEventCursor
 export type CalendarOccurrence = CalendarOccurrenceResponse
 
 export interface CreateCalendarEventInput {
@@ -100,6 +105,34 @@ export async function apiDeleteEvent(eventId: string): Promise<void> {
     method: 'DELETE',
   })
   if (!res.ok) throw await readError(res, 'Failed to delete event')
+}
+
+/**
+ * One page of trashed events the caller can see, newest first, with their purge deadline.
+ *
+ * A non-null `next_cursor` on the result is the only signal that more exist; hand it straight back
+ * to fetch the page after it.
+ */
+export async function apiGetEventTrash(
+  dashboardId?: string | null,
+  cursor?: EventTrashCursor | null,
+): Promise<TrashedEventPage> {
+  const params = new URLSearchParams()
+  if (dashboardId) params.set('dashboard_id', dashboardId)
+  if (cursor) {
+    params.set('before', cursor.deleted_at)
+    params.set('before_id', cursor.id)
+  }
+  const query = params.size > 0 ? `?${params}` : ''
+  const res = await apiFetch(`/api/calendar/events/trash${query}`)
+  if (!res.ok) throw await readError(res, 'Failed to load trashed events')
+  return parseJson(res, TrashedEventPage)
+}
+
+/** Delete a trashed event outright, ahead of the reaper. */
+export async function apiPurgeEvent(eventId: string): Promise<void> {
+  const res = await apiFetch(`/api/calendar/events/${eventId}/trash`, { method: 'DELETE' })
+  if (!res.ok) throw await readError(res, 'Failed to permanently delete event')
 }
 
 /** Undo a delete. Returns the event as it was, recurrence and participants included. */

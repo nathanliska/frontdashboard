@@ -1,6 +1,7 @@
 # ADR-007: The Delete Boundary — Recoverable Where Reconstruction Is Expensive
 
-**Date:** 2026-08-14 (supersedes the 2026-07-20 record and its 2026-07-26 / 2026-07-27 amendments)
+**Date:** 2026-08-14 (supersedes the 2026-07-20 record and its 2026-07-26 / 2026-07-27 amendments;
+amended 2026-08-15 — calendar events gained a trash, not only an undo)
 
 ## Context
 
@@ -30,17 +31,20 @@ calendar event carries a title, description, location, start, end, timezone, an 
 recurrence rule, and owns per-occurrence overrides, participants and reminders — reconstructing one
 by hand is the kind of loss a user would mind.
 
-**How recovery is offered differs by lifetime, and that is deliberate.**
+**Every recoverable resource gets both a trash and an undo** — a listing with a purge date, a
+restore action and a permanent-delete action, plus a Restore on the deletion toast. The two are not
+alternatives: undo covers the seconds after a misclick, where the recovery belongs next to the
+mistake; the trash covers everything after that, and is the only one that can be found later.
 
-- Dashboards and lists have a **trash**: a listing with a purge date, a restore action, and a
-  permanent-delete action. That fits things a user puts away and comes back for.
-- A calendar event has **undo**: the deletion toast carries a Restore action, backed by
-  `POST /calendar/events/{id}/restore`. That fits a misclick, which is the failure this protects
-  against. Its tombstone still expires on the shared trash horizon, so a support-level recovery
-  window exists behind the UI without a second retention setting to reason about.
+This record briefly said an event needed only the undo, on the reasoning that a listing would be
+ceremony around a misclick. That was wrong, and the way it was wrong is worth keeping: **the toast
+lasts eight seconds and the tombstone lasts thirty days**, so between them sat a row that existed,
+was restorable by API, and could not be reached from anywhere in the product. A recovery path that
+expires long before the data does is not a recovery path.
 
 Restore is a write and takes edit access on the parent dashboard, so a viewer cannot undo someone
-else's delete, and an event whose dashboard is itself trashed cannot be restored on its own.
+else's delete, and an event whose dashboard is itself trashed cannot be restored on its own — it
+returns with the dashboard.
 
 ### Consequences for the quota
 
@@ -49,10 +53,9 @@ deleting and recreating. That is only sound while each tombstoned resource has a
 free the space — which is exactly what the old boundary lacked. Now:
 
 - **Dashboards and lists** are purged from the trash on demand.
-- **Calendar events** wait for the reaper, and the refusal message says so rather than describing an
-  action that does not exist. This is accepted rather than solved: the cap is 5,000 events against
-  25,000 items, and events accumulate far more slowly, so the tail is unlikely to bind. If it ever
-  does, an event trash is the answer, not a shorter horizon.
+- **Calendar events** are purged from their own trash on demand, like the other two. The quota
+  refusal still names the horizon rather than the button, because waiting is what happens if nobody
+  presses it.
 - **List items** free their space immediately, which is where quota pressure actually lands.
 
 ## Consequences

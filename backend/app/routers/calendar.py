@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import DateTime, and_, cast, delete, func, or_, select
+from sqlalchemy import DateTime, and_, cast, delete, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_csrf
@@ -22,6 +22,9 @@ from app.schemas.calendar import (
     CalendarOccurrenceResponse,
     CalendarOccurrenceUpdate,
     RecurrenceRule,
+    TrashedEventCursor,
+    TrashedEventPage,
+    TrashedEventSummary,
 )
 from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessResponse
 from app.services import permissions
@@ -37,6 +40,9 @@ from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
+
+# One page of the trash. Nothing on the client mirrors this — the response names the next cursor.
+_TRASH_PAGE_SIZE = 200
 
 
 def _echo_stamp(client_id: str | None) -> dict[str, str]:
@@ -314,6 +320,86 @@ async def list_occurrences(
     return [_occurrence_response(occurrence, participants.get(occurrence.event_id, [])) for occurrence in occurrences]
 
 
+# Declared above `/events/{event_id}`: FastAPI matches in definition order, so below it "trash"
+# is read as an event id and answers 422 instead of this listing. A test pins the ordering.
+@router.get("/events/trash", response_model=TrashedEventPage)
+async def event_trash(
+    dashboard_id: uuid.UUID | None = Query(default=None),
+    before: datetime | None = Query(default=None),
+    before_id: uuid.UUID | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TrashedEventPage:
+    """One page of trashed events the caller can see, newest first, with their purge deadline.
+
+    Scoped by dashboard access, not authorship: whoever can edit the dashboard put it there and can
+    take it back. Events under a trashed dashboard are excluded — they return with it.
+
+    Paged by cursor, not offset: the caller restores and purges from this very list, so an offset
+    would slide rows across the page boundary and skip them. `before`/`before_id` are the last row
+    of the previous page and must be given together.
+    """
+    if (before is None) != (before_id is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="before and before_id must be given together",
+        )
+    # A naive value would be read as UTC and page from the wrong instant, skipping rows — the one
+    # failure a recovery list may not have. The window params above reject naive for the same reason.
+    if before is not None and (before.tzinfo is None or before.utcoffset() is None):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="before must be timezone-aware")
+
+    accessible_dashboard_ids = await list_accessible_dashboard_ids(current_user, db)
+    if not accessible_dashboard_ids:
+        return TrashedEventPage(items=[])
+
+    if dashboard_id is not None:
+        if dashboard_id not in accessible_dashboard_ids:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
+        dashboard_ids = [dashboard_id]
+    else:
+        dashboard_ids = accessible_dashboard_ids
+
+    # `id` breaks ties on identical deleted_at — without it the sort is not total and a cursor can
+    # step over or repeat rows deleted in the same transaction.
+    stmt = (
+        select(CalendarEvent)
+        .where(CalendarEvent.deleted_at.is_not(None), CalendarEvent.dashboard_id.in_(dashboard_ids))
+        .order_by(CalendarEvent.deleted_at.desc(), CalendarEvent.id.desc())
+        # One past the page: whether the extra row came back is what decides `next_cursor`, so the
+        # client is told there is more rather than inferring it from a page size it has to mirror.
+        .limit(_TRASH_PAGE_SIZE + 1)
+    )
+    if before is not None and before_id is not None:
+        stmt = stmt.where(tuple_(CalendarEvent.deleted_at, CalendarEvent.id) < (before, before_id))
+
+    result = await db.execute(stmt)
+    events = list(result.scalars().all())
+    has_more = len(events) > _TRASH_PAGE_SIZE
+    del events[_TRASH_PAGE_SIZE:]
+
+    retention = timedelta(days=settings.trash_retention_days)
+    summaries: list[TrashedEventSummary] = []
+    for event in events:
+        # The WHERE guarantees deleted_at; the assert narrows the Optional for the type checker.
+        assert event.deleted_at is not None
+        summaries.append(
+            TrashedEventSummary(
+                id=event.id,
+                dashboard_id=event.dashboard_id,
+                title=event.title,
+                starts_at=event.starts_at,
+                recurring=event.recurrence is not None,
+                deleted_at=event.deleted_at,
+                purge_at=event.deleted_at + retention,
+            )
+        )
+
+    last = summaries[-1] if summaries else None
+    next_cursor = TrashedEventCursor(deleted_at=last.deleted_at, id=last.id) if has_more and last else None
+    return TrashedEventPage(items=summaries, next_cursor=next_cursor)
+
+
 @router.get("/events/{event_id}", response_model=CalendarEventResponse)
 async def get_event(
     event_id: uuid.UUID,
@@ -547,6 +633,33 @@ async def restore_event(
     )
     await db.refresh(event)
     return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
+
+
+@router.delete("/events/{event_id}/trash", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
+async def purge_trashed_event(
+    request: Request,
+    event_id: uuid.UUID,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a trashed event outright, ahead of the reaper.
+
+    One statement, unlike `purge_dashboard`: overrides, participants and reminders all carry
+    ON DELETE CASCADE, so the row takes them with it. Needs edit on the live parent dashboard, and
+    broadcasts nothing — the event is already invisible outside the trash view.
+    """
+    result = await db.execute(select(CalendarEvent).where(CalendarEvent.id == event_id, CalendarEvent.deleted_at.is_not(None)))
+    event = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    _dashboard, _shares, role = await load_dashboard_access(event.dashboard_id, current_user, db)
+    permissions.assert_can_edit(role)
+
+    await db.delete(event)
+    await db.commit()
 
 
 @router.get("/events/{event_id}/shares", response_model=ResourceAccessResponse)
