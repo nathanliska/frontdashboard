@@ -90,8 +90,12 @@ _Last updated: 2026-08-14_
   the public `/invite/:code` page previews the dashboard and inviter, and accepting is a separate POST
   so scanners can't burn a link.
 - Lists and calendar events inherit access from the dashboard that binds them; their `/shares`
-  endpoints are deliberate 409 stubs. Share/unshare notifies affected users and cleans up
-  their preferences.
+  endpoints are deliberate 409 stubs. Role change/unshare notifies affected users and cleans up
+  their preferences. **Every grant is a redeemed invite** — the direct grant-by-user-id endpoint
+  was removed, so access never appears without the recipient acting.
+- A member can **leave** a shared dashboard (card menu → Leave, `DELETE /{id}/membership`) — their
+  own share is removed, preferences cleaned up, and the feed records "you left". The owner cannot
+  leave; their exit is deleting the dashboard ([FDR-004](docs/fdr/FDR-004-sharing-and-access.md)).
 
 **Lists**
 - Master/detail lists UI with nested routes + mobile slide nav; items support check, due date,

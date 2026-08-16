@@ -1,4 +1,4 @@
-import { Home, LayoutDashboard, Pencil, Star, Trash2 } from 'lucide-react'
+import { Home, LayoutDashboard, LogOut, Pencil, Star, Trash2 } from 'lucide-react'
 import type { DashboardSummary } from '../../api/dashboards'
 import { cn } from '../../utils/shared/cn'
 import { OverflowMenu, type OverflowMenuItem } from '../ui/OverflowMenu'
@@ -12,6 +12,7 @@ export function DashboardCard({
   onSetHome,
   onRename,
   onDelete,
+  onLeave,
 }: {
   dashboard: DashboardSummary
   currentUserId: string | null
@@ -21,6 +22,7 @@ export function DashboardCard({
   onSetHome: () => void
   onRename: () => void
   onDelete: () => void
+  onLeave: () => void
 }) {
   const isOwned = currentUserId !== null && dashboard.user_id === currentUserId
   const subtitle = dashboard.access_description ?? (isOwned ? 'Owned by you' : 'Shared with you')
@@ -40,10 +42,11 @@ export function DashboardCard({
       icon: Star,
       onSelect: onToggleFavorite,
     },
-    // Trash is recoverable, and it is the only put-away state — archive is gone.
+    // Trash is recoverable, and it is the only put-away state — archive is gone. A shared
+    // dashboard offers Leave instead: shares attach without consent, so this is the way out.
     ...(isOwned
       ? [{ label: 'Move to trash', icon: Trash2, onSelect: onDelete, tone: 'danger' as const }]
-      : []),
+      : [{ label: 'Leave dashboard', icon: LogOut, onSelect: onLeave, tone: 'danger' as const }]),
   ]
 
   return (

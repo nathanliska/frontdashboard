@@ -1,7 +1,7 @@
 # FDR-004: Sharing & Access
 
 **Status:** Active
-**Last reviewed:** 2026-08-08
+**Last reviewed:** 2026-08-16
 
 ## Overview
 
@@ -21,6 +21,10 @@ bound to that dashboard inherit the same access. This replaced an earlier groups
   dashboard whose widget binds them. They have no independent sharing UI.
 - **Unshare and role change.** Access can be revoked or changed; affected users are notified and their
   preferences (e.g. home dashboard) are cleaned up.
+- **Leaving.** A member can shed their own access at any time — viewer or editor alike, since leaving
+  is not an edit. The owner cannot leave; their exit is deleting the dashboard. Leaving is not a ban:
+  a fresh invite re-admits, and only an invite can — every grant is a redeemed code. The feed records
+  "you left" rather than "access removed", and nobody is notified.
 - **Trashing affects visibility.** Trashed dashboards are filtered out when resolving child-resource
   access.
 - **Only the invite carries identity outward.** The preview names the inviter and the dashboard,
@@ -82,18 +86,33 @@ link scanners and message previews can't burn an invite by fetching it.
 revocation, not by identity. Minting is restricted to share managers so an editor can't widen who sees
 a dashboard.
 
-### 6. Direct grant stays as an API capability, with no UI (decided 2026-07-26)
+### 6. Direct grant removed — every grant is a redeemed invite (decided 2026-08-16, supersedes 2026-07-26)
 
-**Decision:** `POST /dashboards/{id}/shares` and `DashboardCreate.shares` grant access by user id and
-remain, even though no client calls them. The product's only path to access is an invite link.
-**Why:** This is the direct per-resource grant [ADR-001](../adr/ADR-001-per-resource-sharing.md)
-preserves, and it is what the test suite uses to construct every shared-dashboard scenario — the
-alternative was rewriting that setup across five test modules to mint and redeem invites, which buys
-no coverage. Keeping it is also low-risk: calling it already requires managing shares on the target
-dashboard, and user ids are no longer discoverable, so it grants nothing an invite link wouldn't.
-**Tradeoff:** A live endpoint the UI can't reach, which will read as dead surface to anyone auditing
-the API — hence this entry. `GET`/`PATCH`/`DELETE` on shares *are* client-reachable: they are how the
-share panel lists, re-roles and revokes access after an invite is redeemed.
+**Decision:** `POST /dashboards/{id}/shares` and `DashboardCreate.shares` are gone. The only way a
+share comes into being is `accept_invite`, which calls the `create_share` service after the member
+redeems a code. `GET`/`PATCH`/`DELETE` on shares remain — the share panel lists, re-roles and
+revokes access that redemption created.
+**Why:** The 2026-07-26 record kept the direct grant for test convenience, judging it low-risk
+because user ids are not discoverable. But ids leak to past co-members permanently, and the grant
+attached without the recipient's consent — the one nonconsensual edge in the model, and the only
+door a decline list would ever have been needed for. Tests now grant through a mint-and-redeem
+helper, which exercises the product path instead of one no user can take.
+**Tradeoff:** Programmatic setup (tests, a future admin tool) must mint and redeem an invite —
+two calls where one sufficed. An owner re-adding a departed member sends a link rather than
+re-attaching them silently; that consent step is the point.
+
+### 7. A member can always leave (decided 2026-08-16)
+
+**Decision:** `DELETE /dashboards/{id}/membership` removes the caller's own share. The server finds
+the share itself; share ids stay an owner-only detail. Owner gets a 409.
+**Why:** Joining is a consent act (decision 6), and consent must stay withdrawable — without a
+leave, an accepted invite becomes a permanent claim on the member's account view, shed only by
+asking the owner. Every fan-in surface is bounded by consent only while consent can be revoked from
+both sides.
+**Tradeoff:** Leaving is not undoable from the leaver's side — the way back is a fresh invite, and
+nothing remembers the departure. No block list is needed: with direct grants gone (decision 6),
+re-attachment always requires the leaver to redeem a new code. The owner is not notified of a
+leave; the departure is visible only in the leaver's own feed.
 
 ## Access
 

@@ -4,8 +4,16 @@ export type {
   InheritedDashboardAccessResponse as InheritedDashboardAccess,
   PrincipalType,
   ResourceAccessResponse as ResourceAccessSummary,
-  ShareCreate,
   ShareResponse as ResourceShare,
   ShareRole,
   ShareUpdate,
 } from './generated/contract'
+
+import type { ShareResponse } from './generated/contract'
+
+/**
+ * The grant body the child-share scaffolding would send. The dashboard route that defined this
+ * shape left the contract when direct grants were removed, so it is composed from the response
+ * fields that remain.
+ */
+export type ShareCreate = Pick<ShareResponse, 'principal_type' | 'principal_id' | 'role'>

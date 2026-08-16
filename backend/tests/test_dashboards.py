@@ -9,7 +9,6 @@ from app.models.activity import ActivityEvent
 from app.models.calendar import CalendarEvent
 from app.models.dashboard import Dashboard
 from app.models.list import List, ListItem
-from app.models.user import User
 from tests.helpers import (
     create_calendar_event,
     create_dashboard,
@@ -18,6 +17,7 @@ from tests.helpers import (
     current_user,
     register_client,
     set_csrf,
+    share_dashboard,
 )
 
 
@@ -43,14 +43,8 @@ async def test_home_dashboard_listing_and_shared_access(auth_client: AsyncClient
     owner = await register_client("dashboard-owner@example.com", display_name="Owner")
     try:
         shared_dashboard = await create_dashboard(owner, name="Shared Board")
-        owner_user = await current_user(auth_client)
 
-        set_csrf(owner)
-        share_resp = await owner.post(
-            f"/api/dashboards/{shared_dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": owner_user["id"], "role": "viewer"},
-        )
-        assert share_resp.status_code == 201
+        await share_dashboard(owner, shared_dashboard["id"], auth_client, "viewer")
 
         list_resp = await auth_client.get("/api/dashboards")
         assert list_resp.status_code == 200
@@ -72,68 +66,28 @@ async def test_home_dashboard_listing_and_shared_access(auth_client: AsyncClient
         await owner.__aexit__(None, None, None)
 
 
-async def test_dashboard_share_targets_must_be_active_verified_users(
-    auth_client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
+async def test_the_direct_grant_route_is_gone(auth_client: AsyncClient) -> None:
+    """Access is granted only through invite redemption; a POST here must stay unroutable."""
     dashboard = await create_dashboard(auth_client)
-    owner = await current_user(auth_client)
-    unverified = User(email="unverified-share@example.com", password_hash="x", display_name="Unverified")
-    deleted = User(
-        email="deleted-share@example.com",
-        password_hash="x",
-        display_name="Deleted",
-        email_verified_at=datetime.now(UTC),
-        deleted_at=datetime.now(UTC),
+    set_csrf(auth_client)
+    response = await auth_client.post(
+        f"/api/dashboards/{dashboard['id']}/shares",
+        json={"principal_type": "user", "principal_id": str(uuid.uuid4()), "role": "viewer"},
     )
-    db_session.add_all([unverified, deleted])
-    await db_session.flush()
-
-    for target_id in (owner["id"], str(uuid.uuid4()), str(unverified.id), str(deleted.id)):
-        set_csrf(auth_client)
-        response = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": target_id, "role": "viewer"},
-        )
-        assert response.status_code == 422
-        assert response.json()["detail"] == "Share targets must be active verified users other than the owner"
+    assert response.status_code == 405
 
 
-async def test_dashboard_initial_shares_validate_targets(auth_client: AsyncClient) -> None:
+async def test_dashboard_create_refuses_initial_shares(auth_client: AsyncClient) -> None:
+    """The field went with the direct grant; extra="forbid" makes sending it a hard error."""
     set_csrf(auth_client)
     response = await auth_client.post(
         "/api/dashboards",
         json={
-            "name": "Invalid Shared Board",
-            "shares": [
-                {
-                    "principal_type": "user",
-                    "principal_id": str(uuid.uuid4()),
-                    "role": "viewer",
-                }
-            ],
+            "name": "Shared Board",
+            "shares": [{"principal_type": "user", "principal_id": str(uuid.uuid4()), "role": "viewer"}],
         },
     )
-
     assert response.status_code == 422
-
-
-async def test_dashboard_initial_shares_reject_duplicate_targets(auth_client: AsyncClient) -> None:
-    target_id = str(uuid.uuid4())
-    set_csrf(auth_client)
-    response = await auth_client.post(
-        "/api/dashboards",
-        json={
-            "name": "Duplicate Shares",
-            "shares": [
-                {"principal_type": "user", "principal_id": target_id, "role": "viewer"},
-                {"principal_type": "user", "principal_id": target_id, "role": "editor"},
-            ],
-        },
-    )
-
-    assert response.status_code == 422
-    assert "Duplicate share targets are not allowed" in str(response.json()["detail"])
 
 
 async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> None:
@@ -233,16 +187,10 @@ async def test_delete_moves_to_trash_and_restore_brings_everything_back(auth_cli
     """DELETE is a trash move: children and shares survive, and restore reverses it."""
     viewer = await register_client("trash-viewer@example.com", display_name="Viewer")
     try:
-        viewer_me = await current_user(viewer)
         dashboard = await create_dashboard(auth_client, name="Trashable")
         lst = await create_list(auth_client, dashboard["id"], name="Kept List")
         await create_list_item(auth_client, lst["id"], text="kept")
-        set_csrf(auth_client)
-        share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": viewer_me["id"], "role": "viewer"},
-        )
-        assert share_resp.status_code == 201
+        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
         set_csrf(auth_client)
         assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
@@ -329,13 +277,7 @@ async def test_dashboard_favorites_are_per_user_preferences(auth_client: AsyncCl
     try:
         dashboard = await create_dashboard(auth_client, name="Shared Favorite")
 
-        shared_user_me = await current_user(shared_user)
-        set_csrf(auth_client)
-        share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "viewer"},
-        )
-        assert share_resp.status_code == 201
+        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
 
         shared_dashboards_resp = await shared_user.get("/api/dashboards")
         assert shared_dashboards_resp.status_code == 200
@@ -551,14 +493,7 @@ async def test_delete_dashboard_clears_dashboard_preferences(auth_client: AsyncC
 
     shared_user = await register_client("dashboard-shared@example.com", display_name="Shared User")
     try:
-        shared_user_me = await current_user(shared_user)
-
-        set_csrf(auth_client)
-        share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "viewer"},
-        )
-        assert share_resp.status_code == 201
+        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
 
         set_csrf(shared_user)
         shared_pref_resp = await shared_user.patch(
@@ -591,15 +526,9 @@ async def test_removing_dashboard_share_clears_removed_users_preferences(auth_cl
 
     shared_user = await register_client("dashboard-share-cleanup@example.com", display_name="Cleanup User")
     try:
-        shared_user_me = await current_user(shared_user)
-
-        set_csrf(auth_client)
-        share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "viewer"},
-        )
-        assert share_resp.status_code == 201
-        share_id = share_resp.json()["id"]
+        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
+        (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
+        share_id = share["id"]
 
         set_csrf(shared_user)
         shared_pref_resp = await shared_user.patch(
@@ -632,13 +561,9 @@ async def test_dashboard_share_mutations_emit_activity_events(
     try:
         shared_user_me = await current_user(shared_user)
 
-        set_csrf(auth_client)
-        add_share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "viewer"},
-        )
-        assert add_share_resp.status_code == 201
-        share_id = add_share_resp.json()["id"]
+        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
+        (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
+        share_id = share["id"]
 
         set_csrf(auth_client)
         update_share_resp = await auth_client.patch(
@@ -675,12 +600,16 @@ async def test_dashboard_share_mutations_emit_activity_events(
             "dashboard.share_updated",
             "dashboard.share_removed",
         ]
+        # "joined", not "added": the grant is the joiner redeeming an invite, logged from their side.
         assert [event.payload["share_action"] for event in share_events] == [
-            "added",
+            "joined",
             "updated",
             "removed",
         ]
-        assert all(event.payload["principal_id"] == shared_user_me["id"] for event in share_events)
+        # The joined event names no principal — its actor *is* the person; the owner-side
+        # mutations still carry one.
+        assert share_events[0].actor_id == uuid.UUID(shared_user_me["id"])
+        assert all(event.payload["principal_id"] == shared_user_me["id"] for event in share_events[1:])
         assert share_events[0].payload["role"] == "viewer"
         assert share_events[1].payload["role"] == "editor"
         assert share_events[2].payload["role"] == "editor"
@@ -700,13 +629,7 @@ async def test_trashing_a_shared_dashboard_notifies_the_people_who_lose_access(
 
     shared_user = await register_client("dashboard-trash-notify@example.com", display_name="Shared User")
     try:
-        shared_user_me = await current_user(shared_user)
-        set_csrf(auth_client)
-        add_share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "editor"},
-        )
-        assert add_share_resp.status_code == 201
+        await share_dashboard(auth_client, dashboard["id"], shared_user, "editor")
 
         set_csrf(auth_client)
         delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
@@ -789,8 +712,6 @@ async def test_dashboard_update_events_include_current_version_and_origin_client
     shared_user = await register_client("dashboard-contract-viewer@example.com", display_name="Viewer")
 
     try:
-        shared_user_me = await current_user(shared_user)
-
         set_csrf(auth_client)
         layout_resp = await auth_client.put(
             f"/api/dashboards/{dashboard['id']}/layout",
@@ -822,13 +743,15 @@ async def test_dashboard_update_events_include_current_version_and_origin_client
         )
         assert update_widget_resp.status_code == 200
 
+        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
+        (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
         set_csrf(auth_client)
-        add_share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
+        update_share_resp = await auth_client.patch(
+            f"/api/dashboards/{dashboard['id']}/shares/{share['id']}",
             headers={"X-Client-Id": "share-123"},
-            json={"principal_type": "user", "principal_id": shared_user_me["id"], "role": "viewer"},
+            json={"role": "editor"},
         )
-        assert add_share_resp.status_code == 201
+        assert update_share_resp.status_code == 200
 
         result = await db_session.execute(
             select(ActivityEvent)
@@ -848,7 +771,7 @@ async def test_dashboard_update_events_include_current_version_and_origin_client
         assert rename_event.payload["changed_fields"] == ["name"]
         assert widget_event.entity_version == 2
         assert widget_event.payload["changed_fields"] == ["widgets"]
-        assert share_event.event_type == "dashboard.share_added"
+        assert share_event.event_type == "dashboard.share_updated"
         assert share_event.entity_version == 2
         assert share_event.payload["changed_fields"] == ["shares"]
     finally:

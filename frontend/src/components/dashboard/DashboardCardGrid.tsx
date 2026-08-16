@@ -10,6 +10,7 @@ export function DashboardCardGrid({
   onSetHome,
   onRename,
   onDelete,
+  onLeave,
 }: {
   items: DashboardSummary[]
   homeDashboardId: string | null
@@ -19,6 +20,7 @@ export function DashboardCardGrid({
   onSetHome: (dashboard: DashboardSummary) => void
   onRename: (dashboard: DashboardSummary) => void
   onDelete: (dashboard: DashboardSummary) => void
+  onLeave: (dashboard: DashboardSummary) => void
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -33,6 +35,7 @@ export function DashboardCardGrid({
           onSetHome={() => onSetHome(dashboard)}
           onRename={() => onRename(dashboard)}
           onDelete={() => onDelete(dashboard)}
+          onLeave={() => onLeave(dashboard)}
         />
       ))}
     </div>

@@ -122,6 +122,12 @@ export function canSuppressLocalDashboardEcho(event: SseEvent): boolean {
   // the PATCH response. Add/remove echoes still reload — they flip is_shared.
   if (event.event_type === 'dashboard.share_updated') return true
 
+  // Leaving is the actor shedding their own row: the store already dropped the summary, so unlike
+  // an owner's removal there is no is_shared flip left to fetch.
+  if (event.event_type === 'dashboard.share_removed') {
+    return event.payload.share_action === 'left'
+  }
+
   if (event.event_type !== 'dashboard.updated') return false
 
   return isEchoSuppressible(getDashboardEventChangedFields(event))

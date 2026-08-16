@@ -19,6 +19,7 @@ export function DashboardsPage() {
   const loadSummaries = useDashboardStore((s) => s.loadSummaries)
   const createDashboard = useDashboardStore((s) => s.createDashboard)
   const deleteDashboard = useDashboardStore((s) => s.deleteDashboard)
+  const leaveDashboard = useDashboardStore((s) => s.leaveDashboard)
   const toggleFavorite = useDashboardStore((s) => s.toggleFavorite)
   const renameDashboard = useDashboardStore((s) => s.renameDashboard)
   const trash = useDashboardStore((s) => s.trash)
@@ -105,6 +106,15 @@ export function DashboardsPage() {
     }
   }
 
+  async function handleLeave(dashboard: DashboardSummary) {
+    // No undo: getting back in takes a fresh share from the owner, so say that up front.
+    const message = `Leave "${dashboard.name}"? You will lose access until someone shares it with you again.`
+    if (!(await confirm(message, { confirmLabel: 'Leave dashboard' }))) return
+    if (await leaveDashboard(dashboard.id)) {
+      toast.success(`Left "${dashboard.name}".`)
+    }
+  }
+
   async function handleRestore(trashed: TrashedDashboard) {
     setRestoringId(trashed.id)
     try {
@@ -183,6 +193,7 @@ export function DashboardsPage() {
               onSetHome={handleSetHome}
               onRename={handleRename}
               onDelete={handleDelete}
+              onLeave={handleLeave}
             />
           </section>
         )}
@@ -203,6 +214,7 @@ export function DashboardsPage() {
               onSetHome={handleSetHome}
               onRename={handleRename}
               onDelete={handleDelete}
+              onLeave={handleLeave}
             />
           </section>
         )}

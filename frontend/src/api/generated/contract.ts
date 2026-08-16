@@ -71,17 +71,8 @@ export const ClockWidgetResponse = z.object({ config: ClockWidgetConfig, created
 export type ConnectedSseEvent = z.infer<typeof ConnectedSseEvent>;
 export const ConnectedSseEvent = z.object({ last_event_id: z.number().int().nullable() }).partial().catchall(z.unknown());
 
-export type PrincipalType = z.infer<typeof PrincipalType>;
-export const PrincipalType = z.literal("user");
-
-export type ShareRole = z.infer<typeof ShareRole>;
-export const ShareRole = z.enum(["viewer", "editor"]);
-
-export type ShareCreate = z.infer<typeof ShareCreate>;
-export const ShareCreate = z.object({ principal_id: z.uuid(), principal_type: PrincipalType, role: ShareRole });
-
 export type DashboardCreate = z.infer<typeof DashboardCreate>;
-export const DashboardCreate = z.object({ name: z.string().min(1).max(100), shares: z.array(ShareCreate).optional() });
+export const DashboardCreate = z.object({ name: z.string().min(1).max(100) });
 
 export type DashboardMemberResponse = z.infer<typeof DashboardMemberResponse>;
 export const DashboardMemberResponse = z.object({ display_name: z.string(), user_id: z.uuid() });
@@ -121,6 +112,9 @@ export const InheritedDashboardAccessResponse = z.object({ dashboard_id: z.uuid(
 
 export type InviteAcceptResponse = z.infer<typeof InviteAcceptResponse>;
 export const InviteAcceptResponse = z.object({ dashboard_id: z.uuid(), dashboard_name: z.string(), role: EffectiveRole });
+
+export type ShareRole = z.infer<typeof ShareRole>;
+export const ShareRole = z.enum(["viewer", "editor"]);
 
 export type InviteCreate = z.infer<typeof InviteCreate>;
 export const InviteCreate = z.object({ role: ShareRole });
@@ -205,6 +199,9 @@ export const PasswordResetTokenStatus = z.object({ valid: z.boolean() });
 
 export type PreferencesUpdate = z.infer<typeof PreferencesUpdate>;
 export const PreferencesUpdate = z.object({ favorite_dashboard_ids: z.array(z.string()).nullable(), home_dashboard_id: z.string().nullable() }).partial();
+
+export type PrincipalType = z.infer<typeof PrincipalType>;
+export const PrincipalType = z.literal("user");
 
 export type ProfileUpdate = z.infer<typeof ProfileUpdate>;
 export const ProfileUpdate = z.object({ display_name: z.string().nullable() }).partial();

@@ -140,6 +140,12 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 
 Capabilities deliberately not built. Each states the condition that would make it worth the weight.
 
+- **Paginating the dashboard and list trashes** — when a trash response is ever observed at a
+  size that matters. The event trash pages by cursor because its quota is 10,000 per dashboard;
+  the other two return complete listings (quota-bounded at 100 dashboards, 200 lists/dashboard,
+  and the 30-day reaper trims both). The list trash spans all accessible dashboards, so its real
+  bound is consent — which "leave dashboard" makes withdrawable. The envelope-plus-cursor pattern
+  to copy is the event trash ([FDR-006](fdr/FDR-006-calendar-and-events.md)).
 - **Tracing and structured logging** — when a problem survives a session of reading logs by hand.
   Counters shipped because scaling decisions were being made from reasoning rather than measurement;
   per-request tracing is a different weight and answers no question being asked.

@@ -5,7 +5,6 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, field_validator
 
 from app.schemas.common import PatchModel
-from app.schemas.shares import ShareCreate
 
 DASHBOARD_NAME_MAX_LENGTH = 100
 DashboardName = Annotated[
@@ -153,17 +152,8 @@ class DashboardResponse(BaseModel):
 
 class DashboardCreate(BaseModel):
     name: DashboardName
-    shares: list[ShareCreate] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
-
-    @field_validator("shares")
-    @classmethod
-    def _reject_duplicate_share_targets(cls, shares: list[ShareCreate]) -> list[ShareCreate]:
-        targets = {(share.principal_type, share.principal_id) for share in shares}
-        if len(targets) != len(shares):
-            raise ValueError("Duplicate share targets are not allowed")
-        return shares
 
 
 class DashboardUpdate(PatchModel):

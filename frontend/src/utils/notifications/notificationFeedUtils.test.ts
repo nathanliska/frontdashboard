@@ -120,6 +120,18 @@ describe('formatActivityEvent', () => {
       'You joined "Kitchen" as editor.',
     ],
     [
+      'dashboard.share_removed',
+      { dashboard_name: 'Kitchen', share_action: 'left' },
+      'Sharing',
+      'You left "Kitchen".',
+    ],
+    [
+      'dashboard.share_removed',
+      { dashboard_name: 'Kitchen', share_action: 'removed' },
+      'Sharing',
+      'You removed access from "Kitchen".',
+    ],
+    [
       'calendar.event.occurrence.updated',
       { title: 'Dentist' },
       'Calendar',

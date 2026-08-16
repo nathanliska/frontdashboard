@@ -240,11 +240,18 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
           ? `New role: ${payloadString(payload, 'role')}.`
           : undefined,
       }
-    case 'dashboard.share_removed':
+    case 'dashboard.share_removed': {
+      const dashboardName = quoted(payloadString(payload, 'dashboard_name'), 'a dashboard')
+      // Leaving logs the same type from the other side, like 'joined' on share_added: the actor
+      // shed their own access rather than revoking someone else's.
+      if (payloadString(payload, 'share_action') === 'left') {
+        return { badge: 'Sharing', summary: `You left ${dashboardName}.` }
+      }
       return {
         badge: 'Sharing',
-        summary: `You removed access from ${quoted(payloadString(payload, 'dashboard_name'), 'a dashboard')}.`,
+        summary: `You removed access from ${dashboardName}.`,
       }
+    }
     case 'list.created':
       return {
         badge: 'List',

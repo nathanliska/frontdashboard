@@ -13,6 +13,7 @@ from tests.helpers import (
     current_user,
     register_client,
     set_csrf,
+    share_dashboard,
 )
 
 
@@ -136,14 +137,9 @@ async def test_dashboard_share_notifications_and_activity_filtering(
     viewer = await register_client("dashboard-notified@example.com", display_name="Viewer")
     try:
         viewer_user = await current_user(viewer)
-
-        set_csrf(auth_client)
-        add_share_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/shares",
-            json={"principal_type": "user", "principal_id": viewer_user["id"], "role": "viewer"},
-        )
-        assert add_share_resp.status_code == 201
-        share_id = add_share_resp.json()["id"]
+        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
+        (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
+        share_id = share["id"]
 
         set_csrf(auth_client)
         update_share_resp = await auth_client.patch(
@@ -158,26 +154,29 @@ async def test_dashboard_share_notifications_and_activity_filtering(
         )
         assert delete_share_resp.status_code == 204
 
+        # Joining is the viewer's own act, so no "shared with you" notification exists any more —
+        # they hear only about changes done *to* them afterwards.
         notification_resp = await viewer.get("/api/notifications")
         assert notification_resp.status_code == 200
         notifications = notification_resp.json()["items"]
         assert [notification["type"] for notification in notifications] == [
             "dashboard.share_removed",
             "dashboard.share_updated",
-            "dashboard.share_added",
         ]
         notifications_by_type = {notification["type"]: notification["title"] for notification in notifications}
         assert notifications_by_type["dashboard.share_removed"] == "Dashboard access removed"
         assert notifications_by_type["dashboard.share_updated"] == "Dashboard access updated"
-        assert notifications_by_type["dashboard.share_added"] == "Dashboard shared with you"
 
         unread_count_resp = await viewer.get("/api/notifications/unread-count")
         assert unread_count_resp.status_code == 200
-        assert unread_count_resp.json() == {"count": 3}
+        assert unread_count_resp.json() == {"count": 2}
 
+        # The owner is the one told about the join, since the joiner acted for themselves.
         owner_notifications = await auth_client.get("/api/notifications")
         assert owner_notifications.status_code == 200
-        assert owner_notifications.json() == {"items": [], "next_cursor": None}
+        owner_items = owner_notifications.json()["items"]
+        assert [n["type"] for n in owner_items] == ["dashboard.share_added"]
+        assert owner_items[0]["title"] == "Someone joined a dashboard"
 
         lst = await create_list(auth_client, dashboard["id"], name="Chores")
         item = await create_list_item(auth_client, lst["id"], text="Vacuum")
@@ -207,9 +206,12 @@ async def test_dashboard_share_notifications_and_activity_filtering(
         assert activity_resp.status_code == 200
         activity = activity_resp.json()
         event_types = [event["event_type"] for event in activity]
-        assert "dashboard.share_added" in event_types
+        # share_added lives in the joiner's feed now — the viewer was its actor, not the owner.
+        assert "dashboard.share_added" not in event_types
         assert "dashboard.share_updated" in event_types
         assert "dashboard.share_removed" in event_types
+        viewer_event_types = [event["event_type"] for event in (await viewer.get("/api/activity")).json()]
+        assert "dashboard.share_added" in viewer_event_types
         assert "list.created" in event_types
         assert "list.item.created" in event_types
         dashboard_updates = [event for event in activity if event["event_type"] == "dashboard.updated"]
@@ -220,7 +222,7 @@ async def test_dashboard_share_notifications_and_activity_filtering(
         notification_rows = (
             (await db_session.execute(select(Notification).where(Notification.user_id == uuid.UUID(viewer_user["id"])))).scalars().all()
         )
-        assert len(notification_rows) == 3
+        assert len(notification_rows) == 2
     finally:
         await viewer.__aexit__(None, None, None)
 

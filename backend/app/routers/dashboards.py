@@ -16,7 +16,7 @@ from app.models.activity import ChangedField
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.list import List, ListType
 from app.models.notification import Notification
-from app.models.share import PrincipalType, ResourceShare, ResourceType, ShareRole, as_share_role
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType, ShareRole, as_share_role
 from app.models.user import User
 from app.schemas.dashboards import (
     WIDGET_CONFIG_MODELS,
@@ -32,7 +32,7 @@ from app.schemas.dashboards import (
     WidgetResponse,
     WidgetResponseAdapter,
 )
-from app.schemas.shares import DashboardMemberResponse, ShareCreate, ShareResponse, ShareUpdate
+from app.schemas.shares import DashboardMemberResponse, ShareResponse, ShareUpdate
 from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.notifications import stage_notification
@@ -43,11 +43,9 @@ from app.services.preferences import (
 from app.services.quota import assert_under_quota, limit_message
 from app.services.retention import purge_dashboard
 from app.services.shares import (
-    create_share,
     dashboard_audience_user_ids,
     get_resource_share,
     get_resource_shares,
-    insert_shares,
     load_dashboard_access,
     resolve_member_responses,
     resolve_share_responses,
@@ -56,7 +54,6 @@ from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
-_INVALID_SHARE_TARGET_DETAIL = "Share targets must be active verified users other than the owner"
 
 
 async def _load_widgets(dashboard_id: uuid.UUID, db: AsyncSession) -> list[DashboardWidget]:
@@ -221,34 +218,6 @@ async def _list_accessible_dashboard_summaries(
     return summaries
 
 
-async def _validate_share_targets(
-    share_inputs: list[ShareCreate],
-    owner_id: uuid.UUID,
-    db: AsyncSession,
-) -> None:
-    target_ids = {share.principal_id for share in share_inputs}
-    if not target_ids:
-        return
-    if owner_id in target_ids:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=_INVALID_SHARE_TARGET_DETAIL,
-        )
-
-    result = await db.execute(
-        select(User.id).where(
-            User.id.in_(target_ids),
-            User.deleted_at.is_(None),
-            User.email_verified_at.is_not(None),
-        )
-    )
-    if set(result.scalars()) != target_ids:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=_INVALID_SHARE_TARGET_DETAIL,
-        )
-
-
 async def _remove_dashboard_from_user_preferences(
     dashboard: Dashboard,
     shares: list[ResourceShare],
@@ -317,8 +286,6 @@ def _dashboard_share_event_payload(
 
 
 def _dashboard_share_event_type(action: str) -> EventType:
-    if action == "added":
-        return EventType.dashboard_share_added
     if action == "updated":
         return EventType.dashboard_share_updated
     return EventType.dashboard_share_removed
@@ -331,11 +298,6 @@ def _dashboard_share_notification_copy(
     dashboard_name: str,
     role: ShareRole,
 ) -> tuple[str, str]:
-    if action == "added":
-        return (
-            "Dashboard shared with you",
-            f'{actor_name} gave you {role.value} access to "{dashboard_name}".',
-        )
     if action == "updated":
         return (
             "Dashboard access updated",
@@ -472,7 +434,7 @@ async def create_dashboard(
     client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
 ) -> DashboardSummary:
-    """Create a dashboard and apply any initial shares."""
+    """Create a dashboard, owned by the caller."""
     await assert_under_quota(
         db,
         model=Dashboard,
@@ -481,22 +443,9 @@ async def create_dashboard(
         scope=Dashboard.user_id == current_user.id,
         detail=limit_message("dashboards", settings.quota_dashboards_per_user, reclaim="purge"),
     )
-    await _validate_share_targets(body.shares, current_user.id, db)
     dashboard = Dashboard(user_id=current_user.id, name=body.name)
     db.add(dashboard)
     await db.flush()
-    await insert_shares(ResourceType.dashboard, dashboard.id, body.shares, current_user.id, db)
-    shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    notification_messages = await _build_notification_messages(
-        db,
-        _collect_dashboard_share_notifications(
-            db,
-            dashboard=dashboard,
-            shares=shares,
-            current_user=current_user,
-            action="added",
-        ),
-    )
     event_message = await _build_dashboard_event_message(
         db,
         event_type=EventType.dashboard_created,
@@ -508,13 +457,13 @@ async def create_dashboard(
     await commit_and_broadcast(
         db,
         actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
+        fanouts=[_dashboard_fanout(event_message, dashboard, [])],
     )
     await db.refresh(dashboard)
     return _to_summary(
         dashboard,
         "Owned by you",
-        bool(shares),
+        False,
         can_edit=True,
         can_manage_shares=True,
     )
@@ -1115,61 +1064,6 @@ async def list_dashboard_shares(
     return await resolve_share_responses(shares, db)
 
 
-@router.post("/{dashboard_id}/shares", status_code=status.HTTP_201_CREATED, response_model=ShareResponse)
-@limiter.limit(WRITE_LIMIT)
-async def add_dashboard_share(
-    request: Request,
-    dashboard_id: uuid.UUID,
-    body: ShareCreate,
-    _csrf: None = Depends(require_csrf),
-    current_user: User = Depends(get_current_user),
-    client_id: ClientIdHeader = None,
-    db: AsyncSession = Depends(get_db),
-) -> ShareResponse:
-    """Create or upsert a direct share on a dashboard."""
-    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
-    permissions.assert_can_manage_shares(role)
-    await _validate_share_targets([body], dashboard.user_id, db)
-    existing_share = next(
-        (share for share in shares if share.principal_type == body.principal_type and share.principal_id == body.principal_id),
-        None,
-    )
-    if existing_share is not None and existing_share.role == body.role:
-        return (await resolve_share_responses([existing_share], db))[0]
-
-    share = await create_share(ResourceType.dashboard, dashboard_id, body, current_user.id, db)
-    action = "updated" if existing_share is not None else "added"
-    current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
-    notification_messages = await _build_notification_messages(
-        db,
-        _collect_dashboard_share_notifications(
-            db,
-            dashboard=dashboard,
-            shares=[share],
-            current_user=current_user,
-            action=action,
-        ),
-    )
-    event_message = await _build_dashboard_event_message(
-        db,
-        event_type=_dashboard_share_event_type(action),
-        current_user=current_user,
-        dashboard=dashboard,
-        payload=_dashboard_share_event_payload(
-            dashboard,
-            share,
-            action=action,
-        ),
-        client_id=client_id,
-    )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, current_shares), *_notification_fanouts(notification_messages)],
-    )
-    return (await resolve_share_responses([share], db))[0]
-
-
 @router.patch("/{dashboard_id}/shares/{share_id}", response_model=ShareResponse)
 @limiter.limit(WRITE_LIMIT)
 async def update_dashboard_share(
@@ -1264,4 +1158,53 @@ async def delete_dashboard_share(
         db,
         actor_id=current_user.id,
         fanouts=[_dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
+    )
+
+
+@router.delete("/{dashboard_id}/membership", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
+async def leave_dashboard(
+    request: Request,
+    dashboard_id: uuid.UUID,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    client_id: ClientIdHeader = None,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Remove the caller's own share — leave a dashboard they once accepted an invite to.
+
+    Consent granted at redemption must stay withdrawable, or an accepted invite becomes a permanent
+    claim on the member's account view. The server finds the share itself: `/shares` stays
+    owner-only, and a member never learns share ids.
+    """
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
+    if role is EffectiveRole.owner:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The owner cannot leave their own dashboard — delete it instead",
+        )
+    share = next(
+        (s for s in shares if s.principal_type == PrincipalType.user and s.principal_id == current_user.id),
+        None,
+    )
+    if share is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
+
+    # Same event as an owner removal, distinguished by share_action — the "joined" precedent.
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_share_removed,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload=_dashboard_share_event_payload(dashboard, share, action="left"),
+        client_id=client_id,
+    )
+    current_user.preferences = remove_dashboard_from_preferences(current_user.preferences, dashboard.id)
+    await db.delete(share)
+    # Audience computed before the delete, so the leaver's other tabs still get the frame and
+    # drop the dashboard through the ordinary share_removed handling.
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
     )

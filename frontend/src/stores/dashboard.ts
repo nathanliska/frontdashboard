@@ -14,6 +14,7 @@ import {
   apiDeleteDashboard,
   apiGetDashboard,
   apiGetTrash,
+  apiLeaveDashboard,
   apiListDashboards,
   apiPurgeDashboard,
   apiRemoveWidget,
@@ -29,7 +30,6 @@ import {
   type WidgetCreate,
 } from '../api/dashboards'
 import { ApiError } from '../api/http'
-import type { ShareCreate } from '../api/shares'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import {
   affectsTrash,
@@ -141,11 +141,9 @@ export interface DashboardState {
 
   // ── Listing actions ────────────────────────────────────────────────────────
   loadSummaries: (force?: boolean) => Promise<void>
-  createDashboard: (data: {
-    name: string
-    shares?: ShareCreate[]
-  }) => Promise<DashboardSummary | null>
+  createDashboard: (data: { name: string }) => Promise<DashboardSummary | null>
   deleteDashboard: (id: string) => Promise<boolean>
+  leaveDashboard: (id: string) => Promise<boolean>
   toggleFavorite: (id: string, current: boolean) => Promise<boolean>
   renameDashboard: (id: string, name: string) => Promise<boolean>
   loadTrash: (force?: boolean) => Promise<void>
@@ -249,6 +247,23 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
         return true
       } catch {
         toast.error('Failed to delete dashboard.')
+        return false
+      }
+    },
+
+    async leaveDashboard(id) {
+      const guard = sessionGuard()
+      try {
+        await apiLeaveDashboard(id)
+        // Not the trash: the dashboard still exists for everyone else — only this account's
+        // access is gone, so the summary just disappears.
+        guard.set((s) => ({
+          summaries: s.summaries.filter((d) => d.id !== id),
+          ...(s.dashboard?.id === id ? { dashboard: null } : {}),
+        }))
+        return true
+      } catch {
+        toast.error('Failed to leave dashboard.')
         return false
       }
     },
