@@ -63,7 +63,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   needs an explicit `resolvers 127.0.0.11` for Docker's embedded DNS; active health checks do **not**
   run against a dynamic upstream, so `health_uri` is inert there and passive `fail_duration` is what
   applies, with a new replica waiting up to the 1m default `refresh` for traffic. The scaling lever
-  on Unraid is `deploy.replicas`, not `--scale` (Compose Manager offers no place to pass a flag);
+  in Compose Manager is `deploy.replicas`, not `--scale` (its UI offers no place to pass a flag);
   measured on v5.1.0, `--scale` exits 1 having started nothing. **Postgres is the ceiling:** each
   replica opens its own pool, so 10N against a default `max_connections` of 100 caps this near 8
   replicas — anything automatic wants PgBouncer first. Not scheduled; the trigger is the first
@@ -190,7 +190,7 @@ Capabilities deliberately not built. Each states the condition that would make i
 - **Image provenance/SBOM attestations** — when the images gain a consumer that verifies them.
   The publish job's matched-pair choreography (build with `load:`, push tags by hand so `:latest`
   can never point at a split pair) cannot carry attestations; adopting them means reworking that
-  ordering, and today the only puller is the Unraid box, by hand, verifying nothing.
+  ordering, and today the only puller is the prod host, by hand, verifying nothing.
 - **Runner hardening beyond the zizmor gate** — pinning `ubuntu-latest` to a release trades
   surprise label migrations for permanent manual bumps, and egress allowlisting
   (StepSecurity harden-runner) is defense-in-depth at real weight. Revisit when the repo gains a

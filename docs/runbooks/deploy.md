@@ -9,7 +9,7 @@ There is no deploy script. Merging to `main` is the deploy trigger; the box pull
    drift, the dependency audit, both image builds and the smoke checks. Roughly 3–4 minutes — the grouped jobs trade ~1 minute of wall time for the billing. Both
    images build and load before anything is pushed, and both `:<short-sha>` tags go up before either
    `latest` moves, so the two tags can never describe different commits.
-3. **Check for Updates**, then **Update** the `frontdashboard` stack in Unraid's **Compose Manager**
+3. **Check for Updates**, then **Update** the `frontdashboard` stack in the host's **Compose Manager**
    plugin. That pulls and recreates the containers. **Force Update** is not the routine path: it
    re-pulls when the plugin reports nothing to do, which is worth reaching for only if an update
    completes and the running image is still the old one.
@@ -23,8 +23,8 @@ source. Nothing verifies that they agree, so they have drifted before.
 ## If the pull fails
 
 The GHCR packages are private, so the host authenticates with a `read:packages` token. That login
-lives in `/root/.docker/config.json`, which is on Unraid's RAM disk — a User Scripts entry at array
-start re-applies it, and without it a `pull` answers 403 in a way that reads like a missing tag.
+lives in `/root/.docker/config.json`, which is on the host's RAM disk — a boot-time script
+re-applies it, and without it a `pull` answers 403 in a way that reads like a missing tag.
 
 If CI is red there is simply nothing to pull, and `latest` still points at the previous build.
 
@@ -52,7 +52,7 @@ Then from outside, over HTTPS: the document served `no-cache`, the bundle it nam
 
 ## Rolling back
 
-[rollback.md](rollback.md). Pin the previous `:<short-sha>` in the Unraid compose and update the
+[rollback.md](rollback.md). Pin the previous `:<short-sha>` in the prod compose and update the
 stack — and read the migration warning there first, because an image rollback does not undo a
 migration.
 

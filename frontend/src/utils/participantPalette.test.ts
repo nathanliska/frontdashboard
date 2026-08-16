@@ -16,7 +16,7 @@ describe('participantColor', () => {
 
 describe('participantInitial', () => {
   it('upper-cases the first character and survives blanks', () => {
-    expect(participantInitial('nathan')).toBe('N')
+    expect(participantInitial('miranda')).toBe('M')
     expect(participantInitial('  zoe')).toBe('Z')
     expect(participantInitial('')).toBe('?')
     expect(participantInitial('   ')).toBe('?')

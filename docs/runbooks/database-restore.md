@@ -3,7 +3,7 @@
 For the day the database is gone, corrupted, or a migration destroyed something. Read the whole
 page before running anything — the order matters, and one step is irreversible.
 
-Prod runs **PostgreSQL 17**, matching dev, test and CI. Dumps are taken by a sidecar in the Unraid
+Prod runs **PostgreSQL 17**, matching dev, test and CI. Dumps are taken by a sidecar in the prod
 stack, not by anything in this repo, using the server's own `pg_dump` inside the container so client
 and server versions can never disagree.
 
@@ -83,7 +83,7 @@ Accepts plain `.sql`, gzipped `.sql.gz`, and `pg_dump` custom format.
 
 ## Open gaps
 
-- **No off-host destination.** A copy on the machine that died is not a backup, and Unraid parity
+- **No off-host destination.** A copy on the machine that died is not a backup, and disk parity
   is not one either. Tracked as [#35](../TODO.md).
 - **Backup restoration has been rehearsed, not performed.** The harness proves a dump is loadable
-  and schema-correct; it does not prove the Unraid stack comes back up around it.
+  and schema-correct; it does not prove the production stack comes back up around it.
