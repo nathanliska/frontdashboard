@@ -53,6 +53,14 @@ function layoutEvent(
   )
 }
 
+function reconfiguredEvent(eventId: number, widgetId = 'w-1'): ActivityEvent {
+  return activityEvent(
+    'dashboard.updated',
+    { name: 'Home', changed_fields: ['widgets'], widget_id: widgetId, widget_type: 'calendar' },
+    { event_id: eventId, entity_id: 'dash-1' },
+  )
+}
+
 describe('formatActivityEvent', () => {
   it.each([
     [
@@ -246,14 +254,54 @@ describe('groupActivityEvents', () => {
   })
 
   it('leaves a decision someone made twice as two rows', () => {
+    // widget_id present, as on real add frames: keying on `widgets` being present rather than
+    // alone would merge an add with a nearby reconfigure, and this is the shape that catches it.
     const added = (eventId: number) =>
       activityEvent(
         'dashboard.updated',
-        { name: 'Home', changed_fields: ['widgets', 'layout'], widget_action: 'added' },
+        {
+          name: 'Home',
+          changed_fields: ['widgets', 'layout'],
+          widget_action: 'added',
+          widget_id: 'w-1',
+        },
         { event_id: eventId },
       )
 
     expect(groupActivityEvents([added(2), added(1)])).toHaveLength(2)
+  })
+
+  it('collapses a run of reconfigures on one widget and words it with its count', () => {
+    const groups = groupActivityEvents([
+      reconfiguredEvent(3),
+      reconfiguredEvent(2),
+      reconfiguredEvent(1),
+    ])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].count).toBe(3)
+    expect(groups[0].event.event_id).toBe(3)
+    expect(formatActivityGroup(groups[0]).summary).toBe(
+      'You reconfigured a Calendar widget on "Home" 3 times.',
+    )
+  })
+
+  it('does not merge reconfigures of two different widgets', () => {
+    // The key is the widget, not the dashboard: a run mixing widgets would count a mixed bag.
+    expect(
+      groupActivityEvents([reconfiguredEvent(2, 'w-1'), reconfiguredEvent(1, 'w-2')]),
+    ).toHaveLength(2)
+  })
+
+  it('keeps a reconfigure with no widget id on its own row', () => {
+    const anonymous = (eventId: number) =>
+      activityEvent(
+        'dashboard.updated',
+        { name: 'Home', changed_fields: ['widgets'] },
+        { event_id: eventId },
+      )
+
+    expect(groupActivityEvents([anonymous(2), anonymous(1)])).toHaveLength(2)
   })
 })
 

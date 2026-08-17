@@ -396,7 +396,14 @@ function collapseKey(event: ActivityEvent): string | null {
   }
   if (event.event_type !== 'dashboard.updated') return null
   const changedFields = payloadStrings(event.payload, 'changed_fields')
-  return isOnly(changedFields, 'layout') ? `dashboard.layout:${event.entity_id}` : null
+  if (isOnly(changedFields, 'layout')) return `dashboard.layout:${event.entity_id}`
+  if (isOnly(changedFields, 'widgets')) {
+    // Widgets alone means a reconfigure — adding and removing both move the layout. Keyed on the
+    // widget, so the count names one thing edited repeatedly rather than a mixed bag.
+    const widgetId = payloadString(event.payload, 'widget_id')
+    return widgetId ? `dashboard.widget:${widgetId}` : null
+  }
+  return null
 }
 
 /**

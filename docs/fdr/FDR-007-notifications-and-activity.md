@@ -1,7 +1,7 @@
 # FDR-007: Notifications & Activity Feed
 
 **Status:** Active
-**Last reviewed:** 2026-08-03
+**Last reviewed:** 2026-08-16
 
 ## Overview
 
@@ -74,7 +74,8 @@ staleness would not show up in a test that only asserts the initial render.
 
 **Decision:** The feed shows only the caller's own events, paginated by keyset, and withholds
 nothing. Adjacent runs of the same churn on the same subject collapse into one row: layout-only
-dashboard edits, checkbox changes on one list, and either kind of reorder. Filtering narrows to one
+dashboard edits, reconfigures of one widget, checkbox changes on one list, either kind of reorder,
+and repeated edits to one list, item, or calendar event. Filtering narrows to one
 of five categories — per-type rows made the control 26 deep, and every type sits in a category.
 **Why:** Keyset pagination is stable under inserts, and scoping to self keeps it a personal audit
 trail rather than a firehose. Readability used to be bought by dropping whole classes of event from
