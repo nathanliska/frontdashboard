@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #52, #56, #57, #58◐, #59, #60, #63, #64, #65◐, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #60, #63, #64, #65◐, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -72,11 +72,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   persistence, activity, notification and SSE, repeating the same transaction/broadcast dance per
   handler. Worth doing as the deletion it implies — one unit of work plus a staged outbox, routers as
   thin adapters — not as a speculative layer. *(Large)*
-- **#52 — Coalesce SSE overflow evictions.** A rapid mutation burst can overflow a slow consumer's
-  queue, costing that stream a reconnect/resync cycle per overflow instead of one coalesced resync.
-  Only reachable between members of a shared dashboard, and the stream recovers by design. Coalesce
-  evictions into a single resync and cap resyncs per connection if it ever shows up.
-  *(Medium, Low severity)*
 - **#56 — Account deletion is wanted and unbuilt, and the schema pretends otherwise.**
   `User.deleted_at` is filtered in 8 places across 4 modules but **nothing sets it**. Every `NOT
   NULL` FK to `users.id` blocks the row and none carry `ON DELETE`, so deletion has to *resolve*
@@ -140,6 +135,13 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 
 Capabilities deliberately not built. Each states the condition that would make it worth the weight.
 
+- **Conflict-free list reorders** — when a concurrent drag is ever actually lost and missed. Two
+  members reordering the same list at the same moment each send the full new ordering, and the
+  later write silently replaces the earlier one; the loser sees the true order a moment later over
+  SSE and a re-drag costs seconds. The fix to build is fractional indexing (Figma, Jira's
+  LexoRank): each item carries its own position key, a drag writes one row, and concurrent drags
+  of different items merge instead of colliding — not a layout-style version column, whose 409
+  would punish the common non-conflicting case. Accepted as last-write-wins at household scale.
 - **Paginating the dashboard and list trashes** — when a trash response is ever observed at a
   size that matters. The event trash pages by cursor because its quota is 10,000 per dashboard;
   the other two return complete listings (quota-bounded at 100 dashboards, 200 lists/dashboard,

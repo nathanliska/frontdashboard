@@ -25,7 +25,7 @@ _PREFIX = "frontdashboard_"
 
 SSE_CONNECTS = Counter(f"{_PREFIX}sse_connects", "SSE streams opened, including reconnects.")
 SSE_RESYNCS = Counter(f"{_PREFIX}sse_resyncs", "Streams told to refetch caches on connect.")
-SSE_EVICTIONS = Counter(f"{_PREFIX}sse_evictions", "Clients dropped for falling behind their queue.")
+SSE_OVERFLOW_RESYNCS = Counter(f"{_PREFIX}sse_overflow_resyncs", "Streams resynced in place after their queue overflowed.")
 SSE_EXPIRIES = Counter(f"{_PREFIX}sse_expiries", "Streams closed on the lifetime cap.")
 SSE_PUBLISH_FAILURES = Counter(f"{_PREFIX}sse_publish_failures", "Frames the other workers never received.")
 REAPER_SWEEPS = Counter(f"{_PREFIX}reaper_sweeps", "Retention sweeps that completed.")

@@ -24,7 +24,7 @@ from app.services.activity import current_event_id, entity_types_changed_since
 from app.services.sessions import session_is_live
 from app.services.shares import list_accessible_dashboard_ids
 from app.sse.events import connected_dict, resync_dict
-from app.sse.manager import CLOSED_SENTINEL, REVOKED_SENTINEL, _Client, manager
+from app.sse.manager import OVERFLOW_SENTINEL, REVOKED_SENTINEL, _Client, manager
 
 router = APIRouter(prefix="/sse", tags=["sse"])
 
@@ -89,8 +89,9 @@ async def stream_events(
     watermark: int | None = None,
     max_lifetime: timedelta = _MAX_STREAM_LIFETIME,
     resync_scopes: set[str] | None = None,
+    read_head: Callable[[], Awaitable[int | None]] | None = None,
 ) -> AsyncGenerator[dict]:
-    """Yield SSE frames until the connection closes, is evicted, or its session is revoked.
+    """Yield SSE frames until the connection closes, expires, or its session is revoked.
 
     Module-level rather than nested in the route so tests can drive it directly: httpx's ASGI
     transport cannot cleanly close an infinite SSE generator.
@@ -100,7 +101,7 @@ async def stream_events(
     async_session_factory would bypass that override, query outside the test's
     savepoint, fail to see the session row the test just created, conclude
     "revoked", and kill the stream — every SSE test failing for a reason that looks
-    nothing like the cause.
+    nothing like the cause. `read_head` is injected for the same reason.
     """
     next_check = datetime.now(UTC) + _REVALIDATE_EVERY
     expires_at = _stream_deadline(max_lifetime)
@@ -135,11 +136,21 @@ async def stream_events(
                 # keepalive comments independently.
                 continue
 
-            if msg is CLOSED_SENTINEL:
-                # Evicted for falling behind: tell the client to resync and end the response.
-                # Its mark is stale by definition here, so the resync is sent unconditionally.
-                yield resync_dict()
-                return
+            if msg is OVERFLOW_SENTINEL:
+                # Overflowed: one unscoped resync in place — nothing tracked the dropped backlog.
+                # It carries the log's head so the client's mark moves with the refetch.
+                head: int | None = None
+                if read_head is not None:
+                    try:
+                        # Bounded like the broker's Redis calls: a blackholed DB would otherwise
+                        # hold the client deaf — frames dropping, resync unsent — behind a live ping.
+                        head = await asyncio.wait_for(read_head(), timeout=5.0)
+                    except Exception:  # a dead DB must not also kill the stream
+                        head = None
+                # Cleared before the yield, so frames arriving while it writes are queued, not lost.
+                client.resync_pending = False
+                yield resync_dict(last_event_id=head)
+                continue
 
             if msg is REVOKED_SENTINEL:
                 # Session revoked. End with no resync — the client must re-auth.
@@ -160,6 +171,12 @@ async def _revalidate_session(session_id: uuid.UUID) -> bool:
     """
     async with async_session_factory() as db:
         return await session_is_live(session_id, db)
+
+
+async def _read_log_head() -> int | None:
+    """Read the activity log's head on its own short-lived session (see _revalidate_session)."""
+    async with async_session_factory() as db:
+        return await current_event_id(db)
 
 
 @router.get("", responses={200: {"model": AnySseEvent, "content": {"text/event-stream": {}}}})
@@ -188,6 +205,7 @@ async def sse_stream(
             revalidate=_revalidate_session,
             watermark=head,
             resync_scopes=scopes,
+            read_head=_read_log_head,
         ),
         ping=25,
     )

@@ -26,4 +26,4 @@ Citations flow **one direction: FDR → ADR**. When you cite an ADR you don't ed
 | [FDR-005](FDR-005-lists.md) | Lists | Active | 2026-08-15 |
 | [FDR-006](FDR-006-calendar-and-events.md) | Calendar & Events | Active | 2026-08-15 |
 | [FDR-007](FDR-007-notifications-and-activity.md) | Notifications & Activity Feed | Active | 2026-08-03 |
-| [FDR-008](FDR-008-realtime-sse.md) | Real-Time Delivery (SSE) | Active | 2026-08-09 |
+| [FDR-008](FDR-008-realtime-sse.md) | Real-Time Delivery (SSE) | Active | 2026-08-16 |

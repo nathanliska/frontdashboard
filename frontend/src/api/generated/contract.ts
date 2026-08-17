@@ -225,7 +225,7 @@ export type ResourceAccessResponse = z.infer<typeof ResourceAccessResponse>;
 export const ResourceAccessResponse = z.object({ direct_shares: z.array(ShareResponse), inherited_dashboards: z.array(InheritedDashboardAccessResponse).default([]) });
 
 export type ResyncSseEvent = z.infer<typeof ResyncSseEvent>;
-export const ResyncSseEvent = z.object({ reason: z.string(), scopes: z.array(z.string()).nullable().optional() });
+export const ResyncSseEvent = z.object({ last_event_id: z.number().int().nullable().optional(), reason: z.string(), scopes: z.array(z.string()).nullable().optional() });
 
 export type ShareUpdate = z.infer<typeof ShareUpdate>;
 export const ShareUpdate = z.object({ role: ShareRole });

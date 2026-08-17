@@ -77,6 +77,9 @@ class ResyncSseEvent(BaseModel):
     # Entity types that changed on dashboards the client can see. Absent means "unknown, refetch
     # everything" — no mark was offered, or more changed than the reconnect query will read.
     scopes: list[str] | None = None
+    # The log's head when this resync was built. The refetch it orders covers everything up to
+    # here, so the client moves its mark forward; absent when the head could not be read.
+    last_event_id: int | None = None
 
 
 # Union used purely to register all frame models into OpenAPI components.

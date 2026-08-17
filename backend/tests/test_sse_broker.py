@@ -167,13 +167,14 @@ async def test_an_unusable_redis_url_does_not_end_the_reader(monkeypatch: pytest
     assert attempts >= 3, "the reader gave up instead of retrying"
 
 
-def test_a_backed_up_client_is_evicted_rather_than_skipped() -> None:
+def test_a_backed_up_client_is_overflow_resynced_rather_than_skipped() -> None:
     """The resync repairs the client most likely to be behind, so a full queue must not skip it.
 
     Suppressing the overflow would leave it connected and quietly stale — the one state the
-    recovery resync exists to prevent.
+    recovery resync exists to prevent. Converting to the pending-overflow state preserves the
+    instruction: the sentinel becomes the very resync this frame carried.
     """
-    from app.sse.manager import CLOSED_SENTINEL, SseManager
+    from app.sse.manager import OVERFLOW_SENTINEL, SseManager
 
     manager = SseManager()
     client = manager.connect(uuid.uuid4(), session_id=uuid.uuid4())
@@ -182,8 +183,9 @@ def test_a_backed_up_client_is_evicted_rather_than_skipped() -> None:
 
     manager.deliver_to_all({"event": "resync"})
 
-    assert manager.client_count == 0, "a client that cannot take the resync must be dropped"
-    assert client.queue.get_nowait() is CLOSED_SENTINEL
+    assert manager.client_count == 1, "the stream survives; only its backlog is dropped"
+    assert client.queue.qsize() == 1
+    assert client.queue.get_nowait() is OVERFLOW_SENTINEL
 
 
 def test_the_reader_cannot_block_forever_on_a_wedged_connection(monkeypatch: pytest.MonkeyPatch) -> None:

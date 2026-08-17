@@ -22,7 +22,7 @@ def _sample(name: str, **labels: str) -> float:
     if labels:
         return 0.0
     for collector in (
-        metrics.SSE_EVICTIONS,
+        metrics.SSE_OVERFLOW_RESYNCS,
         metrics.SSE_EXPIRIES,
         metrics.SSE_CONNECTS,
         metrics.SSE_EVENTS_SENT,
@@ -69,9 +69,13 @@ def test_observe_response_buckets_by_status_class() -> None:
 
 
 @pytest.mark.asyncio
-async def test_eviction_counter_follows_a_dropped_client() -> None:
-    """The eviction count is how a slow-client problem becomes visible at all."""
-    before = _sample("frontdashboard_sse_evictions_total")
+async def test_overflow_counter_counts_bursts_not_dropped_frames() -> None:
+    """The overflow count is how a slow-client problem becomes visible at all.
+
+    One per coalesced burst: frames dropped while the resync is pending are the coalescing
+    working, and counting them would read as a storm.
+    """
+    before = _sample("frontdashboard_sse_overflow_resyncs_total")
     mgr = SseManager()
     user_id = uuid.uuid4()
     client = mgr.connect(user_id, session_id=uuid.uuid4())
@@ -79,9 +83,10 @@ async def test_eviction_counter_follows_a_dropped_client() -> None:
         client.queue.put_nowait({"event": "filler"})
 
     await mgr.broadcast({"event": "overflow"}, actor_id=user_id)
+    await mgr.broadcast({"event": "dropped while pending"}, actor_id=user_id)
 
-    assert _sample("frontdashboard_sse_evictions_total") - before == 1
-    assert mgr.client_count == 0
+    assert _sample("frontdashboard_sse_overflow_resyncs_total") - before == 1
+    assert mgr.client_count == 1, "an overflowed client keeps its stream"
 
 
 @pytest.mark.asyncio
@@ -171,22 +176,26 @@ def test_request_duration_is_not_labelled_by_method() -> None:
 
 
 @pytest.mark.asyncio
-async def test_delivered_frames_are_counted_but_sentinels_are_not() -> None:
-    """Sentinels end the stream rather than reaching the client — counting them would inflate fan-out."""
-    from app.sse.manager import CLOSED_SENTINEL
+async def test_delivered_frames_are_counted_but_recovery_frames_are_not() -> None:
+    """Only domain frames count as fan-out — a resync is recovery, and counting it would inflate it."""
+    from app.sse.manager import OVERFLOW_SENTINEL
 
     before = _sample("frontdashboard_sse_events_sent_total")
     mgr = SseManager()
     client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
     client.queue.put_nowait({"event": "real"})
-    client.queue.put_nowait(CLOSED_SENTINEL)
+    client.resync_pending = True
+    client.queue.put_nowait(OVERFLOW_SENTINEL)
 
     async def always_live(_session_id: uuid.UUID) -> bool:
         return True
 
-    frames = [f async for f in stream_events(client, send_resync=False, revalidate=always_live)]
+    gen = stream_events(client, send_resync=False, revalidate=always_live)
+    assert (await gen.__anext__())["event"] == "connected"
+    assert (await gen.__anext__())["event"] == "real"
+    assert (await gen.__anext__())["event"] == "resync"
+    await gen.aclose()
 
-    assert len(frames) == 3, "connected, the real frame, then the eviction resync"
     assert _sample("frontdashboard_sse_events_sent_total") - before == 1
 
 

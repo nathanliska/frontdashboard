@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-20 (amended 2026-07-28 — HTTP-error reconnect no longer signs anyone out; amended
 2026-08-04 — Redis named as the backplane; amended 2026-08-07 — backplane built as a stream, pub/sub
-rejected on measurement)
+rejected on measurement; amended 2026-08-16 — overflow resyncs in place instead of ending the stream)
 
 ## Context
 
@@ -25,8 +25,10 @@ to connected clients with bounded per-client queues.
 
 - Connection primes with a `connected` event and asks for a `resync` on reconnect via
   `Last-Event-ID`.
-- A client whose queue overflows is **evicted with a closed sentinel** so its stream ends and it
-  reconnects with a resync — rather than staying connected and silently deaf.
+- A client whose queue overflows keeps its stream: the backlog is **coalesced into one in-place
+  resync frame**, and frames arriving before it is delivered are dropped as covered by the refetch
+  it orders — rather than the client staying connected and silently deaf, or being disconnected
+  back into the very burst that overflowed it.
 - An HTTP-error-rejected stream (which `EventSource` never auto-retries) reconnects on jittered
   exponential backoff (1s → 30s cap), indefinitely, and **never logs anyone out** — a rejected
   stream means the server is unhappy, which says nothing about the session. Every fourth attempt
@@ -79,7 +81,8 @@ harmless:
   which would refetch every open tab every second for the length of the outage — the reader tells its
   local clients to resync. Publishing never raises: the write has already committed, so a Redis fault
   costs sibling replicas a frame rather than costing the caller their write.
-- **Overflow favours resync over silence**: bounded queues can drop a slow client, but the eviction
-  sentinel guarantees it *knows* it was dropped and re-syncs, so it never silently diverges.
+- **Overflow favours resync over silence**: bounded queues can drop a slow client's backlog, but
+  the overflow sentinel guarantees it *knows* frames were dropped and re-syncs, so it never
+  silently diverges — and the stream itself survives, so one burst costs one refetch.
 - **Client-side write ordering matters on the server**: because REST mutations and SSE fan-out are
   separate paths, event construction must be choreographed around the commit (ADR-015).

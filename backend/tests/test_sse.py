@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.activity import EventType
 from app.services.activity import current_event_id
 from app.sse.events import connected_dict
-from app.sse.manager import _QUEUE_MAX, CLOSED_SENTINEL, REVOKED_SENTINEL, SseManager
+from app.sse.manager import _QUEUE_MAX, OVERFLOW_SENTINEL, REVOKED_SENTINEL, SseManager
 from tests.helpers import register_user, set_csrf
 
 # ---------------------------------------------------------------------------
@@ -94,23 +94,43 @@ async def test_manager_broadcast_targeted_users_reaches_non_actor() -> None:
 
 
 @pytest.mark.asyncio
-async def test_evicted_client_receives_close_sentinel() -> None:
-    """A client too far behind is told to resync, not silently dropped."""
+async def test_overflowing_client_keeps_its_stream_and_gets_one_resync() -> None:
+    """A client too far behind is told to resync in place, not disconnected."""
     mgr = SseManager()
     user_id = uuid.uuid4()
     client = mgr.connect(user_id, session_id=uuid.uuid4())
 
-    # Fill the queue to capacity so the next broadcast evicts.
+    # Fill the queue to capacity so the next broadcast overflows.
     for _ in range(_QUEUE_MAX):
         client.queue.put_nowait({"event": "filler", "data": "{}"})
 
     await mgr.broadcast({"event": "list.updated", "data": "{}"}, user_ids={user_id}, actor_id=user_id)
 
-    # Evicted from the registry...
-    assert client not in mgr._clients
-    # ...and the backlog is replaced by a single close sentinel it will actually see.
+    # Still registered — the stream survives the overflow...
+    assert client in mgr._clients
+    # ...and the backlog is replaced by a single overflow sentinel it will actually see.
     assert client.queue.qsize() == 1
-    assert client.queue.get_nowait() is CLOSED_SENTINEL
+    assert client.resync_pending
+    assert client.queue.get_nowait() is OVERFLOW_SENTINEL
+
+
+@pytest.mark.asyncio
+async def test_frames_are_dropped_while_a_resync_is_pending() -> None:
+    """Between overflow and the resync's delivery, frames add nothing the refetch won't cover."""
+    mgr = SseManager()
+    user_id = uuid.uuid4()
+    client = mgr.connect(user_id, session_id=uuid.uuid4())
+    for _ in range(_QUEUE_MAX):
+        client.queue.put_nowait({"event": "filler", "data": "{}"})
+    await mgr.broadcast({"event": "list.updated", "data": "{}"}, user_ids={user_id}, actor_id=user_id)
+
+    await mgr.broadcast({"event": "list.updated", "data": "{}"}, user_ids={user_id}, actor_id=user_id)
+    await mgr.broadcast({"event": "list.deleted", "data": "{}"}, user_ids={user_id}, actor_id=user_id)
+
+    # Both asserts, or this passes against eviction too: an evicted client also keeps qsize 1,
+    # by being absent from the registry rather than by dropping.
+    assert client in mgr._clients and client.resync_pending
+    assert client.queue.qsize() == 1, "the pending resync stays the only thing queued"
 
 
 @pytest.mark.asyncio
@@ -221,6 +241,19 @@ def test_resync_dict_has_correct_event_type() -> None:
     assert msg["event"] == "resync"
     data = json.loads(msg["data"])
     assert data["reason"] == "refresh_required"
+
+
+def test_resync_dict_carries_the_head_only_when_given_one() -> None:
+    """The head moves the client's mark, so it must appear exactly when the caller read one."""
+    from app.sse.events import resync_dict
+
+    stamped = resync_dict(last_event_id=42)
+    assert json.loads(stamped["data"])["last_event_id"] == 42
+    assert stamped["id"] == "42"
+
+    plain = resync_dict()
+    assert "last_event_id" not in json.loads(plain["data"])
+    assert "id" not in plain
 
 
 def test_connected_dict_primes_the_log_head() -> None:
@@ -353,25 +386,64 @@ async def test_current_event_id_tracks_the_newest_committed_row(db_session: Asyn
 
 
 @pytest.mark.asyncio
-async def test_stream_ends_with_resync_on_close_sentinel() -> None:
-    """An evicted stream yields resync and terminates rather than hanging."""
+async def test_stream_resyncs_in_place_on_overflow_and_keeps_going() -> None:
+    """The overflow sentinel becomes one resync frame, clears the pending flag, and the stream lives.
+
+    The continuation is the point: ending here would send the still-slow client back into the
+    burst that overflowed it, to reconnect and refetch once per overflow instead of once.
+    """
     from app.routers.sse import stream_events
 
     mgr = SseManager()
     client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
 
-    gen = stream_events(client, send_resync=False, revalidate=_always_live)
+    async def head_42() -> int:
+        return 42
+
+    gen = stream_events(client, send_resync=False, revalidate=_always_live, read_head=head_42)
     first = await gen.__anext__()
     assert first["event"] == "connected"
 
-    client.queue.put_nowait({"event": "list.updated", "data": "{}"})
+    for _ in range(_QUEUE_MAX):
+        client.queue.put_nowait({"event": "filler", "data": "{}"})
+    await mgr.broadcast({"event": "list.updated", "data": "{}"}, actor_id=client.user_id)
+
+    frame = await gen.__anext__()
+    assert frame["event"] == "resync"
+    # Stamped with the head, so the client's mark moves with the refetch instead of going stale.
+    assert json.loads(frame["data"])["last_event_id"] == 42
+    assert not client.resync_pending, "delivering the resync reopens the queue"
+
+    await mgr.broadcast({"event": "list.updated", "data": "{}"}, actor_id=client.user_id)
     assert (await gen.__anext__())["event"] == "list.updated"
+    await gen.aclose()
 
-    client.queue.put_nowait(CLOSED_SENTINEL)
-    assert (await gen.__anext__())["event"] == "resync"
 
-    with pytest.raises(StopAsyncIteration):
-        await gen.__anext__()
+@pytest.mark.asyncio
+async def test_overflow_resync_survives_a_failing_head_read() -> None:
+    """The stamp is best-effort: a dead database costs the mark refresh, never the stream."""
+    from app.routers.sse import stream_events
+
+    mgr = SseManager()
+    client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
+
+    async def head_raises() -> int:
+        raise RuntimeError("database unreachable")
+
+    gen = stream_events(client, send_resync=False, revalidate=_always_live, read_head=head_raises)
+    assert (await gen.__anext__())["event"] == "connected"
+
+    for _ in range(_QUEUE_MAX):
+        client.queue.put_nowait({"event": "filler", "data": "{}"})
+    await mgr.broadcast({"event": "list.updated", "data": "{}"}, actor_id=client.user_id)
+
+    frame = await gen.__anext__()
+    assert frame["event"] == "resync"
+    assert "last_event_id" not in json.loads(frame["data"])
+
+    await mgr.broadcast({"event": "list.updated", "data": "{}"}, actor_id=client.user_id)
+    assert (await gen.__anext__())["event"] == "list.updated"
+    await gen.aclose()
 
 
 @pytest.mark.asyncio
@@ -519,11 +591,26 @@ async def test_disconnect_session_only_drops_that_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_eviction_still_resyncs() -> None:
+async def test_overflow_still_resyncs() -> None:
     """No regression to 44a9e15: falling behind is not the same as being revoked."""
     mgr = SseManager()
     client = mgr.connect(uuid.uuid4(), session_id=uuid.uuid4())
     for _ in range(_QUEUE_MAX + 5):
         await mgr.broadcast({"event": "x", "data": "{}"}, actor_id=client.user_id)
 
-    assert client.queue.get_nowait() is CLOSED_SENTINEL
+    assert client.queue.get_nowait() is OVERFLOW_SENTINEL
+
+
+@pytest.mark.asyncio
+async def test_revocation_reaches_a_client_with_a_full_queue() -> None:
+    """The backlog yields to the sentinel — a revoked stream must not keep serving its buffer."""
+    mgr = SseManager()
+    session_id = uuid.uuid4()
+    client = mgr.connect(uuid.uuid4(), session_id=session_id)
+    while not client.queue.full():
+        client.queue.put_nowait({"event": "filler", "data": "{}"})
+
+    mgr.disconnect_session(session_id)
+
+    assert client.queue.qsize() == 1
+    assert client.queue.get_nowait() is REVOKED_SENTINEL

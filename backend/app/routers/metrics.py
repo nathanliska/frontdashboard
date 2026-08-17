@@ -43,7 +43,7 @@ def _overflow() -> float:
 metrics.register_gauge("sse_clients", "SSE streams currently open.", lambda: manager.client_count)
 metrics.register_gauge(
     "sse_queue_depth_max",
-    "Deepest queue seen in the last minute; backpressure before it becomes eviction.",
+    "Deepest queue seen in the last minute; backpressure before it becomes an overflow resync.",
     lambda: metrics.SSE_QUEUE_PEAK.read(manager.max_queue_depth),
 )
 # Fires with the new connection already counted, so the handler sees the true running total.
