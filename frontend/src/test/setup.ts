@@ -6,6 +6,14 @@ import * as connectionStore from '../stores/connection'
 import * as toastStore from '../stores/toast'
 import * as loadOptions from '../utils/dashboard/loadOptions'
 
+// jsdom implements neither scroll API, and this setup also runs for node-environment files
+// where `Element` is undefined. Scrolling is armed inside a requestAnimationFrame, so a missing
+// one throws *after* the test that armed it, failing whichever file runs next.
+if (typeof Element !== 'undefined') {
+  Element.prototype.scrollIntoView ??= () => {}
+  Element.prototype.scrollTo ??= () => {}
+}
+
 /**
  * Cancel what a test armed and drop what it cached.
  *

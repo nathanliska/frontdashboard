@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-08-14_
+_Last updated: 2026-08-17_
 
 ## What's built
 
@@ -107,8 +107,21 @@ _Last updated: 2026-08-14_
   drag handles with keyboard support. Order persists through two transactional endpoints
   (`PUT /lists/{id}/items/order`, `PUT /lists/order`) that renumber `sort_order` to `0..n-1`
   under a row lock and require the submitted id set to match exactly (409 otherwise); DB CHECK
-  constraints keep `sort_order` nonnegative. Checked items stay in place — manual order is the
-  only order. New lists append last.
+  constraints keep `sort_order` nonnegative. Manual order is the only stored order. New lists
+  append last.
+- **Checked pile**: the detail page draws checked items in a collapsible
+  "Checked (N)" pile at the bottom, in the manual order like the active zone above it.
+  Display-only — `sort_order` is untouched, so unchecking returns an item to its remembered
+  place, and a drag in the active zone rebuilds the full id set around the pile (a row checked
+  or removed mid-drag resyncs instead of submitting a no-op). Per-device toggles (localStorage): pile on/off
+  per list (off = checked stay in place) and collapse state. The **add box dedupes against the
+  pile**: typing a checked item's name (or picking the suggestion) unchecks that row instead of
+  creating a duplicate; Escape dismisses the suggestions when a duplicate is wanted on purpose.
+  The list widget carries the same toggle on its progress row; with the pile on it shows only
+  unchecked rows plus a "Checked (N)" peek line (transient — re-collapses on remount, unlike the
+  page's remembered expand state). Its inline add dedupes an exact checked match. The dedupe is
+  deliberately not preference-gated on either surface — an intentional duplicate goes through the
+  page's Escape path.
 - The sidebar has an **Active/Trash** selector: Active is the default and is reorderable; Trash
   lists deleted lists with their purge deadline and a Restore action, and is fetched only when
   opened. The server renumbers the dashboard's live lists, so a reorder's submitted set must equal

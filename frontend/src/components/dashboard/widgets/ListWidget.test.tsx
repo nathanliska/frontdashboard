@@ -9,6 +9,7 @@ import {
   makeListDetail as baseListDetail,
   makeListItem as baseListItem,
 } from '../../../test/fixtures'
+import { setPileEnabled } from '../../lists/checkedPile'
 import { ListWidget } from './ListWidget'
 
 const apiMocks = vi.hoisted(() => ({
@@ -53,6 +54,7 @@ function deferred<T>() {
 describe('ListWidget', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     __resetListDataForTests()
     // Module-level load/debounce state lives outside the store, so setState alone won't clear it.
     resetDashboardData()
@@ -100,7 +102,7 @@ describe('ListWidget', () => {
       />,
     )
 
-    await screen.findByText('Buy milk')
+    await screen.findByPlaceholderText('Add item…')
     expect(apiMocks.apiGetList).toHaveBeenCalledTimes(1)
 
     act(() => {
@@ -157,6 +159,168 @@ describe('ListWidget', () => {
     expect(screen.queryByText('+1 more')).not.toBeInTheDocument()
   })
 
+  it('hides checked rows behind a collapsed Checked (N) peek by default', async () => {
+    apiMocks.apiGetList.mockResolvedValueOnce(
+      makeListDetail({
+        items: [
+          makeListItem({
+            id: 'item-1',
+            text: 'Bought thing',
+            sort_order: 0,
+            checked: true,
+          }),
+          makeListItem({ id: 'item-2', text: 'Needed thing', sort_order: 1 }),
+        ],
+      }),
+    )
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    // The tile shows only unchecked items; the pile is one peekable line.
+    await screen.findByText('Needed thing')
+    expect(screen.queryByText('Bought thing')).not.toBeInTheDocument()
+    const peek = screen.getByRole('button', { name: 'Checked (1)' })
+    expect(peek).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(peek)
+    const rows = screen.getAllByRole('button').map((button) => button.textContent)
+    expect(rows.indexOf('Needed thing')).toBeLessThan(rows.indexOf('Bought thing'))
+
+    // The preference is subscribed, not read-once: flipping it from another surface
+    // (the detail page's toggle) must reorder an already-mounted widget.
+    act(() => setPileEnabled('list-1', false))
+    expect(screen.queryByRole('button', { name: 'Checked (1)' })).not.toBeInTheDocument()
+    const inPlace = screen.getAllByRole('button').map((button) => button.textContent)
+    expect(inPlace.indexOf('Bought thing')).toBeLessThan(inPlace.indexOf('Needed thing'))
+  })
+
+  it('says so when everything is checked instead of showing an empty body', async () => {
+    apiMocks.apiGetList.mockResolvedValueOnce(
+      makeListDetail({
+        items: [makeListItem({ id: 'item-1', text: 'Bought thing', sort_order: 0, checked: true })],
+      }),
+    )
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    // Otherwise a full progress bar sits over blank space and the tile reads as broken.
+    await screen.findByText('All done.')
+    expect(screen.getByRole('button', { name: 'Checked (1)' })).toBeInTheDocument()
+  })
+
+  it('toggles the shared preference from the progress row', async () => {
+    apiMocks.apiGetList.mockResolvedValueOnce(
+      makeListDetail({
+        items: [
+          makeListItem({
+            id: 'item-1',
+            text: 'Bought thing',
+            sort_order: 0,
+            checked: true,
+          }),
+          makeListItem({ id: 'item-2', text: 'Needed thing', sort_order: 1 }),
+        ],
+      }),
+    )
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    await screen.findByText('Needed thing')
+    const toggle = screen.getByRole('button', { name: 'Sink checked items into a pile' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(window.localStorage.getItem('listPile:list-1')).toBe('0')
+    expect(screen.getByText('Bought thing')).toBeInTheDocument()
+  })
+
+  it('unchecks an existing checked item instead of duplicating it from the add form', async () => {
+    apiMocks.apiGetList.mockResolvedValueOnce(
+      makeListDetail({
+        items: [
+          makeListItem({
+            id: 'item-1',
+            text: 'Buy milk',
+            checked: true,
+          }),
+        ],
+      }),
+    )
+    apiMocks.apiUpdateItem.mockResolvedValueOnce(
+      makeListItem({ id: 'item-1', text: 'Buy milk', checked: false }),
+    )
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    await screen.findByPlaceholderText('Add item…')
+    fireEvent.change(screen.getByPlaceholderText('Add item…'), {
+      target: { value: 'buy milk' },
+    })
+    fireEvent.submit(screen.getByPlaceholderText('Add item…').closest('form') as HTMLFormElement)
+
+    await waitFor(() =>
+      expect(apiMocks.apiUpdateItem).toHaveBeenCalledWith('list-1', 'item-1', { checked: false }),
+    )
+    expect(apiMocks.apiCreateItem).not.toHaveBeenCalled()
+  })
+
+  it('keeps the typed text when the dedupe uncheck fails', async () => {
+    apiMocks.apiGetList.mockResolvedValueOnce(
+      makeListDetail({
+        items: [
+          makeListItem({
+            id: 'item-1',
+            text: 'Buy milk',
+            checked: true,
+          }),
+        ],
+      }),
+    )
+    apiMocks.apiUpdateItem.mockRejectedValueOnce(new Error('offline'))
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    await screen.findByPlaceholderText('Add item…')
+    const input = screen.getByPlaceholderText('Add item…')
+    fireEvent.change(input, { target: { value: 'buy milk' } })
+    fireEvent.submit(input.closest('form') as HTMLFormElement)
+
+    await waitFor(() => expect(apiMocks.apiUpdateItem).toHaveBeenCalled())
+    // The reset is success-gated: a failed uncheck must not eat the word the user typed.
+    expect(input).toHaveValue('buy milk')
+  })
+
   it('offers a retry for outages, and the retry recovers', async () => {
     // A network failure is not access loss: the copy must not claim deletion, and the state
     // must offer a way out.
@@ -177,7 +341,7 @@ describe('ListWidget', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 
-    await screen.findByText('Buy milk')
+    await screen.findByPlaceholderText('Add item…')
     expect(apiMocks.apiGetList).toHaveBeenCalledTimes(2)
   })
 
@@ -196,7 +360,7 @@ describe('ListWidget', () => {
       />,
     )
 
-    await screen.findByText('Buy milk')
+    await screen.findByPlaceholderText('Add item…')
 
     act(() => {
       handleListResourceEvent({

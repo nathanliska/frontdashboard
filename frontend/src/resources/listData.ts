@@ -270,9 +270,9 @@ export async function updateListItem(
     patchAgendaFromListDetail(listId, item)
   } catch (error) {
     toast.error(body.text != null ? 'Failed to rename item.' : 'Failed to update item.')
-    if (body.text != null) {
-      throw error instanceof Error ? error : new Error('Failed to rename item.')
-    }
+    // Always rethrow: a swallowed failure made the add box's restore path clear the user's
+    // text over a PATCH that never landed. Callers that can't act on it catch and drop.
+    throw error instanceof Error ? error : new Error('Failed to update item.')
   }
 }
 
