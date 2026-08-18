@@ -12,6 +12,7 @@ export function ListItemRow({
   onSetDueDate,
   onDelete,
   sortable,
+  indentForHandle = false,
 }: {
   item: ListItem
   onToggleChecked: (itemId: string, checked: boolean) => Promise<void>
@@ -19,6 +20,8 @@ export function ListItemRow({
   onSetDueDate: (itemId: string, dueDate: string | null) => Promise<void>
   onDelete: (itemId: string) => Promise<void>
   sortable?: SortableRow
+  /** Reserve the drag handle's footprint so this row's text aligns with sortable siblings. */
+  indentForHandle?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
@@ -68,12 +71,13 @@ export function ListItemRow({
     <li
       ref={sortable?.setNodeRef}
       style={sortable?.style}
+      data-item-id={item.id}
       className={cn(
         'flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 border-b border-zinc-800 group last:border-0',
         sortable?.isDragging && 'opacity-60',
       )}
     >
-      {sortable && (
+      {sortable ? (
         <button
           type="button"
           {...sortable.attributes}
@@ -83,6 +87,13 @@ export function ListItemRow({
         >
           <GripVertical size={14} />
         </button>
+      ) : (
+        indentForHandle && (
+          // Same padded wrapper as the handle button, so the footprint matches to the pixel.
+          <span aria-hidden="true" className="shrink-0 p-0.5">
+            <span className="block w-3.5 h-3.5" />
+          </span>
+        )
       )}
       <button
         type="button"

@@ -39,7 +39,9 @@ in the abstract) are not defined here.
 
 **List Item** — An entry in a list, with optional due date, priority, category, assignee, and a manual sort order.
 
-**Manual order** — The only ordering for list items: user-set, checked items stay in place, new items append last. See [FDR-005](fdr/FDR-005-lists.md).
+**Manual order** — The only *stored* ordering for list items: user-set, new items append last. The checked pile re-draws it but never rewrites it. See [FDR-005](fdr/FDR-005-lists.md).
+
+**Checked pile** — The collapsible "Checked (N)" section a list draws its checked items into, keeping the manual order rather than imposing one of its own. Display-only, so unchecking returns an item to its remembered place; per-device toggle reverts to in-place rendering. The add box dedupes against it: re-adding a checked item's name unchecks the row instead of duplicating it. See [FDR-005](fdr/FDR-005-lists.md).
 
 **Calendar Event** — A household calendar entry, possibly weekly-recurring. See [FDR-006](fdr/FDR-006-calendar-and-events.md).
 

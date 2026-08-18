@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-08-15
+**Last reviewed:** 2026-08-17
 
 ## Overview
 
@@ -20,8 +20,21 @@ master/detail UI and surfaced on dashboards via the list widget ([FDR-003](FDR-0
   local day. Set it from a picker on the item row (its own control, not a field inside the text
   editor, which saves on blur and would close before a date could be chosen); the list widget shows
   it read-only. Only *priority, category and assignee* remain backend-only with no UI.
-- **Manual order only.** Items keep their manual order; checked items stay in place rather than
-  sinking. New items append last.
+- **Manual order is the only stored order.** New items append last. By default the detail page
+  *draws* checked items in a collapsible "Checked (N)" pile at the bottom, keeping that same
+  manual order — the pile is the rest of the list, not a log of one trip. A per-device toggle on
+  the list header returns checked items to their in-place rendering; the collapse state is
+  remembered per device too (see decision 4).
+- **The add box is a toggle, not just an input.** Typing matches checked items (the pile doubles
+  as the list's catalog); submitting an exact match or picking a suggestion unchecks that row
+  instead of creating a duplicate — two shoppers adding "Milk" converge on one row. Escape
+  dismisses the suggestions when a same-named new row is wanted on purpose. The list widget
+  carries the same toggle on its progress row and, with the pile on, shows only unchecked rows
+  plus a "Checked (N)" line — expanding there is a transient peek that re-collapses on remount,
+  where the page remembers its expand state, because the tile's job is the unchecked view. The
+  dedupe itself is deliberately *not* gated on the preference — it prevents duplicates however
+  the list is drawn — so an intentional same-named row always goes through the page's Escape
+  path.
 - **Drag-and-drop reorder.** Reorder items within a list and lists within the sidebar, via drag
   handles with keyboard support.
 - **Active/Trash selector.** The sidebar defaults to Active (reorderable); Trash lists what has been
@@ -67,7 +80,23 @@ refetch. See ADR-006.
 **Tradeoff:** Hot-event payloads are part of the contract; a missing field silently forces the
 divergence-refetch fallback.
 
-### 4. Lists are recoverable; items are not
+### 4. The checked pile is display-only, and keeps the manual order
+
+**Decision:** The pile is a render-time partition of the items a GET already returns — both zones
+stay in `sort_order`, and nothing is stamped or stored to describe it. A drag in the active zone
+rebuilds the full id set for the reorder endpoint with checked items held at their stored
+positions; when the set no longer lines up (a row checked or removed mid-drag) the client resyncs
+rather than submit the stored order, which the endpoint would accept as a silent no-op. The
+pile-on/off and collapse preferences are per-device (localStorage), not synced state.
+**Why:** Manual order is a first-class affordance here, so a pile that reorders itself by check
+recency would contradict an order the user set deliberately — and recency is the wrong model for
+a standing catalog, where the checked half is the rest of the list rather than a log of one trip.
+Deriving the pile from data every client already holds also keeps it free of a column, a stamp on
+the wire, and clock comparison.
+**Tradeoff:** The preference doesn't follow the user across devices, and an accidental check is
+found where the item has always sat rather than at the top of the pile.
+
+### 5. Lists are recoverable; items are not
 
 **Decision:** `List` carries `deleted_at` and a trash; `ListItem` is deleted outright.
 **Why:** An item is a line of text, so retyping it costs less than any path that could return it —

@@ -1,5 +1,5 @@
-import { Check, Plus } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, ChevronRight, ListChecks, Plus } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ListWidgetConfig } from '../../../api/dashboards'
 import { ApiError } from '../../../api/http'
 import type { ListItem } from '../../../api/lists'
@@ -8,6 +8,12 @@ import { useDashboardStore } from '../../../stores/dashboard'
 import { dateKey, formatCalendarDay, startOfDay } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
 import { scrollToNewestItem } from '../../../utils/shared/scrollToNewestItem'
+import {
+  findCheckedMatch,
+  partitionItems,
+  setPileEnabled,
+  usePileEnabled,
+} from '../../lists/checkedPile'
 import { WidgetErrorState } from '../WidgetErrorState'
 
 export function ListWidget({
@@ -24,6 +30,16 @@ export function ListWidget({
   const [containerWidth, setContainerWidth] = useState(300)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
   const { data: detail, error, refetch } = useListDetail(listId)
+
+  const pileOn = usePileEnabled(listId)
+  // A transient peek, deliberately not the page's persisted expand state: the tile's whole
+  // point is showing only unchecked items, so it re-collapses on remount.
+  const [pileOpen, setPileOpen] = useState(false)
+  // Memoized: this component re-renders per ResizeObserver tick during a grid resize.
+  const { active, pile } = useMemo(
+    () => (detail ? partitionItems(detail.items) : { active: [], pile: [] }),
+    [detail],
+  )
 
   useEffect(() => {
     if (!detail) return
@@ -49,7 +65,11 @@ export function ListWidget({
 
   async function handleToggle(item: ListItem) {
     if (!detail) return
-    await updateListItem(listId, item.id, { checked: !item.checked })
+    try {
+      await updateListItem(listId, item.id, { checked: !item.checked })
+    } catch {
+      // The store already toasted; a failed toggle has no state to unwind.
+    }
   }
 
   async function handleAdd(event: React.FormEvent<HTMLFormElement>) {
@@ -60,9 +80,22 @@ export function ListWidget({
     const text = String(new FormData(form).get('item-text') ?? '').trim()
     if (!text) return
 
-    await addListItem(listId, text)
-    form.reset()
-    scrollToNewestItem(scrollRef.current)
+    // Same toggle semantic as the list page's add box, minus the suggestions chrome: an exact
+    // match of a checked item unchecks it rather than minting a duplicate row.
+    try {
+      const existing = findCheckedMatch(detail.items, text)
+      if (existing) {
+        await updateListItem(listId, existing.id, { checked: false })
+        scrollToNewestItem(scrollRef.current, `[data-item-id="${existing.id}"]`)
+      } else {
+        await addListItem(listId, text)
+        // The new row is the last unchecked one — the pile may sit below it in the scroller.
+        scrollToNewestItem(scrollRef.current, 'button[data-checked="false"]')
+      }
+      form.reset()
+    } catch {
+      // The store already toasted. Skipping the reset keeps the typed text for a retry.
+    }
   }
 
   if (error) {
@@ -91,11 +124,55 @@ export function ListWidget({
     )
   }
 
-  const checkedCount = detail.items.filter((i) => i.checked).length
+  const checkedCount = pile.length
   const total = detail.items.length
   const progress = total > 0 ? (checkedCount / total) * 100 : 0
 
   const isTiny = containerWidth < 180
+
+  const renderRow = (item: ListItem) => (
+    <button
+      key={item.id}
+      type="button"
+      data-checked={item.checked}
+      data-item-id={item.id}
+      onClick={() => void handleToggle(item)}
+      className="flex items-start gap-2 w-full text-left px-0.5 py-0.5 rounded hover:bg-zinc-800/50 transition-colors group/item"
+    >
+      <span
+        className={cn(
+          'mt-0.5 shrink-0 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors',
+          item.checked
+            ? 'bg-blue-500 border-blue-500'
+            : 'border-zinc-700 group-hover/item:border-zinc-500',
+        )}
+      >
+        {item.checked && <Check size={9} strokeWidth={3} className="text-white" />}
+      </span>
+      <span
+        className={cn(
+          'text-xs flex-1 truncate leading-4 mt-0.5',
+          item.checked ? 'line-through text-zinc-600' : 'text-zinc-300',
+        )}
+      >
+        {item.text}
+      </span>
+      {/* Read-only here — the picker lives on the list page. Overdue is only meaningful for
+          an outstanding item, so a checked one stays neutral. */}
+      {item.due_date && (
+        <span
+          className={cn(
+            'shrink-0 rounded px-1 py-0.5 text-[9px] tabular-nums leading-none mt-0.5',
+            !item.checked && item.due_date < dateKey(startOfDay(new Date()))
+              ? 'bg-red-500/10 text-red-400'
+              : 'bg-zinc-800 text-zinc-500',
+          )}
+        >
+          {formatCalendarDay(item.due_date)}
+        </span>
+      )}
+    </button>
+  )
 
   return (
     <div ref={containerRef} className="flex flex-col gap-2 flex-1 min-h-0">
@@ -106,6 +183,21 @@ export function ListWidget({
             <span className="text-[10px] text-zinc-600">
               {checkedCount}/{total} done
             </span>
+            {/* Free space at the row's end — the toggle costs the tile no extra height,
+                and the negative margin keeps it that way at a thumb-sized target. */}
+            <button
+              type="button"
+              onClick={() => setPileEnabled(listId, !pileOn)}
+              aria-pressed={pileOn}
+              title="Sink checked items into a pile"
+              aria-label="Sink checked items into a pile"
+              className={cn(
+                'shrink-0 p-2 -my-1.5 rounded transition-colors',
+                pileOn ? 'text-zinc-300' : 'text-zinc-700 hover:text-zinc-400',
+              )}
+            >
+              <ListChecks size={12} />
+            </button>
           </div>
           <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
             <div
@@ -118,47 +210,27 @@ export function ListWidget({
 
       {/* Item list */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-0.5 min-h-0">
-        {detail.items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => void handleToggle(item)}
-            className="flex items-start gap-2 w-full text-left px-0.5 py-0.5 rounded hover:bg-zinc-800/50 transition-colors group/item"
-          >
-            <span
-              className={cn(
-                'mt-0.5 shrink-0 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors',
-                item.checked
-                  ? 'bg-blue-500 border-blue-500'
-                  : 'border-zinc-700 group-hover/item:border-zinc-500',
-              )}
+        {(pileOn ? active : detail.items).map(renderRow)}
+
+        {/* Otherwise the tile reads as broken: a full progress bar over an empty body. */}
+        {pileOn && total > 0 && active.length === 0 && (
+          <p className="text-xs text-zinc-600 px-0.5 py-1">All done.</p>
+        )}
+
+        {pileOn && pile.length > 0 && (
+          <section aria-label="Checked items" className="space-y-0.5">
+            <button
+              type="button"
+              onClick={() => setPileOpen(!pileOpen)}
+              aria-expanded={pileOpen}
+              className="w-full flex items-center gap-1 px-0.5 py-0.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
             >
-              {item.checked && <Check size={9} strokeWidth={3} className="text-white" />}
-            </span>
-            <span
-              className={cn(
-                'text-xs flex-1 truncate leading-4 mt-0.5',
-                item.checked ? 'line-through text-zinc-600' : 'text-zinc-300',
-              )}
-            >
-              {item.text}
-            </span>
-            {/* Read-only here — the picker lives on the list page. Overdue is only meaningful for
-                an outstanding item, so a checked one stays neutral. */}
-            {item.due_date && (
-              <span
-                className={cn(
-                  'shrink-0 rounded px-1 py-0.5 text-[9px] tabular-nums leading-none mt-0.5',
-                  !item.checked && item.due_date < dateKey(startOfDay(new Date()))
-                    ? 'bg-red-500/10 text-red-400'
-                    : 'bg-zinc-800 text-zinc-500',
-                )}
-              >
-                {formatCalendarDay(item.due_date)}
-              </span>
-            )}
-          </button>
-        ))}
+              {pileOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              Checked ({pile.length})
+            </button>
+            {pileOpen && pile.map(renderRow)}
+          </section>
+        )}
 
         {total === 0 && <p className="text-xs text-zinc-700 px-0.5 py-1">No items yet.</p>}
       </div>
