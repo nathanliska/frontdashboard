@@ -66,7 +66,10 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 - Name roles, not identities. Outward text — docs, code, comments, commit messages, PR bodies —
   carries no personal names or emails, no hostnames, and no deployment-platform branding: "the prod
   host", "the maintainer". The LICENSE line and the repository's own URLs are the deliberate
-  exceptions.
+  exceptions. A platform outlives its own name being scrubbed — its plugin names and share paths
+  identify it just as well. Another product cited as precedent goes the same way: the reason has to
+  stand without it. Grep a list of names you already suspect and you find only those; sweep by
+  discovery instead — mid-sentence capitals and external link domains surface the rest.
 
 ## Hard Rules
 
@@ -101,8 +104,8 @@ Standing user constraints. Do not violate these.
 - CI runs on every PR to `main`, and merging is what publishes images. Check CI after opening and
   fix failures that are regressions from `main`.
 - Deploying is [docs/runbooks/deploy.md](docs/runbooks/deploy.md): merge, wait for the publish,
-  then **check for updates and update** the stack in the host's Compose Manager. Production is driven
-  through that plugin's UI, not `docker compose` on the host.
+  then **check for updates and update** the stack in the host's compose UI. Production is driven
+  through that UI, not `docker compose` on the host.
 
 ## Tooling
 

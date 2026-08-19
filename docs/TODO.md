@@ -63,11 +63,11 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   needs an explicit `resolvers 127.0.0.11` for Docker's embedded DNS; active health checks do **not**
   run against a dynamic upstream, so `health_uri` is inert there and passive `fail_duration` is what
   applies, with a new replica waiting up to the 1m default `refresh` for traffic. The scaling lever
-  in Compose Manager is `deploy.replicas`, not `--scale` (its UI offers no place to pass a flag);
-  measured on v5.1.0, `--scale` exits 1 having started nothing. **Postgres is the ceiling:** each
-  replica opens its own pool, so 10N against a default `max_connections` of 100 caps this near 8
-  replicas — anything automatic wants PgBouncer first. Not scheduled; the trigger is the first
-  replica rather than a date. *(Medium)*
+  in the host's compose UI is `deploy.replicas`, not `--scale` (that UI offers no place to pass a
+  flag); measured on the version deployed there, `--scale` exits 1 having started nothing.
+  **Postgres is the ceiling:** each replica opens its own pool, so 10N against a default
+  `max_connections` of 100 caps this near 8 replicas — anything automatic wants PgBouncer first.
+  Not scheduled; the trigger is the first replica rather than a date. *(Medium)*
 - **#39 — Extract use cases from the dashboard router.** ~1,200 lines coupling validation, authz,
   persistence, activity, notification and SSE, repeating the same transaction/broadcast dance per
   handler. Worth doing as the deletion it implies — one unit of work plus a staged outbox, routers as
@@ -138,10 +138,10 @@ Capabilities deliberately not built. Each states the condition that would make i
 - **Conflict-free list reorders** — when a concurrent drag is ever actually lost and missed. Two
   members reordering the same list at the same moment each send the full new ordering, and the
   later write silently replaces the earlier one; the loser sees the true order a moment later over
-  SSE and a re-drag costs seconds. The fix to build is fractional indexing (Figma, Jira's
-  LexoRank): each item carries its own position key, a drag writes one row, and concurrent drags
-  of different items merge instead of colliding — not a layout-style version column, whose 409
-  would punish the common non-conflicting case. Accepted as last-write-wins at household scale.
+  SSE and a re-drag costs seconds. The fix to build is fractional indexing: each item carries its
+  own position key, a drag writes one row, and concurrent drags of different items merge instead of
+  colliding — not a layout-style version column, whose 409 would punish the common non-conflicting
+  case. Accepted as last-write-wins at household scale.
 - **Paginating the dashboard and list trashes** — when a trash response is ever observed at a
   size that matters. The event trash pages by cursor because its quota is 10,000 per dashboard;
   the other two return complete listings (quota-bounded at 100 dashboards, 200 lists/dashboard,

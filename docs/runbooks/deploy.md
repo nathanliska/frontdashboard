@@ -9,14 +9,14 @@ There is no deploy script. Merging to `main` is the deploy trigger; the box pull
    drift, the dependency audit, both image builds and the smoke checks. Roughly 3–4 minutes — the grouped jobs trade ~1 minute of wall time for the billing. Both
    images build and load before anything is pushed, and both `:<short-sha>` tags go up before either
    `latest` moves, so the two tags can never describe different commits.
-3. **Check for Updates**, then **Update** the `frontdashboard` stack in the host's **Compose Manager**
-   plugin. That pulls and recreates the containers. **Force Update** is not the routine path: it
-   re-pulls when the plugin reports nothing to do, which is worth reaching for only if an update
-   completes and the running image is still the old one.
+3. **Check for Updates**, then **Update** the `frontdashboard` stack in the host's **compose UI**.
+   That pulls and recreates the containers. **Force Update** is not the routine path: it re-pulls
+   when the UI reports nothing to do, which is worth reaching for only if an update completes and
+   the running image is still the old one.
 4. **Verify from outside**, read-only — [Checks after it comes up](#checks-after-it-comes-up) below.
 
-Nothing in this repo reaches the host. The stack lives at `/mnt/user/appdata/stacks/frontdashboard/`
-as `compose.yaml`, `compose.override.yaml` and `.env`, maintained by hand there, and should match
+Nothing in this repo reaches the host. The stack lives in the host's own stack directory as
+`compose.yaml`, `compose.override.yaml` and `.env`, maintained by hand there, and should match
 [docker-compose.prod.yml](../../docker-compose.prod.yml); this repo's copy is the reference, not the
 source. Nothing verifies that they agree, so they have drifted before.
 

@@ -1,5 +1,5 @@
 /**
- * Deterministic member colors, Cozi-style: hashed from the user id into a fixed palette, so
+ * Deterministic member colors: hashed from the user id into a fixed palette, so
  * every device shows the same color with zero configuration. Collisions are possible in a small
  * palette; the initial rendered inside the dot is what disambiguates them.
  */

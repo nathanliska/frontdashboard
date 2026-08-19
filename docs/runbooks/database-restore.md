@@ -33,15 +33,18 @@ Accepts plain `.sql`, gzipped `.sql.gz`, and `pg_dump` custom format.
    ```
 
    By container name, as every step here does, so no compose file has to be found first. The stack
-   the box runs is Compose Manager's, at `/mnt/user/appdata/stacks/frontdashboard/` — not this
-   repo's. `restart: unless-stopped` is what makes the stop hold; `always` would race the restore.
+   the box runs is the one in the host's own stack directory — not this repo's.
+   `restart: unless-stopped` is what makes the stop hold; `always` would race the restore.
 
 2. **Take a dump of the current state first, however broken it looks.** It is the only copy of
    whatever happened between the last backup and now, and restoring over it is irreversible.
 
+   Write it somewhere outside the database volume, or a failed restore takes the evidence with it.
+
    ```sh
+   BACKUP_DIR=/path/to/host/backups   # the host's backup share
    docker exec frontdashboard-db pg_dump -U frontdashboard -d frontdashboard \
-     > /mnt/user/appdata/backups/pre-restore-$(date +%Y%m%d-%H%M%S).sql
+     > "$BACKUP_DIR/pre-restore-$(date +%Y%m%d-%H%M%S).sql"
    ```
 
 3. **Drop and recreate the database**, then load the dump. `psql` into `postgres`, not the target —

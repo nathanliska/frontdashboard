@@ -364,9 +364,9 @@ _Last updated: 2026-08-17_
   multiplies it. While it is unreachable they fall back to per-process buckets and recover on
   their own, which keeps an outage from either 500ing every write or letting them through unbounded;
   a bounded retry count is what stops that fallback costing seconds a write, since redis-py retries
-  ten times by default. Valkey is **bundled in the stack** — internal network, no published port, the
-  shape Immich and Paperless ship — so `REDIS_URL` defaults to it and a deploy sets nothing; set to
-  an empty value it refuses to start rather than degrading to per-process limits in silence.
+  ten times by default. Valkey is **bundled in the stack** — internal network, no published port —
+  so `REDIS_URL` defaults to it and a deploy sets nothing; set to an empty value it refuses to
+  start rather than degrading to per-process limits in silence.
 - **The backend schema is the API contract** ([ADR-018](docs/adr/ADR-018-generated-validated-contracts.md)):
   `make contracts` exports FastAPI's OpenAPI document and generates the frontend's zod schemas into
   `frontend/src/api/generated/contract.ts` (committed; CI fails on drift). Every response body is

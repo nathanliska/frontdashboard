@@ -36,11 +36,11 @@ still cost **5.43s** per write against a blackholed address and **45s** against 
 retry brings that to **0.50s**. Otherwise the fallback trades a security hole for a latency one — the
 writes it exists to keep serving are exactly the ones left waiting.
 
-The instance is **bundled in each stack** rather than shared with the host's other apps, which is
-also what Immich and Paperless do. A shared instance would need ACLs to keep another app off our
-keys — ACLs that do not survive a restart without an `aclfile`, and whose `-@dangerous` category
-denies `SELECT`, so database numbers cannot substitute for them. `REDIS_URL` stays overridable for a
-deployment that wants an external instance; the bundled service is the supported shape.
+The instance is **bundled in each stack** rather than shared with the host's other apps. A shared
+instance would need ACLs to keep another app off our keys — ACLs that do not survive a restart
+without an `aclfile`, and whose `-@dangerous` category denies `SELECT`, so database numbers cannot
+substitute for them. `REDIS_URL` stays overridable for a deployment that wants an external
+instance; the bundled service is the supported shape.
 
 Bundling does **not** make the DNS cost go away. A compose service name stops resolving whenever its
 own container is down — a crash, an OOM kill, a `restart: unless-stopped` cycle — not only when the
