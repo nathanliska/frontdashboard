@@ -5,9 +5,12 @@ import { cn } from '../../utils/shared/cn'
 import { matchesItemText } from './checkedPile'
 
 const MAX_SUGGESTIONS = 5
+// The popup grows upward inside a widget card that clips, so the exact match — ranked first, and
+// therefore furthest from the input — is what a short card would cut off. Fewer rows, less reach.
+const MAX_SUGGESTIONS_COMPACT = 3
 
 /** Case-insensitive substring match over checked items, exact match ranked first. */
-function matchChecked(checkedItems: Pick<ListItem, 'id' | 'text'>[], query: string) {
+function matchChecked(checkedItems: Pick<ListItem, 'id' | 'text'>[], query: string, limit: number) {
   const needle = query.trim().toLowerCase()
   if (!needle) return []
   // Same normalization as matchesItemText, so an exact match always ranks and displays.
@@ -17,17 +20,20 @@ function matchChecked(checkedItems: Pick<ListItem, 'id' | 'text'>[], query: stri
     const bExact = matchesItemText(b.text, query) ? 0 : 1
     return aExact - bExact
   })
-  return matches.slice(0, MAX_SUGGESTIONS)
+  return matches.slice(0, limit)
 }
 
 export function AddItemForm({
   onAdd,
   checkedItems = [],
   onRestore,
+  compact = false,
 }: {
   onAdd: (text: string) => Promise<void>
   checkedItems?: Pick<ListItem, 'id' | 'text'>[]
   onRestore?: (itemId: string) => Promise<void>
+  /** Widget sizing: tighter rows, no prefix icon, and a persistent icon submit. */
+  compact?: boolean
 }) {
   const [text, setText] = useState('')
   // Highlight is tracked by item id, not index: the pile can reshuffle underneath (a remote
@@ -38,8 +44,11 @@ export function AddItemForm({
   const listboxId = useId()
 
   const suggestions = useMemo(
-    () => (onRestore && !dismissed ? matchChecked(checkedItems, text) : []),
-    [onRestore, dismissed, checkedItems, text],
+    () =>
+      onRestore && !dismissed
+        ? matchChecked(checkedItems, text, compact ? MAX_SUGGESTIONS_COMPACT : MAX_SUGGESTIONS)
+        : [],
+    [onRestore, dismissed, checkedItems, text, compact],
   )
   const activeIndex = activeId ? suggestions.findIndex((s) => s.id === activeId) : -1
   const optionId = (itemId: string) => `${listboxId}-${itemId}`
@@ -122,14 +131,20 @@ export function AddItemForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="relative px-3 sm:px-4 py-2.5 border-t border-zinc-800 shrink-0"
+      className={cn(
+        'relative border-t border-zinc-800 shrink-0',
+        compact ? 'pt-2' : 'px-3 sm:px-4 py-2.5',
+      )}
     >
       {suggestions.length > 0 && (
         <div
           id={listboxId}
           role="listbox"
           aria-label="Checked items matching your text"
-          className="absolute bottom-full left-2 right-2 mb-1 rounded-md border border-zinc-700 bg-zinc-900 shadow-lg overflow-hidden"
+          className={cn(
+            'absolute bottom-full mb-1 rounded-md border border-zinc-700 bg-zinc-900 shadow-lg overflow-hidden',
+            compact ? 'left-0 right-0' : 'left-2 right-2',
+          )}
         >
           {suggestions.map((item) => (
             <button
@@ -144,21 +159,22 @@ export function AddItemForm({
                 void restore(item.id)
               }}
               className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
+                'w-full flex items-center gap-2 text-left transition-colors',
+                compact ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm',
                 item.id === activeId
                   ? 'bg-zinc-800 text-zinc-100'
                   : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200',
               )}
             >
-              <Undo2 size={13} className="shrink-0 text-zinc-500" />
+              <Undo2 size={compact ? 11 : 13} className="shrink-0 text-zinc-500" />
               <span className="truncate line-through">{item.text}</span>
               <span className="ml-auto shrink-0 text-[10px] text-zinc-600">re-add</span>
             </button>
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2">
-        <Plus size={14} className="text-zinc-600 shrink-0" />
+      <div className={cn('flex items-center', compact ? 'gap-1.5' : 'gap-2')}>
+        {!compact && <Plus size={14} className="text-zinc-600 shrink-0" />}
         {/* text-base keeps mobile at 16px; below that iOS (any browser — all WebKit) zooms on focus */}
         {/* aria-label, not placeholder alone: a placeholder is not a reliable accessible name and
             disappears once typing starts. `name` also stops the browser flagging an unnamed field. */}
@@ -175,15 +191,32 @@ export function AddItemForm({
           }}
           onKeyDown={handleKeyDown}
           placeholder="Add item…"
-          className="flex-1 bg-transparent text-base sm:text-sm text-zinc-300 placeholder-zinc-600 focus:outline-none"
+          className={cn(
+            'flex-1 bg-transparent text-base focus:outline-none',
+            compact
+              ? 'sm:text-xs text-zinc-400 placeholder-zinc-700 min-w-0'
+              : 'sm:text-sm text-zinc-300 placeholder-zinc-600',
+          )}
         />
-        {text.trim() && (
+        {/* Persistent in a widget: the icon is the only add affordance there, and one that appears
+            on keystroke reads as a layout shift in a cell that small. */}
+        {compact ? (
           <button
             type="submit"
-            className="text-xs text-zinc-400 hover:text-zinc-100 transition-colors"
+            aria-label="Add"
+            className="shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            Add
+            <Plus size={12} />
           </button>
+        ) : (
+          text.trim() && (
+            <button
+              type="submit"
+              className="text-xs text-zinc-400 hover:text-zinc-100 transition-colors"
+            >
+              Add
+            </button>
+          )
         )}
       </div>
     </form>

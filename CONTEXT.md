@@ -119,9 +119,9 @@ _Last updated: 2026-08-17_
   creating a duplicate; Escape dismisses the suggestions when a duplicate is wanted on purpose.
   The list widget carries the same toggle on its progress row; with the pile on it shows only
   unchecked rows plus a "Checked (N)" peek line (transient — re-collapses on remount, unlike the
-  page's remembered expand state). Its inline add dedupes an exact checked match. The dedupe is
-  deliberately not preference-gated on either surface — an intentional duplicate goes through the
-  page's Escape path.
+  page's remembered expand state). It renders the same add box, suggestions included, showing
+  fewer of them because the popup opens upward into a card that clips. The dedupe is deliberately
+  not preference-gated on either surface — an intentional duplicate goes through Escape.
 - The sidebar has an **Active/Trash** selector: Active is the default and is reorderable; Trash
   lists deleted lists with their purge deadline and a Restore action, and is fetched only when
   opened. The server renumbers the dashboard's live lists, so a reorder's submitted set must equal
