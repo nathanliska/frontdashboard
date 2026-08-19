@@ -21,8 +21,8 @@ services:
       - edge
     restart: unless-stopped
 
-  # Bundled rather than shared with the box's other apps, which is what Immich and Paperless do too:
-  # on the internal network with no published port, isolation needs no ACL to enforce it.
+  # Bundled rather than shared with the box's other apps: on the internal network with no published
+  # port, isolation needs no ACL to enforce it.
   redis:
     container_name: frontdashboard-redis
     image: valkey/valkey:9-alpine
