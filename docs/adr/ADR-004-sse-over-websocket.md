@@ -2,7 +2,8 @@
 
 **Date:** 2026-07-20 (amended 2026-07-28 — HTTP-error reconnect no longer signs anyone out; amended
 2026-08-04 — Redis named as the backplane; amended 2026-08-07 — backplane built as a stream, pub/sub
-rejected on measurement; amended 2026-08-16 — overflow resyncs in place instead of ending the stream)
+rejected on measurement; amended 2026-08-16 — overflow resyncs in place instead of ending the
+stream; amended 2026-08-19 — engine swapped to Valkey, protocol and client unchanged)
 
 ## Context
 
@@ -76,10 +77,17 @@ harmless:
   replica without silently multiplying every abuse limit
   ([ADR-013](ADR-013-rate-limit-cf-connecting-ip.md)), then fan-out itself (2026-08-07), as a Redis
   stream read from the last id each worker saw.
+- **The engine is Valkey** (amended 2026-08-19), because `redis:8-alpine` now bundles the former
+  Redis Stack modules and loads five of them for an app that uses counters and one stream; the
+  Valkey image loads only its own scripting engine, holding 9.2 MiB resident against 22.3 MiB with
+  this stack's flags. Not a licensing decision: Redis 8's AGPLv3 asks nothing of a stock image run
+  as a separate service. The swap needed no migration because nothing here is durable, and cost no
+  rename because what `REDIS_URL`, redis-py and the compose service name is the protocol Valkey
+  speaks.
 - **The reader repairs what resumption cannot.** Entries trimmed while a worker was away, or lost to
-  a Redis restart, leave a gap the stream cannot close. So on *recovery* — not on each failed retry,
+  a store restart, leave a gap the stream cannot close. So on *recovery* — not on each failed retry,
   which would refetch every open tab every second for the length of the outage — the reader tells its
-  local clients to resync. Publishing never raises: the write has already committed, so a Redis fault
+  local clients to resync. Publishing never raises: the write has already committed, so a store fault
   costs sibling replicas a frame rather than costing the caller their write.
 - **Overflow favours resync over silence**: bounded queues can drop a slow client's backlog, but
   the overflow sentinel guarantees it *knows* frames were dropped and re-syncs, so it never

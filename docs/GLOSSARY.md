@@ -137,7 +137,7 @@ the reaper at the retention horizon. See [ADR-007](adr/ADR-007-soft-delete-bound
 
 **Changed fields** — What a `dashboard.updated` frame says changed, drawn from the closed `ChangedField` vocabulary (`layout`, `widgets`, `name`, `restored`, `shares`) and read by clients to decide what to refetch. Two facts decide every answer: whether the client can apply the change itself, and whether the `dashboards` row moved — `widgets` alone is the case where the first is true and the second is false. Order is never significant. See [FDR-008 §10](fdr/FDR-008-realtime-sse.md).
 
-**Backplane** — The Redis stream that carries an SSE frame from the worker that produced it to the others, so a dashboard shared between two people reaches both when they are served by different replicas. A stream rather than pub/sub, because pub/sub loses whatever is published while a subscriber is away and says nothing. See [ADR-004](adr/ADR-004-sse-over-websocket.md).
+**Backplane** — The Valkey stream that carries an SSE frame from the worker that produced it to the others, so a dashboard shared between two people reaches both when they are served by different replicas. A stream rather than pub/sub, because pub/sub loses whatever is published while a subscriber is away and says nothing. See [ADR-004](adr/ADR-004-sse-over-websocket.md).
 
 **Fan-out reader** — The per-worker task consuming that stream. It skips frames its own worker published (already delivered locally), resumes from the last id it saw, and on recovery tells its local clients to resync — once per outage, not once per retry. See [ADR-004](adr/ADR-004-sse-over-websocket.md).
 

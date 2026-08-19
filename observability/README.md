@@ -7,7 +7,7 @@ Dashboards, alert rules, and notes for the Prometheus host they read from.
 - **`frontdashboard-overview.json`** (uid `frontdashboard`) — is the app healthy for the people
   using it? Liveness, restarts, the two SLIs, request rate, errors, latency, auth failures.
 - **`frontdashboard-internals.json`** (uid `frontdashboard-internals`) — why it looks that way.
-  Pool, Argon2, SSE, shared Redis state, process resources.
+  Pool, Argon2, SSE, shared store state, process resources.
 
 Split because twenty-odd panels on one page is a scanning problem at the moment you can least
 afford one. The overview answers *whether*; internals answers *where*. A shared `frontdashboard` tag

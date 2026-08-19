@@ -135,10 +135,12 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - `backend/` — Python 3.14+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 17.
 - `frontend/` — React 19 + TypeScript, Vite, Tailwind CSS, Zustand stores, react-grid-layout v2.
 - Infra — Docker Compose (dev + prod variants), Caddy reverse proxy (prod), `uv` and `npm`.
-- **Redis** — bundled in each stack, holding the rate-limit windows and the SSE fan-out stream. Not
+- **Valkey** — bundled in each stack, holding the rate-limit windows and the SSE fan-out stream. Not
   a cache and not a source of truth: nothing durable lives there, and both consumers keep serving
   without it ([ADR-013](docs/adr/ADR-013-rate-limit-cf-connecting-ip.md),
-  [ADR-004](docs/adr/ADR-004-sse-over-websocket.md)).
+  [ADR-004](docs/adr/ADR-004-sse-over-websocket.md)). The engine is the only thing that carries that
+  name: `REDIS_URL`, the `redis://` scheme, the compose service and redis-py all keep theirs,
+  because what they name is the protocol Valkey speaks. Don't "fix" that inconsistency.
 - **Sharing model**: per-resource `ResourceShare` rows. Dashboards are shared directly with users
   (viewer/editor, owner = creator); lists and calendar events **inherit** access from the
   dashboard whose widget binds them, so their `/shares` endpoints are deliberate 409 stubs.
@@ -154,7 +156,7 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   [ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
 - **Real-time**: SSE, not WebSocket; one multiplexed connection per open tab, fanned out by user —
   a laptop, a phone and a second tab are three streams, not one. Fan-out reaches the other workers
-  over a Redis stream: delivered locally first, published after, and a lost frame is repaired by the
+  over a Valkey stream: delivered locally first, published after, and a lost frame is repaired by the
   reader's resync on recovery rather than retried.
 - **State**: Zustand stores shared between widgets and full pages. REST for the initial fetch, SSE
   for incremental updates.
@@ -218,9 +220,9 @@ from that:
   that, and the fan-out reader in `sse/broker.py` is the one legitimate caller elsewhere, delivering
   a sibling worker's already-committed frame. Still yours: build the event dict *before* the call,
   and address it with `dashboard_audience_user_ids(...)`.
-- **Anything reaching Redis degrades; it never fails the request.** The limiter falls back to
+- **Anything reaching Valkey degrades; it never fails the request.** The limiter falls back to
   per-process buckets and the fan-out to local-only delivery, each with a metric saying so. A
-  third consumer that raises when Redis is down turns a degradation into an outage.
+  third consumer that raises when Valkey is down turns a degradation into an outage.
 - A new **labelled** metric names its children at import, over the bounded set of label values it
   can take. A child is created on first use and so is born at 1, leaving `increase()` nothing to
   diff against and reporting 0 through the very event it counts; `test_observability_coverage.py`
@@ -286,6 +288,9 @@ from that:
 - **A closed port is not an outage.** Timing a failure path against `connection refused` measures
   nothing: a downed host blackholes instead, and the same connect cost 0.26s one way and 45s the
   other. Stop the real service, or assert on the setting that bounds it rather than on the clock.
+- **A number going into a doc must be the reproducible one.** A container's reported memory moved
+  7.8 to 6.4 MiB across samples of the same image while RSS held at 22.3 — quote what the process
+  holds, not what the sample happened to say, or the next reader cannot get your figure back.
 - Argon2 runs at its **minimum** cost across the backend suite — the real profile is ~64 MiB and
   four threads per operation, and most tests register or log in. Take the `production_argon2`
   fixture to assert on the real profile; `test_hashing.py` guards it against a dependency bump.

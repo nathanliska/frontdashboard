@@ -8,6 +8,14 @@ from pydantic import ValidationError
 from app.config import Settings
 from tests.conftest import POSTGRES_IMAGE_DEFAULT
 
+# Every stack that runs the shared store. A new one belongs here deliberately, not by discovery.
+_STORE_COMPOSE_FILES = (
+    "docker-compose.prod.yml",
+    "docker-compose.smoke.yml",
+    "docker-compose.verify.yml",
+    "docker-compose.yml",
+)
+
 _BASE: dict[str, Any] = {
     "_env_file": None,
     "database_url": "postgresql+asyncpg://u:p@localhost/db",
@@ -102,3 +110,25 @@ def test_dev_compose_and_test_container_pin_the_same_postgres() -> None:
     match = re.search(r"image:\s*\$\{POSTGRES_IMAGE:-([^}]+)\}", compose)
     assert match, "docker-compose.yml no longer parameterizes the db image via POSTGRES_IMAGE"
     assert match.group(1) == POSTGRES_IMAGE_DEFAULT
+
+
+def test_every_compose_file_pins_the_same_shared_store() -> None:
+    """Smoke and verify exist to prove prod works, which they cannot on a different engine.
+
+    The image is named in every stack, so a swap is one hand edit per file and a miss is silent:
+    the stack still boots, and only the environment that drifted tests something prod is not.
+    """
+    root = Path(__file__).resolve().parents[2]
+    pins = {}
+    for path in sorted(root.glob("docker-compose*.yml")):
+        block = re.search(r"^  redis:\n(?:(?:    .*|\n)*)", path.read_text(), re.M)
+        if block is None:
+            continue
+        image = re.search(r"^    image:\s*(\S+)", block.group(0), re.M)
+        assert image, f"{path.name} declares a store service with no pinned image"
+        pins[path.name] = image.group(1)
+
+    # Asserted against the known set rather than a floor: a floor passes while some files drift,
+    # and discovery alone would pass having found nothing if the service were ever renamed.
+    assert set(pins) == set(_STORE_COMPOSE_FILES), f"compose files declaring a store changed: {sorted(pins)}"
+    assert len(set(pins.values())) == 1, f"shared-store image drifted between compose files: {pins}"

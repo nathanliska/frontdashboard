@@ -26,10 +26,10 @@ services:
   # Real, not a stub: the smoke run is what proves the limiter reaches its store rather than
   # silently serving from the in-memory fallback, which looks identical from outside.
   redis:
-    image: redis:8-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    image: valkey/valkey:9-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 2s
       timeout: 3s
       retries: 30

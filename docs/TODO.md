@@ -10,7 +10,7 @@ Phases 1–4 shipped.
 
 **Scale:** a small user base, one Compose stack, one backend replica. Machinery that only
 pays off at fleet scale stays deferred — prefer the fix that deletes lines. Scale is by replica, not
-by uvicorn worker; shared state (rate limits, SSE fan-out) is already on Redis, so what a second
+by uvicorn worker; shared state (rate limits, SSE fan-out) is already on Valkey, so what a second
 replica still needs is routing. The ceilings that bind first are the DB pool and the Argon2 limiter,
 both config.
 
@@ -55,7 +55,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 ## Backlog (unscheduled)
 
 - **#21 / #45 — Replica readiness; routing is what remains.** The shared state is done — rate-limit
-  buckets and the SSE backplane are both on Redis ([ADR-004](adr/ADR-004-sse-over-websocket.md),
+  buckets and the SSE backplane are both on Valkey ([ADR-004](adr/ADR-004-sse-over-websocket.md),
   [ADR-013](adr/ADR-013-rate-limit-cf-connecting-ip.md)), and the invariants that kept that a swap
   rather than a rewrite are recorded there. **Open gap:** `Caddyfile.prod` names a static
   `frontdashboard-backend:8000`, so a second replica takes no traffic. It needs a dynamic A-record
@@ -112,12 +112,12 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   `datetime.now(UTC)` so clock skew was ruled out, and the mechanism is unknown. A fixed clock
   injected into `_live` would make the question unaskable. *(Small, Low severity)*
 - **#64 — Move the rate limiter off its synchronous Redis client.** slowapi's storage is a
-  synchronous client called per rate-limited request, so with Redis unreachable the connect cost is
+  synchronous client called per rate-limited request, so with the store unreachable the connect cost is
   paid on the event loop rather than beside it
   ([ADR-013](adr/ADR-013-rate-limit-cf-connecting-ip.md) records the measurement). No configuration
   reaches it and `asyncio.wait_for` cannot either, a timeout callback being unable to fire on a
   frozen loop. The fix is dropping slowapi for `limits.aio`, which also costs the `@limiter.limit`
-  decorator and the coverage test that enforces it — so it wants a trigger: Redis restarting often
+  decorator and the coverage test that enforces it — so it wants a trigger: the store restarting often
   enough to notice, or a second replica. *(Medium, no trigger yet)*
 - **#65◐ — Occurrence expansion is bounded per event and per dashboard, not per request.** Every
   per-event axis is capped, and `quota_events_per_dashboard` now bounds how many events one
@@ -154,7 +154,7 @@ Capabilities deliberately not built. Each states the condition that would make i
 - **Exporters for infrastructure we don't own** (`redis_exporter`, `postgres_exporter`) — when a
   reading we already have prompts a question about the service underneath it. The split decides where
   every future metric goes: an app instruments *itself*, an exporter translates software you cannot
-  modify. Deliberately not now — Redis holds rate-limit counters and a `MAXLEN`-capped stream, both
+  modify. Deliberately not now — Valkey holds rate-limit counters and a `MAXLEN`-capped stream, both
   self-expiring, and `noeviction` means a full store reaches the app as a failed write that
   `rate_limit_store_degraded` already reports. Measured 2026-08-07: `used_memory` 1.35 MiB against
   the 64 MiB cap. A `redis_exporter` was built and reverted the same day rather than re-argued.

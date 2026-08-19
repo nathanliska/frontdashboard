@@ -1,7 +1,8 @@
 # ADR-013: Rate Limiting — Per-Route Limits Keyed on `CF-Connecting-IP`
 
 **Date:** 2026-07-20 (amended 2026-07-30: limits extended to every mutating route; amended 2026-08-06:
-buckets moved to Redis with an in-memory fallback)
+buckets moved to Redis with an in-memory fallback; amended 2026-08-19: engine swapped to Valkey,
+protocol and client unchanged, hash-field counters rejected on measurement)
 
 ## Context
 
@@ -21,12 +22,12 @@ a client can't reach the origin directly to spoof the header, since the only pat
 Cloudflare. The header is honored **only when the peer is private or loopback**; a public peer
 means the request bypassed the tunnel, so its header is attacker-controlled and is ignored.
 
-Buckets live in **Redis**, so a limit belongs to the deployment rather than to one process. When
-Redis is unreachable the limiter falls back to per-process in-memory buckets and slowapi restores the
+Buckets live in **Valkey**, so a limit belongs to the deployment rather than to one process. When
+it is unreachable the limiter falls back to per-process in-memory buckets and slowapi restores the
 shared store once it answers again. The two alternatives were rejected: slowapi's default re-raises,
 which turns every write into a 500 including login and password reset, and `swallow_errors` lets them
 through unbounded — dropping the 10/min login, 10/min reset-token and 3/min email-bomb limits at once
-on a deployment where anyone can register. The fallback is strictly weaker than Redis only once
+on a deployment where anyone can register. The fallback is strictly weaker than the shared store only once
 replicas exist; at one process it is exactly what ran before.
 
 The store is configured with bounded socket timeouts **and a bounded retry count**, the retry being
@@ -86,7 +87,7 @@ it silently exempts everything. Per-route decoration is the only form that actua
   bucket by N. This had to land before the first replica rather than with it: registration is open to
   the internet, so silently N-ing the abuse limits is a security regression rather than a scaling
   detail ([ADR-004](ADR-004-sse-over-websocket.md), #21/#45 in [TODO.md](../TODO.md)).
-- **Redis being down degrades, it does not fail**: limits stay enforced per process and recover on
+- **The store being down degrades, it does not fail**: limits stay enforced per process and recover on
   their own. No error and no failed request reports it, so two things do. The app attaches a handler
   to slowapi's logger, which ships a discarding one by default, or the single WARNING announcing the
   fallback would go nowhere. And `rate_limit_store_degraded` carries the state as a **gauge**, since
@@ -96,10 +97,10 @@ it silently exempts everything. Per-route decoration is the only form that actua
   **warning** while the stack runs one replica, because the fallback is then exactly what that one
   process already enforced; the second replica is what makes losing the shared store a real weakening
   and promotes it.
-- **The stack brings its own Redis**, so no deploy step sets `REDIS_URL` and forgetting one is not a
+- **The stack brings its own store**, so no deploy step sets `REDIS_URL` and forgetting one is not a
   failure mode. Set to an *empty* value it refuses to start, because slowapi reads that as
   `memory://` and would otherwise run permanently on per-process limits without failing.
-- **An unreachable Redis stalls the whole worker, not just the write that noticed.** The limiter's
+- **An unreachable store stalls the whole worker, not just the write that noticed.** The limiter's
   storage call blocks the event loop for as long as it takes to fail — 7.7s against a stopped
   container — so concurrent requests and open SSE streams wait with it. Writes still complete and
   GETs measured 16ms when they missed a stall, but the readiness endpoint is served by that same
@@ -107,3 +108,13 @@ it silently exempts everything. Per-route decoration is the only form that actua
   restart on unhealthy, so the consequence is a wrong health signal rather than a restart loop.
   Tracked as #64; not fixed here, because the healthy path costs 0.50ms and the fix is replacing
   slowapi.
+- **Hash fields are not the storage layout** (considered 2026-08-19). Valkey 9's `HEXPIRE` makes one
+  hash per client with a field per route expressible, and `limits` documents the extension point —
+  subclass `Storage`, declare a `STORAGE_SCHEME` — so no fork is involved. Rejected on measurement:
+  51 top-level counters cost 7,720 bytes against 3,912 for the equivalent hash, a 3.7 KiB saving for
+  a client that touched every limited route inside one minute, against a 64 MiB cap. The cost is
+  parsing `RateLimitItem.key_for`'s `/`-joined key to find where the client ends and the route
+  begins — an internal format whose drift would misgroup buckets silently rather than raise. Valkey's
+  own hash-field guidance does not mention rate limiting, Redis's names it only in passing beside the
+  `INCR`/`EXPIRE` it leads with, and `limits` uses no hash command in any backend. #64 would discard
+  the layout regardless: `limits.aio`'s sliding and moving windows are sorted-set based.

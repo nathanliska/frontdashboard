@@ -63,7 +63,7 @@ in-memory manager and bounded per-client queues.
 **Why:** The data flow is server→client only; SSE reuses the existing cookie auth and reverse proxy
 and has built-in reconnection, with none of WebSocket's unused duplex or extra handshake. See ADR-004.
 **Tradeoff:** The in-memory manager is still process-local — it knows only its own worker's clients —
-so a Redis stream carries each frame to the others. Proxy-level affinity would not have substituted,
+so a Valkey stream carries each frame to the others. Proxy-level affinity would not have substituted,
 since a shared dashboard fans out to users on *other* workers. Two invariants kept that a swap rather
 than a rewrite, and both are stated in ADR-004 because a change breaking either looks harmless on one
 worker: fan-out has a single choke point, and resync is ordering-free.

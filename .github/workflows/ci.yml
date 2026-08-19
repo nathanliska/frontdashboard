@@ -299,8 +299,8 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"email":"nobody@example.com","password":"not-a-real-password"}')
           echo "login probe returned $code"
-          keys=$(docker compose exec -T redis redis-cli --scan --pattern '*frontdashboard*' | wc -l)
-          echo "rate-limit keys in redis: $keys"
+          keys=$(docker compose exec -T redis valkey-cli --scan --pattern '*frontdashboard*' | wc -l)
+          echo "rate-limit keys in the store: $keys"
           test "$keys" -gt 0
 
       - name: Caddy serves holding no capability
