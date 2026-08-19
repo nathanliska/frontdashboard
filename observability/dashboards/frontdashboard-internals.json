@@ -1252,7 +1252,7 @@
     {
       "id": 102,
       "type": "row",
-      "title": "Shared state (Redis)",
+      "title": "Shared state",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1265,7 +1265,7 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Shared state degraded (Redis)",
+      "title": "Shared state degraded",
       "description": "1 while the guarantee is lost but traffic is still served: limits enforced per process, or a worker not receiving other workers' frames. The rate-limit line is last-known state \u2014 slowapi only re-checks the store when a limited request arrives.",
       "datasource": {
         "type": "prometheus",

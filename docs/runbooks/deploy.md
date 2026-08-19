@@ -20,6 +20,11 @@ as `compose.yaml`, `compose.override.yaml` and `.env`, maintained by hand there,
 [docker-compose.prod.yml](../../docker-compose.prod.yml); this repo's copy is the reference, not the
 source. Nothing verifies that they agree, so they have drifted before.
 
+**A PR that changes the compose file does not deploy itself.** Update pulls a newer image for the
+tags the *host* file names, so a changed image, command, healthcheck or environment key reaches
+production only once someone edits the host copy. The tell is a deploy that completes and changes
+nothing — the stack is running exactly what it ran before, correctly.
+
 ## If the pull fails
 
 The GHCR packages are private, so the host authenticates with a `read:packages` token. That login

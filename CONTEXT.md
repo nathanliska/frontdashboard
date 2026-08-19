@@ -256,7 +256,7 @@ _Last updated: 2026-08-17_
   A Prometheus container joined to the `internal` network scrapes it every 15s at
   `frontdashboard-backend:8000/metrics`. Two Grafana dashboards live in [`observability/`](observability/) —
   an overview carrying the availability and latency SLIs, and an internals board grouped into rows for
-  pool and hashing, real-time, shared Redis state and process resources — with nineteen alert rules
+  pool and hashing, real-time, shared store state and process resources — with nineteen alert rules
   beside them in Prometheus format, which is the one
   Grafana's rule importer accepts. All three are loaded by hand through the Grafana UI rather than
   reaching the deployment host, and `test_observability_coverage.py` fails the build if any names a
@@ -294,7 +294,7 @@ _Last updated: 2026-08-17_
   so one `/metrics` scrape reaches an arbitrary one and every counter reads as resetting — a replica
   is its own scrape target and has no such problem. `WEB_CONCURRENCY` is therefore inert and only
   logs a warning. The state a second process would have split is now shared: rate-limit buckets and
-  the SSE backplane both live in Redis, so a worker's clients receive a sibling's writes. What is
+  the SSE backplane both live in Valkey, so a worker's clients receive a sibling's writes. What is
   left is routing rather than state — `container_name` pins the backend and `Caddyfile.prod` names
   it statically, so `--scale` is refused rather than half-working (#21/#45). Migrations stay in the
   container command, where `alembic/env.py`'s session-scoped advisory lock already serialises
@@ -360,11 +360,11 @@ _Last updated: 2026-08-17_
 - **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
   origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
   in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
-  live in **Redis**, so a limit is the deployment's rather than one process's and a replica no longer
-  multiplies it. While Redis is unreachable they fall back to per-process buckets and recover on
+  live in **Valkey**, so a limit is the deployment's rather than one process's and a replica no longer
+  multiplies it. While it is unreachable they fall back to per-process buckets and recover on
   their own, which keeps an outage from either 500ing every write or letting them through unbounded;
   a bounded retry count is what stops that fallback costing seconds a write, since redis-py retries
-  ten times by default. Redis is **bundled in the stack** — internal network, no published port, the
+  ten times by default. Valkey is **bundled in the stack** — internal network, no published port, the
   shape Immich and Paperless ship — so `REDIS_URL` defaults to it and a deploy sets nothing; set to
   an empty value it refuses to start rather than degrading to per-process limits in silence.
 - **The backend schema is the API contract** ([ADR-018](docs/adr/ADR-018-generated-validated-contracts.md)):

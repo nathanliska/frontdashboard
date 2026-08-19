@@ -25,12 +25,12 @@ services:
   # on the internal network with no published port, isolation needs no ACL to enforce it.
   redis:
     container_name: frontdashboard-redis
-    image: redis:8-alpine
+    image: valkey/valkey:9-alpine
     # Insurance, not a working limit: counters expire on their own and the stream is capped by
     # MAXLEN, so `noeviction` can never bite — and evicting a rate-limit key resets an abuse window.
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5

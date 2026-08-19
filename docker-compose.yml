@@ -39,10 +39,10 @@ services:
 
   # No published port: unauthenticated by design, so reachable only on the compose network.
   redis:
-    image: redis:8-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    image: valkey/valkey:9-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
