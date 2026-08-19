@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { GridLayout, type Layout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import type { Dashboard, DashboardWidget, LayoutItem } from '../../api/dashboards'
+import { useContainerSize } from '../../hooks/useContainerSize'
 import { confirm } from '../../stores/confirm'
 import { useDashboardStore } from '../../stores/dashboard'
 import { WidgetContainer } from './WidgetContainer'
@@ -76,8 +77,9 @@ const DashboardGridContent = memo(function DashboardGridContent({
 export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; canEdit: boolean }) {
   const saveLayout = useDashboardStore((s) => s.saveLayout)
   const removeWidget = useDashboardStore((s) => s.removeWidget)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(1200)
+  // Measured rather than queried in CSS: react-grid-layout takes a column count and a row height
+  // as numbers, so this one cannot move into `@container`.
+  const [containerRef, { width: containerWidth }] = useContainerSize({ width: 1200, height: 800 })
   const [draftLayout, setDraftLayout] = useState<LayoutItem[]>(dashboard.layout)
   const [draftBaseVersion, setDraftBaseVersion] = useState(dashboard.version)
   const activeLayout = useMemo(
@@ -99,16 +101,6 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
   const margin =
     containerWidth < 640 ? ([8, 8] as [number, number]) : ([12, 12] as [number, number])
   const containerPadding = [0, 0] as [number, number]
-
-  useEffect(() => {
-    const element = containerRef.current
-    if (!element) return
-    const observer = new ResizeObserver((entries) => {
-      setContainerWidth(entries[0].contentRect.width)
-    })
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [])
 
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {

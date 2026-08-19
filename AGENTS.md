@@ -166,7 +166,7 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 
 ## Which Rules Fail the Build
 
-Most rules in this file are judgment you are trusted with. These eight are not — each has a test
+Most rules in this file are judgment you are trusted with. These nine are not — each has a test
 that fails CI, and its failure message tells you what to do. Everything else here is guidance,
 so if you are wondering whether a convention bites, this table is the answer.
 
@@ -180,6 +180,7 @@ so if you are wondering whether a convention bites, this table is the answer.
 | Every activity type has feed copy + a category | `test_activity.py` | Below, *Frontend Principles* |
 | Node is pinned once, in `.nvmrc` | `test_toolchain_coverage.py` | — |
 | `react-resizable` tracks react-grid-layout | `test_frontend_pin_coverage.py` | — |
+| A container-scoped variant has an `@container` | `containerQueryCoverage.test.ts` | Below, *Frontend Principles* |
 
 These guards read source, so a refactor can make one **pass having checked nothing** — the
 dangerous failure, because a silent guard looks exactly like a satisfied one. Three rules follow
@@ -261,6 +262,13 @@ from that:
   endpoint would not serve back is a row the next reload silently deletes.
 - A new resource cache calls `registerResourceReset(...)` at module scope, beside the cache it
   clears. `stores/auth.ts` calls the registry, not each reset by name.
+- A widget that responds to its own size splits by *what the size decides*. Spacing, type scale and
+  visibility are a CSS container query — no measurement, no render per resize tick, and `cqi` in a
+  `clamp()` scales instead of snapping between two fixed sizes. Only what CSS cannot decide — how
+  many rows fit, which label set to use, a number react-grid-layout needs — earns a
+  `useContainerSize`. A container-scoped variant whose ancestor never declares `@container` matches
+  nothing and silently stays put, which jsdom cannot see; `containerQueryCoverage.test.ts` fails
+  the build on it.
 - Only `401` means logged out. Not `403`, which is the permission layer, and never a `5xx`,
   timeout or network rejection.
 - `apiFetch` is the only network entry for `/api`; every success body goes through

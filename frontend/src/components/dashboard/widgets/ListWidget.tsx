@@ -21,9 +21,7 @@ export function ListWidget({
   widgetId: string
   config: ListWidgetConfig
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(300)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
   const { data: detail, error, refetch } = useListDetail(listId)
 
@@ -48,16 +46,6 @@ export function ListWidget({
       list_type: detail.list_type,
     })
   }, [config, detail, updateWidget, widgetId])
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const observer = new ResizeObserver((entries) => {
-      setContainerWidth(entries[0].contentRect.width)
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
 
   async function handleToggle(item: ListItem) {
     if (!detail) return
@@ -113,8 +101,6 @@ export function ListWidget({
   const total = detail.items.length
   const progress = total > 0 ? (checkedCount / total) * 100 : 0
 
-  const isTiny = containerWidth < 180
-
   const renderRow = (item: ListItem) => (
     <button
       key={item.id}
@@ -160,7 +146,7 @@ export function ListWidget({
   )
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-2 flex-1 min-h-0">
+    <div className="@container flex flex-col gap-2 flex-1 min-h-0">
       {/* Progress bar */}
       {total > 0 && (
         <div className="shrink-0">
@@ -220,8 +206,9 @@ export function ListWidget({
         {total === 0 && <p className="text-xs text-zinc-700 px-0.5 py-1">No items yet.</p>}
       </div>
 
-      {/* Add item */}
-      {!isTiny && (
+      {/* Add item. Hidden rather than unmounted below the width where it would be unusable, so a
+          cell dragged narrow and back keeps whatever was half-typed into it. */}
+      <div className="shrink-0 @max-[180px]:hidden">
         <AddItemForm
           key={detail.id}
           compact
@@ -229,7 +216,7 @@ export function ListWidget({
           checkedItems={pile}
           onRestore={handleRestore}
         />
-      )}
+      </div>
     </div>
   )
 }

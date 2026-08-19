@@ -67,15 +67,6 @@ describe('ListWidget', () => {
       loadError: false,
       conflict: false,
     })
-
-    globalThis.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-      takeRecords() {
-        return []
-      }
-    } as unknown as typeof ResizeObserver
   })
 
   afterEach(() => {

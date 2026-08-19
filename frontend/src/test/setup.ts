@@ -9,6 +9,18 @@ import * as loadOptions from '../utils/dashboard/loadOptions'
 // jsdom implements neither scroll API, and this setup also runs for node-environment files
 // where `Element` is undefined. Scrolling is armed inside a requestAnimationFrame, so a missing
 // one throws *after* the test that armed it, failing whichever file runs next.
+// jsdom implements no ResizeObserver either, and `useContainerSize` constructs one unconditionally.
+// Inert by default so a widget renders at its initial size; a file needing to drive a resize
+// installs its own capturing stub over this one.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return []
+  }
+} as unknown as typeof ResizeObserver
+
 if (typeof Element !== 'undefined') {
   Element.prototype.scrollIntoView ??= () => {}
   Element.prototype.scrollTo ??= () => {}
