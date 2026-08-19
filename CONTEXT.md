@@ -266,6 +266,13 @@ _Last updated: 2026-08-17_
   burst that opens and closes between two scrapes still counts. Transactional email is counted by
   outcome because it is sent from a background task: a failed send answers 2xx and reaches no other
   signal.
+- **The access log is real traffic only.** Probes outnumber it — the 60s container HEALTHCHECK and
+  the 15s scrape alone are ~7k lines a day, before the external uptime checks — and none of those
+  lines is evidence of anything while it answers: container health is in `docker inspect`, a
+  stalled scrape is Prometheus's own `up`, and a prober keeps history that can be alerted on. So a
+  filter on `uvicorn.access` drops `/api/health`, `/api/health/ready` and `/metrics` under status
+  400, and keeps every line at `LOG_LEVEL=debug`. A failing probe always logs — except above
+  `info`, where uvicorn emits no access lines at all, filter or not.
 - **Rejected auth attempts are counted by cause**, as `auth_failures_total{operation,reason}` —
   both labels closed enumerations, so cardinality is bounded. It exists because `status_class`
   collapses 401 and 403 into one `4xx` series, which makes "wrong password" and "unverified email,

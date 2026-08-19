@@ -280,6 +280,9 @@ from that:
   or caching test that has never been seen to fail is not evidence. Restore by reversing the edit
   or with `git stash pop` — never `git checkout <file>` while the real change is uncommitted,
   which "restores" HEAD and destroys the work it sat on.
+- **Break the boundary, not just the rule.** Deleting a comparison and flipping `>=` to `>` are
+  different mutations, and cases chosen to read well rarely sit on the edge: `401, 500, 503` all
+  survive narrowing `status >= 400`. Test the value the comparison turns on.
 - **A closed port is not an outage.** Timing a failure path against `connection refused` measures
   nothing: a downed host blackholes instead, and the same connect cost 0.26s one way and 45s the
   other. Stop the real service, or assert on the setting that bounds it rather than on the clock.

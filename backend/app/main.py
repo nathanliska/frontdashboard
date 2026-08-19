@@ -24,6 +24,42 @@ from app.sse.broker import close_publisher, run_subscriber
 
 _LOG_HANDLER_NAME = "frontdashboard"
 
+# Endpoints only a prober calls: the container HEALTHCHECK, the metrics scrape, and the external
+# uptime checks that reach /api/health/ready through Caddy (observability/README.md).
+_PROBE_PATHS = frozenset({"/api/health", "/api/health/ready", "/metrics"})
+
+
+class ProbeAccessFilter(logging.Filter):
+    """Treat access lines for healthy probe endpoints as debug-level detail.
+
+    A 60s HEALTHCHECK, a metrics scrape and the external uptime checks outweigh real traffic on
+    a household-sized deployment, and none of those lines carries information above `debug`:
+    container health is in `docker inspect .State.Health`, a stalled scrape shows up as
+    Prometheus's own `up`, and an external prober keeps its own history — which, unlike a log
+    line, can be alerted on. A failing probe is still logged; that is when the line is worth it.
+
+    Only `debug` and `info` reach this at all: uvicorn writes access lines through
+    `logger.info`, so `warning` and above drop every line, probe or not, before any filter.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Resolved once: LOG_LEVEL is process config and this runs per request line. Same
+        # tolerant lookup as _configure_app_logging, so a typo'd level falls back the same way.
+        self._keep_all = getattr(logging, settings.log_level.upper(), logging.INFO) <= logging.DEBUG
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self._keep_all:
+            return True
+        # uvicorn's access record carries (client_addr, method, full_path, http_version, status).
+        # Anything else is a shape we don't recognise, and an unreadable line is still a line.
+        if not isinstance(record.args, tuple) or len(record.args) != 5:
+            return True
+        full_path, status = record.args[2], record.args[4]
+        if not isinstance(full_path, str) or not isinstance(status, int):
+            return True
+        return status >= 400 or full_path.split("?", 1)[0] not in _PROBE_PATHS
+
 
 def _configure_app_logging() -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
@@ -41,6 +77,12 @@ def _configure_app_logging() -> None:
             handler.set_name(_LOG_HANDLER_NAME)
             handler.setFormatter(formatter)
             logger.addHandler(handler)
+
+    # Added here rather than through uvicorn's log config because uvicorn applies that config
+    # before importing the app, so anything set there would be overwritten by it, not after it.
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, ProbeAccessFilter) for f in access_logger.filters):
+        access_logger.addFilter(ProbeAccessFilter())
 
 
 _configure_app_logging()
