@@ -46,6 +46,13 @@ Check `gh run list --branch main` first — a queued run means the webhook arriv
 - `Started server process [1]` — uvicorn is PID 1, with no supervisor between it and the signal.
 - No restart loop. `BackendRestartLoop` alerts on more than three restarts in an hour.
 
+**Seeing no health-check lines is the healthy case.** At `LOG_LEVEL=info` the access log drops
+`/api/health`, `/api/health/ready` and `/metrics` while they answer under 400, so a probe appears
+only once it starts failing. To confirm one is running rather than silenced, read
+`docker inspect --format '{{json .State.Health}}' frontdashboard-backend`, or Prometheus's `up` —
+or set `LOG_LEVEL=debug` and update the stack to see every line again. Raising it to `warning`
+instead is the wrong lever: uvicorn writes access lines at info, so that silences the failures too.
+
 Then from outside, over HTTPS: the document served `no-cache`, the bundle it names answering
 `200 text/javascript`, a deleted asset answering `404` rather than the SPA fallback, and
 `/api/health/ready` answering `200`. All `GET`/`HEAD` — never write to production.

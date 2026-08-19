@@ -95,6 +95,17 @@ scrape_configs:
 The probe has to leave the host and come back through Cloudflare; an internal address would test the
 one path already covered.
 
+Don't expect to see it in the backend log. `/api/health/ready` is proxied like any `/api/*` route,
+so this probe — and any other external uptime check pointed at it — does reach uvicorn, but at
+`LOG_LEVEL=info` the access line is dropped while it answers under 400, along with the container
+HEALTHCHECK and the metrics scrape. The prober's own history is the record, and unlike a log line
+it can be alerted on. A failing probe still logs.
+
+**Point external uptime checks at `/api/health/ready`, not `/api/health`.** Liveness touches
+nothing by design, so it answers 200 straight through a database outage — an uptime monitor on it
+reads 100% while nobody can use the site. Readiness answers 503 with `database: false` instead.
+It costs a `SELECT 1` per check, which is worth budgeting if the interval is short.
+
 ### Cap the disk, not just the age
 
 The container ships `--storage.tsdb.retention.time=15d` with `retention.size` unset, so runaway
