@@ -1,13 +1,13 @@
 # FDR-002: Dashboards & Layout Editor
 
 **Status:** Active
-**Last reviewed:** 2026-08-15
+**Last reviewed:** 2026-08-21
 
 ## Overview
 
 Dashboards are the top-level surface: a user has multiple, each a grid of widgets they arrange. This
 FDR covers the dashboard lifecycle (create, favorite, trash, restore), the grid layout editor, and
-how concurrent and mobile edits are kept safe. Widgets themselves are [FDR-003](FDR-003-widgets.md);
+how concurrent edits and narrow windows are kept safe. Widgets themselves are [FDR-003](FDR-003-widgets.md);
 sharing is [FDR-004](FDR-004-sharing-and-access.md).
 
 ## Behavior
@@ -23,8 +23,8 @@ sharing is [FDR-004](FDR-004-sharing-and-access.md).
   widgets, and shares.
 - **Editor.** Drag/resize widgets on a react-grid-layout grid; changes save automatically. A
   conflicting concurrent save shows a banner and reloads rather than clobbering.
-- **Mobile is read-only stacking.** Below 640px the grid renders as a computed single-column stack;
-  it never writes a layout back.
+- **A narrow board is read-only stacking.** Below the width where a default widget stops being
+  readable, the grid renders as a computed single-column stack; it never writes a layout back.
 - **Settings modal.** Rename and share from a per-dashboard settings modal.
 - **Mutations preserve user input on failure.** A failed create/rename/widget-add/share-add keeps
   what the user typed instead of discarding it.
@@ -55,13 +55,13 @@ re-reading the version the previous save returned.
 makes every 409 a *real* other-editor conflict. See ADR-008.
 **Tradeoff:** Hand-rolled in-flight/serial machinery in the store that must be maintained carefully.
 
-### 3. Persisted layout is canonical; mobile is a derived projection
+### 3. Persisted layout is canonical; the stacked view is a derived projection
 
-**Decision:** The stored layout is the source of truth; the mobile single-column view is computed
-from it and ignores layout events, as do read-only dashboards.
-**Why:** Stops a phone (or a viewer) from flattening and persisting over the desktop arrangement. See
-ADR-009.
-**Tradeoff:** No independently editable mobile layout; that would need a per-breakpoint persisted
+**Decision:** The stored layout is the source of truth; the single-column view a narrow board falls
+back to is computed from it and ignores layout events, as do read-only dashboards.
+**Why:** Stops a narrow window (or a viewer) from flattening and persisting over the arrangement.
+The trigger is a width, not a device — a split screen stacks like a phone. See ADR-009.
+**Tradeoff:** No independently editable stacked layout; that would need a per-breakpoint persisted
 layout, deliberately not built.
 
 ### 4. Deleting a dashboard moves it to the trash (#40, 2026-07-26)
@@ -100,5 +100,5 @@ irreversible action there.
 ## Related
 
 - **ADRs:** ADR-007 (soft/hard delete boundary), ADR-008 (layout version OCC), ADR-009 (canonical
-  layout / mobile projection), ADR-001 (per-resource sharing), ADR-020 (resource quotas)
+  layout / stacked projection), ADR-001 (per-resource sharing), ADR-020 (resource quotas)
 - **FDRs:** FDR-003 (Widgets), FDR-004 (Sharing & Access)

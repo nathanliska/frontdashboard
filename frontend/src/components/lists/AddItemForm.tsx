@@ -53,11 +53,9 @@ export function AddItemForm({
   const activeIndex = activeId ? suggestions.findIndex((s) => s.id === activeId) : -1
   const optionId = (itemId: string) => `${listboxId}-${itemId}`
 
-  // Combobox semantics only where a popup can actually exist, and each IDREF only while its
-  // target exists — a permanent collapsed combobox with a dangling aria-controls is an axe
-  // failure, and so is pointing at a suggestion the pile has since dropped. activedescendant
-  // is what names the highlight: focus stays in the input, so aria-selected alone announces
-  // nothing as the user arrows through.
+  // Combobox semantics only where a popup can exist, and each IDREF only while its target does:
+  // a dangling aria-controls is an axe failure. activedescendant names the highlight, because
+  // focus stays in the input and aria-selected alone announces nothing while arrowing.
   const comboboxProps = onRestore
     ? {
         role: 'combobox' as const,
@@ -87,11 +85,9 @@ export function AddItemForm({
     const trimmedText = text.trim()
     if (!trimmedText) return
 
-    // Enter on a highlighted suggestion — or on text exactly matching a checked item —
-    // unchecks that item instead of minting a duplicate row. The exact match runs over the
-    // FULL pile, not the displayed slice: a data rule must not depend on presentation caps.
-    // Gated on onRestore, not just on the text: without a way to restore, a match would make
-    // the form a dead end that neither adds nor unchecks.
+    // Enter on a highlight, or on text exactly matching a checked item, unchecks it rather than
+    // minting a duplicate. The match runs over the FULL pile, not the displayed slice — a data
+    // rule must not depend on a presentation cap — and is gated on onRestore, or it dead-ends.
     const highlighted = activeIndex >= 0 ? suggestions[activeIndex] : undefined
     const exact =
       onRestore && !dismissed

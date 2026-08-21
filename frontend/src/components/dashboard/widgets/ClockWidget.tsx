@@ -49,21 +49,25 @@ export function ClockWidget({
     sharedLocale,
   )
   return (
-    <div className="@container h-full flex flex-col items-center justify-center gap-1 select-none">
+    <div className="@container clock-face h-full flex flex-col items-center justify-center gap-1 select-none">
       <div className="flex items-end gap-1">
         {/* Fluid, not a step: the clock is the widest thing in its cell, so a jump between two
-            fixed sizes reads as a snap while the grid is being dragged. */}
+            fixed sizes reads as a snap while the grid is being dragged. Bounded by height as well
+            as width, or a short widget renders a full-size time and clips the date under it. */}
         <span
           className="font-semibold text-zinc-100 tabular-nums leading-none"
-          style={{ fontSize: 'clamp(1.5rem, 18cqi, 2.25rem)' }}
+          style={{ fontSize: 'clamp(1rem, min(18cqi, 42cqh), 2.25rem)' }}
         >
           {time}
         </span>
-        <span className="@max-[180px]:hidden text-zinc-600 tabular-nums text-sm leading-none mb-0.5">
+        <span
+          data-clock-detail
+          className="@max-[180px]:hidden text-zinc-600 tabular-nums text-sm leading-none mb-0.5"
+        >
           {seconds}s
         </span>
       </div>
-      <p className="@max-[180px]:hidden text-xs text-zinc-500">
+      <p data-clock-detail className="@max-[180px]:hidden text-xs text-zinc-500">
         {dateStr}
         {sharedTimezone ? ` · ${sharedTimezone}` : ''}
       </p>

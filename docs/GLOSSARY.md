@@ -103,7 +103,7 @@ the reaper at the retention horizon. See [ADR-007](adr/ADR-007-soft-delete-bound
 
 **Serialize-and-coalesce** — The client rule that keeps one layout PUT in flight plus one latest-pending layout, so rapid drag/resize can't self-conflict. See [ADR-008](adr/ADR-008-layout-version-occ.md).
 
-**Canonical layout / mobile projection** — The persisted desktop layout is canonical; the mobile single-column view is a read-only derived projection that never writes back. See [ADR-009](adr/ADR-009-canonical-layout-mobile-projection.md).
+**Canonical layout / stacked projection** — The persisted multi-column layout is canonical; the single-column view a narrow board falls back to is a read-only derived projection that never writes back. It triggers on width, not on device — a split-screen window stacks like a phone does. See [ADR-009](adr/ADR-009-canonical-layout-mobile-projection.md).
 
 **First-class session** — One `sessions` row per login, and the whole credential: the `session` cookie holds an opaque token whose SHA-256 is the row, resolved on every request so revocation is immediate. There is no access or refresh token beside it. See [ADR-003](adr/ADR-003-first-class-sessions.md).
 

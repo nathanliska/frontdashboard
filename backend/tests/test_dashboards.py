@@ -9,6 +9,7 @@ from app.models.activity import ActivityEvent
 from app.models.calendar import CalendarEvent
 from app.models.dashboard import Dashboard
 from app.models.list import List, ListItem
+from app.schemas.dashboards import GRID_COLUMNS, GRID_ROWS
 from tests.helpers import (
     create_calendar_event,
     create_dashboard,
@@ -426,19 +427,35 @@ async def test_widget_created_list_appends_last_after_reorder(auth_client: Async
     assert lists[-1]["sort_order"] == 2
 
 
-async def test_calendar_widget_uses_small_default_layout(auth_client: AsyncClient) -> None:
+async def test_calendar_widget_starts_larger_than_the_others(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Calendar Widgets")
 
     set_csrf(auth_client)
-    add_resp = await auth_client.post(
+    calendar_resp = await auth_client.post(
         f"/api/dashboards/{dashboard['id']}/widgets",
         json={"widget_type": "calendar", "config": {"view": "month"}},
     )
-    assert add_resp.status_code == 201
+    clock_resp = await auth_client.post(
+        f"/api/dashboards/{dashboard['id']}/widgets",
+        json={"widget_type": "clock", "config": {}},
+    )
+    assert calendar_resp.status_code == 201
+    assert clock_resp.status_code == 201
 
-    layout_item = add_resp.json()["layout"][0]
-    assert layout_item["w"] == 3
-    assert layout_item["h"] == 3
+    board = clock_resp.json()
+    layout = {item["i"]: item for item in board["layout"]}
+    by_type = {widget["widget_type"]: layout[widget["id"]] for widget in board["widgets"]}
+    calendar, clock = by_type["calendar"], by_type["clock"]
+
+    # Larger *than the others* is the rule, not a literal, which goes stale the moment the grid's
+    # resolution changes as it did at 12 -> 24. The calendar renders a grid of its own, seven day
+    # columns by five weeks, so it is the one widget that cannot start small.
+    assert calendar["w"] * calendar["h"] > clock["w"] * clock["h"]
+
+    # Both counts divide the grid, or a board tiles ragged and wastes full-size slots.
+    for item in (calendar, clock):
+        assert GRID_COLUMNS % item["w"] == 0
+        assert GRID_ROWS % item["h"] == 0
 
 
 async def test_dashboard_calendar_routes_and_delete(auth_client: AsyncClient) -> None:

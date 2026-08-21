@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { render } from '@testing-library/react'
-import { act } from 'react'
+import { act, useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { type ContainerSize, useContainerSize } from './useContainerSize'
+import { type ContainerSize, useAvailableHeight, useContainerSize } from './useContainerSize'
 
 type Entry = { contentRect: { width: number; height: number } }
 let emit: ((entries: Entry[]) => void) | null = null
@@ -67,5 +67,75 @@ describe('useContainerSize', () => {
     // a render count instead would be testing React's bailout, which is not a guarantee.
     expect(seen.at(-1)).toBe(afterChange)
     expect(new Set(seen.map((size) => `${size.width}x${size.height}`)).size).toBe(2)
+  })
+})
+
+// jsdom lays nothing out, so the page shape a measurement reads has to be stated outright: a
+// scrolling `main` padded on every side, with the measured element starting below a header.
+function measurePage({
+  windowHeight,
+  scrollerBottom,
+  paddingBottom,
+  elementTop,
+}: {
+  windowHeight: number
+  scrollerBottom: number
+  paddingBottom: string
+  elementTop: number
+}): number {
+  Object.defineProperty(window, 'innerHeight', { value: windowHeight, configurable: true })
+
+  const stubRect = (bottom: number, top: number) => (node: HTMLDivElement | null) => {
+    // Callback refs run in the commit phase, before the effect that measures — so the stub is in
+    // place by the time the hook reads it, without a second render to force.
+    if (node) node.getBoundingClientRect = () => ({ top, bottom }) as DOMRect
+  }
+
+  let measured = 0
+  function Probe() {
+    const ref = useRef<HTMLDivElement>(null)
+    measured = useAvailableHeight(ref)
+    return (
+      <div style={{ overflowY: 'auto', paddingBottom }} ref={stubRect(scrollerBottom, 0)}>
+        <div
+          ref={(node) => {
+            stubRect(elementTop, elementTop)(node)
+            ref.current = node
+          }}
+        />
+      </div>
+    )
+  }
+
+  render(<Probe />)
+  return measured
+}
+
+describe('useAvailableHeight', () => {
+  it('leaves the page its bottom padding, the way the horizontal axis already does', () => {
+    // A grid sized to the last pixel of the window sits flush against the edge while its right
+    // side keeps the gutter — the asymmetry a reader notices first. Room ends at the scrolling
+    // container's *content* box, so the 24px of `p-6` counts on the bottom as it does on the side.
+    expect(
+      measurePage({
+        windowHeight: 1300,
+        scrollerBottom: 1300,
+        paddingBottom: '24px',
+        elementTop: 80,
+      }),
+    ).toBe(1300 - 24 - 80)
+  })
+
+  it('never reports more room than the window has', () => {
+    // An unclamped scroller can extend past the fold. Room the user must scroll to reach is not
+    // room something claiming to fit the screen may spend.
+    expect(
+      measurePage({
+        windowHeight: 1000,
+        scrollerBottom: 2400,
+        paddingBottom: '24px',
+        elementTop: 80,
+      }),
+    ).toBe(1000 - 80)
   })
 })
