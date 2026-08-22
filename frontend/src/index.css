@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* The rail is worth its 224px only while the grid is still a grid: 960px of board, plus the rail
+   and 48px of page padding. Below it the rail goes off-canvas rather than narrowing (ADR-009). */
+@theme {
+  --breakpoint-nav: 77rem;
+}
+
 *,
 *::before,
 *::after {

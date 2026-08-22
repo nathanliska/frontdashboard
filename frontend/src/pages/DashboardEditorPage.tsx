@@ -72,7 +72,7 @@ export function DashboardEditorPage() {
   return (
     <div className="flex flex-col min-h-full gap-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 pl-12 sm:pl-0 min-h-10">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 pl-12 nav:pl-0 min-h-10">
         <button
           type="button"
           onClick={() => navigate(ROUTES.dashboards)}

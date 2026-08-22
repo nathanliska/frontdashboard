@@ -23,7 +23,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <button
           type="button"
           onClick={toggleMobileSidebar}
-          className="sm:hidden fixed top-3 left-3 z-30 inline-flex items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/90 p-2 text-zinc-300 shadow-lg backdrop-blur"
+          className="nav:hidden fixed top-3 left-3 z-30 inline-flex items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/90 p-2 text-zinc-300 shadow-lg backdrop-blur"
           aria-label={
             degraded
               ? 'Open navigation (reconnecting — live updates are paused)'

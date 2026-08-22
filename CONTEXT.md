@@ -192,7 +192,7 @@ _Last updated: 2026-08-21_
   mark on the query string, since a fresh `EventSource` sends no `Last-Event-ID` header; a tab
   holding no mark still asks for the resync itself. The browser's own auto-retry is left alone.
 - **The UI admits when the stream is down** — an amber dot while reconnecting, on the sidebar
-  account avatar and on the mobile navigation button, since below `sm:` the sidebar is an overlay
+  account avatar and on the mobile navigation button, since below `nav:` the sidebar is an overlay
   and a phone is where a stream drops most. Only the degraded state is drawn: a dot that reads
   green all day stops being read, and the failure worth surfacing is the app looking live while
   receiving nothing. The dot is decorative; each surface carries its own wording (a `title` on the
