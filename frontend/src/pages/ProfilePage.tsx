@@ -128,7 +128,7 @@ export function ProfilePage() {
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <div className="flex min-h-10 items-center pl-12 sm:pl-0">
+      <div className="flex min-h-10 items-center pl-12 nav:pl-0">
         <h1 className="text-xl font-semibold text-zinc-100">Profile</h1>
       </div>
 

@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-08-17
+**Last reviewed:** 2026-08-21
 
 ## Overview
 
@@ -29,12 +29,16 @@ master/detail UI and surfaced on dashboards via the list widget ([FDR-003](FDR-0
   as the list's catalog); submitting an exact match or picking a suggestion unchecks that row
   instead of creating a duplicate — two shoppers adding "Milk" converge on one row. Escape
   dismisses the suggestions when a same-named new row is wanted on purpose. The list widget
-  carries the same toggle on its progress row and, with the pile on, shows only unchecked rows
-  plus a "Checked (N)" line — expanding there is a transient peek that re-collapses on remount,
-  where the page remembers its expand state, because the tile's job is the unchecked view. The
-  dedupe itself is deliberately *not* gated on the preference — it prevents duplicates however
-  the list is drawn — so an intentional same-named row always goes through the page's Escape
-  path.
+  renders that same add box — matching, suggestions and Escape alike — showing fewer suggestions
+  than the page, because the popup opens upward into a widget card that clips and the exact match
+  ranks furthest from the input. It is kept however narrow the tile gets: it is the tile's only way
+  to write, so it truncates like the rows above it rather than leaving no visible way to add. It
+  carries the same toggle on its progress row and, with the pile
+  on, shows only unchecked rows plus a "Checked (N)" line — expanding there is a transient peek
+  that re-collapses on remount, where the page remembers its expand state, because the tile's job
+  is the unchecked view. The dedupe itself is deliberately *not* gated on the preference — it
+  prevents duplicates however the list is drawn — so an intentional same-named row always goes
+  through Escape.
 - **Drag-and-drop reorder.** Reorder items within a list and lists within the sidebar, via drag
   handles with keyboard support.
 - **Active/Trash selector.** The sidebar defaults to Active (reorderable); Trash lists what has been

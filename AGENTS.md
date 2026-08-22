@@ -169,7 +169,7 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 
 ## Which Rules Fail the Build
 
-Most rules in this file are judgment you are trusted with. These eight are not — each has a test
+Most rules in this file are judgment you are trusted with. These twelve are not — each has a test
 that fails CI, and its failure message tells you what to do. Everything else here is guidance,
 so if you are wondering whether a convention bites, this table is the answer.
 
@@ -183,6 +183,10 @@ so if you are wondering whether a convention bites, this table is the answer.
 | Every activity type has feed copy + a category | `test_activity.py` | Below, *Frontend Principles* |
 | Node is pinned once, in `.nvmrc` | `test_toolchain_coverage.py` | — |
 | `react-resizable` tracks react-grid-layout | `test_frontend_pin_coverage.py` | — |
+| The grid the client renders is the one the API validates | `test_grid_basis_coverage.py` | [ADR-009](docs/adr/ADR-009-canonical-layout-mobile-projection.md) |
+| A container-scoped variant has an `@container` | `containerQueryCoverage.test.ts` | Below, *Frontend Principles* |
+| A hand-written `@container` rule names a class that declares one | `test_css_container_coverage.py` | Below, *Frontend Principles* |
+| The header reserve is released where the floating menu button hides | `hamburgerReserveCoverage.test.ts` | Below, *Frontend Principles* |
 
 These guards read source, so a refactor can make one **pass having checked nothing** — the
 dangerous failure, because a silent guard looks exactly like a satisfied one. Three rules follow
@@ -264,6 +268,20 @@ from that:
   endpoint would not serve back is a row the next reload silently deletes.
 - A new resource cache calls `registerResourceReset(...)` at module scope, beside the cache it
   clears. `stores/auth.ts` calls the registry, not each reset by name.
+- A widget that responds to its own size splits by *what the size decides*. Spacing, type scale and
+  visibility are a CSS container query — no measurement, no render per resize tick, and `cqi` in a
+  `clamp()` scales instead of snapping between two fixed sizes. Only what CSS cannot decide — how
+  many rows fit, which label set to use, a number react-grid-layout needs — earns a
+  `useContainerSize`. A container-scoped variant whose ancestor never declares `@container` matches
+  nothing and silently stays put, which jsdom cannot see; `containerQueryCoverage.test.ts` fails
+  the build on it. Tailwind's `@container` is inline-size, so a query on **height** is hand-written
+  CSS against a class that sets `container-type: size` — which puts the rule and the element in
+  different files, guarded from the other side by `test_css_container_coverage.py`.
+- The sidebar has **two** states, not three: a labelled rail, and off-canvas behind the floating
+  menu button below `nav:` (77rem) — the width at which the rail costs more than the grid it leaves,
+  so `--breakpoint-nav` is derived from `STACK_BELOW + 224 + 48`, not picked. That button overlaps
+  the page, so every page header reserves `pl-12` and releases it at the same breakpoint;
+  `hamburgerReserveCoverage.test.ts` fails the build when the two drift apart.
 - Only `401` means logged out. Not `403`, which is the permission layer, and never a `5xx`,
   timeout or network rejection.
 - `apiFetch` is the only network entry for `/api`; every success body goes through

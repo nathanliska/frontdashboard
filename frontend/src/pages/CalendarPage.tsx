@@ -210,7 +210,7 @@ export function CalendarPage() {
   return (
     <div className="flex min-h-full flex-col gap-4 xl:h-full">
       <div className="flex flex-col gap-2 shrink-0">
-        <div className="flex items-center gap-2 min-w-0 pl-12 sm:pl-0 min-h-10">
+        <div className="flex items-center gap-2 min-w-0 pl-12 nav:pl-0 min-h-10">
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Calendar</h1>
           <select
             name="dashboard"

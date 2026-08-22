@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* The rail is worth its 224px only while the grid is still a grid: 960px of board, plus the rail
+   and 48px of page padding. Below it the rail goes off-canvas rather than narrowing (ADR-009). */
+@theme {
+  --breakpoint-nav: 77rem;
+}
+
 *,
 *::before,
 *::after {
@@ -34,4 +40,44 @@ body {
   to {
     opacity: 1;
   }
+}
+
+/* Tailwind's `@container` is inline-size, which cannot answer a height query — and the clock is
+   the one widget squashed short often enough to need one. */
+.clock-face {
+  container-type: size;
+}
+
+/* The time floors at 1rem, which with the gap and the line under it needs 36px — so at 40px there
+   is room for one of them, and the detail is what a glance can spare rather than have clipped. */
+@container (max-height: 40px) {
+  .clock-face [data-clock-detail] {
+    display: none;
+  }
+}
+
+/* react-grid-layout ships this as flat red, which reads as an error rather than a drop target.
+   Restated in the app's own accent so a drag looks deliberate. The extra ancestor is load-bearing:
+   the library's stylesheet is imported from the component, so it lands after this file and wins
+   at equal specificity. */
+.react-grid-layout .react-grid-item.react-grid-placeholder {
+  background: #3b82f6;
+  opacity: 0.15;
+  border-radius: 0.5rem;
+}
+
+/* A dragged widget is opaque by default, so it swallows whatever it passes over and the drop
+   target underneath is invisible. Lifted and faded instead, so the board stays readable. */
+.react-grid-layout .react-grid-item.react-draggable-dragging {
+  opacity: 0.75;
+  z-index: 3;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.55);
+  cursor: grabbing;
+}
+
+/* A drop the grid cannot accept — one that would push a widget out, leaving the arrangement
+   unsettled — otherwise looks identical to one it can, until the release snaps it back. */
+[data-drop-blocked] .react-grid-item.react-grid-placeholder {
+  background: #ef4444;
+  opacity: 0.18;
 }

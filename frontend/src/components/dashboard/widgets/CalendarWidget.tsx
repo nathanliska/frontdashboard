@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { CalendarOccurrence } from '../../../api/calendar'
 import type { CalendarWidgetConfig } from '../../../api/dashboards'
+import { useContainerSize } from '../../../hooks/useContainerSize'
 import { useLocalDay } from '../../../hooks/useLocalDay'
 import { useCalendarOccurrences } from '../../../resources/calendarData'
 import { useDashboardStore } from '../../../stores/dashboard'
@@ -28,9 +29,12 @@ export function CalendarWidget({
   dashboardId: string
   config: CalendarWidgetConfig
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(300)
-  const [containerHeight, setContainerHeight] = useState(320)
+  // Measured rather than queried in CSS: these feed how many occurrences a cell renders and which
+  // weekday labels it uses, neither of which a container query can decide.
+  const [containerRef, { width: containerWidth, height: containerHeight }] = useContainerSize({
+    width: 300,
+    height: 320,
+  })
   const updateWidget = useDashboardStore((s) => s.updateWidget)
 
   // `view` is a plain string in the contract, not a Literal union: it is read back from
@@ -50,19 +54,6 @@ export function CalendarWidget({
   )
   const occurrences = occurrencesQuery.data ?? EMPTY_OCCURRENCES
   const { loading, error } = occurrencesQuery
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-
-    const observer = new ResizeObserver((entries) => {
-      setContainerWidth(entries[0].contentRect.width)
-      setContainerHeight(entries[0].contentRect.height)
-    })
-
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
 
   const weekDays = useMemo(() => {
     const start = startOfWeek(today)

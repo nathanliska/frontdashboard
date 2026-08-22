@@ -52,16 +52,16 @@ export function Sidebar() {
         type="button"
         aria-label="Close navigation"
         className={cn(
-          'fixed inset-0 z-40 bg-black/50 transition-opacity sm:hidden',
+          'fixed inset-0 z-40 bg-black/50 transition-opacity nav:hidden',
           mobileSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
         onClick={closeMobileSidebar}
       />
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-zinc-800 bg-zinc-950 transition-transform duration-200 sm:relative sm:z-20 sm:h-dvh sm:shrink-0 sm:transition-all',
-          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0',
-          sidebarCollapsed ? 'sm:w-16' : 'sm:w-56',
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-zinc-800 bg-zinc-950 transition-transform duration-200 nav:relative nav:z-20 nav:h-dvh nav:shrink-0 nav:transition-all',
+          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full nav:translate-x-0',
+          sidebarCollapsed ? 'nav:w-16' : 'nav:w-56',
         )}
       >
         {/* Logo + collapse toggle */}

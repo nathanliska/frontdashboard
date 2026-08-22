@@ -12,9 +12,10 @@ DashboardName = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=DASHBOARD_NAME_MAX_LENGTH),
 ]
 
-# The canonical grid every persisted layout is expressed in (ADR-009). The client renders other
-# widths as projections or density changes, never as a different column count.
-GRID_COLUMNS = 12
+# The canonical grid every persisted layout counts in (ADR-009). Both axes are hard bounds: a board
+# is one screen. Changing either is a migration, since a coordinate is meaningless without its basis.
+GRID_COLUMNS = 24
+GRID_ROWS = 24
 
 
 class LayoutItem(BaseModel):
@@ -178,19 +179,30 @@ class LayoutUpdate(BaseModel):
     def _reject_impossible_grids(cls, layout: list[LayoutItem]) -> list[LayoutItem]:
         """Bounds live here, on the write path, so reads of legacy rows can't 500 (see LayoutItem).
 
-        `x + w <= GRID_COLUMNS` is the invariant behind #53: an item wider than the canonical grid
-        is definitionally not a 12-column layout, and react-grid-layout would resolve it by
-        clamping — the exact remap-then-persist trap the client guards against.
+        Fitting the canonical grid is the invariant behind #53: an item past its edge is
+        definitionally not a layout in that grid, and react-grid-layout would resolve it by
+        clamping — the exact remap-then-persist trap the client guards against. Both axes are
+        bounded, because a board is one screen and a widget outside it cannot be reached.
+
+        Overlap is rejected for a harder reason than tidiness: a client whose compactor declines to
+        settle an arrangement reports one where widgets still sit on each other, and every
+        coordinate in it is individually in range. Accepting that stores a layout no client can
+        render back, which is a corruption a client-side check cannot be trusted to prevent.
         """
         seen: set[str] = set()
+        placed: list[LayoutItem] = []
         for item in layout:
             if item.x < 0 or item.y < 0 or item.w < 1 or item.h < 1:
                 raise ValueError(f"Layout item {item.i!r} has out-of-range coordinates")
-            if item.x + item.w > GRID_COLUMNS:
-                raise ValueError(f"Layout item {item.i!r} does not fit a {GRID_COLUMNS}-column grid")
+            if item.x + item.w > GRID_COLUMNS or item.y + item.h > GRID_ROWS:
+                raise ValueError(f"Layout item {item.i!r} does not fit a {GRID_COLUMNS}x{GRID_ROWS} grid")
             if item.i in seen:
                 raise ValueError(f"Duplicate layout item {item.i!r}")
+            for other in placed:
+                if item.x < other.x + other.w and other.x < item.x + item.w and item.y < other.y + other.h and other.y < item.y + item.h:
+                    raise ValueError(f"Layout items {other.i!r} and {item.i!r} overlap")
             seen.add(item.i)
+            placed.append(item)
         return layout
 
 

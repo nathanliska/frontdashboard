@@ -65,7 +65,7 @@ export function NotificationsPage() {
   return (
     <div className="flex flex-col h-full gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 shrink-0 pl-12 sm:pl-0 min-h-10">
+      <div className="flex items-center justify-between gap-3 shrink-0 pl-12 nav:pl-0 min-h-10">
         <h1 className="min-w-0 text-xl font-semibold text-zinc-100 truncate">Notifications</h1>
         {tab === 'notifications' && unreadCount > 0 && (
           <button

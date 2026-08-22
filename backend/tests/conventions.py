@@ -15,6 +15,7 @@ from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ROUTERS = BACKEND_ROOT / "app" / "routers"
+FRONTEND_ROOT = BACKEND_ROOT.parent / "frontend"
 
 
 def router_modules() -> list[Path]:

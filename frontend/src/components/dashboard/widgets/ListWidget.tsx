@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronRight, ListChecks, Plus } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, ListChecks } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ListWidgetConfig } from '../../../api/dashboards'
 import { ApiError } from '../../../api/http'
@@ -8,12 +8,8 @@ import { useDashboardStore } from '../../../stores/dashboard'
 import { dateKey, formatCalendarDay, startOfDay } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
 import { scrollToNewestItem } from '../../../utils/shared/scrollToNewestItem'
-import {
-  findCheckedMatch,
-  partitionItems,
-  setPileEnabled,
-  usePileEnabled,
-} from '../../lists/checkedPile'
+import { AddItemForm } from '../../lists/AddItemForm'
+import { partitionItems, setPileEnabled, usePileEnabled } from '../../lists/checkedPile'
 import { WidgetErrorState } from '../WidgetErrorState'
 
 export function ListWidget({
@@ -25,9 +21,7 @@ export function ListWidget({
   widgetId: string
   config: ListWidgetConfig
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(300)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
   const { data: detail, error, refetch } = useListDetail(listId)
 
@@ -53,16 +47,6 @@ export function ListWidget({
     })
   }, [config, detail, updateWidget, widgetId])
 
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const observer = new ResizeObserver((entries) => {
-      setContainerWidth(entries[0].contentRect.width)
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-
   async function handleToggle(item: ListItem) {
     if (!detail) return
     try {
@@ -72,30 +56,19 @@ export function ListWidget({
     }
   }
 
-  async function handleAdd(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!detail) return
+  // Both throw on failure so the add box can put the typed text back; the store has already
+  // toasted by then. The checked-match toggle lives in AddItemForm, driven by `checkedItems`.
+  async function handleAdd(text: string) {
+    await addListItem(listId, text)
+    // The new row is the last unchecked one — the pile may sit below it in the scroller.
+    scrollToNewestItem(scrollRef.current, 'button[data-checked="false"]')
+  }
 
-    const form = event.currentTarget
-    const text = String(new FormData(form).get('item-text') ?? '').trim()
-    if (!text) return
-
-    // Same toggle semantic as the list page's add box, minus the suggestions chrome: an exact
-    // match of a checked item unchecks it rather than minting a duplicate row.
-    try {
-      const existing = findCheckedMatch(detail.items, text)
-      if (existing) {
-        await updateListItem(listId, existing.id, { checked: false })
-        scrollToNewestItem(scrollRef.current, `[data-item-id="${existing.id}"]`)
-      } else {
-        await addListItem(listId, text)
-        // The new row is the last unchecked one — the pile may sit below it in the scroller.
-        scrollToNewestItem(scrollRef.current, 'button[data-checked="false"]')
-      }
-      form.reset()
-    } catch {
-      // The store already toasted. Skipping the reset keeps the typed text for a retry.
-    }
+  async function handleRestore(itemId: string) {
+    await updateListItem(listId, itemId, { checked: false })
+    // The row returns to its remembered spot, often scrolled out of a cell this short — without
+    // this the restore looks like a no-op and gets retyped into a real duplicate.
+    scrollToNewestItem(scrollRef.current, `[data-item-id="${itemId}"]`)
   }
 
   if (error) {
@@ -127,8 +100,6 @@ export function ListWidget({
   const checkedCount = pile.length
   const total = detail.items.length
   const progress = total > 0 ? (checkedCount / total) * 100 : 0
-
-  const isTiny = containerWidth < 180
 
   const renderRow = (item: ListItem) => (
     <button
@@ -175,7 +146,7 @@ export function ListWidget({
   )
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-2 flex-1 min-h-0">
+    <div className="flex flex-col gap-2 flex-1 min-h-0">
       {/* Progress bar */}
       {total > 0 && (
         <div className="shrink-0">
@@ -235,28 +206,15 @@ export function ListWidget({
         {total === 0 && <p className="text-xs text-zinc-700 px-0.5 py-1">No items yet.</p>}
       </div>
 
-      {/* Add item */}
-      {!isTiny && (
-        <form
-          onSubmit={(event) => void handleAdd(event)}
-          className="flex items-center gap-1.5 shrink-0 border-t border-zinc-800 pt-2"
-        >
-          {/* text-base keeps mobile at 16px; below that iOS (any browser — all WebKit) zooms on focus */}
-          <input
-            name="item-text"
-            required
-            placeholder="Add item…"
-            className="flex-1 bg-transparent text-base sm:text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none min-w-0"
-          />
-          <button
-            type="submit"
-            className="shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors"
-            aria-label="Add"
-          >
-            <Plus size={12} />
-          </button>
-        </form>
-      )}
+      {/* Kept at every width: it is the tile's only way in, so it truncates like the rows above
+          it rather than going away, which leaves no visible way to add at all. */}
+      <AddItemForm
+        key={detail.id}
+        compact
+        onAdd={handleAdd}
+        checkedItems={pile}
+        onRestore={handleRestore}
+      />
     </div>
   )
 }

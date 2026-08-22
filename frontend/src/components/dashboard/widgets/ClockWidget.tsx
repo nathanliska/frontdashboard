@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ClockWidgetConfig } from '../../../api/dashboards'
 
 function now() {
@@ -25,8 +25,6 @@ export function ClockWidget({
   isSharedDashboard: boolean
 }) {
   const [date, setDate] = useState(now)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(300)
   const configuredTimezone = config.timezone || undefined
   const sharedTimezone = isSharedDashboard ? (configuredTimezone ?? 'UTC') : undefined
   const sharedLocale = isSharedDashboard ? 'en-US' : undefined
@@ -35,16 +33,6 @@ export function ClockWidget({
   useEffect(() => {
     const id = setInterval(() => setDate(now()), 1000)
     return () => clearInterval(id)
-  }, [])
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const observer = new ResizeObserver((entries) => {
-      setContainerWidth(entries[0].contentRect.width)
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
   }, [])
 
   const time = formatTime(
@@ -60,30 +48,29 @@ export function ClockWidget({
     { weekday: 'long', month: 'long', day: 'numeric' },
     sharedLocale,
   )
-  const isTiny = containerWidth < 180
-
   return (
-    <div
-      ref={containerRef}
-      className="h-full flex flex-col items-center justify-center gap-1 select-none"
-    >
+    <div className="@container clock-face h-full flex flex-col items-center justify-center gap-1 select-none">
       <div className="flex items-end gap-1">
+        {/* Fluid, not a step: the clock is the widest thing in its cell, so a jump between two
+            fixed sizes reads as a snap while the grid is being dragged. Bounded by height as well
+            as width, or a short widget renders a full-size time and clips the date under it. */}
         <span
           className="font-semibold text-zinc-100 tabular-nums leading-none"
-          style={{ fontSize: isTiny ? '1.5rem' : '2.25rem' }}
+          style={{ fontSize: 'clamp(1rem, min(18cqi, 42cqh), 2.25rem)' }}
         >
           {time}
         </span>
-        {!isTiny && (
-          <span className="text-zinc-600 tabular-nums text-sm leading-none mb-0.5">{seconds}s</span>
-        )}
+        <span
+          data-clock-detail
+          className="@max-[180px]:hidden text-zinc-600 tabular-nums text-sm leading-none mb-0.5"
+        >
+          {seconds}s
+        </span>
       </div>
-      {!isTiny && (
-        <p className="text-xs text-zinc-500">
-          {dateStr}
-          {sharedTimezone ? ` · ${sharedTimezone}` : ''}
-        </p>
-      )}
+      <p data-clock-detail className="@max-[180px]:hidden text-xs text-zinc-500">
+        {dateStr}
+        {sharedTimezone ? ` · ${sharedTimezone}` : ''}
+      </p>
     </div>
   )
 }

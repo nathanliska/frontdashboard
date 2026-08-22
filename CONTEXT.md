@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-08-17_
+_Last updated: 2026-08-21_
 
 ## What's built
 
@@ -69,10 +69,22 @@ _Last updated: 2026-08-17_
 - Editor: react-grid-layout drag/resize, saves with optimistic version. A 409 is resolved in the
   client — re-read, replay the drag onto the server's layout, retry once — and only a second one
   raises the conflict banner offering a reload; settings modal (rename/share).
-- **The persisted layout is canonical; the mobile view is a derived projection.** Below 640px the
-  grid renders a computed one-column stack, and layout events are ignored there (and on read-only
-  dashboards), so the projection can never overwrite the desktop arrangement. Editable mobile
-  layouts would need their own per-breakpoint persisted layout — deliberately not built.
+- **The canonical grid is 24 x 24 and both axes are hard bounds.** A board is one screen: row height
+  is derived so 24 rows and their gaps fill the room below the grid, and nothing — drag, resize,
+  collision push or server-side placement — may leave it. A gesture whose *result* would leave the
+  grid first tries re-seating the other widgets around it, since compaction settles upward and so
+  never finds room *beside* a widget; only when that fails does the gesture revert. A new widget
+  takes the largest box up to its default size that fits, shrinking rather than refusing when the
+  gap is smaller — only a board without one free cell returns a 409. Overlap is rejected on the
+  write path too, so a client bug cannot store a board no client
+  can render back. Both counts are validated there and mirrored in the client, with
+  `test_grid_basis_coverage.py` failing the build on drift — changing either is a data migration,
+  since a coordinate is meaningless without its basis.
+- **The persisted layout is canonical; the stacked view is a derived projection.** Below 960px of
+  board — the width at which a default four-column widget falls under 150px, so a split screen
+  stacks for the same reason a phone does — the grid renders a computed one-column stack, and layout
+  events are ignored there (and on read-only dashboards), so the projection can never overwrite the
+  desktop arrangement. Editing one would need its own per-breakpoint persisted layout — not built.
 - **Layout saves are serialized and coalesced**: one PUT in flight at a time plus one latest-pending
   layout, each send re-reading the version the previous save returned. Rapid drag/resize therefore
   can't conflict with itself or install an older layout; a 409 means a *real* other-editor conflict.
@@ -119,9 +131,9 @@ _Last updated: 2026-08-17_
   creating a duplicate; Escape dismisses the suggestions when a duplicate is wanted on purpose.
   The list widget carries the same toggle on its progress row; with the pile on it shows only
   unchecked rows plus a "Checked (N)" peek line (transient — re-collapses on remount, unlike the
-  page's remembered expand state). Its inline add dedupes an exact checked match. The dedupe is
-  deliberately not preference-gated on either surface — an intentional duplicate goes through the
-  page's Escape path.
+  page's remembered expand state). It renders the same add box, suggestions included, showing
+  fewer of them because the popup opens upward into a card that clips. The dedupe is deliberately
+  not preference-gated on either surface — an intentional duplicate goes through Escape.
 - The sidebar has an **Active/Trash** selector: Active is the default and is reorderable; Trash
   lists deleted lists with their purge deadline and a Restore action, and is fetched only when
   opened. The server renumbers the dashboard's live lists, so a reorder's submitted set must equal
@@ -180,7 +192,7 @@ _Last updated: 2026-08-17_
   mark on the query string, since a fresh `EventSource` sends no `Last-Event-ID` header; a tab
   holding no mark still asks for the resync itself. The browser's own auto-retry is left alone.
 - **The UI admits when the stream is down** — an amber dot while reconnecting, on the sidebar
-  account avatar and on the mobile navigation button, since below `sm:` the sidebar is an overlay
+  account avatar and on the mobile navigation button, since below `nav:` the sidebar is an overlay
   and a phone is where a stream drops most. Only the degraded state is drawn: a dot that reads
   green all day stops being read, and the failure worth surfacing is the app looking live while
   receiving nothing. The dot is decorative; each surface carries its own wording (a `title` on the

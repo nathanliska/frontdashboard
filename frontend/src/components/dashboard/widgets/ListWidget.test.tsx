@@ -67,15 +67,6 @@ describe('ListWidget', () => {
       loadError: false,
       conflict: false,
     })
-
-    globalThis.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-      takeRecords() {
-        return []
-      }
-    } as unknown as typeof ResizeObserver
   })
 
   afterEach(() => {
@@ -319,6 +310,85 @@ describe('ListWidget', () => {
     await waitFor(() => expect(apiMocks.apiUpdateItem).toHaveBeenCalled())
     // The reset is success-gated: a failed uncheck must not eat the word the user typed.
     expect(input).toHaveValue('buy milk')
+  })
+
+  it('offers a checked item as a suggestion on a partial match', async () => {
+    apiMocks.apiGetList.mockResolvedValueOnce(
+      makeListDetail({
+        items: [makeListItem({ id: 'item-1', text: 'Orange Juice', checked: true })],
+      }),
+    )
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    await screen.findByPlaceholderText('Add item…')
+    fireEvent.change(screen.getByPlaceholderText('Add item…'), { target: { value: 'Ora' } })
+
+    // A partial, not an exact match: the exact-match toggle would fire without any suggestion
+    // rendering at all, so only a prefix proves the popup itself reached the widget.
+    const option = await screen.findByRole('option')
+    expect(option).toHaveTextContent('Orange Juice')
+    expect(option).toHaveTextContent('re-add')
+  })
+
+  it('unchecks the item when its suggestion is chosen', async () => {
+    apiMocks.apiGetList.mockResolvedValueOnce(
+      makeListDetail({
+        items: [makeListItem({ id: 'item-1', text: 'Orange Juice', checked: true })],
+      }),
+    )
+    apiMocks.apiUpdateItem.mockResolvedValueOnce(
+      makeListItem({ id: 'item-1', text: 'Orange Juice', checked: false }),
+    )
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    await screen.findByPlaceholderText('Add item…')
+    fireEvent.change(screen.getByPlaceholderText('Add item…'), { target: { value: 'Ora' } })
+    // mouseDown, not click: the handler fires before the input's blur can race the re-render.
+    fireEvent.mouseDown(await screen.findByRole('option'))
+
+    await waitFor(() =>
+      expect(apiMocks.apiUpdateItem).toHaveBeenCalledWith('list-1', 'item-1', { checked: false }),
+    )
+    expect(apiMocks.apiCreateItem).not.toHaveBeenCalled()
+  })
+
+  it('caps suggestions below the page cap, so the top of the popup survives a short card', async () => {
+    apiMocks.apiGetList.mockResolvedValueOnce(
+      makeListDetail({
+        items: [1, 2, 3, 4, 5].map((n) =>
+          makeListItem({ id: `item-${n}`, text: `Juice ${n}`, checked: true }),
+        ),
+      }),
+    )
+
+    render(
+      <ListWidget
+        listId="list-1"
+        widgetId="widget-1"
+        config={{ list_name: 'Groceries', list_type: 'todo' }}
+      />,
+    )
+
+    await screen.findByPlaceholderText('Add item…')
+    fireEvent.change(screen.getByPlaceholderText('Add item…'), { target: { value: 'Juice' } })
+
+    // Five match; the popup grows upward into a clipping card, so the widget shows fewer than the
+    // page's five. Asserting the count, not the cap constant, so the reason has to keep holding.
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(3))
   })
 
   it('offers a retry for outages, and the retry recovers', async () => {

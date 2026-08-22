@@ -19,6 +19,8 @@ from app.models.notification import Notification
 from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType, ShareRole, as_share_role
 from app.models.user import User
 from app.schemas.dashboards import (
+    GRID_COLUMNS,
+    GRID_ROWS,
     WIDGET_CONFIG_MODELS,
     DashboardCreate,
     DashboardResponse,
@@ -111,16 +113,70 @@ def _to_response(
     )
 
 
-def _next_y(layout: list[dict[str, Any]]) -> int:
-    if not layout:
-        return 0
-    return max(item.get("y", 0) + item.get("h", 1) for item in layout)
+def _first_free_slot(layout: list[dict[str, Any]], w: int, h: int) -> tuple[int, int] | None:
+    """Topmost-then-leftmost free position for a `w`x`h` widget, or None when the board is full.
+
+    Candidates are the existing edges rather than every cell: a slot that fits at all fits flush
+    against something's bottom or right, or against an axis. That keeps the scan quadratic in the
+    widget count rather than proportional to the grid's area.
+
+    There is no below-everything fallback, because there is no below — the grid is bounded on both
+    axes, and a widget placed past the last row could not be reached at all (ADR-009).
+    """
+    boxes = [(item.get("x", 0), item.get("y", 0), item.get("w", 1), item.get("h", 1)) for item in layout]
+    rows = sorted({0} | {y + box_h for _, y, _, box_h in boxes})
+    columns = sorted({0} | {x + box_w for x, _, box_w, _ in boxes})
+
+    for y in rows:
+        if y + h > GRID_ROWS:
+            continue
+        for x in columns:
+            if x + w > GRID_COLUMNS:
+                continue
+            overlaps = any(x < box_x + box_w and box_x < x + w and y < box_y + box_h and box_y < y + h for box_x, box_y, box_w, box_h in boxes)
+            if not overlaps:
+                return (x, y)
+    return None
+
+
+def _fit_widget(layout: list[dict[str, Any]], w: int, h: int) -> tuple[int, int, int, int] | None:
+    """Seat a widget of at most `w`x`h` as `(x, y, w, h)`, or None when not one cell is free.
+
+    The default size is a preference, not a requirement. Asking only for that exact box reports a
+    full board while an eighth of the grid stands empty — a gap one row short of the default is
+    ordinary, and refusing it is a worse answer than a widget the user drags bigger. The grid is
+    bounded, so even the smallest result is on screen and resizable rather than lost.
+
+    Candidates are tried largest-area first, so a widget gives up only the area it has to, and ties
+    go to the shape the default asked for. The first candidate *is* the default, so a board with
+    room pays a single scan.
+    """
+    shape = w / h
+    candidates = sorted(
+        ((width, height) for width in range(1, w + 1) for height in range(1, h + 1)),
+        key=lambda size: (-size[0] * size[1], abs(size[0] / size[1] - shape)),
+    )
+
+    for width, height in candidates:
+        slot = _first_free_slot(layout, width, height)
+        if slot is not None:
+            return (*slot, width, height)
+    return None
 
 
 def _default_widget_size(widget_type: str) -> tuple[int, int]:
+    """Starting size for a new widget, in canonical grid cells.
+
+    The calendar is the largest because it is the one widget rendering a grid of its own — a month
+    is seven day columns by five weeks — so it needs the room the others do not. Everything else
+    starts small enough to read at a glance and be dragged bigger.
+
+    Both divide 24 exactly, which is what keeps a board tiling rather than going ragged: a height of
+    9 leaves 24 // 9 == 2 rows of widgets and wastes the remainder, costing three full-size slots.
+    """
     if widget_type == "calendar":
-        return (3, 3)
-    return (4, 4)
+        return (12, 8)
+    return (4, 6)
 
 
 async def _resource_shares_by_dashboard(
@@ -871,13 +927,24 @@ async def add_widget(
 
     current_layout: list[dict[str, Any]] = dashboard.layout if isinstance(dashboard.layout, list) else []
     default_w, default_h = _default_widget_size(body.widget_type)
+    placement = _fit_widget(current_layout, default_w, default_h)
+    if placement is None:
+        # Only when not one cell is free, since the widget shrinks to whatever is. A bounded grid
+        # can still genuinely run out, and the alternative is placing the widget where the user
+        # could never reach it. The row is already flushed, so the rollback also drops it.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This dashboard is full — make room by moving or removing a widget first",
+        )
+    slot_x, slot_y, slot_w, slot_h = placement
     dashboard.layout = current_layout + [
         {
             "i": str(widget.id),
-            "x": 0,
-            "y": _next_y(current_layout),
-            "w": default_w,
-            "h": default_h,
+            "x": slot_x,
+            "y": slot_y,
+            "w": slot_w,
+            "h": slot_h,
         }
     ]
     dashboard.version += 1

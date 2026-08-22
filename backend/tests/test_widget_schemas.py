@@ -11,6 +11,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from app.schemas.dashboards import (
+    GRID_COLUMNS,
     AgendaWidgetResponse,
     CalendarWidgetResponse,
     ClockWidgetResponse,
@@ -144,11 +145,14 @@ def test_widget_create_config_is_typed_per_variant() -> None:
 
 def test_layout_update_bounds_the_canonical_grid() -> None:
     """Write-side bounds only — LayoutItem itself stays types-only so reads can't 500 (#53/ADR-009)."""
-    fits = {"i": "a", "x": 8, "y": 0, "w": 4, "h": 3}
+    # Derived from the basis, and flush against its right edge: the pair the comparison actually
+    # turns on. A literal here sits in the interior the moment the grid widens, so it would keep
+    # passing while testing nothing — which is how widening it to 24 first went unnoticed.
+    fits = {"i": "a", "x": GRID_COLUMNS - 4, "y": 0, "w": 4, "h": 3}
     assert LayoutUpdate(layout=[fits], version=0).layout[0].w == 4
 
     for bad in (
-        {**fits, "x": 9},  # x + w exceeds the 12-column grid
+        {**fits, "x": GRID_COLUMNS - 3},  # one column past the edge
         {**fits, "x": -1},
         {**fits, "w": 0},
         {**fits, "h": 0},
@@ -158,6 +162,29 @@ def test_layout_update_bounds_the_canonical_grid() -> None:
 
     with pytest.raises(ValidationError):
         LayoutUpdate(layout=[fits, dict(fits)], version=0)  # duplicate item id
+
+
+def test_layout_update_rejects_overlapping_items() -> None:
+    """Every coordinate in range, and still not a layout any client could render back."""
+    # The shape a refused settlement produces: the client's compactor declined to move these apart,
+    # so they are reported still sitting on each other. A bounds check passes it, and accepting it
+    # stored two widgets in the same cells.
+    overlapping = [
+        {"i": "a", "x": 0, "y": 1, "w": 3, "h": 5},
+        {"i": "b", "x": 2, "y": 0, "w": 21, "h": 20},
+    ]
+
+    with pytest.raises(ValidationError):
+        LayoutUpdate(layout=overlapping, version=0)
+
+    # Touching edges are not overlapping — the boundary this rule turns on.
+    flush = [
+        {"i": "a", "x": 0, "y": 0, "w": 3, "h": 5},
+        {"i": "b", "x": 3, "y": 0, "w": 21, "h": 20},
+        {"i": "c", "x": 0, "y": 5, "w": 3, "h": 5},
+    ]
+
+    assert len(LayoutUpdate(layout=flush, version=0).layout) == 3
 
 
 def test_layout_items_drop_transient_grid_bookkeeping() -> None:

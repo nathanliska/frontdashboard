@@ -150,7 +150,7 @@ export function DashboardsPage() {
 
   return (
     <div className="flex flex-col h-full gap-6">
-      <div className="flex items-center justify-between gap-3 shrink-0 pl-12 sm:pl-0 min-h-10">
+      <div className="flex items-center justify-between gap-3 shrink-0 pl-12 nav:pl-0 min-h-10">
         <h1 className="min-w-0 text-xl font-semibold text-zinc-100 truncate">Dashboards</h1>
         <div className="flex shrink-0 items-center gap-2">
           <button
