@@ -355,10 +355,12 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
   }
 }
 
-/** One feed row: the newest event of a collapsed run, and how many events it stands for. */
+/** One feed row: a collapsed run, and every event it stands for. */
 export type ActivityGroup = {
+  /** The run's representative and `members[0]` — its newest event, since the feed is newest-first. */
   event: ActivityEvent
-  count: number
+  /** Every event the row collapsed, newest first. A row that collapsed nothing holds just its own. */
+  members: ActivityEvent[]
   /** Distinct entities the run touched. Toggling one checkbox ten times is one checkbox. */
   entities: number
 }
@@ -434,13 +436,13 @@ export function groupActivityEvents(events: ActivityEvent[]): ActivityGroup[] {
     const withinWindow = runPreviousAt - at <= COLLAPSE_WINDOW_MS
 
     if (last && key !== null && key === runKey && withinWindow) {
-      last.count += 1
+      last.members.push(event)
       runEntities.add(event.entity_id)
       last.entities = runEntities.size
       runPreviousAt = at
       continue
     }
-    groups.push({ event, count: 1, entities: 1 })
+    groups.push({ event, members: [event], entities: 1 })
     runKey = key
     runPreviousAt = at
     runEntities = new Set([event.entity_id])
@@ -456,17 +458,19 @@ export function groupActivityEvents(events: ActivityEvent[]): ActivityGroup[] {
  * newest would claim the others never happened. A run that touched one thing repeatedly keeps its
  * own sentence and says how often.
  */
-export function formatActivityGroup({ event, count, entities }: ActivityGroup): ActivityRow {
+export function formatActivityGroup({ event, members, entities }: ActivityGroup): ActivityRow {
   if (entities > 1 && event.event_type === 'list.item.checked') {
     const listName = payloadString(event.payload, 'list_name')
     const location = listName ? ` in "${listName}"` : ''
     return {
       badge: 'List item',
       // "updated", not "checked": the same event type carries unchecking, and a run mixes both.
-      summary: `You updated ${entities} checkboxes${location}.`,
+      // Uncounted because entities and events can disagree here; the disclosure states the number.
+      summary: `You updated checkboxes${location}.`,
     }
   }
   const presentation = formatActivityEvent(event)
+  const count = members.length
   if (count === 1) return presentation
   return { ...presentation, summary: `${presentation.summary.replace(/\.$/, '')} ${count} times.` }
 }

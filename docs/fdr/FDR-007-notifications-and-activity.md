@@ -1,7 +1,7 @@
 # FDR-007: Notifications & Activity Feed
 
 **Status:** Active
-**Last reviewed:** 2026-08-22
+**Last reviewed:** 2026-08-25
 
 ## Overview
 
@@ -89,9 +89,20 @@ times" — rather than a row with a separate `×N` beside it. Two shapes were tr
 principled but invisible: a reader cannot tell why one row carries a badge and the next does not,
 and being asked is the evidence that it does not work. The exception is a run spanning several
 entities, where naming the newest would claim the others never happened; those summarize against
-what contains them — "You updated 3 checkboxes in Groceries", counting **distinct checkboxes**, not
-events, because one box toggled ten times is one box. The verb is *updated* because the same event
+what contains them — "You updated checkboxes in Groceries". It stays uncounted because the honest
+number there is ambiguous: distinct boxes and events differ once one is toggled twice, and the
+disclosure states events against the lines it shows. The verb is *updated* because the same event
 type carries unchecking and a run mixes both.
+**A collapsed row opens to the events it stands for.** Collapsing is a presentation pass over the
+feed already loaded, so the members are in hand and expanding costs no request and no group column.
+The disclosure sits on every row that collapsed something rather than only the interesting ones: a
+split a reader cannot predict is the shape this decision already tried and reverted. **The count
+moved onto the control**, and the multi-entity summary lost its own: a count of entities and a count
+of events genuinely differ once a checkbox is toggled twice, and two numbers that disagree read as a
+miscount even when both are right. One number, on the control, naming the lines it reveals. Which
+rows are open is held by the feed against the event ids already opened, not by the row against its
+own identity: a run grows at the front when SSE delivers and at the tail when a page is appended, so
+no single event stays its name.
 **Tradeoff:** A tidying session still costs one row per drag underneath, and a run interrupted by an
 unrelated event shows as two sittings. A run reaching the end of what is loaded states a partial
 count until the next page arrives: collapsing runs over the whole accumulated feed rather than per
