@@ -424,6 +424,30 @@ describe('counting what a collapsed run actually touched', () => {
   })
 })
 
+describe('a run reaching the end of a loaded page', () => {
+  // Grouping runs over the whole accumulated feed, not per page, so the tail of a run states a
+  // partial count and the seam re-merges when the older page lands. Nothing else would catch that
+  // becoming two permanent rows, which is what a per-page collapse would give.
+  const RUN = [6, 5, 4, 3, 2, 1].map((id, index) =>
+    checkedEvent(id, 'list-1', `Item ${id}`, `2026-07-17T18:5${5 - index}:00.000Z`),
+  )
+
+  it('states only what is loaded while the rest is still a page away', () => {
+    const loaded = groupActivityEvents(RUN.slice(0, 3))
+
+    expect(loaded).toHaveLength(1)
+    expect(loaded[0].count).toBe(3)
+  })
+
+  it('re-merges into one row once the older page is appended', () => {
+    const whole = groupActivityEvents([...RUN.slice(0, 3), ...RUN.slice(3)])
+
+    expect(whole).toHaveLength(1)
+    expect(whole[0].count).toBe(6)
+    expect(whole[0].entities).toBe(6)
+  })
+})
+
 describe('collapsing reorder churn', () => {
   function reorderEvent(eventId: number, listId = 'list-1'): ActivityEvent {
     return activityEvent(

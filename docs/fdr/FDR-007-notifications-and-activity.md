@@ -1,7 +1,7 @@
 # FDR-007: Notifications & Activity Feed
 
 **Status:** Active
-**Last reviewed:** 2026-08-16
+**Last reviewed:** 2026-08-22
 
 ## Overview
 
@@ -92,9 +92,11 @@ entities, where naming the newest would claim the others never happened; those s
 what contains them — "You updated 3 checkboxes in Groceries", counting **distinct checkboxes**, not
 events, because one box toggled ten times is one box. The verb is *updated* because the same event
 type carries unchecking and a run mixes both.
-**Tradeoff:** A tidying session still costs one row per drag underneath, so a collapsed run split
-across a page boundary shows as two rows, and one interrupted by an unrelated event shows as two
-sittings. It's not a cross-user or admin audit view; that would be a separate surface.
+**Tradeoff:** A tidying session still costs one row per drag underneath, and a run interrupted by an
+unrelated event shows as two sittings. A run reaching the end of what is loaded states a partial
+count until the next page arrives: collapsing runs over the whole accumulated feed rather than per
+page, so the seam re-merges instead of leaving two rows. It's not a cross-user or admin audit view;
+that would be a separate surface.
 
 ### 5. Trashing a shared dashboard notifies the people who lose access
 
