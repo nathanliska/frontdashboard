@@ -9,6 +9,7 @@ import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialo
 import { CalendarTrashPanel } from '../components/calendar/CalendarTrashPanel'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
 import { ParticipantMicroDots } from '../components/calendar/ParticipantDots'
+import { useContainerSize } from '../hooks/useContainerSize'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import { useLocalDay } from '../hooks/useLocalDay'
 import {
@@ -29,15 +30,18 @@ import {
   toRecurrenceUntilIso,
 } from '../utils/calendar/calendarEditorDraftUtils'
 import {
+  CALENDAR_MONTH_ROW_HEIGHT,
   CALENDAR_WEEKDAY_LABELS,
   calendarWindow,
   DEFAULT_TIMEZONE,
   dateKey,
+  fitOccurrenceRows,
   formatCalendarOccurrenceCellLabel,
   formatCalendarOccurrenceCellTitle,
   formatDayNumber,
   formatHeadingDate,
   formatMonthLabel,
+  hiddenOccurrencesTitle,
   monthWeeksInView,
   occurrencesForDate,
   startOfDay,
@@ -95,6 +99,9 @@ export function CalendarPage() {
   const occurrences = occurrencesQuery.data ?? EMPTY_OCCURRENCES
   const { loading, error: occurrencesError, refetch: refetchOccurrences } = occurrencesQuery
   const monthDays = useMemo(() => monthWeeksInView(monthCursor), [monthCursor])
+  // Measured because CSS cannot count rows, and one cell answers for all of them: `auto-rows-fr`
+  // gives every cell the same height, so the body of the first is the height of every other.
+  const [cellBodyRef, cellBody] = useContainerSize({ width: 0, height: 96 })
   const selectedOccurrences = useMemo(
     () => occurrencesForDate(occurrences, selectedDate),
     [occurrences, selectedDate],
@@ -326,12 +333,16 @@ export function CalendarPage() {
           ) : (
             <div className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">
               <div className="grid h-full grid-cols-7 auto-rows-fr gap-1">
-                {monthDays.map((day) => {
+                {monthDays.map((day, index) => {
                   const dayOccurrences = occurrencesForDate(occurrences, day)
                   const inMonth = day.getMonth() === monthCursor.getMonth()
                   const isSelected = dateKey(day) === dateKey(selectedDate)
                   const isToday = dateKey(day) === dateKey(today)
-                  const visibleOccurrences = dayOccurrences.slice(0, inMonth ? 4 : 2)
+                  const { visible, hidden } = fitOccurrenceRows(
+                    cellBody.height,
+                    CALENDAR_MONTH_ROW_HEIGHT,
+                    dayOccurrences.length,
+                  )
                   return (
                     <button
                       key={day.toISOString()}
@@ -357,8 +368,11 @@ export function CalendarPage() {
                             dimmed={!inMonth}
                           />
                         </div>
-                        <div className="flex-1 min-h-0 overflow-hidden space-y-1">
-                          {visibleOccurrences.map((occurrence) => (
+                        <div
+                          ref={index === 0 ? cellBodyRef : null}
+                          className="flex-1 min-h-0 overflow-hidden space-y-1"
+                        >
+                          {dayOccurrences.slice(0, visible).map((occurrence) => (
                             <div
                               key={`${occurrence.event_id}:${occurrence.original_start}`}
                               className={cn(
@@ -375,12 +389,15 @@ export function CalendarPage() {
                               </span>
                             </div>
                           ))}
+                          {hidden > 0 && (
+                            <p
+                              className="text-[10px] text-zinc-500"
+                              title={hiddenOccurrencesTitle(dayOccurrences.slice(visible), day)}
+                            >
+                              +{hidden}
+                            </p>
+                          )}
                         </div>
-                        {dayOccurrences.length > visibleOccurrences.length && (
-                          <p className="text-[10px] text-zinc-500 shrink-0 mt-0.5">
-                            +{dayOccurrences.length - visibleOccurrences.length}
-                          </p>
-                        )}
                       </div>
                     </button>
                   )
