@@ -18,7 +18,10 @@ export function AgendaWidget({ dashboardId }: { dashboardId: string }) {
   const { data, error, refetch } = useAgendaItems(dashboardId)
   const all = data ?? []
   const todayItems = all.filter(isToday)
-  const upcomingItems = all.filter((i) => !isToday(i)).slice(0, MAX_ITEMS - todayItems.length)
+  // Clamped: today alone can exceed the budget, and a negative `slice` count counts from the end —
+  // so an overloaded day would show nearly every upcoming item instead of none.
+  const upcomingBudget = Math.max(0, MAX_ITEMS - todayItems.length)
+  const upcomingItems = all.filter((i) => !isToday(i)).slice(0, upcomingBudget)
 
   if (error) {
     return (
