@@ -311,8 +311,11 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
   const removeWidget = useDashboardStore((s) => s.removeWidget)
   // Measured rather than queried in CSS: react-grid-layout takes a column count and a row height
   // as numbers, so this one cannot move into `@container`.
-  const [containerRef, { width: containerWidth }] = useContainerSize({ width: 1200, height: 800 })
-  const availableHeight = useAvailableHeight(containerRef)
+  const [containerRef, { width: containerWidth }, containerElement] = useContainerSize({
+    width: 1200,
+    height: 800,
+  })
+  const availableHeight = useAvailableHeight(containerElement)
   const [draftLayout, setDraftLayout] = useState<LayoutItem[]>(dashboard.layout)
   const [draftBaseVersion, setDraftBaseVersion] = useState(dashboard.version)
   const activeLayout = useMemo(

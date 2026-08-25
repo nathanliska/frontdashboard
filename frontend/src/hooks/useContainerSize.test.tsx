@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { render } from '@testing-library/react'
-import { act, useRef } from 'react'
+import { act, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type ContainerSize, useAvailableHeight, useContainerSize } from './useContainerSize'
 
@@ -52,6 +52,28 @@ describe('useContainerSize', () => {
     expect(getByTestId('box')).toHaveTextContent('180x140')
   })
 
+  it('measures an element that only appears after the loading branch clears', () => {
+    // Every caller of this hook renders a spinner first and the measured element second, so the
+    // element does not exist at the first commit. An effect that found `null` there would get no
+    // second chance, and the widget would keep its initial size for the rest of its life.
+    function LateProbe() {
+      const [ready, setReady] = useState(false)
+      const [ref, size] = useContainerSize({ width: 300, height: 320 })
+      if (!ready) return <button type="button" onClick={() => setReady(true)} data-testid="load" />
+      return (
+        <div ref={ref} data-testid="box">
+          {size.width}x{size.height}
+        </div>
+      )
+    }
+
+    const { getByTestId } = render(<LateProbe />)
+    act(() => getByTestId('load').click())
+
+    resizeTo(180, 140)
+    expect(getByTestId('box')).toHaveTextContent('180x140')
+  })
+
   it('hands back the same object when the reported size is unchanged', () => {
     const seen: ContainerSize[] = []
     render(<Probe onSize={(size) => seen.push(size)} />)
@@ -92,17 +114,20 @@ function measurePage({
   }
 
   let measured = 0
+  // Created once per call, not per render: this one sets state, and a fresh identity per render would
+  // have React detach and reattach it forever.
+  let attach: ((node: HTMLDivElement | null) => void) | null = null
+
   function Probe() {
-    const ref = useRef<HTMLDivElement>(null)
-    measured = useAvailableHeight(ref)
+    const [element, setElement] = useState<HTMLDivElement | null>(null)
+    attach ??= (node) => {
+      stubRect(elementTop, elementTop)(node)
+      setElement(node)
+    }
+    measured = useAvailableHeight(element)
     return (
       <div style={{ overflowY: 'auto', paddingBottom }} ref={stubRect(scrollerBottom, 0)}>
-        <div
-          ref={(node) => {
-            stubRect(elementTop, elementTop)(node)
-            ref.current = node
-          }}
-        />
+        <div ref={attach} />
       </div>
     )
   }
@@ -112,6 +137,45 @@ function measurePage({
 }
 
 describe('useAvailableHeight', () => {
+  it('measures an element that only appears after the loading branch clears', () => {
+    // The dashboard grid returns an empty state before it has widgets, so adding the first one
+    // reveals the measured element on a re-render rather than a remount. Nothing re-runs an effect
+    // keyed on a ref, so the height stayed at the window's until the next resize.
+    Object.defineProperty(window, 'innerHeight', { value: 1000, configurable: true })
+    const stub = (top: number, bottom: number) => (node: HTMLDivElement | null) => {
+      if (node) node.getBoundingClientRect = () => ({ top, bottom }) as DOMRect
+    }
+
+    let measured = 0
+    let attach: ((node: HTMLDivElement | null) => void) | null = null
+
+    function LateProbe() {
+      const [ready, setReady] = useState(false)
+      const [element, setElement] = useState<HTMLDivElement | null>(null)
+      attach ??= (node) => {
+        stub(80, 80)(node)
+        setElement(node)
+      }
+      measured = useAvailableHeight(element)
+      return (
+        <div style={{ overflowY: 'auto', paddingBottom: '24px' }} ref={stub(0, 1000)}>
+          {ready ? (
+            <div ref={attach} />
+          ) : (
+            <button type="button" onClick={() => setReady(true)} data-testid="load" />
+          )}
+        </div>
+      )
+    }
+
+    const { getByTestId } = render(<LateProbe />)
+    expect(measured).toBe(1000)
+
+    act(() => getByTestId('load').click())
+
+    expect(measured).toBe(1000 - 24 - 80)
+  })
+
   it('leaves the page its bottom padding, the way the horizontal axis already does', () => {
     // A grid sized to the last pixel of the window sits flush against the edge while its right
     // side keeps the gutter — the asymmetry a reader notices first. Room ends at the scrolling

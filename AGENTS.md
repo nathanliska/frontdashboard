@@ -130,6 +130,11 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - CI runs lint, tests, `ty` type checking and the frontend build on every push and PR — except
   docs-only changes (`docs/**`, `**.md` at any depth), which skip it. On a PR touching only one
   side, the other side's job is skipped. Keep it green.
+- **Five of the guards below are backend tests that read *frontend* source**, so a frontend-only PR
+  skips exactly the checks protecting what it changed: `test_activity.py`,
+  `test_grid_basis_coverage.py`, `test_css_container_coverage.py` — which globs every `.tsx` —
+  `test_frontend_pin_coverage.py` and `test_toolchain_coverage.py`. Run `make test` before opening
+  one; a skipped job reports the same green as a passing one.
 - MCP servers are declared once per tool — `.mcp.json` for Claude Code, `.codex/config.toml` for
   Codex. Nothing syncs them; change both or one agent silently loses the server.
 
@@ -187,6 +192,9 @@ so if you are wondering whether a convention bites, this table is the answer.
 | A container-scoped variant has an `@container` | `containerQueryCoverage.test.ts` | Below, *Frontend Principles* |
 | A hand-written `@container` rule names a class that declares one | `test_css_container_coverage.py` | Below, *Frontend Principles* |
 | The header reserve is released where the floating menu button hides | `hamburgerReserveCoverage.test.ts` | Below, *Frontend Principles* |
+
+The five named under *Tooling* are backend tests reading frontend source — the one combination the
+side-skip gets wrong, and the reason a green PR is not on its own evidence they ran.
 
 These guards read source, so a refactor can make one **pass having checked nothing** — the
 dangerous failure, because a silent guard looks exactly like a satisfied one. Three rules follow
@@ -277,6 +285,10 @@ from that:
   the build on it. Tailwind's `@container` is inline-size, so a query on **height** is hand-written
   CSS against a class that sets `container-type: size` — which puts the rule and the element in
   different files, guarded from the other side by `test_css_container_coverage.py`.
+- `useContainerSize` arms its observer from a **callback ref**, not an effect over a `useRef`.
+  Every caller renders a spinner before the element it measures, so an effect finds `null` at the
+  first commit and — having no dependencies — never runs again, leaving the initial size standing
+  for the element's life. Written the obvious way, a measuring hook is silently dead.
 - The sidebar has **two** states, not three: a labelled rail, and off-canvas behind the floating
   menu button below `nav:` (77rem) — the width at which the rail costs more than the grid it leaves,
   so `--breakpoint-nav` is derived from `STACK_BELOW + 224 + 48`, not picked. That button overlaps

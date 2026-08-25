@@ -60,7 +60,7 @@ export function ParticipantMicroDots({
   if (participants.length === 0) return null
   return (
     <span className="flex shrink-0 items-center gap-0.5">
-      {participants.slice(0, 3).map((participant) => (
+      {participants.slice(0, MAX_DOTS).map((participant) => (
         <span
           key={participant.user_id}
           className="h-1.5 w-1.5 rounded-full"

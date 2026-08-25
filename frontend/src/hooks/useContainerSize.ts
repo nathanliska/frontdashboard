@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type ContainerSize = { width: number; height: number }
 
@@ -24,7 +24,7 @@ function scrollableContentBottom(el: HTMLElement): number {
 }
 
 /**
- * Height still available below `ref` — the room a grid there can actually occupy.
+ * Height still available below `element` — the room a grid there can actually occupy.
  *
  * The window's own height is the wrong bound at both ends. Above, an element starting below a page
  * header has less than the window, so sizing N rows against `innerHeight` overflows by however far
@@ -33,22 +33,24 @@ function scrollableContentBottom(el: HTMLElement): number {
  * keeps the gutter, which is the asymmetry a reader sees first. The element's own container is no
  * help — it grows with its content and would never bind.
  */
-export function useAvailableHeight(ref: RefObject<HTMLElement | null>) {
+export function useAvailableHeight(element: HTMLElement | null) {
   const [height, setHeight] = useState(() =>
     typeof window === 'undefined' ? 800 : window.innerHeight,
   )
 
+  // The element itself, not a ref to it: this measures from an effect, and a ref's `.current` is
+  // not a dependency — so an element arriving after the first commit would never be measured, only
+  // caught later by a window resize.
   useEffect(() => {
     const measure = () => {
-      const el = ref.current
-      if (!el) return
-      const room = scrollableContentBottom(el) - el.getBoundingClientRect().top
+      if (!element) return
+      const room = scrollableContentBottom(element) - element.getBoundingClientRect().top
       setHeight(Math.max(MIN_AVAILABLE_HEIGHT, room))
     }
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [ref])
+  }, [element])
 
   return height
 }
@@ -65,14 +67,22 @@ export function useAvailableHeight(ref: RefObject<HTMLElement | null>) {
  * usually has; zero renders a frame of the smallest layout before snapping out of it.
  */
 export function useContainerSize<T extends HTMLElement = HTMLDivElement>(initial: ContainerSize) {
-  const ref = useRef<T>(null)
   const [size, setSize] = useState(initial)
+  // State rather than a ref, so a consumer measuring the node from an effect has a dependency that
+  // changes when it attaches.
+  const [element, setElement] = useState<T | null>(null)
+  const observer = useRef<ResizeObserver | null>(null)
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
+  // A callback ref rather than an effect over a plain `useRef`: what gets measured is usually
+  // rendered behind a loading branch, so it does not exist at the first commit — and an effect
+  // that finds `null` there never runs again, leaving `initial` in place for the element's life.
+  const ref = useCallback((node: T | null) => {
+    setElement(node)
+    observer.current?.disconnect()
+    observer.current = null
+    if (!node) return
 
-    const observer = new ResizeObserver((entries) => {
+    observer.current = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect
       // The same object back unless a number moved. Callers put this in dependency arrays, and a
       // grid drag reports continuously — a fresh object per observation re-runs their effects for
@@ -81,10 +91,8 @@ export function useContainerSize<T extends HTMLElement = HTMLDivElement>(initial
         previous.width === width && previous.height === height ? previous : { width, height },
       )
     })
-
-    observer.observe(el)
-    return () => observer.disconnect()
+    observer.current.observe(node)
   }, [])
 
-  return [ref, size] as const
+  return [ref, size, element] as const
 }

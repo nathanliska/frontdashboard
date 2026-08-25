@@ -1,16 +1,21 @@
 import { CalendarDays, Clock3 } from 'lucide-react'
 import { memo } from 'react'
 import type { CalendarOccurrence } from '../../../api/calendar'
+import { useContainerSize } from '../../../hooks/useContainerSize'
 import {
+  CALENDAR_MONTH_ROW_HEIGHT,
+  CALENDAR_WEEK_ROW_HEIGHT,
   CALENDAR_WEEKDAY_LABELS,
   CALENDAR_WEEKDAY_LABELS_COMPACT,
   dateKey,
+  fitOccurrenceRows,
   formatCalendarOccurrenceCellLabel,
   formatCalendarOccurrenceCellTitle,
   formatDayNumber,
   formatMonthLabel,
   formatOccurrenceSpan,
   formatOccurrenceTime,
+  hiddenOccurrencesTitle,
   isMultiDayOccurrence,
 } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
@@ -86,6 +91,10 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
   occurrencesByDate: Map<string, CalendarOccurrence[]>
   compact: boolean
 }) {
+  // Measured because CSS cannot count rows, and one cell answers for all seven: they share a grid
+  // row, so the body of the first is the height of every other.
+  const [cellBodyRef, cellBody] = useContainerSize({ width: 0, height: 200 })
+
   return (
     <div className="h-full flex flex-col gap-2">
       <div className="shrink-0">
@@ -93,19 +102,24 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
       </div>
 
       <div className="grid grid-cols-7 gap-1 flex-1 min-h-0">
-        {days.map((day) => {
+        {days.map((day, index) => {
           const dayOccurrences = occurrencesByDate.get(dateKey(day)) ?? []
           const isToday = dateKey(day) === dateKey(new Date())
+          const { visible, hidden } = fitOccurrenceRows(
+            cellBody.height,
+            CALENDAR_WEEK_ROW_HEIGHT,
+            dayOccurrences.length,
+          )
 
           return (
             <div
               key={day.toISOString()}
               className={cn(
-                'rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 min-h-0 min-w-0 overflow-hidden',
+                'rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 min-h-0 min-w-0 overflow-hidden flex flex-col',
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
             >
-              <div className="flex items-center justify-between gap-1 mb-1">
+              <div className="flex items-center justify-between gap-1 mb-1 shrink-0">
                 <span className="text-[10px] uppercase text-zinc-500">
                   {new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(day)}
                 </span>
@@ -113,8 +127,11 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
                   {formatDayNumber(day)}
                 </span>
               </div>
-              <div className="space-y-1">
-                {dayOccurrences.slice(0, compact ? 2 : 3).map((occurrence) => (
+              <div
+                ref={index === 0 ? cellBodyRef : null}
+                className="flex-1 min-h-0 overflow-hidden space-y-1"
+              >
+                {dayOccurrences.slice(0, visible).map((occurrence) => (
                   <div
                     key={`${occurrence.event_id}:${occurrence.original_start}`}
                     title={formatCalendarOccurrenceCellTitle(occurrence, day)}
@@ -133,9 +150,12 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
                     </span>
                   </div>
                 ))}
-                {dayOccurrences.length > (compact ? 2 : 3) && (
-                  <p className="text-[10px] text-zinc-500">
-                    +{dayOccurrences.length - (compact ? 2 : 3)}
+                {hidden > 0 && (
+                  <p
+                    className="text-[10px] text-zinc-500"
+                    title={hiddenOccurrencesTitle(dayOccurrences.slice(visible), day)}
+                  >
+                    +{hidden}
                   </p>
                 )}
               </div>
@@ -167,6 +187,9 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
   onViewChange: (value: CalendarWidgetView) => void | Promise<void>
 }) {
   const weekdayLabels = compact ? CALENDAR_WEEKDAY_LABELS_COMPACT : CALENDAR_WEEKDAY_LABELS
+  // Measured because CSS cannot count rows, and one cell answers for all of them: `auto-rows-fr`
+  // gives every cell the same height, so the body of the first is the height of every other.
+  const [cellBodyRef, cellBody] = useContainerSize({ width: 0, height: 57 })
 
   return (
     <div className="h-full flex flex-col">
@@ -204,11 +227,15 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
           ultraCompact ? 'gap-0.5' : 'gap-1',
         )}
       >
-        {days.map((day) => {
+        {days.map((day, index) => {
           const dayOccurrences = occurrencesByDate.get(dateKey(day)) ?? []
           const inMonth = day.getMonth() === monthDate.getMonth()
           const isToday = dateKey(day) === dateKey(new Date())
-          const visible = dayOccurrences.slice(0, compact ? 1 : 2)
+          const { visible, hidden } = fitOccurrenceRows(
+            cellBody.height,
+            CALENDAR_MONTH_ROW_HEIGHT,
+            dayOccurrences.length,
+          )
 
           return (
             <div
@@ -246,32 +273,36 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
                   )}
                 </div>
               ) : (
-                <>
-                  <div className="flex-1 min-h-0 overflow-hidden space-y-1">
-                    {visible.map((occurrence) => (
-                      <div
-                        key={`${occurrence.event_id}:${occurrence.original_start}`}
-                        title={formatCalendarOccurrenceCellTitle(occurrence, day)}
-                        className={cn(
-                          'flex items-center gap-1 rounded px-1 py-0.5 text-[10px]',
-                          occurrence.recurring
-                            ? 'bg-emerald-500/12 text-emerald-300'
-                            : 'bg-sky-500/12 text-sky-300',
-                        )}
-                      >
-                        <ParticipantMicroDots participants={occurrence.participants} />
-                        <span className="min-w-0 truncate">
-                          {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  {dayOccurrences.length > visible.length && (
-                    <p className="text-[10px] text-zinc-500 shrink-0 mt-0.5">
-                      +{dayOccurrences.length - visible.length}
+                <div
+                  ref={index === 0 ? cellBodyRef : null}
+                  className="flex-1 min-h-0 overflow-hidden space-y-1"
+                >
+                  {dayOccurrences.slice(0, visible).map((occurrence) => (
+                    <div
+                      key={`${occurrence.event_id}:${occurrence.original_start}`}
+                      title={formatCalendarOccurrenceCellTitle(occurrence, day)}
+                      className={cn(
+                        'flex items-center gap-1 rounded px-1 py-0.5 text-[10px]',
+                        occurrence.recurring
+                          ? 'bg-emerald-500/12 text-emerald-300'
+                          : 'bg-sky-500/12 text-sky-300',
+                      )}
+                    >
+                      <ParticipantMicroDots participants={occurrence.participants} />
+                      <span className="min-w-0 truncate">
+                        {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
+                      </span>
+                    </div>
+                  ))}
+                  {hidden > 0 && (
+                    <p
+                      className="text-[10px] text-zinc-500"
+                      title={hiddenOccurrencesTitle(dayOccurrences.slice(visible), day)}
+                    >
+                      +{hidden}
                     </p>
                   )}
-                </>
+                </div>
               )}
             </div>
           )

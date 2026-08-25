@@ -5,6 +5,28 @@ export const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 export const CALENDAR_WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 export const CALENDAR_WEEKDAY_LABELS_COMPACT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const
 
+// Row pitch of an occurrence pill, rounded up so a rounding error costs a row rather than clipping
+// one. Each is `text-[10px]` plus that cell's own pill padding; `space-y-1` is the gap between.
+export const CALENDAR_WEEK_ROW_HEIGHT = 21
+export const CALENDAR_MONTH_ROW_HEIGHT = 19
+const CALENDAR_ROW_GAP = 4
+
+/**
+ * How many of `total` occurrences a cell body `height` pixels tall shows, and how many it hides.
+ *
+ * The "+N" line spends a row of its own, so a cell that cannot show everything shows one fewer
+ * event than it has room for — never a full cell with an event silently missing from it.
+ */
+export function fitOccurrenceRows(
+  height: number,
+  rowHeight: number,
+  total: number,
+): { visible: number; hidden: number } {
+  const rows = Math.max(1, Math.floor((height + CALENDAR_ROW_GAP) / (rowHeight + CALENDAR_ROW_GAP)))
+  const visible = total <= rows ? total : rows - 1
+  return { visible, hidden: total - visible }
+}
+
 export function addDays(date: Date, days: number): Date {
   const next = new Date(date)
   next.setDate(next.getDate() + days)
@@ -173,6 +195,18 @@ export function formatCalendarOccurrenceCellTitle(
     occurrence.occurrence_end,
     occurrence.all_day,
   )})`
+}
+
+/**
+ * Hover text for a "+N" line: what the rows it stands in for would have said.
+ *
+ * The month grids are the one surface with no way to reach a hidden occurrence — a widget cell is
+ * not clickable at all — so the count needs to name them somewhere.
+ */
+export function hiddenOccurrencesTitle(hidden: CalendarOccurrence[], day: Date): string {
+  return hidden
+    .map((occurrence) => formatCalendarOccurrenceCellLabel(occurrence, day, 'compact'))
+    .join('\n')
 }
 
 export function toLocalInputValue(date: Date): string {

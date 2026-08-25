@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CALENDAR_MONTH_ROW_HEIGHT,
   calendarWindow,
   dateKey,
+  fitOccurrenceRows,
   formatCalendarOccurrenceCellLabel,
   formatCalendarOccurrenceCellTitle,
   isMultiDayOccurrence,
@@ -239,5 +241,31 @@ describe('calendar utils', () => {
     expect(formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 10, 12))).toBe(
       'Starts 8:00 PM Retreat',
     )
+  })
+})
+
+describe('fitOccurrenceRows', () => {
+  const ROW = CALENDAR_MONTH_ROW_HEIGHT
+  const GAP = 4
+  // Three rows to the pixel: two gaps between them, and no trailing gap under the last.
+  const THREE_ROWS = ROW * 3 + GAP * 2
+
+  it('counts the last row that fits without counting a gap below it', () => {
+    expect(fitOccurrenceRows(THREE_ROWS, ROW, 3)).toEqual({ visible: 3, hidden: 0 })
+    expect(fitOccurrenceRows(THREE_ROWS - 1, ROW, 3)).toEqual({ visible: 1, hidden: 2 })
+  })
+
+  it('spends a row on the "+N" line rather than hiding an event silently', () => {
+    expect(fitOccurrenceRows(THREE_ROWS, ROW, 4)).toEqual({ visible: 2, hidden: 2 })
+  })
+
+  it('shows everything when everything fits', () => {
+    expect(fitOccurrenceRows(THREE_ROWS, ROW, 0)).toEqual({ visible: 0, hidden: 0 })
+    expect(fitOccurrenceRows(THREE_ROWS, ROW, 2)).toEqual({ visible: 2, hidden: 0 })
+  })
+
+  it('keeps one row in a cell too short for any, so a busy day still says so', () => {
+    expect(fitOccurrenceRows(0, ROW, 3)).toEqual({ visible: 0, hidden: 3 })
+    expect(fitOccurrenceRows(0, ROW, 1)).toEqual({ visible: 1, hidden: 0 })
   })
 })
