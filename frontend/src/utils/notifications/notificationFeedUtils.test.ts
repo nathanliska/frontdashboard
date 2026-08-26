@@ -211,7 +211,7 @@ describe('groupActivityEvents', () => {
     const groups = groupActivityEvents([layoutEvent(5), layoutEvent(4), layoutEvent(3)])
 
     expect(groups).toHaveLength(1)
-    expect(groups[0].count).toBe(3)
+    expect(groups[0].members.length).toBe(3)
     // Newest-first feed, so the run is dated by the newest event in it.
     expect(groups[0].event.event_id).toBe(5)
   })
@@ -224,7 +224,7 @@ describe('groupActivityEvents', () => {
       layoutEvent(3, 'dash-2'),
     ])
 
-    expect(groups.map((group) => [group.event.event_id, group.count])).toEqual([
+    expect(groups.map((group) => [group.event.event_id, group.members.length])).toEqual([
       [6, 1],
       [5, 1],
       [4, 1],
@@ -238,7 +238,7 @@ describe('groupActivityEvents', () => {
       layoutEvent(1, 'dash-1', '2026-07-13T09:00:00.000Z'),
     ])
 
-    expect(groups.map((group) => [group.event.event_id, group.count])).toEqual([
+    expect(groups.map((group) => [group.event.event_id, group.members.length])).toEqual([
       [2, 1],
       [1, 1],
     ])
@@ -279,7 +279,7 @@ describe('groupActivityEvents', () => {
     ])
 
     expect(groups).toHaveLength(1)
-    expect(groups[0].count).toBe(3)
+    expect(groups[0].members.length).toBe(3)
     expect(groups[0].event.event_id).toBe(3)
     expect(formatActivityGroup(groups[0]).summary).toBe(
       'You reconfigured a Calendar widget on "Home" 3 times.',
@@ -333,13 +333,13 @@ describe('collapsing checkbox churn', () => {
     ])
 
     expect(groups).toHaveLength(1)
-    expect(groups[0].count).toBe(3)
+    expect(groups[0].members.length).toBe(3)
   })
 
   it('does not merge two different lists', () => {
     const groups = groupActivityEvents([checkedEvent(2, 'list-1'), checkedEvent(1, 'list-2')])
 
-    expect(groups.map((group) => group.count)).toEqual([1, 1])
+    expect(groups.map((group) => group.members.length)).toEqual([1, 1])
   })
 
   it('summarizes the run against the list, because each event names a different item', () => {
@@ -351,7 +351,7 @@ describe('collapsing checkbox churn', () => {
     const row = formatActivityGroup(group)
 
     // Naming the newest would claim the other two never happened.
-    expect(row.summary).toBe('You updated 3 checkboxes in "Groceries".')
+    expect(row.summary).toBe('You updated checkboxes in "Groceries".')
   })
 
   it('still names the item when the run is one event', () => {
@@ -377,16 +377,18 @@ describe('counting what a collapsed run actually touched', () => {
     )
   }
 
-  it('counts checkboxes, not events, when one item is toggled more than once', () => {
+  it('separates what a run touched from how often, when one item is toggled twice', () => {
     const [group] = groupActivityEvents([
       toggle(3, 'item-a'),
       toggle(2, 'item-b'),
       toggle(1, 'item-a'),
     ])
 
-    expect(group.count).toBe(3)
+    // The two genuinely differ, which is why neither the row nor the control states both: the
+    // summary is uncounted and the disclosure counts the lines it reveals.
+    expect(group.members.length).toBe(3)
     expect(group.entities).toBe(2)
-    expect(formatActivityGroup(group).summary).toBe('You updated 2 checkboxes in "Groceries".')
+    expect(formatActivityGroup(group).summary).toBe('You updated checkboxes in "Groceries".')
   })
 
   it('reads as the item itself when a run only ever touched one', () => {
@@ -424,6 +426,30 @@ describe('counting what a collapsed run actually touched', () => {
   })
 })
 
+describe('a run reaching the end of a loaded page', () => {
+  // Grouping runs over the whole accumulated feed, not per page, so the tail of a run states a
+  // partial count and the seam re-merges when the older page lands. Nothing else would catch that
+  // becoming two permanent rows, which is what a per-page collapse would give.
+  const RUN = [6, 5, 4, 3, 2, 1].map((id, index) =>
+    checkedEvent(id, 'list-1', `Item ${id}`, `2026-07-17T18:5${5 - index}:00.000Z`),
+  )
+
+  it('states only what is loaded while the rest is still a page away', () => {
+    const loaded = groupActivityEvents(RUN.slice(0, 3))
+
+    expect(loaded).toHaveLength(1)
+    expect(loaded[0].members.length).toBe(3)
+  })
+
+  it('re-merges into one row once the older page is appended', () => {
+    const whole = groupActivityEvents([...RUN.slice(0, 3), ...RUN.slice(3)])
+
+    expect(whole).toHaveLength(1)
+    expect(whole[0].members.length).toBe(6)
+    expect(whole[0].entities).toBe(6)
+  })
+})
+
 describe('collapsing reorder churn', () => {
   function reorderEvent(eventId: number, listId = 'list-1'): ActivityEvent {
     return activityEvent(
@@ -437,7 +463,7 @@ describe('collapsing reorder churn', () => {
     const groups = groupActivityEvents([reorderEvent(3), reorderEvent(2), reorderEvent(1)])
 
     expect(groups).toHaveLength(1)
-    expect(groups[0].count).toBe(3)
+    expect(groups[0].members.length).toBe(3)
   })
 
   it('keeps the counted badge, because every row in the run says the same thing', () => {
@@ -450,7 +476,7 @@ describe('collapsing reorder churn', () => {
   it('does not merge reorders of two different lists', () => {
     const groups = groupActivityEvents([reorderEvent(2, 'list-1'), reorderEvent(1, 'list-2')])
 
-    expect(groups.map((group) => group.count)).toEqual([1, 1])
+    expect(groups.map((group) => group.members.length)).toEqual([1, 1])
   })
 
   it('collapses list reorders on the dashboard that holds them', () => {
