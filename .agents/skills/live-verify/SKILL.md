@@ -30,6 +30,22 @@ docker compose -f docker-compose.verify.yml up -d --wait
 The app is on **http://localhost:8080**. The backend runs `alembic upgrade head` on start, so the
 schema builds itself.
 
+**If :8080 is already taken** (another project's container, typically), don't stop the holder —
+pick any free port, and boot with a second `-f` override file. Both keys below carry that same
+port: the backend's Origin check compares against `FRONTEND_BASE_URL`, so moving the published
+port alone rejects every login as cross-origin. `ports:` needs the `!override` YAML tag or
+Compose *appends* the mapping and still binds 8080:
+
+```yaml
+services:
+  backend:
+    environment:
+      FRONTEND_BASE_URL: http://localhost:8081
+  frontend:
+    ports: !override
+      - "8081:80"
+```
+
 **Never delete `name: frontdashboard-verify` from that compose file, and never override it with
 `-p`.** Without it Compose derives the project from the directory, collides with the dev stack's `db`
 service, and recreates that container with the real `frontdashboard_pgdata` volume attached — a
