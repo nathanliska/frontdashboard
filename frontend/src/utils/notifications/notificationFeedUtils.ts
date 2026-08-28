@@ -37,6 +37,12 @@ const WIDGET_LABELS: Record<string, string> = {
   list: 'a List widget',
 }
 
+/** A `dashboard.updated` whose only changed field is the layout — the shape a drag writes. */
+function isLayoutEvent(event: ActivityEvent): boolean {
+  if (event.event_type !== 'dashboard.updated') return false
+  return primaryChangedField(payloadStrings(event.payload, 'changed_fields')) === 'layout'
+}
+
 function widgetLabel(payload: Record<string, unknown>): string {
   return WIDGET_LABELS[payloadString(payload, 'widget_type') ?? ''] ?? 'a widget'
 }
@@ -209,8 +215,18 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
           }
           return { badge: 'Dashboard', summary: `You reconfigured ${widget} on ${name}.` }
         }
-        case 'layout':
+        case 'layout': {
+          // Older rows carry no gesture, and neither do the layout writes nobody performed.
+          const action = payloadString(payload, 'layout_action')
+          if (action === 'moved' || action === 'resized') {
+            const verb = action === 'moved' ? 'moved' : 'resized'
+            return {
+              badge: 'Dashboard',
+              summary: `You ${verb} ${widgetLabel(payload)} on ${name}.`,
+            }
+          }
           return { badge: 'Dashboard', summary: `You rearranged widgets on ${name}.` }
+        }
         default:
           return { badge: 'Dashboard', summary: `You updated ${name}.` }
       }
@@ -458,7 +474,14 @@ export function groupActivityEvents(events: ActivityEvent[]): ActivityGroup[] {
  * newest would claim the others never happened. No branch carries a count: the disclosure states
  * it once, against the lines it reveals.
  */
-export function formatActivityGroup({ event, entities }: ActivityGroup): ActivityRow {
+export function formatActivityGroup({ event, members, entities }: ActivityGroup): ActivityRow {
+  // A layout run collapses per dashboard, so its `entities` stays 1 however many widgets moved.
+  // Naming the newest one would claim the rest never moved — the container sentence is the honest
+  // one, and the disclosure names each widget.
+  if (members.length > 1 && isLayoutEvent(event)) {
+    const name = quoted(payloadString(event.payload, 'name'), 'a dashboard')
+    return { badge: 'Dashboard', summary: `You rearranged widgets on ${name}.` }
+  }
   if (entities > 1 && event.event_type === 'list.item.checked') {
     const listName = payloadString(event.payload, 'list_name')
     const location = listName ? ` in "${listName}"` : ''

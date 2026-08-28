@@ -774,12 +774,29 @@ async def update_layout(
     # react-grid-layout bookkeeping keys the client round-trips (see LayoutItem).
     dashboard.layout = [item.model_dump() for item in body.layout]
     dashboard.version += 1
+    payload: dict[str, Any] = {
+        "version": dashboard.version,
+        "changed_fields": [ChangedField.layout],
+    }
+    if body.gesture is not None:
+        # Rendered back to its own author, but still client-supplied: a widget id from another
+        # dashboard would put a stranger's widget type in this feed, so it is looked up here.
+        gestured = await db.scalar(
+            select(DashboardWidget).where(
+                DashboardWidget.id == body.gesture.widget_id,
+                DashboardWidget.dashboard_id == dashboard.id,
+            )
+        )
+        if gestured is not None:
+            payload["widget_id"] = str(gestured.id)
+            payload["widget_type"] = gestured.widget_type
+            payload["layout_action"] = body.gesture.action
     event_message = await _build_dashboard_event_message(
         db,
         event_type=EventType.dashboard_updated,
         current_user=current_user,
         dashboard=dashboard,
-        payload={"version": dashboard.version, "changed_fields": [ChangedField.layout]},
+        payload=payload,
         client_id=client_id,
     )
     await commit_and_broadcast(

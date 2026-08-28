@@ -304,6 +304,63 @@ async def test_dashboard_layout_and_widget_activity_survives_a_reload(auth_clien
     assert {event["payload"]["widget_type"] for event in updates if "widget_type" in event["payload"]} == {"clock"}
 
 
+async def test_layout_event_names_only_a_widget_the_dashboard_owns(auth_client: AsyncClient) -> None:
+    """Only the client knows which widget was grabbed, and it has to prove it.
+
+    The saved layout carries every neighbour compaction reflowed, so the server cannot tell them
+    apart — and a gesture naming a widget from elsewhere must not reach this feed.
+    """
+    dashboard = await create_dashboard(auth_client, name="Board")
+    set_csrf(auth_client)
+    add_resp = await auth_client.post(
+        f"/api/dashboards/{dashboard['id']}/widgets",
+        json={"widget_type": "clock", "config": {}},
+    )
+    added = add_resp.json()
+    widget_id = added["widgets"][0]["id"]
+
+    set_csrf(auth_client)
+    moved = await auth_client.put(
+        f"/api/dashboards/{dashboard['id']}/layout",
+        json={
+            "layout": [{"i": widget_id, "x": 2, "y": 1, "w": 2, "h": 2}],
+            "version": added["version"],
+            "gesture": {"widget_id": widget_id, "action": "resized"},
+        },
+    )
+    assert moved.status_code == 200
+
+    # A widget id from somewhere else would otherwise put a foreign widget type in this feed.
+    other = await create_dashboard(auth_client, name="Elsewhere")
+    set_csrf(auth_client)
+    other_add = await auth_client.post(
+        f"/api/dashboards/{other['id']}/widgets",
+        json={"widget_type": "calendar", "config": {}},
+    )
+    foreign_widget_id = other_add.json()["widgets"][0]["id"]
+
+    set_csrf(auth_client)
+    spoofed = await auth_client.put(
+        f"/api/dashboards/{dashboard['id']}/layout",
+        json={
+            "layout": [{"i": widget_id, "x": 0, "y": 0, "w": 2, "h": 2}],
+            "version": moved.json()["version"],
+            "gesture": {"widget_id": foreign_widget_id, "action": "moved"},
+        },
+    )
+    assert spoofed.status_code == 200
+
+    feed = (await auth_client.get("/api/activity")).json()
+    layout_events = [
+        event
+        for event in feed
+        if event["event_type"] == "dashboard.updated" and event["payload"]["changed_fields"] == ["layout"] and event["payload"]["name"] == "Board"
+    ]
+    # Newest first: the spoofed one kept the countless sentence, the honest one named its widget.
+    assert [event["payload"].get("layout_action") for event in layout_events] == [None, "resized"]
+    assert [event["payload"].get("widget_type") for event in layout_events] == [None, "clock"]
+
+
 async def test_restore_names_the_dashboard_it_brought_back(auth_client: AsyncClient) -> None:
     """Restore staged only `changed_fields`, so the feed could only say "a dashboard"."""
     dashboard = await create_dashboard(auth_client, name="Kitchen")

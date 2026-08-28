@@ -134,8 +134,11 @@ export const ItemPriority = z.enum(["low", "medium", "high"]);
 export type ItemReorder = z.infer<typeof ItemReorder>;
 export const ItemReorder = z.object({ item_ids: z.array(z.uuid()).min(1).max(1000) });
 
+export type LayoutGesture = z.infer<typeof LayoutGesture>;
+export const LayoutGesture = z.object({ action: z.enum(["moved", "resized"]), widget_id: z.uuid() });
+
 export type LayoutUpdate = z.infer<typeof LayoutUpdate>;
-export const LayoutUpdate = z.object({ layout: z.array(LayoutItem), version: z.number().int() });
+export const LayoutUpdate = z.object({ gesture: LayoutGesture.nullable().optional(), layout: z.array(LayoutItem), version: z.number().int() });
 
 export type ListType = z.infer<typeof ListType>;
 export const ListType = z.enum(["checklist", "grocery", "todo"]);

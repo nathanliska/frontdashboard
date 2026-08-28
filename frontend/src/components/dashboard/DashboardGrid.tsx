@@ -3,6 +3,7 @@ import { GridLayout, type Layout, verticalCompactor } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import type { Dashboard, DashboardWidget, LayoutItem } from '../../api/dashboards'
+import type { LayoutGesture } from '../../api/generated/contract'
 import { useAvailableHeight, useContainerSize } from '../../hooks/useContainerSize'
 import { confirm } from '../../stores/confirm'
 import { useDashboardStore } from '../../stores/dashboard'
@@ -405,8 +406,10 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
     [boundedCompactor, cols],
   )
 
+  // The gestured item is the widget under the cursor, and only the client can say which one that
+  // was: the saved layout carries every neighbour compaction reflowed, indistinguishable server-side.
   const handleLayoutStop = useCallback(
-    (newLayout: Layout) => {
+    (newLayout: Layout, gestured: Layout[number] | null, action: LayoutGesture['action']) => {
       if (!canEdit || isStacked) return
       setDropBlocked(false)
       boundedCompactor.endGesture()
@@ -417,9 +420,27 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
       setDraftBaseVersion(dashboard.version)
       setDraftLayout([...newLayout] as unknown as LayoutItem[])
       if (sameLayout(dashboard.layout, newLayout)) return
-      void saveLayout([...newLayout] as unknown as LayoutItem[])
+      // The library allows a stop with no item behind it; the layout still saves, the event just
+      // keeps the sentence it has always had.
+      void saveLayout(
+        [...newLayout] as unknown as LayoutItem[],
+        gestured ? { widget_id: gestured.i, action } : undefined,
+      )
     },
     [canEdit, cols, boundedCompactor, dashboard.layout, dashboard.version, isStacked, saveLayout],
+  )
+
+  // Stable, like every other handler here: this component re-renders on each observer tick during a
+  // gesture, and a fresh closure per tick would hand the grid new props throughout the drag.
+  const handleDragStop = useCallback(
+    (layout: Layout, gestured: Layout[number] | null) =>
+      handleLayoutStop(layout, gestured, 'moved'),
+    [handleLayoutStop],
+  )
+  const handleResizeStop = useCallback(
+    (layout: Layout, gestured: Layout[number] | null) =>
+      handleLayoutStop(layout, gestured, 'resized'),
+    [handleLayoutStop],
   )
 
   if (dashboard.widgets.length === 0) {
@@ -460,8 +481,8 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
         onResizeStart={handleGestureStart}
         onDrag={handleGestureMove}
         onResize={handleGestureMove}
-        onDragStop={handleLayoutStop}
-        onResizeStop={handleLayoutStop}
+        onDragStop={handleDragStop}
+        onResizeStop={handleResizeStop}
         className="w-full"
       >
         {dashboard.widgets.map((widget) => (

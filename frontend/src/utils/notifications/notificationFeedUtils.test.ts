@@ -53,6 +53,24 @@ function layoutEvent(
   )
 }
 
+function gesturedLayoutEvent(
+  eventId: number,
+  action: 'moved' | 'resized',
+  widgetType = 'calendar',
+): ActivityEvent {
+  return activityEvent(
+    'dashboard.updated',
+    {
+      name: 'Home',
+      changed_fields: ['layout'],
+      widget_id: `w-${eventId}`,
+      widget_type: widgetType,
+      layout_action: action,
+    },
+    { event_id: eventId, entity_id: 'dash-1' },
+  )
+}
+
 function reconfiguredEvent(eventId: number, widgetId = 'w-1'): ActivityEvent {
   return activityEvent(
     'dashboard.updated',
@@ -365,6 +383,37 @@ describe('collapsing checkbox churn', () => {
     const row = formatActivityGroup(group)
 
     expect(row.summary).toBe('You rearranged widgets on "Home".')
+  })
+
+  it('names the widget a single gesture moved or resized', () => {
+    expect(formatActivityEvent(gesturedLayoutEvent(1, 'moved')).summary).toBe(
+      'You moved a Calendar widget on "Home".',
+    )
+    expect(formatActivityEvent(gesturedLayoutEvent(1, 'resized', 'list')).summary).toBe(
+      'You resized a List widget on "Home".',
+    )
+  })
+
+  it('keeps a run of gestures on the dashboard that holds them, not the newest widget', () => {
+    // A layout run collapses per dashboard, so `entities` stays 1 however many widgets moved —
+    // naming the newest would claim the rest never did.
+    const [group] = groupActivityEvents([
+      gesturedLayoutEvent(3, 'moved', 'list'),
+      gesturedLayoutEvent(2, 'resized'),
+      gesturedLayoutEvent(1, 'moved'),
+    ])
+
+    expect(formatActivityGroup(group).summary).toBe('You rearranged widgets on "Home".')
+    // The members keep their own sentences, which is what the disclosure is for.
+    expect(group.members.map((m) => formatActivityEvent(m).summary)).toEqual([
+      'You moved a List widget on "Home".',
+      'You resized a Calendar widget on "Home".',
+      'You moved a Calendar widget on "Home".',
+    ])
+  })
+
+  it('falls back to the old sentence for a layout event with no gesture', () => {
+    expect(formatActivityEvent(layoutEvent(1)).summary).toBe('You rearranged widgets on "Home".')
   })
 })
 
