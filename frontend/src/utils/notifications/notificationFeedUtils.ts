@@ -452,13 +452,13 @@ export function groupActivityEvents(events: ActivityEvent[]): ActivityGroup[] {
 }
 
 /**
- * How a collapsed run reads as one line, with its count inside the sentence.
+ * How a collapsed run reads as one line.
  *
  * A run spanning several entities is summarized against what contains them, since naming the
- * newest would claim the others never happened. A run that touched one thing repeatedly keeps its
- * own sentence and says how often.
+ * newest would claim the others never happened. No branch carries a count: the disclosure states
+ * it once, against the lines it reveals.
  */
-export function formatActivityGroup({ event, members, entities }: ActivityGroup): ActivityRow {
+export function formatActivityGroup({ event, entities }: ActivityGroup): ActivityRow {
   if (entities > 1 && event.event_type === 'list.item.checked') {
     const listName = payloadString(event.payload, 'list_name')
     const location = listName ? ` in "${listName}"` : ''
@@ -469,8 +469,5 @@ export function formatActivityGroup({ event, members, entities }: ActivityGroup)
       summary: `You updated checkboxes${location}.`,
     }
   }
-  const presentation = formatActivityEvent(event)
-  const count = members.length
-  if (count === 1) return presentation
-  return { ...presentation, summary: `${presentation.summary.replace(/\.$/, '')} ${count} times.` }
+  return formatActivityEvent(event)
 }

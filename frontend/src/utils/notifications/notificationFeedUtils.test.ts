@@ -271,7 +271,7 @@ describe('groupActivityEvents', () => {
     expect(groupActivityEvents([added(2), added(1)])).toHaveLength(2)
   })
 
-  it('collapses a run of reconfigures on one widget and words it with its count', () => {
+  it('collapses a run of reconfigures on one widget into its own sentence', () => {
     const groups = groupActivityEvents([
       reconfiguredEvent(3),
       reconfiguredEvent(2),
@@ -282,7 +282,7 @@ describe('groupActivityEvents', () => {
     expect(groups[0].members.length).toBe(3)
     expect(groups[0].event.event_id).toBe(3)
     expect(formatActivityGroup(groups[0]).summary).toBe(
-      'You reconfigured a Calendar widget on "Home" 3 times.',
+      'You reconfigured a Calendar widget on "Home".',
     )
   })
 
@@ -360,11 +360,11 @@ describe('collapsing checkbox churn', () => {
     expect(formatActivityGroup(group).summary).toBe('You checked "Milk" in "Groceries".')
   })
 
-  it('leaves layout churn on the counted-badge shape, where every event said the same thing', () => {
+  it('collapses layout churn on one dashboard, where every event says the same thing', () => {
     const [group] = groupActivityEvents([layoutEvent(2), layoutEvent(1)])
     const row = formatActivityGroup(group)
 
-    expect(row.summary).toBe('You rearranged widgets on "Home" 2 times.')
+    expect(row.summary).toBe('You rearranged widgets on "Home".')
   })
 })
 
@@ -399,8 +399,8 @@ describe('counting what a collapsed run actually touched', () => {
     ])
     const row = formatActivityGroup(group)
 
-    // "3 checkboxes" would be three items; it was one, three times.
-    expect(row.summary).toBe('You checked "Milk" in "Groceries" 3 times.')
+    // "checkboxes" would claim three items; it was one, touched repeatedly.
+    expect(row.summary).toBe('You checked "Milk" in "Groceries".')
   })
 
   it('collapses repeated edits to one entity, where every row reads alike', () => {
@@ -412,7 +412,7 @@ describe('counting what a collapsed run actually touched', () => {
       )
     const [group] = groupActivityEvents([edit(2), edit(1)])
 
-    expect(formatActivityGroup(group).summary).toBe('You updated "Vacuum" in "Chores" 2 times.')
+    expect(formatActivityGroup(group).summary).toBe('You updated "Vacuum" in "Chores".')
   })
 
   it('does not merge edits to two different items', () => {
@@ -466,11 +466,11 @@ describe('collapsing reorder churn', () => {
     expect(groups[0].members.length).toBe(3)
   })
 
-  it('keeps the counted badge, because every row in the run says the same thing', () => {
+  it('collapses reorders of one list, where every row says the same thing', () => {
     const [group] = groupActivityEvents([reorderEvent(2), reorderEvent(1)])
     const row = formatActivityGroup(group)
 
-    expect(row.summary).toBe('You reordered items in "Chores" 2 times.')
+    expect(row.summary).toBe('You reordered items in "Chores".')
   })
 
   it('does not merge reorders of two different lists', () => {
@@ -489,7 +489,7 @@ describe('collapsing reorder churn', () => {
     const groups = groupActivityEvents([listReorder(2), listReorder(1)])
 
     expect(groups).toHaveLength(1)
-    expect(formatActivityGroup(groups[0]).summary).toBe('You reordered lists in "Home" 2 times.')
+    expect(formatActivityGroup(groups[0]).summary).toBe('You reordered lists in "Home".')
   })
 })
 
