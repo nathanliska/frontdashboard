@@ -135,7 +135,7 @@ describe('NotificationsPage', () => {
     })
   })
 
-  it('renders a run of widget moves as one row that states its own count', async () => {
+  it('renders a run of widget moves as one row, counted on its disclosure', async () => {
     const layoutEvent = (eventId: number) => ({
       event_id: eventId,
       event_type: 'dashboard.updated',
@@ -151,9 +151,9 @@ describe('NotificationsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^activity$/i }))
 
-    expect(await screen.findAllByText('You rearranged widgets on "Roadmap" 3 times.')).toHaveLength(
-      1,
-    )
+    expect(await screen.findAllByText('You rearranged widgets on "Roadmap".')).toHaveLength(1)
+    // The count is the disclosure's alone, so the sentence above it stays plain.
+    expect(screen.getByRole('button', { name: 'Show 3 changes' })).toBeInTheDocument()
   })
 
   it('refetches when the caller forces it, which is how a resync recovers', async () => {

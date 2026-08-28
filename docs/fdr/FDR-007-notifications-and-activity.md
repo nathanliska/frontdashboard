@@ -1,7 +1,7 @@
 # FDR-007: Notifications & Activity Feed
 
 **Status:** Active
-**Last reviewed:** 2026-08-25
+**Last reviewed:** 2026-08-26
 
 ## Overview
 
@@ -84,23 +84,25 @@ Collapsing buys the same readability in the presentation layer, where being wron
 rather than a missing one, and filtering serves what hiding was really aiming at: finding one kind
 of thing. Checkbox churn is 69% of a real log and the reason hiding was reached for; collapsing it
 measured 112 events into 23 rows, which is the same quiet without the dishonesty.
-**A collapsed run is one sentence that states its own count** — "You reordered items in List 3
-times" — rather than a row with a separate `×N` beside it. Two shapes were tried and the split was
-principled but invisible: a reader cannot tell why one row carries a badge and the next does not,
-and being asked is the evidence that it does not work. The exception is a run spanning several
-entities, where naming the newest would claim the others never happened; those summarize against
-what contains them — "You updated checkboxes in Groceries". It stays uncounted because the honest
-number there is ambiguous: distinct boxes and events differ once one is toggled twice, and the
-disclosure states events against the lines it shows. The verb is *updated* because the same event
-type carries unchecking and a run mixes both.
+**A collapsed run is one plain sentence, and no summary carries a count.** A `×N` badge was tried
+and rejected: the split was principled but invisible, since a reader cannot tell why one row carries
+a badge and the next does not, and being asked is the evidence that it does not work. Putting the
+number in the sentence was tried next and reads as a second fact once the disclosure below states
+the same figure. The count belongs on the control, said once. A run spanning several entities is
+summarized against what contains them — "You updated checkboxes in Groceries" — since naming the
+newest would claim the others never happened; the verb is *updated* because the same event type
+carries unchecking and a run mixes both.
 **A collapsed row opens to the events it stands for.** Collapsing is a presentation pass over the
 feed already loaded, so the members are in hand and expanding costs no request and no group column.
 The disclosure sits on every row that collapsed something rather than only the interesting ones: a
-split a reader cannot predict is the shape this decision already tried and reverted. **The count
-moved onto the control**, and the multi-entity summary lost its own: a count of entities and a count
-of events genuinely differ once a checkbox is toggled twice, and two numbers that disagree read as a
-miscount even when both are right. One number, on the control, naming the lines it reveals. Which
-rows are open is held by the feed against the event ids already opened, not by the row against its
+split a reader cannot predict is the shape this decision already tried and reverted. The control's
+count names the lines it reveals, not the entities they touched — a checkbox toggled twice is two of
+one and one of the other, and two numbers that disagree read as a miscount even when both are right.
+A layout run's members
+name the widget each gesture moved or resized, which is what makes opening one worth the click: the
+saved layout carries every neighbour compaction reflowed, so the client reports what was grabbed and
+the server records only what it can attribute to that dashboard. Older rows carry no gesture and keep
+the countless sentence. Which rows are open is held by the feed against the event ids already opened, not by the row against its
 own identity: a run grows at the front when SSE delivers and at the tail when a page is appended, so
 no single event stays its name.
 **Tradeoff:** A tidying session still costs one row per drag underneath, and a run interrupted by an

@@ -10,6 +10,7 @@ import {
   DashboardMemberResponse,
   DashboardResponse,
   DashboardSummary,
+  type LayoutGesture,
   type LayoutItem,
   type ListWidgetCreate,
   ListWidgetResponse,
@@ -17,6 +18,9 @@ import {
   TrashedDashboardSummary,
 } from './generated/contract'
 import { parseJson, readError } from './http'
+
+export type { LayoutGesture }
+
 import type { ResourceShare, ShareUpdate } from './shares'
 
 // Share reads are the one place a single-flight earns its keep: the settings modal fetches them
@@ -163,10 +167,11 @@ export async function apiUpdateLayout(
   dashboardId: string,
   layout: LayoutItem[],
   version: number,
+  gesture?: LayoutGesture,
 ): Promise<UpdateLayoutResult> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/layout`, {
     method: 'PUT',
-    body: JSON.stringify({ layout, version }),
+    body: JSON.stringify({ layout, version, gesture }),
   })
   if (res.status === 409) {
     const data = (await res.json().catch(() => ({}))) as { detail?: string }

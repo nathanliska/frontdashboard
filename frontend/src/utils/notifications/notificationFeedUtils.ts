@@ -37,6 +37,12 @@ const WIDGET_LABELS: Record<string, string> = {
   list: 'a List widget',
 }
 
+/** A `dashboard.updated` whose only changed field is the layout — the shape a drag writes. */
+function isLayoutEvent(event: ActivityEvent): boolean {
+  if (event.event_type !== 'dashboard.updated') return false
+  return primaryChangedField(payloadStrings(event.payload, 'changed_fields')) === 'layout'
+}
+
 function widgetLabel(payload: Record<string, unknown>): string {
   return WIDGET_LABELS[payloadString(payload, 'widget_type') ?? ''] ?? 'a widget'
 }
@@ -209,8 +215,18 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
           }
           return { badge: 'Dashboard', summary: `You reconfigured ${widget} on ${name}.` }
         }
-        case 'layout':
+        case 'layout': {
+          // Older rows carry no gesture, and neither do the layout writes nobody performed.
+          const action = payloadString(payload, 'layout_action')
+          if (action === 'moved' || action === 'resized') {
+            const verb = action === 'moved' ? 'moved' : 'resized'
+            return {
+              badge: 'Dashboard',
+              summary: `You ${verb} ${widgetLabel(payload)} on ${name}.`,
+            }
+          }
           return { badge: 'Dashboard', summary: `You rearranged widgets on ${name}.` }
+        }
         default:
           return { badge: 'Dashboard', summary: `You updated ${name}.` }
       }
@@ -452,13 +468,20 @@ export function groupActivityEvents(events: ActivityEvent[]): ActivityGroup[] {
 }
 
 /**
- * How a collapsed run reads as one line, with its count inside the sentence.
+ * How a collapsed run reads as one line.
  *
  * A run spanning several entities is summarized against what contains them, since naming the
- * newest would claim the others never happened. A run that touched one thing repeatedly keeps its
- * own sentence and says how often.
+ * newest would claim the others never happened. No branch carries a count: the disclosure states
+ * it once, against the lines it reveals.
  */
 export function formatActivityGroup({ event, members, entities }: ActivityGroup): ActivityRow {
+  // A layout run collapses per dashboard, so its `entities` stays 1 however many widgets moved.
+  // Naming the newest one would claim the rest never moved — the container sentence is the honest
+  // one, and the disclosure names each widget.
+  if (members.length > 1 && isLayoutEvent(event)) {
+    const name = quoted(payloadString(event.payload, 'name'), 'a dashboard')
+    return { badge: 'Dashboard', summary: `You rearranged widgets on ${name}.` }
+  }
   if (entities > 1 && event.event_type === 'list.item.checked') {
     const listName = payloadString(event.payload, 'list_name')
     const location = listName ? ` in "${listName}"` : ''
@@ -469,8 +492,5 @@ export function formatActivityGroup({ event, members, entities }: ActivityGroup)
       summary: `You updated checkboxes${location}.`,
     }
   }
-  const presentation = formatActivityEvent(event)
-  const count = members.length
-  if (count === 1) return presentation
-  return { ...presentation, summary: `${presentation.summary.replace(/\.$/, '')} ${count} times.` }
+  return formatActivityEvent(event)
 }

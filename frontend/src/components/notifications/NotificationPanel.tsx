@@ -3,6 +3,7 @@ import { Bell, Check, X } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 import { ROUTES } from '../../routes'
 import { useNotificationsStore } from '../../stores/notifications'
+import { useUIStore } from '../../stores/ui'
 import { getNotificationDestination } from '../../utils/notifications/notificationFeedUtils'
 import { cn } from '../../utils/shared/cn'
 import { NotificationFeed } from './NotificationFeed'
@@ -23,6 +24,9 @@ export function NotificationPanel({
   const setPanelOpen = useNotificationsStore((s) => s.setPanelOpen)
   const markRead = useNotificationsStore((s) => s.markRead)
   const markAllRead = useNotificationsStore((s) => s.markAllRead)
+  // Leaving the panel by navigating has to take the off-canvas sidebar with it: the panel opens
+  // from inside that sidebar, so the destination would otherwise render behind it.
+  const closeMobileSidebar = useUIStore((s) => s.closeMobileSidebar)
   function handleNotificationClick(notification: (typeof notifications)[number]) {
     if (notification.read_at === null) {
       void markRead(notification.id)
@@ -30,6 +34,7 @@ export function NotificationPanel({
     setPanelOpen(false)
     const destination = getNotificationDestination(notification)
     if (destination) {
+      closeMobileSidebar()
       navigate(destination)
     }
   }
@@ -125,7 +130,10 @@ export function NotificationPanel({
           <div className="px-4 py-2.5 border-t border-zinc-800 shrink-0">
             <Link
               to={ROUTES.notifications}
-              onClick={() => setPanelOpen(false)}
+              onClick={() => {
+                setPanelOpen(false)
+                closeMobileSidebar()
+              }}
               className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
             >
               View all notifications →

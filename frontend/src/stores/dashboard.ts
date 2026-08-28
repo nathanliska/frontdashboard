@@ -25,6 +25,7 @@ import {
   type Dashboard,
   type DashboardSummary,
   type DashboardWidget,
+  type LayoutGesture,
   type LayoutItem,
   type TrashedDashboard,
   type WidgetCreate,
@@ -71,7 +72,12 @@ type InFlightSummariesLoad = {
   promise: Promise<void>
 }
 
-type PendingLayoutSave = { dashboardId: string; layout: LayoutItem[]; retried?: boolean }
+type PendingLayoutSave = {
+  dashboardId: string
+  layout: LayoutItem[]
+  gesture?: LayoutGesture
+  retried?: boolean
+}
 
 let inFlightDashboardLoad: InFlightDashboardLoad | null = null
 let inFlightSummariesLoad: InFlightSummariesLoad | null = null
@@ -152,7 +158,7 @@ export interface DashboardState {
 
   // ── Editor actions ─────────────────────────────────────────────────────────
   loadDashboard: (id: string, options?: LoadDashboardOptions) => Promise<void>
-  saveLayout: (layout: LayoutItem[]) => Promise<void>
+  saveLayout: (layout: LayoutItem[], gesture?: LayoutGesture) => Promise<void>
   addWidget: (widget: WidgetCreate) => Promise<boolean>
   removeWidget: (widgetId: string) => Promise<boolean>
   updateWidget: (widgetId: string, config: Record<string, unknown>) => Promise<boolean>
@@ -489,11 +495,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       return promise
     },
 
-    async saveLayout(layout) {
+    async saveLayout(layout, gesture) {
       const { dashboard } = get()
       if (!dashboard) return
       // Coalesce: keep only the newest requested layout.
-      pendingLayoutSave = { dashboardId: dashboard.id, layout }
+      pendingLayoutSave = { dashboardId: dashboard.id, layout, gesture }
       // Serialize: a drain is already running and will pick the entry above up, with whatever
       // version the in-flight save returns.
       if (layoutSaveInFlight) return
@@ -511,7 +517,12 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           // may have navigated to a different dashboard entirely.
           if (!current || current.id !== pending.dashboardId) continue
           try {
-            const result = await apiUpdateLayout(current.id, pending.layout, current.version)
+            const result = await apiUpdateLayout(
+              current.id,
+              pending.layout,
+              current.version,
+              pending.gesture,
+            )
             if (!guard.isCurrent()) {
               return
             }
@@ -538,6 +549,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
               pendingLayoutSave ??= {
                 dashboardId: pending.dashboardId,
                 layout: merged.layout,
+                // The replay is the same drag on a newer base, so it is still the widget they moved.
+                gesture: pending.gesture,
                 retried: true,
               }
               continue

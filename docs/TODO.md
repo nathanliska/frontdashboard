@@ -130,6 +130,16 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   actually slow: series with a `count` limit and no `until` still load unbounded, since finding their
   end means expanding the rule — which is the work being avoided. A persisted last-occurrence column
   was considered and rejected ([FDR-006](fdr/FDR-006-calendar-and-events.md)). *(Small, no trigger)*
+- **#67 — Nothing enforces a minimum widget size.** No `minH`/`minW` reaches react-grid-layout, and
+  the layout validator checks only the 24x24 bounds, so a widget can be dragged down to a few pixels
+  of body. A calendar at `h=7` leaves a 5px cell and clips the one occurrence row forced into it.
+  The fix belongs in the grid constraints, not in the widgets that suffer it — each would otherwise
+  need its own floor. *(Small)*
+- **#68 — A hidden occurrence is unreachable except by mouse.** A month cell's "+N" carries the
+  hidden titles as a `title`, which is not keyboard-reachable and is not reliably announced, and the
+  widget's grid is not clickable at all. The calendar page's cells already open the day beside them;
+  the widget has no equivalent, and deep-linking one would need a date parameter the page does not
+  read yet. *(Small, product decision first)*
 
 ## Deferred — revisit when
 

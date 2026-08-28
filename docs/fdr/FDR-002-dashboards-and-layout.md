@@ -1,7 +1,7 @@
 # FDR-002: Dashboards & Layout Editor
 
 **Status:** Active
-**Last reviewed:** 2026-08-21
+**Last reviewed:** 2026-08-26
 
 ## Overview
 
@@ -46,6 +46,11 @@ overlaid by widget id, because `PUT /layout` replaces the array wholesale and ne
 against the widget set — posting our own stale array would strip a widget the other editor just
 added. Two people dragging the *same* widget still means one of them loses, which is the right
 answer for a position. A failed re-read falls back to the banner rather than retrying blind.
+**The write also carries an optional `gesture`** — the widget a person moved or resized. It is the
+one fact the saved layout destroys: compaction reflows neighbours, so a server-side diff names every
+widget that shifted rather than the one that was grabbed, and only the client holds the difference.
+The server records it solely when the id belongs to that dashboard, and every other layout write —
+fitting a new widget, the mobile projection, a replayed merge — simply omits it.
 
 ### 2. Rapid saves are serialized and coalesced
 

@@ -151,6 +151,15 @@ class DashboardResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LayoutGesture(BaseModel):
+    """The widget a person moved or resized, as the client alone can report it."""
+
+    widget_id: uuid.UUID
+    action: Literal["moved", "resized"]
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class DashboardCreate(BaseModel):
     name: DashboardName
 
@@ -173,6 +182,10 @@ class DashboardUpdate(PatchModel):
 class LayoutUpdate(BaseModel):
     layout: list[LayoutItem]
     version: int
+    # What the reader wanted to know and the layout cannot say. Compaction reflows neighbours, so
+    # diffing two layouts names every widget that shifted rather than the one that was grabbed.
+    # Absent on the writes no one gestured — fitting a new widget, the mobile projection.
+    gesture: LayoutGesture | None = None
 
     @field_validator("layout")
     @classmethod

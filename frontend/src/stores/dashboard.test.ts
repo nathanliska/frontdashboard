@@ -455,6 +455,34 @@ describe('useDashboardStore', () => {
     expect(useDashboardStore.getState().dashboard).toEqual(refreshedDashboard)
   })
 
+  it('sends the gesture belonging to the layout that survived coalescing', async () => {
+    const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
+    apiUpdateLayout.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
+
+    const layoutA = [{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }]
+    const layoutB = [{ i: 'w2', x: 2, y: 0, w: 4, h: 3 }]
+
+    void useDashboardStore.getState().saveLayout(layoutA, { widget_id: 'w1', action: 'moved' })
+    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
+
+    // A second gesture lands mid-flight. Dropping the layout has to drop its gesture with it, or
+    // the feed names the widget from a drag the server never saw.
+    void useDashboardStore.getState().saveLayout(layoutB, { widget_id: 'w2', action: 'resized' })
+    resolvers[0]({ conflict: false, dashboard: makeDashboard({ version: 2, layout: layoutA }) })
+
+    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(2))
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutB, 2, {
+      widget_id: 'w2',
+      action: 'resized',
+    })
+  })
+
   it('coalesces rapid layout saves and re-reads the bumped version', async () => {
     const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
     apiUpdateLayout.mockImplementation(
@@ -471,7 +499,7 @@ describe('useDashboardStore', () => {
 
     const savePromise = useDashboardStore.getState().saveLayout(layoutA)
     await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
-    expect(apiUpdateLayout).toHaveBeenNthCalledWith(1, 'dash-1', layoutA, 1)
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(1, 'dash-1', layoutA, 1, undefined)
 
     // B then C arrive while A is still in flight: only the latest survives.
     void useDashboardStore.getState().saveLayout(layoutB)
@@ -481,7 +509,7 @@ describe('useDashboardStore', () => {
     resolvers[0]({ conflict: false, dashboard: makeDashboard({ version: 2, layout: layoutA }) })
     await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(2))
     // The follow-up PUT carries the bumped version and the coalesced latest layout (B dropped).
-    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutC, 2)
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutC, 2, undefined)
 
     resolvers[1]({ conflict: false, dashboard: makeDashboard({ version: 3, layout: layoutC }) })
     await savePromise
@@ -505,13 +533,17 @@ describe('useDashboardStore', () => {
     )
     useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
 
-    await useDashboardStore.getState().saveLayout([{ i: 'w1', x: 6, y: 2, w: 4, h: 3 }])
+    await useDashboardStore
+      .getState()
+      .saveLayout([{ i: 'w1', x: 6, y: 2, w: 4, h: 3 }], { widget_id: 'w1', action: 'moved' })
 
     // Asserting the call, not the resulting layout: a user who hit reload would also end up
     // correct, so only the retry itself distinguishes this from the old banner.
     expect(apiUpdateLayout).toHaveBeenCalledTimes(2)
-    const [, retriedLayout, retriedVersion] = apiUpdateLayout.mock.calls[1]
+    const [, retriedLayout, retriedVersion, retriedGesture] = apiUpdateLayout.mock.calls[1]
     expect(retriedVersion).toBe(5)
+    // The replay is the same drag rebased, so the feed must still name what was moved.
+    expect(retriedGesture).toEqual({ widget_id: 'w1', action: 'moved' })
     expect(retriedLayout).toContainEqual({ i: 'w1', x: 6, y: 2, w: 4, h: 3 })
     // Posting our own array wholesale would have stripped w2 — PUT /layout replaces the blob.
     expect(retriedLayout).toContainEqual({ i: 'w2', x: 4, y: 0, w: 4, h: 3 })
@@ -1338,7 +1370,7 @@ describe('useDashboardStore', () => {
 
     await useDashboardStore.getState().saveLayout([])
 
-    expect(apiUpdateLayout).toHaveBeenCalledWith('dash-1', [], 1)
+    expect(apiUpdateLayout).toHaveBeenCalledWith('dash-1', [], 1, undefined)
     expect(useDashboardStore.getState().conflict).toBe(true)
     expect(useDashboardStore.getState().dashboard).toEqual(currentDashboard)
   })
