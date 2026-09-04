@@ -11,7 +11,7 @@ import { CalendarTrashPanel } from '../components/calendar/CalendarTrashPanel'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
 import { useContainerSize } from '../hooks/useContainerSize'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
-import { useLocalDay } from '../hooks/useLocalDay'
+import { useLocalToday } from '../hooks/useLocalDay'
 import {
   createCalendarEvent,
   deleteCalendarEvent,
@@ -101,9 +101,7 @@ export function CalendarPage() {
     () => occurrencesForDate(occurrences, selectedDate),
     [occurrences, selectedDate],
   )
-  const dayKey = useLocalDay()
-  // biome-ignore lint/correctness/useExhaustiveDependencies: dayKey re-runs `new Date()` at the local-day rollover — an intentional trigger dep, not used inside.
-  const today = useMemo(() => startOfDay(new Date()), [dayKey])
+  const today = useLocalToday()
   const activeDashboard = useMemo<DashboardContext | null>(() => {
     const summary = activeDashboards.find((d) => d.id === effectiveActiveDashboardId)
     return summary ? { id: summary.id, name: summary.name } : null
