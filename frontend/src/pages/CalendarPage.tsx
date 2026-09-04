@@ -4,11 +4,11 @@ import { useSearchParams } from 'react-router'
 import type { CalendarOccurrence } from '../api/calendar'
 import type { CalendarEventParticipantResponse } from '../api/generated/contract'
 import { CalendarDayNumber } from '../components/calendar/CalendarDayNumber'
+import { CalendarDayOccurrences } from '../components/calendar/CalendarDayOccurrences'
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialog'
 import { CalendarTrashPanel } from '../components/calendar/CalendarTrashPanel'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
-import { ParticipantMicroDots } from '../components/calendar/ParticipantDots'
 import { useContainerSize } from '../hooks/useContainerSize'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import { useLocalDay } from '../hooks/useLocalDay'
@@ -30,18 +30,13 @@ import {
   toRecurrenceUntilIso,
 } from '../utils/calendar/calendarEditorDraftUtils'
 import {
-  CALENDAR_MONTH_ROW_HEIGHT,
   CALENDAR_WEEKDAY_LABELS,
   calendarWindow,
   DEFAULT_TIMEZONE,
   dateKey,
-  fitOccurrenceRows,
-  formatCalendarOccurrenceCellLabel,
-  formatCalendarOccurrenceCellTitle,
   formatDayNumber,
   formatHeadingDate,
   formatMonthLabel,
-  hiddenOccurrencesTitle,
   monthWeeksInView,
   occurrencesForDate,
   startOfDay,
@@ -338,11 +333,6 @@ export function CalendarPage() {
                   const inMonth = day.getMonth() === monthCursor.getMonth()
                   const isSelected = dateKey(day) === dateKey(selectedDate)
                   const isToday = dateKey(day) === dateKey(today)
-                  const { visible, hidden } = fitOccurrenceRows(
-                    cellBody.height,
-                    CALENDAR_MONTH_ROW_HEIGHT,
-                    dayOccurrences.length,
-                  )
                   return (
                     <button
                       key={day.toISOString()}
@@ -368,36 +358,13 @@ export function CalendarPage() {
                             dimmed={!inMonth}
                           />
                         </div>
-                        <div
-                          ref={index === 0 ? cellBodyRef : null}
-                          className="flex-1 min-h-0 overflow-hidden space-y-1"
-                        >
-                          {dayOccurrences.slice(0, visible).map((occurrence) => (
-                            <div
-                              key={`${occurrence.event_id}:${occurrence.original_start}`}
-                              className={cn(
-                                'flex items-center gap-1 rounded px-1 py-0.5 text-[10px]',
-                                occurrence.recurring
-                                  ? 'bg-emerald-500/12 text-emerald-300'
-                                  : 'bg-sky-500/12 text-sky-300',
-                              )}
-                              title={formatCalendarOccurrenceCellTitle(occurrence, day)}
-                            >
-                              <ParticipantMicroDots participants={occurrence.participants} />
-                              <span className="min-w-0 truncate">
-                                {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
-                              </span>
-                            </div>
-                          ))}
-                          {hidden > 0 && (
-                            <p
-                              className="text-[10px] text-zinc-500"
-                              title={hiddenOccurrencesTitle(dayOccurrences.slice(visible), day)}
-                            >
-                              +{hidden}
-                            </p>
-                          )}
-                        </div>
+                        <CalendarDayOccurrences
+                          occurrences={dayOccurrences}
+                          day={day}
+                          height={cellBody.height}
+                          density="month"
+                          measureRef={index === 0 ? cellBodyRef : null}
+                        />
                       </div>
                     </button>
                   )
