@@ -2,6 +2,7 @@ import { Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Notification } from '../api/notifications'
+import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { ActivityFeed } from '../components/notifications/ActivityFeed'
 import { ActivityFilter } from '../components/notifications/ActivityFilter'
 import { NotificationFeed } from '../components/notifications/NotificationFeed'
@@ -65,7 +66,12 @@ export function NotificationsPage() {
   return (
     <div className="flex flex-col h-full gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 shrink-0 pl-12 nav:pl-0 min-h-10">
+      <div
+        className={cn(
+          'flex items-center justify-between gap-3 shrink-0 min-h-10',
+          PAGE_HEADER_RESERVE,
+        )}
+      >
         <h1 className="min-w-0 text-xl font-semibold text-zinc-100 truncate">Notifications</h1>
         {tab === 'notifications' && unreadCount > 0 && (
           <button

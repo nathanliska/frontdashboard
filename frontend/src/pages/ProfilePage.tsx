@@ -2,6 +2,7 @@ import { Check, Home, LockKeyhole, Pencil, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { ApiError } from '../api/http'
+import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { FormField } from '../components/ui/FormField'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
@@ -128,7 +129,7 @@ export function ProfilePage() {
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <div className="flex min-h-10 items-center pl-12 nav:pl-0">
+      <div className={cn('flex min-h-10 items-center', PAGE_HEADER_RESERVE)}>
         <h1 className="text-xl font-semibold text-zinc-100">Profile</h1>
       </div>
 

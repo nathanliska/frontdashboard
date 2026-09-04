@@ -4,9 +4,11 @@ import { useNavigate, useParams } from 'react-router'
 import { AddWidgetModal } from '../components/dashboard/AddWidgetModal'
 import { DashboardGrid } from '../components/dashboard/DashboardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
+import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { LoadingBlock } from '../components/ui/Spinner'
 import { ROUTES } from '../routes'
 import { useDashboardStore } from '../stores/dashboard'
+import { cn } from '../utils/shared/cn'
 
 const APP_TITLE = 'FrontDashboard'
 
@@ -72,7 +74,12 @@ export function DashboardEditorPage() {
   return (
     <div className="flex flex-col min-h-full gap-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 pl-12 nav:pl-0 min-h-10">
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 min-h-10',
+          PAGE_HEADER_RESERVE,
+        )}
+      >
         <button
           type="button"
           onClick={() => navigate(ROUTES.dashboards)}

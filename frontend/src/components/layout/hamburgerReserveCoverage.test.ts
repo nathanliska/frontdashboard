@@ -2,17 +2,18 @@ import { describe, expect, it } from 'vitest'
 
 /**
  * Below the `nav` breakpoint the sidebar is off-canvas and AppShell floats a menu button over the
- * top-left corner, so every page header reserves `pl-12` for it and gives that back above the same
- * breakpoint. The two live in different files with nothing tying them together: move one and a
- * header either sits under the button or keeps a 48px indent no layout explains. jsdom has no
- * media queries and both classes still exist, so only a person resizing the window would see it.
+ * top-left corner, so a page header reserves `pl-12` for it and gives that back above the same
+ * breakpoint. `PAGE_HEADER_RESERVE` holds both halves; this guards that they stay held — a header
+ * spelling them out inline can lose either one, and a reserve that outlives the button leaves a
+ * 48px indent no layout explains. jsdom has no media queries, so only a resize would show it.
  */
 const RESERVE = 'pl-12'
+const DECLARING_MODULE = '/pageHeaderReserve.ts'
 // The class list around it may be reordered; the anchor may not go missing, which is what the
 // first case below is for.
 const HAMBURGER = /([a-z][\w-]*):hidden fixed top-3 left-3/
 
-const sources = import.meta.glob('../../**/*.tsx', {
+const sources = import.meta.glob(['../../**/*.ts', '../../**/*.tsx'], {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -32,14 +33,19 @@ describe('hamburger reserve coverage', () => {
     expect(breakpoint).toBeDefined()
   })
 
-  it('keeps a header reserving room for it', () => {
-    const reserving = scanned.filter(([, source]) => source.includes(RESERVE))
-    expect(reserving.length).toBeGreaterThan(0)
+  it('releases the reserve at exactly that breakpoint', () => {
+    const declaring = scanned.find(([path]) => path.endsWith(DECLARING_MODULE))?.[1]
+
+    expect(declaring).toBeDefined()
+    expect(declaring).toContain(RESERVE)
+    expect(declaring).toContain(`${breakpoint}:pl-0`)
   })
 
-  it('releases the reserve at exactly that breakpoint', () => {
+  it('keeps the reserve in one place', () => {
+    // A header spelling the pair out again is how the two halves drifted apart before there was
+    // somewhere for them to live together.
     const offenders = scanned
-      .filter(([, source]) => source.includes(RESERVE) && !source.includes(`${breakpoint}:pl-0`))
+      .filter(([path, source]) => source.includes(RESERVE) && !path.endsWith(DECLARING_MODULE))
       .map(([path]) => path)
 
     expect(offenders).toEqual([])

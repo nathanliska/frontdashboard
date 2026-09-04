@@ -130,11 +130,12 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - CI runs lint, tests, `ty` type checking and the frontend build on every push and PR — except
   docs-only changes (`docs/**`, `**.md` at any depth), which skip it. On a PR touching only one
   side, the other side's job is skipped. Keep it green.
-- **Five of the guards below are backend tests that read *frontend* source**, so a frontend-only PR
+- **Six of the guards below are backend tests that read *frontend* source**, so a frontend-only PR
   skips exactly the checks protecting what it changed: `test_activity.py`,
   `test_grid_basis_coverage.py`, `test_css_container_coverage.py` — which globs every `.tsx` —
-  `test_frontend_pin_coverage.py` and `test_toolchain_coverage.py`. Run `make test` before opening
-  one; a skipped job reports the same green as a passing one.
+  `test_nav_breakpoint_coverage.py`, `test_frontend_pin_coverage.py` and
+  `test_toolchain_coverage.py`. Run `make test` before opening one; a skipped job reports the same
+  green as a passing one.
 - MCP servers are declared once per tool — `.mcp.json` for Claude Code, `.codex/config.toml` for
   Codex. Nothing syncs them; change both or one agent silently loses the server.
 
@@ -174,7 +175,7 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 
 ## Which Rules Fail the Build
 
-Most rules in this file are judgment you are trusted with. These twelve are not — each has a test
+Most rules in this file are judgment you are trusted with. These thirteen are not — each has a test
 that fails CI, and its failure message tells you what to do. Everything else here is guidance,
 so if you are wondering whether a convention bites, this table is the answer.
 
@@ -192,8 +193,9 @@ so if you are wondering whether a convention bites, this table is the answer.
 | A container-scoped variant has an `@container` | `containerQueryCoverage.test.ts` | Below, *Frontend Principles* |
 | A hand-written `@container` rule names a class that declares one | `test_css_container_coverage.py` | Below, *Frontend Principles* |
 | The header reserve is released where the floating menu button hides | `hamburgerReserveCoverage.test.ts` | Below, *Frontend Principles* |
+| `--breakpoint-nav` is the sum of the terms it is derived from | `test_nav_breakpoint_coverage.py` | Below, *Frontend Principles* |
 
-The five named under *Tooling* are backend tests reading frontend source — the one combination the
+The six named under *Tooling* are backend tests reading frontend source — the one combination the
 side-skip gets wrong, and the reason a green PR is not on its own evidence they ran.
 
 These guards read source, so a refactor can make one **pass having checked nothing** — the
@@ -289,11 +291,15 @@ from that:
   Every caller renders a spinner before the element it measures, so an effect finds `null` at the
   first commit and — having no dependencies — never runs again, leaving the initial size standing
   for the element's life. Written the obvious way, a measuring hook is silently dead.
+- A pixel constant standing in for a class — a pill's row pitch, a header's reserve — belongs in
+  the file that writes the class. Apart, the two drift with nothing to catch it: jsdom sees neither
+  a media query nor a rendered height, so only a person resizing the window would notice.
 - The sidebar has **two** states, not three: a labelled rail, and off-canvas behind the floating
-  menu button below `nav:` (77rem) — the width at which the rail costs more than the grid it leaves,
-  so `--breakpoint-nav` is derived from `STACK_BELOW + 224 + 48`, not picked. That button overlaps
-  the page, so every page header reserves `pl-12` and releases it at the same breakpoint;
-  `hamburgerReserveCoverage.test.ts` fails the build when the two drift apart.
+  menu button below `nav:` (77rem) — the width at which the rail costs more than the grid it leaves.
+  `--breakpoint-nav` is that sum, not a picked number, and `test_nav_breakpoint_coverage.py` fails
+  the build when a term of it moves alone. That button overlaps the page, so a page header applies
+  `PAGE_HEADER_RESERVE` rather than spelling the pair out again;
+  `hamburgerReserveCoverage.test.ts` fails the build on a second copy or a half that drifted.
 - Only `401` means logged out. Not `403`, which is the permission layer, and never a `5xx`,
   timeout or network rejection.
 - `apiFetch` is the only network entry for `/api`; every success body goes through
