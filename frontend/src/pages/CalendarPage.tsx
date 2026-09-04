@@ -9,6 +9,7 @@ import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialog'
 import { CalendarTrashPanel } from '../components/calendar/CalendarTrashPanel'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
+import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { useContainerSize } from '../hooks/useContainerSize'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import { useLocalToday } from '../hooks/useLocalDay'
@@ -210,7 +211,7 @@ export function CalendarPage() {
   return (
     <div className="flex min-h-full flex-col gap-4 xl:h-full">
       <div className="flex flex-col gap-2 shrink-0">
-        <div className="flex items-center gap-2 min-w-0 pl-12 nav:pl-0 min-h-10">
+        <div className={cn('flex items-center gap-2 min-w-0 min-h-10', PAGE_HEADER_RESERVE)}>
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Calendar</h1>
           <select
             name="dashboard"

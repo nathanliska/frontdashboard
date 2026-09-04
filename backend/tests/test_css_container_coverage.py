@@ -13,26 +13,25 @@ import re
 
 import pytest
 
-from tests.conventions import FRONTEND_ROOT
+from tests.conventions import FRONTEND_ROOT, INDEX_CSS
 
-_CSS = FRONTEND_ROOT / "src" / "index.css"
 _SOURCES = sorted(FRONTEND_ROOT.glob("src/**/*.tsx"))
 
 
 def _queried_classes() -> list[str]:
-    blocks = re.findall(r"@container[^{]*\{(.*?)\n\}", _CSS.read_text(), re.DOTALL)
+    blocks = re.findall(r"@container[^{]*\{(.*?)\n\}", INDEX_CSS.read_text(), re.DOTALL)
     return sorted({name for block in blocks for name in re.findall(r"\.([a-z][\w-]*)", block)})
 
 
 @pytest.mark.parametrize("class_name", _queried_classes())
 def test_a_queried_class_declares_its_container_and_is_rendered(class_name: str) -> None:
-    css = _CSS.read_text()
+    css = INDEX_CSS.read_text()
 
     assert re.search(rf"\.{re.escape(class_name)}\s*\{{[^}}]*container-type", css), (
-        f"`.{class_name}` is queried by an @container rule in {_CSS.name} but never declares "
+        f"`.{class_name}` is queried by an @container rule in {INDEX_CSS.name} but never declares "
         "`container-type`, so the query resolves against some ancestor or nothing at all"
     )
     assert any(class_name in source.read_text() for source in _SOURCES), (
-        f"no component renders `{class_name}`, so the @container rule naming it in {_CSS.name} "
+        f"no component renders `{class_name}`, so the @container rule naming it in {INDEX_CSS.name} "
         "matches nothing — the element keeps its default state and nothing fails"
     )

@@ -11,11 +11,14 @@ guard enforces.
 """
 
 import ast
+import re
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ROUTERS = BACKEND_ROOT / "app" / "routers"
 FRONTEND_ROOT = BACKEND_ROOT.parent / "frontend"
+INDEX_CSS = FRONTEND_ROOT / "src" / "index.css"
+DASHBOARD_GRID = FRONTEND_ROOT / "src" / "components" / "dashboard" / "DashboardGrid.tsx"
 
 
 def router_modules() -> list[Path]:
@@ -75,3 +78,15 @@ def dict_values_for_key(tree: ast.AST, key: str) -> list[tuple[int, str]]:
                 if isinstance(element, ast.Constant) and isinstance(element.value, str):
                     found.append((element.lineno, element.value))
     return found
+
+
+def declared_int(path: Path, name: str) -> int:
+    """The `n` in a top-level `const name = n` of a TypeScript source.
+
+    Anchored on the declaration rather than a use, so a rename fails here instead of matching some
+    other `= 24` further down the file, and a second declaration fails rather than silently winning.
+    """
+    found = re.findall(rf"^const {name} = (\d+)$", path.read_text(), re.MULTILINE)
+    assert found, f"no `const {name} = <n>` declaration in {path.name}, so this guard reads nothing"
+    assert len(found) == 1, f"{name} declared {len(found)} times in {path.name}"
+    return int(found[0])
