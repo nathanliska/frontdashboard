@@ -205,7 +205,9 @@ from that:
 - A guard that discovers what to check must fail when it discovers nothing. Parametrizing over the
   discovery is how: `empty_parameter_set_mark = "fail_at_collect"` turns an empty set into a
   collection error, where the default skips and exits 0. A guard that instead reads a fixed list
-  asserts on it directly, as `test_rate_limit_coverage.py` does.
+  asserts on it directly, as `test_rate_limit_coverage.py` does. Assert the discovery before
+  anything consumes it: `max()`, `next()` and `split(...)[1]` all raise on empty with Python's
+  message, not the guard's.
 - Enumerate router sources through `backend/tests/conventions.py`, which walks with `rglob` so a
   router that grows into a package stays covered. Another directory may be globbed directly.
 - Match the shape you mean. A guard scraping `case '...'` for event types must require the dotted
