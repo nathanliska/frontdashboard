@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { dateKey, startOfDay } from '../utils/calendar/calendarUtils'
 
 function currentDayKey(): string {
@@ -56,4 +56,20 @@ export function useLocalDay(): string {
   }, [])
 
   return day
+}
+
+/**
+ * Local midnight of the current calendar day, as a value that only changes when the day does.
+ *
+ * Built by parsing the day key back rather than calling `new Date()` under a `[day]` dependency:
+ * the second is a relationship the linter cannot see, so every caller writing it needs a
+ * `useExhaustiveDependencies` suppression asserting what this hook can just express.
+ */
+export function useLocalToday(): Date {
+  const day = useLocalDay()
+
+  return useMemo(() => {
+    const [year, month, date] = day.split('-').map(Number)
+    return new Date(year, month - 1, date)
+  }, [day])
 }

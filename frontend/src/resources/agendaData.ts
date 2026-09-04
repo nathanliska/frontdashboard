@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { CalendarOccurrence } from '../api/calendar'
 import type { CalendarEventParticipantResponse } from '../api/generated/contract'
 import { apiGetListDetails, type ListItem, type ListSummary } from '../api/lists'
-import { useLocalDay } from '../hooks/useLocalDay'
+import { useLocalToday } from '../hooks/useLocalDay'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { addDays, dateKey, startOfDay } from '../utils/calendar/calendarUtils'
 
@@ -220,21 +220,20 @@ export function useAgendaItems(dashboardId: string | null) {
   )
 
   // At local midnight the window and the today/overdue classification both go stale. The window is
-  // derived from dayKey so the occurrence store refetches on its own; reminders classify at fetch
+  // derived from today so the occurrence store refetches on its own; reminders classify at fetch
   // time, so they still need the explicit nudge. The ref skips the mount run.
-  const dayKey = useLocalDay()
-  // biome-ignore lint/correctness/useExhaustiveDependencies: dayKey re-runs `new Date()` at the local-day rollover — an intentional trigger dep, not used inside.
-  const agendaWindow = useMemo(() => {
-    const today = startOfDay(new Date())
-    return { start: today.toISOString(), end: addDays(today, 8).toISOString() }
-  }, [dayKey])
-  const previousDay = useRef(dayKey)
+  const today = useLocalToday()
+  const agendaWindow = useMemo(
+    () => ({ start: today.toISOString(), end: addDays(today, 8).toISOString() }),
+    [today],
+  )
+  const previousDay = useRef(today)
   useEffect(() => {
-    if (previousDay.current === dayKey) return
-    previousDay.current = dayKey
+    if (previousDay.current === today) return
+    previousDay.current = today
     if (!scope) return
     void agendaRemindersQuery.fetch(scope, { background: true }).catch(() => undefined)
-  }, [dayKey, scope])
+  }, [today, scope])
 
   const occurrences = useOccurrences(dashboardId, agendaWindow.start, agendaWindow.end)
   const remindersState = agendaRemindersQuery.useQuery(scope)
