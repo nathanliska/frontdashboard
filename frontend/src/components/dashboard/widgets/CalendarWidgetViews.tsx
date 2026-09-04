@@ -3,24 +3,20 @@ import { memo } from 'react'
 import type { CalendarOccurrence } from '../../../api/calendar'
 import { useContainerSize } from '../../../hooks/useContainerSize'
 import {
-  CALENDAR_MONTH_ROW_HEIGHT,
-  CALENDAR_WEEK_ROW_HEIGHT,
   CALENDAR_WEEKDAY_LABELS,
   CALENDAR_WEEKDAY_LABELS_COMPACT,
   dateKey,
-  fitOccurrenceRows,
-  formatCalendarOccurrenceCellLabel,
   formatCalendarOccurrenceCellTitle,
   formatDayNumber,
   formatMonthLabel,
   formatOccurrenceSpan,
   formatOccurrenceTime,
-  hiddenOccurrencesTitle,
   isMultiDayOccurrence,
 } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
 import { CalendarDayNumber } from '../../calendar/CalendarDayNumber'
-import { ParticipantDots, ParticipantMicroDots } from '../../calendar/ParticipantDots'
+import { CalendarDayOccurrences } from '../../calendar/CalendarDayOccurrences'
+import { ParticipantDots } from '../../calendar/ParticipantDots'
 import { type CalendarWidgetView, ViewTabButtons } from './CalendarWidgetViewTabs'
 
 const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
@@ -105,11 +101,6 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
         {days.map((day, index) => {
           const dayOccurrences = occurrencesByDate.get(dateKey(day)) ?? []
           const isToday = dateKey(day) === dateKey(new Date())
-          const { visible, hidden } = fitOccurrenceRows(
-            cellBody.height,
-            CALENDAR_WEEK_ROW_HEIGHT,
-            dayOccurrences.length,
-          )
 
           return (
             <div
@@ -127,38 +118,14 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
                   {formatDayNumber(day)}
                 </span>
               </div>
-              <div
-                ref={index === 0 ? cellBodyRef : null}
-                className="flex-1 min-h-0 overflow-hidden space-y-1"
-              >
-                {dayOccurrences.slice(0, visible).map((occurrence) => (
-                  <div
-                    key={`${occurrence.event_id}:${occurrence.original_start}`}
-                    title={formatCalendarOccurrenceCellTitle(occurrence, day)}
-                    className={cn(
-                      'flex items-center gap-1 rounded px-1.5 py-1 text-[10px] leading-tight',
-                      occurrence.recurring
-                        ? 'bg-emerald-500/12 text-emerald-300'
-                        : 'bg-sky-500/12 text-sky-300',
-                    )}
-                  >
-                    <ParticipantMicroDots participants={occurrence.participants} />
-                    <span className="min-w-0 truncate">
-                      {compact
-                        ? occurrence.title
-                        : formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
-                    </span>
-                  </div>
-                ))}
-                {hidden > 0 && (
-                  <p
-                    className="text-[10px] text-zinc-500"
-                    title={hiddenOccurrencesTitle(dayOccurrences.slice(visible), day)}
-                  >
-                    +{hidden}
-                  </p>
-                )}
-              </div>
+              <CalendarDayOccurrences
+                occurrences={dayOccurrences}
+                day={day}
+                height={cellBody.height}
+                density="week"
+                titleOnly={compact}
+                measureRef={index === 0 ? cellBodyRef : null}
+              />
             </div>
           )
         })}
@@ -231,11 +198,6 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
           const dayOccurrences = occurrencesByDate.get(dateKey(day)) ?? []
           const inMonth = day.getMonth() === monthDate.getMonth()
           const isToday = dateKey(day) === dateKey(new Date())
-          const { visible, hidden } = fitOccurrenceRows(
-            cellBody.height,
-            CALENDAR_MONTH_ROW_HEIGHT,
-            dayOccurrences.length,
-          )
 
           return (
             <div
@@ -273,36 +235,13 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
                   )}
                 </div>
               ) : (
-                <div
-                  ref={index === 0 ? cellBodyRef : null}
-                  className="flex-1 min-h-0 overflow-hidden space-y-1"
-                >
-                  {dayOccurrences.slice(0, visible).map((occurrence) => (
-                    <div
-                      key={`${occurrence.event_id}:${occurrence.original_start}`}
-                      title={formatCalendarOccurrenceCellTitle(occurrence, day)}
-                      className={cn(
-                        'flex items-center gap-1 rounded px-1 py-0.5 text-[10px]',
-                        occurrence.recurring
-                          ? 'bg-emerald-500/12 text-emerald-300'
-                          : 'bg-sky-500/12 text-sky-300',
-                      )}
-                    >
-                      <ParticipantMicroDots participants={occurrence.participants} />
-                      <span className="min-w-0 truncate">
-                        {formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')}
-                      </span>
-                    </div>
-                  ))}
-                  {hidden > 0 && (
-                    <p
-                      className="text-[10px] text-zinc-500"
-                      title={hiddenOccurrencesTitle(dayOccurrences.slice(visible), day)}
-                    >
-                      +{hidden}
-                    </p>
-                  )}
-                </div>
+                <CalendarDayOccurrences
+                  occurrences={dayOccurrences}
+                  day={day}
+                  height={cellBody.height}
+                  density="month"
+                  measureRef={index === 0 ? cellBodyRef : null}
+                />
               )}
             </div>
           )
