@@ -145,7 +145,7 @@ the reaper at the retention horizon. See [ADR-007](adr/ADR-007-soft-delete-bound
 
 **Overflow sentinel** — The marker that replaces an overflowing SSE client's backlog. The stream stays open and turns it into a single in-place resync; until that is delivered, further frames are dropped as covered by the refetch it orders. See [ADR-004](adr/ADR-004-sse-over-websocket.md).
 
-**useLocalDay** — The shared hook that ticks at the next local midnight (DST-safe) and on tab wake, so day-dependent views don't stick on yesterday on an always-on display. See [FDR-006](fdr/FDR-006-calendar-and-events.md).
+**useLocalDay** — The shared hook that ticks at the next local midnight (DST-safe) and on tab wake, so day-dependent views don't stick on yesterday on an always-on display. `useLocalToday()` is the same tick as a local-midnight `Date` whose identity only changes with the day, for callers that put "today" in a dependency array. See [FDR-006](fdr/FDR-006-calendar-and-events.md).
 
 **CF-Connecting-IP** — The Cloudflare-set real-client-IP header the rate limiter keys on; authoritative because the origin is reachable only through the Cloudflare Tunnel. See [ADR-013](adr/ADR-013-rate-limit-cf-connecting-ip.md).
 
