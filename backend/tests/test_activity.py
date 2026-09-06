@@ -36,7 +36,8 @@ def test_all_activity_event_types_have_frontend_presentations() -> None:
     function's own closing brace. An inner switch over some other vocabulary therefore neither
     contributes phantom types nor cuts the scan short at its `default:`.
     """
-    formatter_source = _FEED_UTILS_PATH.read_text().split("export function formatActivityEvent", 1)[1]
+    _, anchor, formatter_source = _FEED_UTILS_PATH.read_text().partition("export function formatActivityEvent")
+    assert anchor, "`formatActivityEvent` is no longer in notificationFeedUtils, so this guard reads nothing"
     formatter_source = formatter_source.split("\n}", 1)[0]
     mapped_event_types = set(re.findall(r"case '([a-z]+(?:\.[a-z_]+)+)':", formatter_source))
 
@@ -45,7 +46,9 @@ def test_all_activity_event_types_have_frontend_presentations() -> None:
 
 def test_all_activity_event_types_are_reachable_in_the_filter() -> None:
     """A type in no category is one the Activity tab can never be narrowed to."""
-    categories = _FEED_UTILS_PATH.read_text().split("const ACTIVITY_CATEGORIES", 1)[1].split("\n]", 1)[0]
+    _, anchor, categories = _FEED_UTILS_PATH.read_text().partition("const ACTIVITY_CATEGORIES")
+    assert anchor, "`ACTIVITY_CATEGORIES` is no longer in notificationFeedUtils, so this guard reads nothing"
+    categories = categories.split("\n]", 1)[0]
     categorised = set(re.findall(r"'([a-z]+\.[a-z_.]+)'", categories))
 
     assert categorised == {event_type.value for event_type in EventType}

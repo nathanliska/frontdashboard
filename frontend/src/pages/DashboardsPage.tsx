@@ -5,6 +5,7 @@ import type { DashboardSummary, TrashedDashboard } from '../api/dashboards'
 import { CreateDashboardModal } from '../components/dashboard/CreateDashboardModal'
 import { DashboardCardGrid } from '../components/dashboard/DashboardCardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
+import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { LoadingBlock } from '../components/ui/Spinner'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
@@ -150,7 +151,12 @@ export function DashboardsPage() {
 
   return (
     <div className="flex flex-col h-full gap-6">
-      <div className="flex items-center justify-between gap-3 shrink-0 pl-12 nav:pl-0 min-h-10">
+      <div
+        className={cn(
+          'flex items-center justify-between gap-3 shrink-0 min-h-10',
+          PAGE_HEADER_RESERVE,
+        )}
+      >
         <h1 className="min-w-0 text-xl font-semibold text-zinc-100 truncate">Dashboards</h1>
         <div className="flex shrink-0 items-center gap-2">
           <button
