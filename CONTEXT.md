@@ -386,7 +386,8 @@ _Last updated: 2026-09-09_
   validated at the network boundary, widgets are a discriminated union on `widget_type`, and SSE
   frames validate against generated frame schemas — so a new backend event type or widget type is a
   compile error in the client code that must handle it.
-- CI: four grouped jobs (each with a tight `timeout-minutes`, and docs-only changes skip the
+- CI: the six cross-stack source guards run in Repo checks even for a one-sided change. Four
+  grouped jobs (each with a tight `timeout-minutes`, and docs-only changes skip the
   workflow entirely), because Actions bills each job rounded up to a full minute and ten small
   lanes cost double their compute — repo checks (actionlint, zizmor, prod Compose structure, alert rules,
   osv-scanner over both lockfiles failing only on advisories the change introduces, contract drift), backend (Ruff, `ty`, deptry, pytest), frontend

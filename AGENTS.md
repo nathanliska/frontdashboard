@@ -133,12 +133,10 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - CI runs lint, tests, `ty` type checking and the frontend build on every push and PR — except
   docs-only changes (`docs/**`, `**.md` at any depth), which skip it. On a PR touching only one
   side, the other side's job is skipped. Keep it green.
-- **Six of the guards below are backend tests that read *frontend* source**, so a frontend-only PR
-  skips exactly the checks protecting what it changed: `test_activity.py`,
-  `test_grid_basis_coverage.py`, `test_css_container_coverage.py` — which globs every `.tsx` —
-  `test_nav_breakpoint_coverage.py`, `test_frontend_pin_coverage.py` and
-  `test_toolchain_coverage.py`. Run `make test` before opening one; a skipped job reports the same
-  green as a passing one.
+- **Six guards are backend tests that read frontend source**: `test_activity.py`,
+  `test_grid_basis_coverage.py`, `test_css_container_coverage.py`, `test_nav_breakpoint_coverage.py`,
+  `test_frontend_pin_coverage.py` and `test_toolchain_coverage.py`. Repo checks runs their unit cases
+  for either side, independently of the Backend job's side filter. Run `make test` before a PR.
 - MCP servers are declared once per tool — `.mcp.json` for Claude Code, `.codex/config.toml` for
   Codex. Nothing syncs them; change both or one agent silently loses the server.
 
@@ -198,8 +196,7 @@ so if you are wondering whether a convention bites, this table is the answer.
 | The header reserve is released where the floating menu button hides | `hamburgerReserveCoverage.test.ts` | Below, *Frontend Principles* |
 | `--breakpoint-nav` is the sum of the terms it is derived from | `test_nav_breakpoint_coverage.py` | Below, *Frontend Principles* |
 
-The six named under *Tooling* are backend tests reading frontend source — the one combination the
-side-skip gets wrong, and the reason a green PR is not on its own evidence they ran.
+The six named under *Tooling* are backend tests reading frontend source — the combination covered by Repo checks independently of the side-specific jobs.
 
 These guards read source, so a refactor can make one **pass having checked nothing** — the
 dangerous failure, because a silent guard looks exactly like a satisfied one. Three rules follow
