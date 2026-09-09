@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #60, #63, #64, #65◐, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #60, #63, #64, #65◐, #21/#45, #69, #70, #72 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -140,6 +140,16 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   widget's grid is not clickable at all. The calendar page's cells already open the day beside them;
   the widget has no equivalent, and deep-linking one would need a date parameter the page does not
   read yet. *(Small, product decision first)*
+- **#69 — Failed logout leaves the server session live.** The client clears its view immediately,
+  ignores failed HTTP responses and swallows network errors. A reload can restore the same account
+  on a shared browser. Check the response and present a failed-revocation state with a retry path;
+  keep the immediate local privacy reset. *(Medium)*
+- **#70 — Authentication bootstrap treats outages as logout.** `apiGetMe` returns null for every
+  failed response or network rejection. Reserve that result for 401 and expose a recoverable load
+  error for other failures. *(Small)*
+- **#72 — Preferences reveal whether an inaccessible dashboard exists.** An absent dashboard ID
+  returns 404 while an existing inaccessible ID returns 403. A former member with a known ID can
+  distinguish the two. Return the same 404 for both. *(Small, Low severity)*
 
 ## Deferred — revisit when
 
@@ -193,7 +203,7 @@ Capabilities deliberately not built. Each states the condition that would make i
   for its accessible wiring; what is missing is *cross-component* coverage in a real browser — focus
   order across a page, keyboard traversal, contrast. Worth it when a regression slips through the
   unit tests, or when the component set outgrows a by-hand recheck.
-- **Container hardening beyond non-root + digest pinning** (read-only fs, tmpfs, dropped caps,
+- **Container hardening beyond non-root execution** (read-only fs, tmpfs, dropped caps,
   `no-new-privileges`, resource/PID limits) — when the origin is reachable outside the Cloudflare
   Tunnel, or when it runs untrusted workloads.
 - **Dropping runtime response validation** — the generated types are free; the runtime half is

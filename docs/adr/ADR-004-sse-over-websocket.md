@@ -1,9 +1,10 @@
-# ADR-004: SSE (Not WebSocket), One Multiplexed Connection Per User
+# ADR-004: SSE (Not WebSocket), One Multiplexed Connection Per Open Tab
 
 **Date:** 2026-07-20 (amended 2026-07-28 — HTTP-error reconnect no longer signs anyone out; amended
 2026-08-04 — Redis named as the backplane; amended 2026-08-07 — backplane built as a stream, pub/sub
 rejected on measurement; amended 2026-08-16 — overflow resyncs in place instead of ending the
-stream; amended 2026-08-19 — engine swapped to Valkey, protocol and client unchanged)
+stream; amended 2026-08-19 — engine swapped to Valkey, protocol and client unchanged; amended
+2026-09-06 — one multiplexed connection per open tab, not per user)
 
 ## Context
 
@@ -20,7 +21,7 @@ The transport choices:
 
 ## Decision
 
-Use **SSE**. Each user holds **one multiplexed** `EventSource('/api/sse')` connection carrying every
+Use **SSE**. Each open tab holds **one multiplexed** `EventSource('/api/sse')` connection carrying every
 event type (lists, calendar, dashboards, notifications). An in-memory manager fans server events out
 to connected clients with bounded per-client queues.
 
@@ -61,7 +62,7 @@ harmless:
 
 - **Reuses the existing HTTP/cookie/proxy stack**: no separate WS auth or upgrade handling; the
   cookie session (ADR-002/ADR-003) authenticates the stream directly.
-- **One connection, not one per resource**: multiplexing keeps the connection count at one per user
+- **One connection, not one per resource**: multiplexing keeps the connection count at one per open tab
   and centralises reconnect logic — but it means the manager must route every event type and a
   single overflow policy governs all of them.
 - **In-memory manager is single-process**: correct for the current single-worker deployment, and the

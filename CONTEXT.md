@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-08-24_
+_Last updated: 2026-09-09_
 
 ## What's built
 
@@ -365,8 +365,8 @@ _Last updated: 2026-08-24_
   items and events each carry a ceiling per creator, checked on create only, so an account over a
   lowered cap keeps everything and simply adds nothing more. Counts include trashed rows, since
   those hold storage until the reaper takes them and a live-only count would be bypassed by
-  deleting and recreating; caps sit far above plausible use precisely because nothing reclaims
-  trash early ([ADR-020](docs/adr/ADR-020-resource-quotas.md)) — though the trash view offers a
+  deleting and recreating; caps sit far above plausible use while trashed rows retain storage
+  ([ADR-020](docs/adr/ADR-020-resource-quotas.md)) — though the trash view offers a
   **permanent delete** that purges a dashboard or list and its cascade immediately, which is how
   a full account reclaims its allowance. Refusals are visible as
   `frontdashboard_quota_rejections_total`.
@@ -410,13 +410,12 @@ _Last updated: 2026-08-24_
   security-first phases are done — Phase 1 (security quick wins), Phase 2 (auth/session hardening,
   incl. the 2026-07-17 follow-up security review), and Phase 3 (dashboard correctness) all shipped by
   2026-07-20. The durable decisions from
-  these phases are captured in the [ADRs](docs/adr/INDEX.md) / [FDRs](docs/fdr/INDEX.md). **Phases
-  4–6 (data layer/contracts/exposure, infra/CI/ops, UX & cleanup) and the unscheduled backlog
-  remain** — see [docs/TODO.md](docs/TODO.md).
+  these phases are captured in the [ADRs](docs/adr/INDEX.md) / [FDRs](docs/fdr/INDEX.md). **Phase 5
+  (infra/CI/ops) and the unscheduled backlog remain** — see [docs/TODO.md](docs/TODO.md).
 
 ## Deliberately deferred / known dead code
 
-- Remediation backlog (Phases 4–6 + unscheduled triage) — tracked in [docs/TODO.md](docs/TODO.md),
+- Remediation backlog (Phase 5 + unscheduled triage) — tracked in [docs/TODO.md](docs/TODO.md),
   not here.
 - `CalendarReminder` model + table exist with **no** router/service usage — reserved schema for a
   future "notify me N minutes before" feature, kept deliberately (see
