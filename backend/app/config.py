@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     quota_lists_per_dashboard: int = 200
     quota_items_per_list: int = 5_000
     quota_events_per_dashboard: int = 10_000
+    # Below the expansion budget on purpose: a series at this ceiling still expands, where one past
+    # the budget is left out of every listing with nothing but a counter to say so.
+    quota_overrides_per_event: int = 1_000
 
     @field_validator("frontend_base_url", mode="before")
     @classmethod

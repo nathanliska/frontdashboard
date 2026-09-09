@@ -35,7 +35,7 @@ RATE_LIMITED = Counter(f"{_PREFIX}rate_limited", "Requests rejected by the rate 
 
 # Rejections are the only outward sign a quota binds: the rate limiter counts bursts, this counts
 # accounts that ran out of room. Labelled by what was refused, never by user — that is unbounded.
-QuotaResource = Literal["dashboards", "lists", "items", "events", "widgets"]
+QuotaResource = Literal["dashboards", "lists", "items", "events", "overrides", "widgets"]
 
 QUOTA_REJECTIONS = Counter(
     f"{_PREFIX}quota_rejections",

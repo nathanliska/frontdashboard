@@ -8,7 +8,9 @@ from app.models.calendar import CalendarEvent, CalendarEventOverride
 
 MAX_EVENT_OCCURRENCES = 2000
 MAX_OCCURRENCE_WINDOW = timedelta(days=366)
+MAX_OCCURRENCE_DURATION = timedelta(days=31)
 _RANGE_MESSAGE = "An event extends beyond the supported date range. Adjust its dates or timezone."
+_DURATION_MESSAGE = "A repeating event's occurrence cannot be longer than 31 days. Shorten it, or make it a one-off event."
 _BUDGET_MESSAGE = "An event produces too many occurrences. Shorten its duration or recurrence range."
 
 
@@ -99,18 +101,13 @@ def _build_occurrence(
 
 
 def assert_expandable(event: CalendarEvent) -> None:
-    """Raise CalendarExpansionError if a maximum-size listing could not expand `event`.
+    """Raise CalendarExpansionError for a recurring event whose occurrence outlasts a month.
 
-    Run at write time so a listing never meets an event it cannot expand: the same budget, applied
-    where the one person who can fix the event is the one asking. Anchored at the end as well as
-    the start, because from there the fast-forward steps back through the whole duration.
+    With `count` and `interval` bounded by the schema, this one bound keeps the longest walk any
+    listing can make at a few hundred candidates, so nothing has to predict the walk.
     """
-    for anchor in (event.starts_at, event.ends_at):
-        try:
-            window_end = anchor + MAX_OCCURRENCE_WINDOW
-        except OverflowError as exc:
-            raise CalendarExpansionError(_RANGE_MESSAGE) from exc
-        expand_event_occurrences(event, {}, anchor, window_end)
+    if event.recurrence is not None and event.ends_at - event.starts_at > MAX_OCCURRENCE_DURATION:
+        raise CalendarExpansionError(_DURATION_MESSAGE)
 
 
 def build_overridden_occurrence(event: CalendarEvent, override: CalendarEventOverride) -> ExpandedOccurrence | None:

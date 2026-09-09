@@ -369,7 +369,8 @@ _Last updated: 2026-09-09_
   and `test_rate_limit_coverage.py` fails the build if a route is added without one. Caddy caps
   request bodies at 1MB.
 - **Per-creator quotas bound what rate limits deliberately do not — the total.** Dashboards, lists,
-  items and events each carry a ceiling per creator, checked on create only, so an account over a
+  items and events each carry a ceiling per creator, checked on create only, and a series a ceiling
+  on edited occurrences that keeps it under the expansion budget, so an account over a
   lowered cap keeps everything and simply adds nothing more. Counts include trashed rows, since
   those hold storage until the reaper takes them and a live-only count would be bypassed by
   deleting and recreating; caps sit far above plausible use while trashed rows retain storage
@@ -393,10 +394,10 @@ _Last updated: 2026-09-09_
   validated at the network boundary, widgets are a discriminated union on `widget_type`, and SSE
   frames validate against generated frame schemas — so a new backend event type or widget type is a
   compile error in the client code that must handle it.
-- Calendar recurrence expansion stops at date-range and recurrence-end boundaries. A per-event
-  budget is enforced when an event is written (422), against the largest window a listing may ask
-  for (366 days); a stored event that still exceeds it is left out of listings and counted rather
-  than failing them. Monthly/yearly series without count limits skip historical candidates.
+- Calendar recurrence expansion is bounded by what a write accepts: an occurrence of a repeating
+  event lasts at most 31 days, and `count` and `interval` are capped, so a listing's walk is a few
+  hundred candidates at most. A stored event that still exceeds the expander's budget is left out
+  of listings and counted rather than failing them.
 - CI: the six cross-stack source guards run in Repo checks even for a one-sided change. Four
   grouped jobs (each with a tight `timeout-minutes`, and docs-only changes skip the
   workflow entirely), because Actions bills each job rounded up to a full minute and ten small

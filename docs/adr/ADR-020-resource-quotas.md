@@ -1,7 +1,7 @@
 # ADR-020: Per-creator resource quotas, counted over non-purged rows
 
 **Status:** Accepted
-**Date:** 2026-08-12
+**Date:** 2026-08-12 (amended 2026-09-09 — edited occurrences per series capped below the expansion budget)
 
 ## Context
 
@@ -29,7 +29,8 @@ can be enormous — which is what makes a *row count* a meaningful proxy for byt
 Nested per-container caps alone cannot do this: dashboards × lists × items multiplies into a ceiling
 of hundreds of gigabytes at any per-container numbers generous enough to be usable. So the storage
 bound is a per-creator total, and the per-container caps that remain exist to keep a single view
-renderable, not to bound storage.
+renderable, not to bound storage. The cap on edited occurrences per series is of that kind: it sits
+below the expansion budget so a series a listing must skip cannot be built one edit at a time.
 
 Counting trashed rows is the load-bearing half. A trashed row holds its storage until the reaper
 purges it ([ADR-007](ADR-007-soft-delete-boundary.md)), so a cap over live rows only would be
