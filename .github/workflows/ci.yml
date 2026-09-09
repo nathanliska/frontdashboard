@@ -77,6 +77,9 @@ jobs:
           # No later step talks to the remote, so no job needs the token sitting in .git/config
           # where every transitive dependency's install hook could read it.
           persist-credentials: false
+          # The audit diffs against the first parent: the base branch of a PR's merge commit, or
+          # the previous commit of a push.
+          fetch-depth: 2
       - name: Lint GitHub Actions workflows
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
         with:
@@ -109,8 +112,34 @@ jobs:
             "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
           echo "${OSV_SHA256}  /tmp/osv-scanner" | sha256sum -c -
           install -m 0755 /tmp/osv-scanner /usr/local/bin/osv-scanner
-      - name: Audit dependency lockfiles
-        run: make audit
+      # Dependabot alerts own advisories published against what main already ships. This step
+      # owns only what the change itself introduces, so an overnight advisory warns here rather
+      # than failing every open PR, and a bump into a vulnerable version still fails.
+      - name: Audit dependency lockfiles for advisories this change introduces
+        run: |
+          scan() {
+            osv-scanner scan source --config=osv-scanner.toml --format=json --output-file="$2" \
+              --lockfile="$1/backend/uv.lock" --lockfile="$1/frontend/package-lock.json" \
+              >/dev/null 2>&1 || [ $? -eq 1 ]  # 1 means advisories found; anything else is a scan error
+          }
+          mkdir -p /tmp/base/backend /tmp/base/frontend
+          git show HEAD^1:backend/uv.lock > /tmp/base/backend/uv.lock
+          git show HEAD^1:frontend/package-lock.json > /tmp/base/frontend/package-lock.json
+          scan /tmp/base /tmp/base.json
+          scan . /tmp/head.json
+          keys='.results[].packages[] | {e: .package.ecosystem, n: .package.name, id: .vulnerabilities[].id} | "\(.id) \(.e) \(.n)"'
+          jq -r "$keys" /tmp/base.json | sort -u > /tmp/base.txt
+          jq -r "$keys" /tmp/head.json | sort -u > /tmp/head.txt
+          comm -12 /tmp/base.txt /tmp/head.txt | while IFS= read -r line; do
+            echo "::warning title=Advisory already on main::$line"
+          done
+          introduced=$(comm -13 /tmp/base.txt /tmp/head.txt)
+          if [ -n "$introduced" ]; then
+            echo "$introduced" | while IFS= read -r line; do
+              echo "::error title=Advisory introduced by this change::$line"
+            done
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
