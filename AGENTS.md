@@ -127,6 +127,9 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   [docs/runbooks/deploy.md](docs/runbooks/deploy.md), read-only.
 - Backend integration tests need PostgreSQL: either a Docker socket (Testcontainers) or
   `TEST_DATABASE_URL` pointing at a dedicated test database. `make test-unit` needs neither.
+- The CI audit fails only on an advisory the change itself introduces; one published against what
+  `main` already ships is a warning there, and Dependabot's alert and security PR are its fix.
+  `make audit` is the full scan.
 - CI runs lint, tests, `ty` type checking and the frontend build on every push and PR — except
   docs-only changes (`docs/**`, `**.md` at any depth), which skip it. On a PR touching only one
   side, the other side's job is skipped. Keep it green.

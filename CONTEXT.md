@@ -389,7 +389,7 @@ _Last updated: 2026-09-09_
 - CI: four grouped jobs (each with a tight `timeout-minutes`, and docs-only changes skip the
   workflow entirely), because Actions bills each job rounded up to a full minute and ten small
   lanes cost double their compute — repo checks (actionlint, zizmor, prod Compose structure, alert rules,
-  osv-scanner over both lockfiles, contract drift), backend (Ruff, `ty`, deptry, pytest), frontend
+  osv-scanner over both lockfiles failing only on advisories the change introduces, contract drift), backend (Ruff, `ty`, deptry, pytest), frontend
   (Biome, knip, `tsc`, Vitest), and an **images & smoke** job that builds both production images
   and boots them together against a throwaway database — [docker-compose.smoke.yml](docker-compose.smoke.yml)
   layered over the real prod Compose file, so a drift between it and the Caddy upstream fails here
