@@ -285,7 +285,7 @@ async def test_dashboard_layout_and_widget_activity_survives_a_reload(auth_clien
     set_csrf(auth_client)
     layout_resp = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
-        json={"layout": [{"i": widget_id, "x": 2, "y": 1, "w": 2, "h": 2}], "version": added["version"]},
+        json={"layout": [{"i": widget_id, "x": 2, "y": 1, "w": 4, "h": 6}], "version": added["version"]},
     )
     assert layout_resp.status_code == 200
 
@@ -326,7 +326,7 @@ async def test_layout_event_names_only_a_widget_the_dashboard_owns(auth_client: 
     moved = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
         json={
-            "layout": [{"i": widget_id, "x": 2, "y": 1, "w": 2, "h": 2}],
+            "layout": [{"i": widget_id, "x": 2, "y": 1, "w": 4, "h": 6}],
             "version": added["version"],
             "gesture": {"widget_id": widget_id, "action": "resized"},
         },
@@ -346,7 +346,7 @@ async def test_layout_event_names_only_a_widget_the_dashboard_owns(auth_client: 
     spoofed = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
         json={
-            "layout": [{"i": widget_id, "x": 0, "y": 0, "w": 2, "h": 2}],
+            "layout": [{"i": widget_id, "x": 0, "y": 0, "w": 4, "h": 6}],
             "version": moved.json()["version"],
             "gesture": {"widget_id": foreign_widget_id, "action": "moved"},
         },

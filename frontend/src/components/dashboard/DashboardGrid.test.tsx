@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, screen } from '@testing-library/react'
 import * as React from 'react'
+import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dashboard, DashboardWidget, LayoutItem } from '../../api/dashboards'
 import { DashboardGrid } from './DashboardGrid'
@@ -781,5 +782,29 @@ describe('DashboardGrid', () => {
 
     expect(screen.getByTestId('grid')).toHaveAttribute('data-child-types', 'div')
     expect(screen.getByText('Clock')).toBeInTheDocument()
+  })
+
+  it('passes type-specific minimum sizes while preserving undersized legacy layouts', () => {
+    const dashboard = makeDashboard()
+    dashboard.layout = [
+      { i: 'clock', x: 0, y: 0, w: 6, h: 8 },
+      { i: 'calendar', x: 6, y: 0, w: 12, h: 8 },
+      { i: 'legacy', x: 18, y: 0, w: 2, h: 3 },
+    ]
+    dashboard.widgets = [
+      makeClockWidget('clock'),
+      { ...makeClockWidget('calendar'), widget_type: 'calendar' },
+      makeClockWidget('legacy'),
+    ]
+    render(
+      <MemoryRouter>
+        <DashboardGrid dashboard={dashboard} canEdit />
+      </MemoryRouter>,
+    )
+    expect(gridSpy.lastLayout).toEqual([
+      expect.objectContaining({ i: 'clock', minW: 4, minH: 4 }),
+      expect.objectContaining({ i: 'calendar', minW: 8, minH: 8 }),
+      expect.objectContaining({ i: 'legacy', minW: 2, minH: 3, w: 2, h: 3 }),
+    ])
   })
 })

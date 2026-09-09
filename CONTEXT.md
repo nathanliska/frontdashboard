@@ -77,8 +77,10 @@ _Last updated: 2026-09-09_
   collision push or server-side placement — may leave it. A gesture whose *result* would leave the
   grid first tries re-seating the other widgets around it, since compaction settles upward and so
   never finds room *beside* a widget; only when that fails does the gesture revert. A new widget
-  takes the largest box up to its default size that fits, shrinking rather than refusing when the
-  gap is smaller — only a board without one free cell returns a 409. Overlap is rejected on the
+  takes the largest box up to its default size that fits above its minimum: 4×4 cells for
+  clock/list/agenda, 8×8 for calendar. An unusable gap returns 409. Existing smaller widgets keep
+  their arrangement, but cannot shrink below their saved dimensions; enlarged dimensions become
+  the next save’s floor until the type minimum is reached. Overlap is rejected on the
   write path too, so a client bug cannot store a board no client
   can render back. Both counts are validated there and mirrored in the client, with
   `test_grid_basis_coverage.py` failing the build on drift — changing either is a data migration,

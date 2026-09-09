@@ -12,10 +12,17 @@ it counts in, so a change here has to rewrite every stored layout (ADR-009).
 
 import pytest
 
-from app.schemas.dashboards import GRID_COLUMNS, GRID_ROWS
+from app.schemas.dashboards import GRID_COLUMNS, GRID_ROWS, MIN_CALENDAR_HEIGHT, MIN_CALENDAR_WIDTH, MIN_WIDGET_HEIGHT, MIN_WIDGET_WIDTH
 from tests.conventions import DASHBOARD_GRID, declared_int
 
-_AXES = [("DESKTOP_COLUMNS", GRID_COLUMNS), ("DESKTOP_ROWS", GRID_ROWS)]
+_AXES = [
+    ("DESKTOP_COLUMNS", GRID_COLUMNS),
+    ("DESKTOP_ROWS", GRID_ROWS),
+    ("MIN_WIDGET_WIDTH", MIN_WIDGET_WIDTH),
+    ("MIN_WIDGET_HEIGHT", MIN_WIDGET_HEIGHT),
+    ("MIN_CALENDAR_WIDTH", MIN_CALENDAR_WIDTH),
+    ("MIN_CALENDAR_HEIGHT", MIN_CALENDAR_HEIGHT),
+]
 
 
 @pytest.mark.parametrize(("constant", "expected"), _AXES)

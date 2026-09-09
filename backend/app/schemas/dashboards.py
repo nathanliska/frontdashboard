@@ -16,6 +16,17 @@ DashboardName = Annotated[
 # is one screen. Changing either is a migration, since a coordinate is meaningless without its basis.
 GRID_COLUMNS = 24
 GRID_ROWS = 24
+MIN_WIDGET_WIDTH = 4
+MIN_WIDGET_HEIGHT = 4
+MIN_CALENDAR_WIDTH = 8
+MIN_CALENDAR_HEIGHT = 8
+
+
+def minimum_widget_size(widget_type: str) -> tuple[int, int]:
+    """Smallest useful box for new widgets; legacy layouts cannot shrink below their saved size."""
+    if widget_type == "calendar":
+        return MIN_CALENDAR_WIDTH, MIN_CALENDAR_HEIGHT
+    return MIN_WIDGET_WIDTH, MIN_WIDGET_HEIGHT
 
 
 class LayoutItem(BaseModel):
