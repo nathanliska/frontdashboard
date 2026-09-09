@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #60, #63, #64, #65◐, #21/#45, #69, #70, #72 |
+| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #63, #64, #65◐, #21/#45, #69, #70, #72 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -98,14 +98,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   "already in use" response **reintroduces the enumeration oracle**
   ([ADR-011](adr/ADR-011-enumeration-safe-login.md)) — it has to say "check your new address" and
   silently do nothing when taken. *(Medium)*
-- **#60 — No session-management UI, and the columns for one sit empty.** `sessions` has
-  `device_name`, `ip_hash` and `user_agent_hash` and nothing writes them — deliberate, since with no
-  screen to read them it would mean collecting client IPs for nobody. It matters because dropping
-  refresh-token rotation ([ADR-003](adr/ADR-003-first-class-sessions.md)) removed the only mechanism
-  that would have signalled a **copied session cookie**. The machinery exists (`revoke_session` is
-  the single choke point), so this is two endpoints and a panel. To settle first: `ip_hash` needs a
-  **keyed** hash, since a plain SHA-256 of an IPv4 is brute-forceable in seconds and so anonymises
-  nothing; and `device_name` has no trustworthy source. *(Small-Medium)*
 - **#63 — `test_the_liveness_predicate_is_shared` failed once, unreproduced.** `resolve_session`
   treated a session as expired while `session_is_live` still called it live, at the
   `session_idle_days + 1s` boundary. Did not recur across ten runs; both paths take their own

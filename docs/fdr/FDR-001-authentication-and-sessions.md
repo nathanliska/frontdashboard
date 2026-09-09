@@ -40,7 +40,11 @@ multi-user account model with immediate, per-device session control — not just
   password for its own account, which a signed-in visitor is told may not be theirs.
 - **Emails.** Verification and reset emails send in the background via Resend; without an API key the
   link is written to `backend/.dev-mail/` (how you get tokens in local dev).
-- **Profile page.** Display name, password change, and home-dashboard preference.
+- **Profile page.** Display name, password change, home-dashboard preference, and active sessions.
+  The session panel pages through live sign-ins, newest first, showing sign-in and last-active times
+  and identifying the current session. Only the account owner can list or revoke them; current-session
+  revocation uses the ordinary Sign out flow. A successful revocation removes its row locally.
+  Refresh explicitly checks changes on other devices. IP addresses and device metadata remain uncollected.
 - **A refused password change keeps you signed in, and says which field was wrong.** Mistyping the
   current password answers **403**, not 401 — a 401 is the client's only signal that a session is
   gone, so it signed people out of the form they were using. Both refusals, the wrong current
@@ -81,8 +85,8 @@ while the mandatory periodic refresh call turned any deploy or proxy blip into a
 detection read a *lost response* as theft and killed the session. Both were observed in production.
 See ADR-003.
 **Tradeoff:** Nothing now signals that a session cookie has been copied. The compensating controls
-are the absolute timeout and server-side revocation; a session-management UI is the intended
-replacement (TODO #60).
+are the absolute timeout and server-side revocation; the active-session panel is the
+control for inspecting and revoking other sign-ins.
 
 ### 4. Login is enumeration-safe and constant-work
 

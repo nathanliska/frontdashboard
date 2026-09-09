@@ -39,6 +39,9 @@ from app.schemas.auth import (
     RegisterRequest,
     RegistrationResponse,
     ResendVerificationRequest,
+    SessionCursor,
+    SessionPage,
+    SessionSummary,
     UserResponse,
     VerifyEmailRequest,
 )
@@ -47,6 +50,7 @@ from app.services.password_reset import consume_password_reset_token, reset_toke
 from app.services.passwords import assert_password_not_common
 from app.services.sessions import (
     drop_session_streams,
+    list_live_sessions,
     revoke_session,
     revoke_user_sessions,
     start_session,
@@ -453,6 +457,59 @@ async def logout(
 async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     """Return the currently authenticated user."""
     return UserResponse.model_validate(current_user)
+
+
+@router.get("/sessions", response_model=SessionPage)
+async def list_sessions(
+    response: Response,
+    before: datetime | None = None,
+    before_id: uuid.UUID | None = None,
+    current_user: User = Depends(get_current_user),
+    session: UserSession = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> SessionPage:
+    """List the caller's live sessions without exposing credentials or client identifiers."""
+    if (before is None) != (before_id is None):
+        raise HTTPException(status_code=422, detail="before and before_id must be given together")
+    if before is not None and (before.tzinfo is None or before.utcoffset() is None):
+        raise HTTPException(status_code=422, detail="before must be timezone-aware")
+    rows = await list_live_sessions(current_user.id, db, before=before, before_id=before_id)
+    page = rows[:50]
+    response.headers["Cache-Control"] = "no-store"
+    return SessionPage(
+        items=[
+            SessionSummary(
+                id=row.id,
+                created_at=row.created_at,
+                last_used_at=row.last_used_at,
+                expires_at=row.expires_at,
+                is_current=row.id == session.id,
+            )
+            for row in page
+        ],
+        next_cursor=SessionCursor(created_at=page[-1].created_at, id=page[-1].id) if len(rows) > 50 else None,
+    )
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(WRITE_LIMIT)
+async def revoke_other_session(
+    request: Request,
+    session_id: uuid.UUID,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    session: UserSession = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Revoke one of the caller's other sessions, dropping its streams after commit."""
+    owned = await db.scalar(select(UserSession.id).where(UserSession.id == session_id, UserSession.user_id == current_user.id))
+    if owned is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if owned == session.id:
+        raise HTTPException(status_code=422, detail="Use Sign out to end this session")
+    revoked_id = await revoke_session(owned, db)
+    await db.commit()
+    drop_session_streams([revoked_id] if revoked_id else [])
 
 
 @router.patch("/profile", response_model=UserResponse)

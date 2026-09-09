@@ -230,6 +230,15 @@ export const ResourceAccessResponse = z.object({ direct_shares: z.array(ShareRes
 export type ResyncSseEvent = z.infer<typeof ResyncSseEvent>;
 export const ResyncSseEvent = z.object({ last_event_id: z.number().int().nullable().optional(), reason: z.string(), scopes: z.array(z.string()).nullable().optional() }).catchall(z.unknown());
 
+export type SessionCursor = z.infer<typeof SessionCursor>;
+export const SessionCursor = z.object({ created_at: z.iso.datetime(), id: z.uuid() }).catchall(z.unknown());
+
+export type SessionSummary = z.infer<typeof SessionSummary>;
+export const SessionSummary = z.object({ created_at: z.iso.datetime(), expires_at: z.iso.datetime(), id: z.uuid(), is_current: z.boolean(), last_used_at: z.iso.datetime() }).catchall(z.unknown());
+
+export type SessionPage = z.infer<typeof SessionPage>;
+export const SessionPage = z.object({ items: z.array(SessionSummary), next_cursor: SessionCursor.nullable().optional() }).catchall(z.unknown());
+
 export type ShareUpdate = z.infer<typeof ShareUpdate>;
 export const ShareUpdate = z.object({ role: ShareRole }).catchall(z.unknown());
 
