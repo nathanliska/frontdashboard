@@ -95,7 +95,7 @@ def test_a_gap_that_fits_the_default_leaves_it_alone() -> None:
     assert _fit_widget([], 8, 9) == (0, 0, 8, 9)
 
 
-@pytest.mark.parametrize(("gap_w", "gap_h"), [(7, 8), (8, 8), (7, 9), (2, 3)])
+@pytest.mark.parametrize(("gap_w", "gap_h"), [(7, 8), (8, 8), (7, 9), (4, 5), (4, 4)])
 def test_a_gap_smaller_than_the_default_shrinks_the_widget_instead_of_refusing(gap_w: int, gap_h: int) -> None:
     """A gap one short on either axis is ordinary, and 'the dashboard is full' is untrue there."""
     # A single free rectangle of exactly gap_w x gap_h, walled in on both sides.
@@ -113,9 +113,7 @@ def test_a_gap_smaller_than_the_default_shrinks_the_widget_instead_of_refusing(g
     assert (x, y, w, h) == (GRID_COLUMNS - gap_w, 0, gap_w, gap_h)
 
 
-def test_only_a_board_without_one_free_cell_is_refused() -> None:
-    # The 409 still exists, and now means what it says. One free cell is enough for a 1x1: the grid
-    # is bounded, so even that widget is on screen and can be dragged bigger.
+def test_a_board_with_only_an_unusable_sliver_is_refused() -> None:
     packed = [_item(0, 0, GRID_COLUMNS, GRID_ROWS, "everything")]
     assert _fit_widget(packed, 8, 9) is None
 
@@ -123,4 +121,13 @@ def test_only_a_board_without_one_free_cell_is_refused() -> None:
         _item(0, 0, GRID_COLUMNS - 1, GRID_ROWS, "most"),
         _item(GRID_COLUMNS - 1, 1, 1, GRID_ROWS - 1, "rest"),
     ]
-    assert _fit_widget(one_cell_short, 8, 9) == (GRID_COLUMNS - 1, 0, 1, 1)
+    assert _fit_widget(one_cell_short, 8, 9) is None
+
+
+@pytest.mark.parametrize(("gap_w", "gap_h", "fits"), [(8, 8, True), (7, 8, False), (8, 7, False)])
+def test_calendar_placement_honors_both_minimum_edges(gap_w: int, gap_h: int, fits: bool) -> None:
+    layout = [
+        _item(0, 0, GRID_COLUMNS - gap_w, GRID_ROWS, "left"),
+        _item(GRID_COLUMNS - gap_w, gap_h, gap_w, GRID_ROWS - gap_h, "below"),
+    ]
+    assert (_fit_widget(layout, 12, 8, minimum=(8, 8)) is not None) is fits

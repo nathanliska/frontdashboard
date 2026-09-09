@@ -3,7 +3,8 @@
 **Date:** 2026-07-20 (amended 2026-08-19 — the canonical grid is 24 x 24 and both axes are hard
 bounds; amended 2026-08-21 — the write path enforces the invariant, and a refusal makes room
 sideways before it reverts; amended 2026-08-21 — the projection triggers on a width rather than a
-device class, and this ADR was retitled to match. The filename keeps its original slug.)
+device class, and this ADR was retitled to match. The filename keeps its original slug;
+amended 2026-09-06 — useful widget minimums with legacy floors.)
 
 ## Context
 
@@ -215,13 +216,13 @@ The **persisted layout is canonical**; the **stacked view is a read-only derived
   placing something new and wrong when preserving something the user placed, which is why an add
   re-homes freely and a displaced widget does not.
 
-  **The default size is a preference, not a requirement.** Asking only for that exact box reported a
-  full board while an eighth of the grid stood empty — a gap one row short of the default is
-  ordinary. So an add takes the largest box up to the default that fits, and only a board without a
-  single free cell is refused with a 409. Shrinking has no floor: the grid is bounded, so even a 1x1
-  result is on screen and can be dragged bigger, which beats refusing the add outright. Candidates
-  are ordered by area rather than shrunk one axis at a time, because giving up the longer side first
-  leaves a tall narrow gap holding a 3x3 where a 3x9 fits — 51 wasted cells, measured.
+  **The default size is a preference above a usable minimum.** An add takes the largest box up to
+  the default that fits, but never smaller than 4×4 cells for clock/list/agenda or 8×8 for calendar.
+  A gap below that floor returns 409 and rolls back any resource created with the widget. Both the
+  client resize constraints and the server layout write enforce the same limits. Existing smaller
+  dimensions are grandfathered at their saved values so adopting a minimum cannot force an old
+  board into an overlapping arrangement. Enlarging a legacy widget raises its saved floor until
+  it reaches the type minimum. Candidates remain ordered by area and then default aspect ratio.
 
 - **The room below is not the window, and that asymmetry is visible** (amended 2026-08-19). Width
   needs no arithmetic: the grid is `w-full` inside a padded `main`, so CSS subtracts the page gutter

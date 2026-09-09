@@ -14,6 +14,11 @@ import { WidgetContainer } from './WidgetContainer'
 // written against a larger one is rejected by the write path rather than degraded.
 const DESKTOP_COLUMNS = 24
 const DESKTOP_ROWS = 24
+// Mirrored by the write path and checked by test_grid_basis_coverage.py.
+const MIN_WIDGET_WIDTH = 4
+const MIN_WIDGET_HEIGHT = 4
+const MIN_CALENDAR_WIDTH = 8
+const MIN_CALENDAR_HEIGHT = 8
 // A row is a 24th of the room below the grid rather than a fixed height, which is what makes "one
 // screen" true. No floor: a widget spans many rows, so what must stay legible is it, not the cell.
 const MIN_ROW_HEIGHT = 1
@@ -340,6 +345,21 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
   // a remap rather than a projection: the library clamps overflowing items and reports those
   // corrections as though they were drags, so one touch persisted the narrower grid (ADR-009).
   const cols = isStacked ? 1 : DESKTOP_COLUMNS
+  const minimumSizes = useMemo(() => {
+    const widgets = new Map(dashboard.widgets.map((widget) => [widget.id, widget.widget_type]))
+    return new Map(
+      dashboard.layout.map((item) => {
+        const calendar = widgets.get(item.i) === 'calendar'
+        return [
+          item.i,
+          {
+            minW: Math.min(item.w, calendar ? MIN_CALENDAR_WIDTH : MIN_WIDGET_WIDTH),
+            minH: Math.min(item.h, calendar ? MIN_CALENDAR_HEIGHT : MIN_WIDGET_HEIGHT),
+          },
+        ]
+      }),
+    )
+  }, [dashboard.layout, dashboard.widgets])
   const presentedLayout = useMemo(
     () =>
       isStacked
@@ -350,10 +370,11 @@ export function DashboardGrid({ dashboard, canEdit }: { dashboard: Dashboard; ca
           // on release, the size having been clamped all along.
           activeLayout.map((item) => ({
             ...item,
+            ...minimumSizes.get(item.i),
             maxW: Math.max(item.w, cols - item.x),
             maxH: Math.max(item.h, DESKTOP_ROWS - item.y),
           })),
-    [activeLayout, cols, isStacked],
+    [activeLayout, cols, isStacked, minimumSizes],
   )
   // Solved rather than picked: rows and the gaps between them have to add up to the room available,
   // so the gap is whichever is smaller — the usual 12px, or the third of a row that leaves the other

@@ -21,6 +21,8 @@ from app.models.user import User
 from app.schemas.dashboards import (
     GRID_COLUMNS,
     GRID_ROWS,
+    MIN_WIDGET_HEIGHT,
+    MIN_WIDGET_WIDTH,
     WIDGET_CONFIG_MODELS,
     DashboardCreate,
     DashboardResponse,
@@ -33,6 +35,7 @@ from app.schemas.dashboards import (
     WidgetCreate,
     WidgetResponse,
     WidgetResponseAdapter,
+    minimum_widget_size,
 )
 from app.schemas.shares import DashboardMemberResponse, ShareResponse, ShareUpdate
 from app.services import permissions
@@ -139,13 +142,15 @@ def _first_free_slot(layout: list[dict[str, Any]], w: int, h: int) -> tuple[int,
     return None
 
 
-def _fit_widget(layout: list[dict[str, Any]], w: int, h: int) -> tuple[int, int, int, int] | None:
-    """Seat a widget of at most `w`x`h` as `(x, y, w, h)`, or None when not one cell is free.
+def _fit_widget(
+    layout: list[dict[str, Any]], w: int, h: int, *, minimum: tuple[int, int] = (MIN_WIDGET_WIDTH, MIN_WIDGET_HEIGHT)
+) -> tuple[int, int, int, int] | None:
+    """Seat the largest useful box up to `w`x`h`, or None when no useful box fits.
 
     The default size is a preference, not a requirement. Asking only for that exact box reports a
     full board while an eighth of the grid stands empty — a gap one row short of the default is
-    ordinary, and refusing it is a worse answer than a widget the user drags bigger. The grid is
-    bounded, so even the smallest result is on screen and resizable rather than lost.
+    ordinary. Shrinking stops at the widget's minimum, since a box that hides its content is not
+    usable space.
 
     Candidates are tried largest-area first, so a widget gives up only the area it has to, and ties
     go to the shape the default asked for. The first candidate *is* the default, so a board with
@@ -153,7 +158,7 @@ def _fit_widget(layout: list[dict[str, Any]], w: int, h: int) -> tuple[int, int,
     """
     shape = w / h
     candidates = sorted(
-        ((width, height) for width in range(1, w + 1) for height in range(1, h + 1)),
+        ((width, height) for width in range(minimum[0], w + 1) for height in range(minimum[1], h + 1)),
         key=lambda size: (-size[0] * size[1], abs(size[0] / size[1] - shape)),
     )
 
@@ -770,6 +775,17 @@ async def update_layout(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Version conflict: expected {dashboard.version}, got {body.version}",
         )
+    widgets = await _load_widgets(dashboard.id, db)
+    widget_types = {str(widget.id): widget.widget_type for widget in widgets}
+    saved = {item["i"]: item for item in dashboard.layout or []}
+    for item in body.layout:
+        min_w, min_h = minimum_widget_size(widget_types.get(item.i, ""))
+        previous = saved.get(item.i)
+        if previous:
+            min_w = min(min_w, previous.get("w", min_w))
+            min_h = min(min_h, previous.get("h", min_h))
+        if item.w < min_w or item.h < min_h:
+            raise HTTPException(status_code=422, detail=f"Widget must be at least {min_w} columns by {min_h} rows")
     # Dump to plain dicts for the JSON column; model_dump also drops the transient
     # react-grid-layout bookkeeping keys the client round-trips (see LayoutItem).
     dashboard.layout = [item.model_dump() for item in body.layout]
@@ -944,15 +960,15 @@ async def add_widget(
 
     current_layout: list[dict[str, Any]] = dashboard.layout if isinstance(dashboard.layout, list) else []
     default_w, default_h = _default_widget_size(body.widget_type)
-    placement = _fit_widget(current_layout, default_w, default_h)
+    minimum = minimum_widget_size(body.widget_type)
+    placement = _fit_widget(current_layout, default_w, default_h, minimum=minimum)
     if placement is None:
-        # Only when not one cell is free, since the widget shrinks to whatever is. A bounded grid
-        # can still genuinely run out, and the alternative is placing the widget where the user
-        # could never reach it. The row is already flushed, so the rollback also drops it.
+        # A leftover sliver cannot hold usable content. Roll back the widget and any auto-created
+        # resource together, so a failed placement leaves nothing behind.
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This dashboard is full — make room by moving or removing a widget first",
+            detail=f"No free space of at least {minimum[0]}×{minimum[1]} cells for this widget — make room by moving or removing one first",
         )
     slot_x, slot_y, slot_w, slot_h = placement
     dashboard.layout = current_layout + [

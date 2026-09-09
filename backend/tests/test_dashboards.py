@@ -105,7 +105,7 @@ async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> Non
     assert meta["is_favorite"] is False
     assert meta["version"] == 0
 
-    layout = [{"i": "sample-widget", "x": 0, "y": 0, "w": 4, "h": 3}]
+    layout = [{"i": "sample-widget", "x": 0, "y": 0, "w": 4, "h": 6}]
     set_csrf(auth_client)
     layout_resp = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
@@ -684,7 +684,7 @@ async def test_dashboard_mutations_emit_activity_events(
     set_csrf(auth_client)
     layout_resp = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
-        json={"layout": [{"i": "sample", "x": 0, "y": 0, "w": 4, "h": 3}], "version": 0},
+        json={"layout": [{"i": "sample", "x": 0, "y": 0, "w": 4, "h": 6}], "version": 0},
     )
     assert layout_resp.status_code == 200
 
@@ -732,7 +732,7 @@ async def test_dashboard_update_events_include_current_version_and_origin_client
         set_csrf(auth_client)
         layout_resp = await auth_client.put(
             f"/api/dashboards/{dashboard['id']}/layout",
-            json={"layout": [{"i": "sample", "x": 0, "y": 0, "w": 4, "h": 3}], "version": 0},
+            json={"layout": [{"i": "sample", "x": 0, "y": 0, "w": 4, "h": 6}], "version": 0},
         )
         assert layout_resp.status_code == 200
 

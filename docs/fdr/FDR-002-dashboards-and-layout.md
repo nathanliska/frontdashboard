@@ -1,7 +1,7 @@
 # FDR-002: Dashboards & Layout Editor
 
 **Status:** Active
-**Last reviewed:** 2026-08-26
+**Last reviewed:** 2026-09-06
 
 ## Overview
 
@@ -19,12 +19,16 @@ sharing is [FDR-004](FDR-004-sharing-and-access.md).
 - **Trash is the only put-away state.** There is no archive: a dashboard is either live or in the
   trash. Trashed dashboards are filtered out of every listing and out of child-resource access
   ([ADR-007](../adr/ADR-007-soft-delete-boundary.md)).
-- **Delete is hard and cascading.** Deleting a dashboard also removes its owned lists, items, events,
+- **Permanent deletion cascades.** Purging a trashed dashboard removes its lists, items, events,
   widgets, and shares.
 - **Editor.** Drag/resize widgets on a react-grid-layout grid; changes save automatically. A
-  conflicting concurrent save shows a banner and reloads rather than clobbering.
+  conflicting save re-reads and replays once; a second conflict offers a reload.
 - **A narrow board is read-only stacking.** Below the width where a default widget stops being
   readable, the grid renders as a computed single-column stack; it never writes a layout back.
+- **Minimum sizes.** Clock/list/agenda widgets have a 4×4-cell minimum; calendar has an 8×8-cell
+  minimum. Add and resize enforce these floors. Existing smaller layouts stay editable, with each
+  dimension unable to shrink below its saved value until enlarged to the type minimum. An add
+  that cannot fit a useful box returns 409 without leaving a widget or auto-created list behind.
 - **Settings modal.** Rename and share from a per-dashboard settings modal.
 - **Mutations preserve user input on failure.** A failed create/rename/widget-add/share-add keeps
   what the user typed instead of discarding it.
