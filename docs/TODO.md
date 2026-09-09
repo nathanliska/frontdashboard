@@ -122,11 +122,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   actually slow: series with a `count` limit and no `until` still load unbounded, since finding their
   end means expanding the rule — which is the work being avoided. A persisted last-occurrence column
   was considered and rejected ([FDR-006](fdr/FDR-006-calendar-and-events.md)). *(Small, no trigger)*
-- **#68 — A hidden occurrence is unreachable except by mouse.** A month cell's "+N" carries the
-  hidden titles as a `title`, which is not keyboard-reachable and is not reliably announced, and the
-  widget's grid is not clickable at all. The calendar page's cells already open the day beside them;
-  the widget has no equivalent, and deep-linking one would need a date parameter the page does not
-  read yet. *(Small, product decision first)*
 - **#69 — Failed logout leaves the server session live.** The client clears its view immediately,
   ignores failed HTTP responses and swallows network errors. A reload can restore the same account
   on a shared browser. Check the response and present a failed-revocation state with a retry path;

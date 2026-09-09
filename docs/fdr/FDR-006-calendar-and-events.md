@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-08-15
+**Last reviewed:** 2026-09-09
 
 ## Overview
 
@@ -11,6 +11,9 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
 
 ## Behavior
 
+- **Date links.** A calendar link can select a local `YYYY-MM-DD` date and dashboard. Invalid dates
+  fall back to today. Selection waits for dashboard access to resolve before fetching, and changing
+  dashboards preserves the date.
 - **Views.** Day, week, and month.
 - **Event editor.** An editor with an all-day toggle, a duration toolbar, timezones and weekly
   recurrence, presented as a bottom sheet on a phone and a centred panel on a wider screen. It is a

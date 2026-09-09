@@ -42,7 +42,8 @@ export function CalendarWidget({
   const view: CalendarWidgetView =
     requestedView === 'day' || requestedView === 'week' ? requestedView : 'month'
   const today = useLocalToday()
-  const ultraCompactMonth = view === 'month' && containerWidth < 280
+  // Below either size a month cell cannot hold one row of pills, so the dots say what "+N" would.
+  const ultraCompactMonth = view === 'month' && (containerWidth < 280 || containerHeight < 320)
   const widgetWindow = useMemo(() => getWidgetWindow(view, today), [today, view])
   const occurrencesQuery = useCalendarOccurrences(
     widgetWindow.windowStart.toISOString(),
@@ -111,6 +112,7 @@ export function CalendarWidget({
         <WidgetViewTabs compact={containerWidth < 260} value={view} onChange={handleViewChange} />
         <div className="flex-1 min-h-0">
           <WeekCalendarWidget
+            dashboardId={dashboardId}
             days={weekDays}
             occurrencesByDate={visibleOccurrencesByDate}
             compact={containerWidth < 320 || containerHeight < 260}
@@ -124,6 +126,7 @@ export function CalendarWidget({
     <div ref={containerRef} className="h-full flex flex-col gap-3">
       <div className="flex-1 min-h-0">
         <MonthCalendarWidget
+          dashboardId={dashboardId}
           days={monthDays}
           occurrencesByDate={visibleOccurrencesByDate}
           compact={containerWidth < 340 || containerHeight < 280}

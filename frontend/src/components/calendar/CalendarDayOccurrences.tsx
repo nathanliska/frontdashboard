@@ -40,8 +40,7 @@ export function fitOccurrenceRows(
 /**
  * Hover text for a "+N" line: what the rows it stands in for would have said.
  *
- * These grids have no way to reach a hidden occurrence — a cell is not clickable — so the count
- * needs to name them somewhere.
+ * The day link opens the full list; the tooltip also supports a quick pointer preview.
  */
 function hiddenOccurrencesTitle(hidden: CalendarOccurrence[], day: Date): string {
   return hidden

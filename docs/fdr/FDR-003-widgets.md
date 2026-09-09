@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-08-07
+**Last reviewed:** 2026-09-09
 
 ## Overview
 
@@ -18,7 +18,11 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
   **not** drag-reorderable inside the grid (its own drag would fight react-grid-layout's).
 - **Clock widget.** Shows the current time. No bound resource.
 - **Calendar widget.** Shows a calendar view of events. Re-derives "today" at local midnight so an
-  always-on display doesn't stick on yesterday.
+  always-on display doesn't stick on yesterday. Week/month day cells, including compact dots and
+  overflow counts, link to the full calendar at the selected local date and dashboard. The whole
+  day is keyboard-accessible and exposes its date and event count. Too narrow or too short for a
+  row of pills, the month view falls back to a one-line cell: date and dots with an overflow count.
+  Every week of the month stays in view at any widget size; the grid never scrolls.
 - **Agenda widget.** Shows today / overdue / upcoming items; background-refetches on a day rollover.
   Its reminders come from `GET /lists/details` — one dashboard-scoped batch of every list with its
   items — rather than composing summaries plus one detail request per list client-side (#17, closed

@@ -25,7 +25,7 @@ export function useInitialDashboardSelection(
 ) {
   const loadSummaries = useDashboardStore((state) => state.loadSummaries)
   const [dashboardId, setDashboardId] = useState<string | null>(null)
-  const [ready, setReady] = useState(false)
+  const [readyFor, setReadyFor] = useState<string | null | undefined>(undefined)
 
   useEffect(() => {
     let cancelled = false
@@ -38,7 +38,7 @@ export function useInitialDashboardSelection(
         setDashboardId(
           pickInitialDashboardId(useDashboardStore.getState().summaries, requestedDashboardId),
         )
-        setReady(true)
+        setReadyFor(requestedDashboardId)
       } catch {
         if (!cancelled) {
           toast.error(loadErrorMessage)
@@ -53,5 +53,5 @@ export function useInitialDashboardSelection(
     }
   }, [loadErrorMessage, loadSummaries, requestedDashboardId])
 
-  return [dashboardId, setDashboardId, ready] as const
+  return [dashboardId, setDashboardId, readyFor === requestedDashboardId] as const
 }
