@@ -27,6 +27,7 @@ SSE_CONNECTS = Counter(f"{_PREFIX}sse_connects", "SSE streams opened, including 
 SSE_RESYNCS = Counter(f"{_PREFIX}sse_resyncs", "Streams told to refetch caches on connect.")
 SSE_OVERFLOW_RESYNCS = Counter(f"{_PREFIX}sse_overflow_resyncs", "Streams resynced in place after their queue overflowed.")
 SSE_EXPIRIES = Counter(f"{_PREFIX}sse_expiries", "Streams closed on the lifetime cap.")
+CALENDAR_EXPANSION_SKIPS = Counter(f"{_PREFIX}calendar_expansion_skips", "Events left out of a listing because expanding them exceeded the budget.")
 SSE_PUBLISH_FAILURES = Counter(f"{_PREFIX}sse_publish_failures", "Frames the other workers never received.")
 REAPER_SWEEPS = Counter(f"{_PREFIX}reaper_sweeps", "Retention sweeps that completed.")
 REAPER_FAILURES = Counter(f"{_PREFIX}reaper_failures", "Retention sweeps that raised and will retry.")

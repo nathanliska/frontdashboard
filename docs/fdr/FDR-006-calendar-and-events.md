@@ -14,6 +14,15 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
 - **Date links.** A calendar link can select a local `YYYY-MM-DD` date and dashboard. Invalid dates
   fall back to today. Selection waits for dashboard access to resolve before fetching, and changing
   dashboards preserves the date.
+- **Bounded expansion.** Each event admits at most 2,000 recurrence candidates and 2,000 overrides
+  per expansion, and a create or update is refused with 422 if a listing over the largest window a
+  client may ask for (366 days; longer is refused) could not expand the result. The check expands
+  from the event's end as well as its start, since a long duration costs the most from there. A
+  stored event that still trips the bound is left out
+  of the listing and counted (`frontdashboard_calendar_expansion_skips_total`) rather than failing
+  the shared calendar. Recurrence end and date-range boundaries terminate iteration; unrepresentable
+  date or timezone arithmetic is refused the same way. Occurrence edits build the changed occurrence
+  alone before committing, so their response does not expand an unrelated part of the series.
 - **Views.** Day, week, and month.
 - **Event editor.** An editor with an all-day toggle, a duration toolbar, timezones and weekly
   recurrence, presented as a bottom sheet on a phone and a centred panel on a wider screen. It is a

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -5,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import DateTime, and_, cast, delete, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import metrics
 from app.auth.dependencies import get_current_user, require_csrf
 from app.config import settings
 from app.database import get_db
@@ -29,7 +31,14 @@ from app.schemas.calendar import (
 from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessResponse
 from app.services import permissions
 from app.services.activity import EventType, log_event
-from app.services.calendar import expand_event_occurrences, normalize_all_day_bounds
+from app.services.calendar import (
+    MAX_OCCURRENCE_WINDOW,
+    CalendarExpansionError,
+    assert_expandable,
+    build_overridden_occurrence,
+    expand_event_occurrences,
+    normalize_all_day_bounds,
+)
 from app.services.quota import assert_under_quota, limit_message
 from app.services.shares import (
     dashboard_audience_user_ids,
@@ -38,6 +47,8 @@ from app.services.shares import (
 )
 from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
@@ -212,6 +223,10 @@ async def create_event(
         all_day=body.all_day,
         recurrence=body.recurrence.model_dump(mode="json") if body.recurrence else None,
     )
+    try:
+        assert_expandable(event)
+    except CalendarExpansionError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     db.add(event)
     await db.flush()
     await _replace_participants(db, event, body.participants, dashboard, shares)
@@ -250,7 +265,7 @@ async def list_occurrences(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="window_end must be timezone-aware")
     if window_end <= window_start:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="window_end must be after window_start")
-    if window_end - window_start > timedelta(days=366):
+    if window_end - window_start > MAX_OCCURRENCE_WINDOW:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="window cannot exceed 366 days")
 
     accessible_dashboard_ids = await list_accessible_dashboard_ids(current_user, db)
@@ -306,14 +321,20 @@ async def list_occurrences(
 
     occurrences = []
     for event in events:
-        occurrences.extend(
-            expand_event_occurrences(
-                event,
-                overrides_by_event.get(event.id, {}),
-                window_start,
-                window_end,
+        try:
+            occurrences.extend(
+                expand_event_occurrences(
+                    event,
+                    overrides_by_event.get(event.id, {}),
+                    window_start,
+                    window_end,
+                )
             )
-        )
+        except CalendarExpansionError as exc:
+            # One event the write-time check did not exist for cannot take the shared calendar
+            # down with it. The counter is the signal to go and find it.
+            metrics.CALENDAR_EXPANSION_SKIPS.inc()
+            logger.warning("calendar event %s left out of a listing: %s", event.id, exc)
 
     occurrences.sort(key=lambda occurrence: (occurrence.occurrence_start, occurrence.title.lower()))
     participants = await _participants_by_event(db, {occurrence.event_id for occurrence in occurrences})
@@ -459,6 +480,11 @@ async def update_event(
         await _replace_participants(db, event, body.participants, dashboard, shares)
     event.updated_by = current_user.id
 
+    try:
+        assert_expandable(event)
+    except CalendarExpansionError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
     activity = log_event(
         db,
         event_type=EventType.calendar_event_updated,
@@ -520,6 +546,10 @@ async def update_occurrence(
     override.timezone = body.timezone
     override.all_day = body.all_day
     override.updated_by = current_user.id
+    try:
+        occurrence = build_overridden_occurrence(event, override)
+    except CalendarExpansionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     activity = log_event(
         db,
@@ -539,17 +569,11 @@ async def update_occurrence(
     )
     await db.refresh(override)
 
-    occurrence = expand_event_occurrences(
-        event,
-        {override.occurrence_start: override},
-        body.occurrence_start.astimezone(UTC) - (event.ends_at - event.starts_at),
-        (override.ends_at or event.ends_at) + (event.ends_at - event.starts_at),
-    )
     if not occurrence:
         return CalendarOccurrenceMutationResponse(cancelled=True, occurrence=None)
     return CalendarOccurrenceMutationResponse(
         cancelled=False,
-        occurrence=_occurrence_response(occurrence[0], (await _participants_by_event(db, {event.id})).get(event.id, [])),
+        occurrence=_occurrence_response(occurrence, (await _participants_by_event(db, {event.id})).get(event.id, [])),
     )
 
 
