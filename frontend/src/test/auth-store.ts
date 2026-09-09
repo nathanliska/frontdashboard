@@ -2,7 +2,7 @@ import { vi } from 'vitest'
 import type { RegistrationResponse, User } from '../api/auth'
 
 export interface MockAuthState {
-  status: 'loading' | 'authenticated' | 'unauthenticated'
+  status: 'loading' | 'authenticated' | 'unauthenticated' | 'unreachable'
   user: User | null
   init: () => Promise<void>
   login: (email: string, password: string) => Promise<void>

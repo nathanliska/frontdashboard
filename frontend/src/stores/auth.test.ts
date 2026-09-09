@@ -99,6 +99,40 @@ describe('useAuthStore', () => {
     expect(registeredReset).toHaveBeenCalledTimes(1)
   })
 
+  it('treats an unreachable server as unknown, not logged out, until a retry answers', async () => {
+    apiGetMe.mockRejectedValueOnce(new Error('connection refused'))
+
+    await useAuthStore.getState().init()
+    expect(useAuthStore.getState().status).toBe('unreachable')
+    expect(registeredReset).not.toHaveBeenCalled()
+
+    apiGetMe.mockResolvedValue(user)
+    await useAuthStore.getState().init()
+    expect(useAuthStore.getState().status).toBe('authenticated')
+  })
+
+  it('keeps the local sign-out when the server call fails, and offers a retry', async () => {
+    apiLogout.mockRejectedValueOnce(new Error('bad gateway')).mockResolvedValueOnce(undefined)
+    useAuthStore.setState({ status: 'authenticated', user })
+
+    await useAuthStore.getState().logout()
+    expect(useAuthStore.getState().status).toBe('unauthenticated')
+    expect(toastError).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ label: 'Retry' }),
+    )
+
+    toastError.mock.calls[0][1].onAction()
+    await vi.waitFor(() => expect(apiLogout).toHaveBeenCalledTimes(2))
+
+    // A retry offered before a new sign-in must not end the session that sign-in created.
+    apiLogout.mockRejectedValueOnce(new Error('bad gateway'))
+    await useAuthStore.getState().logout()
+    bumpSessionGeneration()
+    toastError.mock.calls[1][1].onAction()
+    expect(apiLogout).toHaveBeenCalledTimes(3)
+  })
+
   it('updates auth state on login and logout', async () => {
     apiLogin.mockResolvedValue(user)
     apiLogout.mockResolvedValue(undefined)

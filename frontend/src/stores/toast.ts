@@ -98,6 +98,7 @@ export function __resetToastStoreForTests(): void {
 export const toast = {
   success: (msg: string, action?: ToastAction) =>
     useToastStore.getState().toast(msg, 'success', action),
-  error: (msg: string) => useToastStore.getState().toast(msg, 'error'),
+  error: (msg: string, action?: ToastAction) =>
+    useToastStore.getState().toast(msg, 'error', action),
   info: (msg: string, action?: ToastAction) => useToastStore.getState().toast(msg, 'info', action),
 }

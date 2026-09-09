@@ -109,7 +109,10 @@ ADR-010.
 
 **Decision:** Login, logout, verification, and unauthenticated startup clear all client state; a
 session-generation counter drops any in-flight async write whose boundary has since been crossed.
-A delayed 401 from a request begun before that boundary cannot expire the new session.
+A delayed 401 from a request begun before that boundary cannot expire the new session. A startup
+that cannot reach the server is neither boundary: the shell shows a retry, not the login page. A
+sign-out whose server call fails keeps the local reset and says the session may still be live,
+with a retry.
 **Why:** Prevents one account's cached or in-flight data from leaking into the next account in the
 same tab. See ADR-012.
 **Tradeoff:** Every account-scoped store must adopt the generation-guard pattern and a reset hook.

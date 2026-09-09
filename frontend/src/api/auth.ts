@@ -15,15 +15,12 @@ export { ApiError } from './http'
 // Generated `UserResponse` re-exported under the name consumers already import.
 export type User = UserResponse
 
-// Plain fetch — no refresh loop; caller decides what to do on 401
+/** Null means the server said we are not signed in. Anything else throws: an outage is not a logout. */
 export async function apiGetMe(): Promise<User | null> {
-  try {
-    const res = await fetch('/api/auth/me', { credentials: 'include' })
-    if (!res.ok) return null
-    return parseJson(res, UserResponse)
-  } catch {
-    return null
-  }
+  const res = await fetch('/api/auth/me', { credentials: 'include' })
+  if (res.status === 401) return null
+  if (!res.ok) throw await readError(res, 'Could not load your account')
+  return parseJson(res, UserResponse)
 }
 
 export async function apiLogin(email: string, password: string): Promise<User> {
@@ -111,7 +108,9 @@ export async function apiConfirmPasswordReset(token: string, new_password: strin
 }
 
 export async function apiLogout(): Promise<void> {
-  await apiFetch('/api/auth/logout', { method: 'POST' })
+  const res = await apiFetch('/api/auth/logout', { method: 'POST' })
+  // A 401 means there was no session left to end, which is what logout wanted.
+  if (!res.ok && res.status !== 401) throw await readError(res, 'Sign-out did not reach the server')
 }
 
 export async function apiUpdatePreferences(prefs: UserPreferences): Promise<User> {

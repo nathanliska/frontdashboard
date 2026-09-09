@@ -33,7 +33,7 @@ function resetSessionData(): void {
 }
 
 interface AuthState {
-  status: 'loading' | 'authenticated' | 'unauthenticated'
+  status: 'loading' | 'authenticated' | 'unauthenticated' | 'unreachable'
   user: User | null
   init: (bootReady?: Promise<void>) => Promise<void>
   login: (email: string, password: string) => Promise<void>
@@ -50,7 +50,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   user: null,
 
   async init(bootReady?: Promise<void>) {
-    if (get().status !== 'loading') return
+    if (get().status !== 'loading' && get().status !== 'unreachable') return
     if (authInitPromise) return authInitPromise
 
     setSessionExpiredHandler(handleSessionExpired)
@@ -59,7 +59,14 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       // either resolves to a live row or it does not, so /me is the whole of the check.
       // bootReady (the route chunk preload) rides along so answering doesn't just trade the
       // boot screen for a suspense fallback; it never rejects and caps its own wait.
-      const [user] = await Promise.all([apiGetMe(), bootReady])
+      let user: User | null
+      try {
+        ;[user] = await Promise.all([apiGetMe(), bootReady])
+      } catch {
+        // Nothing is known: not signed in, not signed out. The shell offers a retry, not a login.
+        set({ status: 'unreachable', user: null })
+        return
+      }
       if (user) {
         set({ status: 'authenticated', user })
         return
@@ -94,7 +101,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   async logout() {
     set({ status: 'unauthenticated', user: null }) // closes the SSE stream via useSSE cleanup
     resetSessionData() // clears stores + bumps the generation
-    await apiLogout().catch(() => {})
+    await endServerSession()
   },
 
   async updatePreferences(prefs) {
@@ -127,6 +134,23 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     await apiChangePassword(input)
   },
 }))
+
+// The local reset has already happened, so a failure here is only about the server's copy of the
+// session, which may still be live: say so, and offer to try again.
+async function endServerSession(): Promise<void> {
+  const generation = currentSessionGeneration()
+  try {
+    await apiLogout()
+  } catch {
+    toast.error('Sign-out did not reach the server, so this session may still be active.', {
+      label: 'Retry',
+      // A sign-in since then moved the boundary; ending that session is not what was asked.
+      onAction: () => {
+        if (generation === currentSessionGeneration()) void endServerSession()
+      },
+    })
+  }
+}
 
 /**
  * A 401 from any request means the session is gone — revoked elsewhere, idled out, or past its

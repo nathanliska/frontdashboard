@@ -58,6 +58,8 @@ _Last updated: 2026-09-09_
   async write in the **dashboard, auth, and notifications** stores — each captures the generation at
   entry and drops its post-await write if a boundary crossed — so a prior account's in-flight response
   can't repopulate the next account's state (dashboards, `user`, or notifications) in the same tab.
+  Only a 401 at startup means signed out; an unreachable server shows a retry. A sign-out whose
+  server call fails keeps the local reset and offers a retry, since the session may still be live.
   Delayed 401 responses from a prior session cannot clear a newer sign-in.
   Logout tears down the session view and SSE stream before its network round-trip.
 
