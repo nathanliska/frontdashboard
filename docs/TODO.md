@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #63, #64, #65◐, #21/#45, #69, #70, #72 |
+| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #63, #64, #65◐, #21/#45, #69, #70 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -130,9 +130,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 - **#70 — Authentication bootstrap treats outages as logout.** `apiGetMe` returns null for every
   failed response or network rejection. Reserve that result for 401 and expose a recoverable load
   error for other failures. *(Small)*
-- **#72 — Preferences reveal whether an inaccessible dashboard exists.** An absent dashboard ID
-  returns 404 while an existing inaccessible ID returns 403. A former member with a known ID can
-  distinguish the two. Return the same 404 for both. *(Small, Low severity)*
 
 ## Deferred — revisit when
 
