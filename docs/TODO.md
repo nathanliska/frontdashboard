@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #63, #64, #65◐, #21/#45, #69, #70 |
+| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #63, #64, #65◐, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -123,13 +123,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   actually slow: series with a `count` limit and no `until` still load unbounded, since finding their
   end means expanding the rule — which is the work being avoided. A persisted last-occurrence column
   was considered and rejected ([FDR-006](fdr/FDR-006-calendar-and-events.md)). *(Small, no trigger)*
-- **#69 — Failed logout leaves the server session live.** The client clears its view immediately,
-  ignores failed HTTP responses and swallows network errors. A reload can restore the same account
-  on a shared browser. Check the response and present a failed-revocation state with a retry path;
-  keep the immediate local privacy reset. *(Medium)*
-- **#70 — Authentication bootstrap treats outages as logout.** `apiGetMe` returns null for every
-  failed response or network rejection. Reserve that result for 401 and expose a recoverable load
-  error for other failures. *(Small)*
 
 ## Deferred — revisit when
 

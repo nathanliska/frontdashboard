@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -44,6 +44,17 @@ describe('RequireAuth', () => {
       }),
     ).toBeInTheDocument()
     expect(screen.queryByText('Private content')).not.toBeInTheDocument()
+  })
+
+  it('offers a retry instead of the login page when the server could not be reached', () => {
+    const init = vi.fn()
+    setMockAuthState(createMockAuthState({ status: 'unreachable', init }))
+
+    renderRequireAuth()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(init).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Login page')).not.toBeInTheDocument()
   })
 
   it('redirects unauthenticated users to login', () => {
