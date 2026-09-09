@@ -220,7 +220,8 @@ async def _normalize_accessible_dashboard_ids(
         if any(
             dashboard_id not in accessible_shared_ids for dashboard_id in normalized_ids if owner_by_dashboard_id[dashboard_id] != current_user.id
         ):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            # 404, as for an absent id: a 403 would tell a former member the dashboard still exists.
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
 
     return normalized_ids
 

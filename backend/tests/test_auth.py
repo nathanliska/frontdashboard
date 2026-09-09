@@ -764,8 +764,8 @@ async def test_update_preferences_rejects_inaccessible_dashboard(auth_client: As
             _PREFERENCES_URL,
             json={"home_dashboard_id": dashboard["id"]},
         )
-        assert resp.status_code == 403
-        assert resp.json()["detail"] == "Access denied"
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Dashboard not found"
     finally:
         await other.__aexit__(None, None, None)
 
@@ -792,8 +792,8 @@ async def test_update_preferences_rejects_inaccessible_favorite_dashboard(auth_c
             _PREFERENCES_URL,
             json={"favorite_dashboard_ids": [dashboard["id"]]},
         )
-        assert resp.status_code == 403
-        assert resp.json()["detail"] == "Access denied"
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Dashboard not found"
     finally:
         await other.__aexit__(None, None, None)
 
