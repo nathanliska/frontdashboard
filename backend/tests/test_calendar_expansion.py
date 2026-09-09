@@ -16,7 +16,8 @@ import pytest
 
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.schemas.calendar import CalendarOccurrenceResponse
-from app.services.calendar import expand_event_occurrences
+from app.services import calendar as calendar_service
+from app.services.calendar import MAX_EVENT_OCCURRENCES, CalendarExpansionError, assert_expandable, expand_event_occurrences
 
 
 def _event(
@@ -432,3 +433,120 @@ def test_a_non_advancing_interval_cannot_hang_the_expander(frequency: str) -> No
     assert occurrences, "the clamp should still produce a series, not an empty one"
     starts = [o.occurrence_start for o in occurrences]
     assert len(starts) == len(set(starts)), "a non-advancing interval repeated the same start"
+
+
+@pytest.mark.parametrize("frequency", ["daily", "weekly", "monthly", "yearly"])
+def test_recurrence_stops_at_the_last_representable_year(frequency: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skipping an invalid date must never turn year overflow into an infinite loop."""
+    safe_date = calendar_service._safe_date
+
+    def bounded_date(year: int, month: int, day: int):
+        assert year <= 9999, "An exhausted year range must terminate before skipping invalid dates"
+        return safe_date(year, month, day)
+
+    monkeypatch.setattr(calendar_service, "_safe_date", bounded_date)
+    start = datetime(9999, 12, 30, 9, tzinfo=UTC)
+    rule = {"frequency": frequency, "interval": 2}
+    if frequency == "weekly":
+        rule["by_weekday"] = [start.weekday()]
+    event = _event(starts_at=start, ends_at=start + timedelta(hours=1), recurrence=rule)
+    occurrences = expand_event_occurrences(event, {}, start, datetime(9999, 12, 31, tzinfo=UTC))
+    assert [occurrence.occurrence_start for occurrence in occurrences] == [start]
+
+
+def test_expansion_stops_consuming_a_large_series(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bound actual iterator consumption, not only the size of the returned response."""
+    original = calendar_service._iter_recurrence_starts
+    consumed = 0
+
+    def counted(*args):
+        nonlocal consumed
+        for start in original(*args):
+            consumed += 1
+            assert consumed <= MAX_EVENT_OCCURRENCES + 1, "Expansion consumed beyond its work budget"
+            yield start
+
+    monkeypatch.setattr(calendar_service, "_iter_recurrence_starts", counted)
+    event = _event(starts_at=datetime(1, 1, 1, tzinfo=UTC), ends_at=datetime(2027, 1, 1, tzinfo=UTC), recurrence={"frequency": "daily"})
+    with pytest.raises(CalendarExpansionError, match="too many occurrences"):
+        expand_event_occurrences(event, {}, datetime(2026, 9, 6, tzinfo=UTC), datetime(2026, 9, 7, tzinfo=UTC))
+    assert consumed == MAX_EVENT_OCCURRENCES + 1
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "timezone"),
+    [
+        ("9999-12-30T00:00:00+00:00", "9999-12-31T12:00:00+00:00", "UTC"),
+        ("9999-12-31T23:00:00+00:00", "9999-12-31T23:30:00+00:00", "Pacific/Kiritimati"),
+    ],
+)
+def test_unrepresentable_occurrences_raise_a_handled_error(start: str, end: str, timezone: str) -> None:
+    event = _event(starts_at=_utc(start), ends_at=_utc(end), timezone=timezone, recurrence={"frequency": "daily"})
+    with pytest.raises(CalendarExpansionError, match="supported date range"):
+        expand_event_occurrences(event, {}, _utc(start), datetime(9999, 12, 31, 23, 59, tzinfo=UTC))
+
+
+@pytest.mark.parametrize("frequency", ["daily", "weekly", "monthly", "yearly"])
+def test_until_stops_work_even_when_a_long_duration_rewinds_the_window(frequency: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rejected candidates cost CPU too, so counting only yielded starts misses this boundary."""
+    original = calendar_service._local_to_utc
+    conversions = 0
+
+    def counted(*args):
+        nonlocal conversions
+        conversions += 1
+        assert conversions <= 2, "Recurrence continued scanning after its until bound"
+        return original(*args)
+
+    monkeypatch.setattr(calendar_service, "_local_to_utc", counted)
+    rule = {"frequency": frequency, "until": "0001-01-01T01:00:00+00:00"}
+    if frequency == "weekly":
+        rule["by_weekday"] = [0]
+    event = _event(starts_at=datetime(1, 1, 1, tzinfo=UTC), ends_at=datetime(9999, 1, 1, tzinfo=UTC), recurrence=rule)
+    assert len(expand_event_occurrences(event, {}, datetime(2026, 9, 6, tzinfo=UTC), datetime(2026, 9, 7, tzinfo=UTC))) == 1
+
+
+def test_the_write_time_check_refuses_what_a_listing_could_not_expand() -> None:
+    """Anchored at the end as well as the start: from there the fast-forward steps back through the duration."""
+    too_long = _event(starts_at=datetime(1, 1, 1, tzinfo=UTC), ends_at=datetime(2027, 1, 1, tzinfo=UTC), recurrence={"frequency": "daily"})
+    with pytest.raises(CalendarExpansionError, match="too many occurrences"):
+        assert_expandable(too_long)
+    # Anchored at the start only, this one would have passed: 42 days of a daily series is 42 candidates.
+    assert len(expand_event_occurrences(too_long, {}, too_long.starts_at, too_long.starts_at + timedelta(days=42))) == 42
+
+    too_late = _event(
+        starts_at=_utc("9999-12-30T00:00:00+00:00"), ends_at=_utc("9999-12-31T12:00:00+00:00"), timezone="UTC", recurrence={"frequency": "daily"}
+    )
+    with pytest.raises(CalendarExpansionError, match="supported date range"):
+        assert_expandable(too_late)
+
+
+def test_the_write_time_check_accepts_ordinary_long_lived_events() -> None:
+    standup = _event(
+        starts_at=datetime(2020, 1, 6, 9, tzinfo=UTC), ends_at=datetime(2020, 1, 6, 9, 30, tzinfo=UTC), recurrence={"frequency": "daily"}
+    )
+    sabbatical = _event(starts_at=datetime(2020, 1, 1, tzinfo=UTC), ends_at=datetime(2023, 1, 1, tzinfo=UTC), recurrence=None)
+    weekly_for_years = _event(
+        starts_at=datetime(2020, 1, 6, 9, tzinfo=UTC),
+        ends_at=datetime(2023, 1, 6, 10, tzinfo=UTC),
+        recurrence={"frequency": "weekly", "by_weekday": [0]},
+    )
+    for event in (standup, sabbatical, weekly_for_years):
+        assert_expandable(event)
+
+
+@pytest.mark.parametrize("extra_days", [0, 1])
+def test_write_validation_covers_the_largest_listing_at_the_budget_boundary(extra_days: int) -> None:
+    start = datetime(2020, 1, 1, 9, tzinfo=UTC)
+    event = _event(
+        starts_at=start,
+        ends_at=start + timedelta(days=MAX_EVENT_OCCURRENCES - 366 - 1 + extra_days, hours=1),
+        recurrence={"frequency": "daily"},
+    )
+    if extra_days:
+        with pytest.raises(CalendarExpansionError, match="too many occurrences"):
+            assert_expandable(event)
+    else:
+        assert_expandable(event)
+        occurrences = expand_event_occurrences(event, {}, event.ends_at, event.ends_at + timedelta(days=366))
+        assert len(occurrences) == MAX_EVENT_OCCURRENCES - 1

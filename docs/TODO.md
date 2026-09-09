@@ -111,8 +111,9 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   frozen loop. The fix is dropping slowapi for `limits.aio`, which also costs the `@limiter.limit`
   decorator and the coverage test that enforces it — so it wants a trigger: the store restarting often
   enough to notice, or a second replica. *(Medium, no trigger yet)*
-- **#65◐ — Occurrence expansion is bounded per event and per dashboard, not per request.** Every
-  per-event axis is capped, and `quota_events_per_dashboard` now bounds how many events one
+- **#65◐ — Occurrence expansion is bounded per event and per dashboard, not per request.**
+  Each event expansion has a bounded candidate/override budget, and `quota_events_per_dashboard`
+  bounds how many events one
   dashboard can hold ([ADR-020](adr/ADR-020-resource-quotas.md)). Remaining: the query still has no
   `LIMIT`, so a request spanning many accessible dashboards multiplies that ceiling by their number.
   Worth measuring before building: `frontdashboard_http_request_seconds` on `/api/calendar/events`

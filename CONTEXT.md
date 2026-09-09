@@ -393,6 +393,10 @@ _Last updated: 2026-09-09_
   validated at the network boundary, widgets are a discriminated union on `widget_type`, and SSE
   frames validate against generated frame schemas — so a new backend event type or widget type is a
   compile error in the client code that must handle it.
+- Calendar recurrence expansion stops at date-range and recurrence-end boundaries. A per-event
+  budget is enforced when an event is written (422), against the largest window a listing may ask
+  for (366 days); a stored event that still exceeds it is left out of listings and counted rather
+  than failing them. Monthly/yearly series without count limits skip historical candidates.
 - CI: the six cross-stack source guards run in Repo checks even for a one-sided change. Four
   grouped jobs (each with a tight `timeout-minutes`, and docs-only changes skip the
   workflow entirely), because Actions bills each job rounded up to a full minute and ten small

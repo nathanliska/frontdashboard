@@ -1,9 +1,19 @@
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from itertools import islice
 from zoneinfo import ZoneInfo
 
 from app.models.calendar import CalendarEvent, CalendarEventOverride
+
+MAX_EVENT_OCCURRENCES = 2000
+MAX_OCCURRENCE_WINDOW = timedelta(days=366)
+_RANGE_MESSAGE = "An event extends beyond the supported date range. Adjust its dates or timezone."
+_BUDGET_MESSAGE = "An event produces too many occurrences. Shorten its duration or recurrence range."
+
+
+class CalendarExpansionError(ValueError):
+    """An event cannot be expanded safely within the requested window."""
 
 
 @dataclass(slots=True)
@@ -28,8 +38,18 @@ def expand_event_occurrences(
     window_start: datetime,
     window_end: datetime,
 ) -> list[ExpandedOccurrence]:
+    """Expand a bounded series or raise CalendarExpansionError instead of exhausting the worker."""
     duration = event.ends_at - event.starts_at
-    starts = [event.starts_at] if not event.recurrence else list(_iter_recurrence_starts(event, window_start, window_end))
+    try:
+        starts = (
+            [event.starts_at]
+            if not event.recurrence
+            else list(islice(_iter_recurrence_starts(event, window_start, window_end), MAX_EVENT_OCCURRENCES + 1))
+        )
+    except OverflowError as exc:
+        raise CalendarExpansionError(_RANGE_MESSAGE) from exc
+    if len(starts) > MAX_EVENT_OCCURRENCES or len(overrides_by_start) > MAX_EVENT_OCCURRENCES:
+        raise CalendarExpansionError(_BUDGET_MESSAGE)
 
     # An override can retime an occurrence *into* this window from an original start outside it.
     # The iterator walks the window, so that start is never generated — but overrides key on it.
@@ -38,7 +58,10 @@ def expand_event_occurrences(
 
     occurrences: list[ExpandedOccurrence] = []
     for start in starts:
-        occurrence = _build_occurrence(event, overrides_by_start.get(start), start, duration)
+        try:
+            occurrence = _build_occurrence(event, overrides_by_start.get(start), start, duration)
+        except OverflowError as exc:
+            raise CalendarExpansionError(_RANGE_MESSAGE) from exc
         if occurrence is None:
             continue
         if _overlaps(occurrence.occurrence_start, occurrence.occurrence_end, window_start, window_end):
@@ -73,6 +96,29 @@ def _build_occurrence(
         recurring=event.recurrence is not None,
         is_exception=override is not None,
     )
+
+
+def assert_expandable(event: CalendarEvent) -> None:
+    """Raise CalendarExpansionError if a maximum-size listing could not expand `event`.
+
+    Run at write time so a listing never meets an event it cannot expand: the same budget, applied
+    where the one person who can fix the event is the one asking. Anchored at the end as well as
+    the start, because from there the fast-forward steps back through the whole duration.
+    """
+    for anchor in (event.starts_at, event.ends_at):
+        try:
+            window_end = anchor + MAX_OCCURRENCE_WINDOW
+        except OverflowError as exc:
+            raise CalendarExpansionError(_RANGE_MESSAGE) from exc
+        expand_event_occurrences(event, {}, anchor, window_end)
+
+
+def build_overridden_occurrence(event: CalendarEvent, override: CalendarEventOverride) -> ExpandedOccurrence | None:
+    """Build only the changed occurrence before its write commits, raising on unsupported dates."""
+    try:
+        return _build_occurrence(event, override, override.occurrence_start, event.ends_at - event.starts_at)
+    except OverflowError as exc:
+        raise CalendarExpansionError(_RANGE_MESSAGE) from exc
 
 
 def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window_end: datetime):
@@ -122,12 +168,14 @@ def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window
             current_date = base_local.date()
         while True:
             candidate_utc = _local_to_utc(tz, current_date, local_time)
-            if candidate_utc >= window_end:
+            if candidate_utc >= window_end or (until is not None and candidate_utc > until):
                 break
             if should_emit(candidate_utc):
                 yield candidate_utc
             elif count_limit is not None and emitted >= count_limit:
                 break
+            if current_date.toordinal() + interval > date.max.toordinal():
+                return
             current_date += timedelta(days=interval)
         return
 
@@ -143,11 +191,16 @@ def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window
         else:
             week_index = 0
         while True:
-            current_week_start = week_start + timedelta(weeks=week_index * interval)
+            week_ordinal = week_start.toordinal() + 7 * week_index * interval
+            if week_ordinal > date.max.toordinal():
+                return
+            current_week_start = date.fromordinal(week_ordinal)
             for weekday in weekdays:
+                if week_ordinal + weekday > date.max.toordinal():
+                    return
                 candidate_date = current_week_start + timedelta(days=weekday)
                 candidate_utc = _local_to_utc(tz, candidate_date, local_time)
-                if candidate_utc >= window_end:
+                if candidate_utc >= window_end or (until is not None and candidate_utc > until):
                     return
                 if should_emit(candidate_utc):
                     yield candidate_utc
@@ -157,14 +210,21 @@ def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window
 
     if frequency == "monthly":
         months_added = 0
+        if count_limit is None and window_start > event.starts_at:
+            months_ahead = (window_start.year - base_local.year) * 12 + window_start.month - base_local.month
+            months_back = (event.ends_at - event.starts_at).days // 28 + interval + 1
+            months_added = max(0, (months_ahead - months_back) // interval) * interval
         while True:
             year, month = _add_months(base_local.year, base_local.month, months_added)
+            # An impossible day can be skipped; an exhausted year range can never recover.
+            if year > date.max.year:
+                return
             candidate_date = _safe_date(year, month, base_local.day)
             months_added += interval
             if candidate_date is None:
                 continue
             candidate_utc = _local_to_utc(tz, candidate_date, local_time)
-            if candidate_utc >= window_end:
+            if candidate_utc >= window_end or (until is not None and candidate_utc > until):
                 break
             if should_emit(candidate_utc):
                 yield candidate_utc
@@ -174,13 +234,19 @@ def _iter_recurrence_starts(event: CalendarEvent, window_start: datetime, window
 
     if frequency == "yearly":
         years_added = 0
+        if count_limit is None and window_start > event.starts_at:
+            years_back = (event.ends_at - event.starts_at).days // 365 + interval + 1
+            years_added = max(0, (window_start.year - base_local.year - years_back) // interval) * interval
         while True:
-            candidate_date = _safe_date(base_local.year + years_added, base_local.month, base_local.day)
+            year = base_local.year + years_added
+            if year > date.max.year:
+                return
+            candidate_date = _safe_date(year, base_local.month, base_local.day)
             years_added += interval
             if candidate_date is None:
                 continue
             candidate_utc = _local_to_utc(tz, candidate_date, local_time)
-            if candidate_utc >= window_end:
+            if candidate_utc >= window_end or (until is not None and candidate_utc > until):
                 break
             if should_emit(candidate_utc):
                 yield candidate_utc

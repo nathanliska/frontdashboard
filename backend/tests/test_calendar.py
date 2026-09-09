@@ -1,10 +1,24 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
+from prometheus_client import REGISTRY
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.models.calendar import CalendarEvent
 from app.routers import calendar as calendar_router
-from tests.helpers import create_calendar_event, create_dashboard, register_client, set_csrf, share_dashboard
+from app.services.sessions import start_session
+from tests.helpers import (
+    create_calendar_event,
+    create_dashboard,
+    make_db_dashboard,
+    make_db_user,
+    register_client,
+    set_csrf,
+    share_dashboard,
+)
 
 
 async def test_create_private_calendar_event(auth_client: AsyncClient) -> None:
@@ -498,3 +512,82 @@ async def test_clearing_recurrence_removes_its_occurrence_overrides(auth_client:
     assert [item["occurrence_start"] for item in occurrences] == ["2026-04-10T14:00:00Z"]
     assert occurrences[0]["title"] == "Workout"
     assert occurrences[0]["is_exception"] is False
+
+
+async def test_an_event_a_listing_could_not_expand_is_refused_when_written(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client)
+    set_csrf(auth_client)
+    response = await auth_client.post(
+        "/api/calendar/events",
+        json={
+            "title": "Forever",
+            "starts_at": "0001-01-01T09:00:00+00:00",
+            "ends_at": "2027-01-01T10:00:00+00:00",
+            "timezone": "UTC",
+            "all_day": False,
+            "dashboard_id": dashboard["id"],
+            "recurrence": {"frequency": "daily", "interval": 1},
+        },
+    )
+    assert response.status_code == 422
+    assert "too many occurrences" in response.json()["detail"]
+
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Fine")
+    response = await auth_client.patch(
+        f"/api/calendar/events/{event['id']}",
+        json={"ends_at": "2040-01-01T10:00:00+00:00", "recurrence": {"frequency": "daily", "interval": 1}},
+    )
+    assert response.status_code == 422, response.text
+
+
+async def test_a_stored_event_that_cannot_expand_is_left_out_not_fatal(client: AsyncClient, db_session: AsyncSession) -> None:
+    """The write-time check has not always existed, so the listing must survive a row that predates it."""
+    owner = await make_db_user(db_session)
+    board = await make_db_dashboard(db_session, owner)
+    kept = CalendarEvent(
+        dashboard_id=board.id,
+        created_by=owner.id,
+        updated_by=owner.id,
+        title="Kept",
+        timezone="UTC",
+        all_day=False,
+        starts_at=datetime(2026, 9, 7, 9, tzinfo=UTC),
+        ends_at=datetime(2026, 9, 7, 10, tzinfo=UTC),
+        recurrence=None,
+    )
+    broken = CalendarEvent(
+        dashboard_id=board.id,
+        created_by=owner.id,
+        updated_by=owner.id,
+        title="Broken",
+        timezone="UTC",
+        all_day=False,
+        starts_at=datetime(1, 1, 1, 9, tzinfo=UTC),
+        ends_at=datetime(2027, 1, 1, 10, tzinfo=UTC),
+        recurrence={"frequency": "daily", "interval": 1},
+    )
+    db_session.add_all([kept, broken])
+    _, raw = await start_session(owner.id, db_session)
+    await db_session.flush()
+    client.cookies.set(settings.session_cookie_name, raw)
+    skipped_before = REGISTRY.get_sample_value("frontdashboard_calendar_expansion_skips_total") or 0
+
+    response = await client.get(
+        "/api/calendar/events",
+        params={"window_start": "2026-09-06T00:00:00+00:00", "window_end": "2026-09-13T00:00:00+00:00", "dashboard_id": str(board.id)},
+    )
+
+    assert response.status_code == 200, response.text
+    assert {occurrence["title"] for occurrence in response.json()} == {"Kept"}
+    assert REGISTRY.get_sample_value("frontdashboard_calendar_expansion_skips_total") == skipped_before + 1
+
+
+async def test_a_listing_window_is_capped_at_the_size_the_write_check_covers(auth_client: AsyncClient) -> None:
+    """366 days exactly is allowed; one second more is not — the same bound assert_expandable is checked against."""
+    dashboard = await create_dashboard(auth_client)
+    base = {"dashboard_id": dashboard["id"], "window_start": "2026-01-01T00:00:00+00:00"}
+    allowed = await auth_client.get("/api/calendar/events", params={**base, "window_end": "2027-01-02T00:00:00+00:00"})
+    assert allowed.status_code == 200, allowed.text
+    refused = await auth_client.get("/api/calendar/events", params={**base, "window_end": "2027-01-02T00:00:01+00:00"})
+    assert refused.status_code == 422
+    assert "366 days" in refused.json()["detail"]
