@@ -161,6 +161,18 @@ jobs:
         working-directory: frontend
       - run: uv sync --frozen
         working-directory: backend
+      # These backend tests inspect frontend source, so the backend job's side filter cannot own
+      # them. Repo checks runs for either side and already has both stacks installed.
+      - name: Check conventions spanning backend and frontend
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+          ENVIRONMENT: development
+        run: >-
+          uv run pytest -m unit
+          tests/test_activity.py tests/test_grid_basis_coverage.py
+          tests/test_css_container_coverage.py tests/test_nav_breakpoint_coverage.py
+          tests/test_frontend_pin_coverage.py tests/test_toolchain_coverage.py
       - name: Contract is in sync with the backend schema
         # app.openapi() is schema-only — no DB connection is opened, but Settings() still
         # requires these to be set (no defaults) for app.main to import.
