@@ -82,7 +82,14 @@ export function SessionsPanel() {
         <p className="text-sm text-zinc-400">No sessions on this page.</p>
       )}
       <div className="flex flex-wrap gap-3 text-sm text-sky-300">
-        <button type="button" disabled={disabled} onClick={refetch}>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            setRevokeError(null)
+            refetch()
+          }}
+        >
           Refresh sessions
         </button>
         {cursor && (

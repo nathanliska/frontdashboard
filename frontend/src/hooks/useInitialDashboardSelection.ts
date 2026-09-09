@@ -25,7 +25,7 @@ export function useInitialDashboardSelection(
 ) {
   const loadSummaries = useDashboardStore((state) => state.loadSummaries)
   const [dashboardId, setDashboardId] = useState<string | null>(null)
-  const [readyFor, setReadyFor] = useState<string | null | undefined>(undefined)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -38,7 +38,7 @@ export function useInitialDashboardSelection(
         setDashboardId(
           pickInitialDashboardId(useDashboardStore.getState().summaries, requestedDashboardId),
         )
-        setReadyFor(requestedDashboardId)
+        setReady(true)
       } catch {
         if (!cancelled) {
           toast.error(loadErrorMessage)
@@ -53,5 +53,7 @@ export function useInitialDashboardSelection(
     }
   }, [loadErrorMessage, loadSummaries, requestedDashboardId])
 
-  return [dashboardId, setDashboardId, readyFor === requestedDashboardId] as const
+  // Ready once summaries have loaded at all: a later switch picks from that list, so nothing
+  // fetched for it can be a dashboard the user cannot see.
+  return [dashboardId, setDashboardId, ready] as const
 }

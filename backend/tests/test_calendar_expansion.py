@@ -17,7 +17,7 @@ import pytest
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.schemas.calendar import CalendarOccurrenceResponse
 from app.services import calendar as calendar_service
-from app.services.calendar import MAX_EVENT_OCCURRENCES, CalendarExpansionError, assert_expandable, expand_event_occurrences
+from app.services.calendar import MAX_EVENT_OCCURRENCES, CalendarExpansionError, expand_event_occurrences
 
 
 def _event(
@@ -504,49 +504,3 @@ def test_until_stops_work_even_when_a_long_duration_rewinds_the_window(frequency
         rule["by_weekday"] = [0]
     event = _event(starts_at=datetime(1, 1, 1, tzinfo=UTC), ends_at=datetime(9999, 1, 1, tzinfo=UTC), recurrence=rule)
     assert len(expand_event_occurrences(event, {}, datetime(2026, 9, 6, tzinfo=UTC), datetime(2026, 9, 7, tzinfo=UTC))) == 1
-
-
-def test_the_write_time_check_refuses_what_a_listing_could_not_expand() -> None:
-    """Anchored at the end as well as the start: from there the fast-forward steps back through the duration."""
-    too_long = _event(starts_at=datetime(1, 1, 1, tzinfo=UTC), ends_at=datetime(2027, 1, 1, tzinfo=UTC), recurrence={"frequency": "daily"})
-    with pytest.raises(CalendarExpansionError, match="too many occurrences"):
-        assert_expandable(too_long)
-    # Anchored at the start only, this one would have passed: 42 days of a daily series is 42 candidates.
-    assert len(expand_event_occurrences(too_long, {}, too_long.starts_at, too_long.starts_at + timedelta(days=42))) == 42
-
-    too_late = _event(
-        starts_at=_utc("9999-12-30T00:00:00+00:00"), ends_at=_utc("9999-12-31T12:00:00+00:00"), timezone="UTC", recurrence={"frequency": "daily"}
-    )
-    with pytest.raises(CalendarExpansionError, match="supported date range"):
-        assert_expandable(too_late)
-
-
-def test_the_write_time_check_accepts_ordinary_long_lived_events() -> None:
-    standup = _event(
-        starts_at=datetime(2020, 1, 6, 9, tzinfo=UTC), ends_at=datetime(2020, 1, 6, 9, 30, tzinfo=UTC), recurrence={"frequency": "daily"}
-    )
-    sabbatical = _event(starts_at=datetime(2020, 1, 1, tzinfo=UTC), ends_at=datetime(2023, 1, 1, tzinfo=UTC), recurrence=None)
-    weekly_for_years = _event(
-        starts_at=datetime(2020, 1, 6, 9, tzinfo=UTC),
-        ends_at=datetime(2023, 1, 6, 10, tzinfo=UTC),
-        recurrence={"frequency": "weekly", "by_weekday": [0]},
-    )
-    for event in (standup, sabbatical, weekly_for_years):
-        assert_expandable(event)
-
-
-@pytest.mark.parametrize("extra_days", [0, 1])
-def test_write_validation_covers_the_largest_listing_at_the_budget_boundary(extra_days: int) -> None:
-    start = datetime(2020, 1, 1, 9, tzinfo=UTC)
-    event = _event(
-        starts_at=start,
-        ends_at=start + timedelta(days=MAX_EVENT_OCCURRENCES - 366 - 1 + extra_days, hours=1),
-        recurrence={"frequency": "daily"},
-    )
-    if extra_days:
-        with pytest.raises(CalendarExpansionError, match="too many occurrences"):
-            assert_expandable(event)
-    else:
-        assert_expandable(event)
-        occurrences = expand_event_occurrences(event, {}, event.ends_at, event.ends_at + timedelta(days=366))
-        assert len(occurrences) == MAX_EVENT_OCCURRENCES - 1

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionPage } from '../../api/generated/contract'
+import { ApiError } from '../../api/http'
 import { SessionsPanel } from './SessionsPanel'
 
 const api = vi.hoisted(() => ({ apiListSessions: vi.fn(), apiRevokeSession: vi.fn() }))
@@ -47,6 +48,14 @@ describe('session management', () => {
     await waitFor(() => expect(screen.queryByText('Other session')).not.toBeInTheDocument())
     expect(api.apiRevokeSession).toHaveBeenCalledWith('other')
     expect(api.apiListSessions).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats a 404 on revoke as done, since the session is already gone', async () => {
+    api.apiRevokeSession.mockRejectedValueOnce(new ApiError('Session not found', 404))
+    render(<SessionsPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Revoke session/ }))
+    await waitFor(() => expect(screen.queryByText('Other session')).not.toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('keeps a failed revocation visible with an error and a retry', async () => {

@@ -101,6 +101,30 @@ async def test_occurrence_override_updates_one_instance(auth_client: AsyncClient
     assert payload["occurrence"]["title"] == "Moved Standup"
 
 
+async def test_edited_occurrences_on_one_series_are_capped(auth_client: AsyncClient, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "quota_overrides_per_event", 1)
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Standup",
+        recurrence={"frequency": "daily", "interval": 1, "count": 3},
+    )
+    set_csrf(auth_client)
+
+    async def edit(day: int, title: str):
+        return await auth_client.patch(
+            f"/api/calendar/events/{event['id']}/occurrences",
+            json={"occurrence_start": f"2026-04-{day:02d}T14:00:00+00:00", "title": title},
+        )
+
+    assert (await edit(11, "Moved")).status_code == 200
+    refused = await edit(12, "Another")
+    assert refused.status_code == 422
+    assert "edited occurrences" in refused.json()["detail"]
+    assert (await edit(11, "Moved again")).status_code == 200
+
+
 async def test_viewer_cannot_edit_event(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"])
@@ -514,7 +538,7 @@ async def test_clearing_recurrence_removes_its_occurrence_overrides(auth_client:
     assert occurrences[0]["is_exception"] is False
 
 
-async def test_an_event_a_listing_could_not_expand_is_refused_when_written(auth_client: AsyncClient) -> None:
+async def test_a_repeating_event_whose_occurrence_outlasts_a_month_is_refused(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
     set_csrf(auth_client)
     response = await auth_client.post(
@@ -530,7 +554,7 @@ async def test_an_event_a_listing_could_not_expand_is_refused_when_written(auth_
         },
     )
     assert response.status_code == 422
-    assert "too many occurrences" in response.json()["detail"]
+    assert "longer than 31 days" in response.json()["detail"]
 
     event = await create_calendar_event(auth_client, dashboard["id"], title="Fine")
     response = await auth_client.patch(

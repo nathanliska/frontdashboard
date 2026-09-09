@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { apiListSessions, apiRevokeSession } from '../api/auth'
 import type { SessionCursor, SessionPage } from '../api/generated/contract'
+import { ApiError } from '../api/http'
 import { currentSessionGeneration } from '../stores/sessionGeneration'
 import { registerResourceReset } from './resetRegistry'
 import { createScopedQuery } from './scopedQuery'
@@ -26,7 +27,12 @@ export function useSessions(cursor: SessionCursor | null) {
 /** Remove a successfully revoked session from every loaded page without a follow-up GET. */
 export async function revokeOtherSession(id: string): Promise<void> {
   const generation = currentSessionGeneration()
-  await apiRevokeSession(id)
+  try {
+    await apiRevokeSession(id)
+  } catch (error) {
+    // Already gone, revoked elsewhere or expired: the state the user asked for holds.
+    if (!(error instanceof ApiError && error.status === 404)) throw error
+  }
   if (generation !== currentSessionGeneration()) return
   revoked.add(id)
   sessionsQuery.updateWhere(

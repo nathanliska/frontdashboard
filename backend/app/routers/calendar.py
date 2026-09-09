@@ -529,6 +529,16 @@ async def update_occurrence(
     )
     override = result.scalar_one_or_none()
     if override is None:
+        await assert_under_quota(
+            db,
+            model=CalendarEventOverride,
+            resource="overrides",
+            cap=settings.quota_overrides_per_event,
+            scope=CalendarEventOverride.calendar_event_id == event.id,
+            detail=(
+                f"This series already has {settings.quota_overrides_per_event:,} edited occurrences. Change one of those, or create a separate event."
+            ),
+        )
         override = CalendarEventOverride(
             calendar_event_id=event.id,
             created_by=current_user.id,
