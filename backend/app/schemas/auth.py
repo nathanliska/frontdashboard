@@ -116,3 +116,23 @@ class ProfileUpdate(PatchModel):
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class SessionSummary(BaseModel):
+    """Public session metadata; neither the credential nor its hash is exposed."""
+
+    id: uuid.UUID
+    created_at: datetime
+    last_used_at: datetime
+    expires_at: datetime
+    is_current: bool
+
+
+class SessionCursor(BaseModel):
+    created_at: datetime
+    id: uuid.UUID
+
+
+class SessionPage(BaseModel):
+    items: list[SessionSummary]
+    next_cursor: SessionCursor | None = None

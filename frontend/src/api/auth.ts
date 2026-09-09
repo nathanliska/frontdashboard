@@ -2,6 +2,8 @@ import { apiFetch } from './client'
 import {
   PasswordResetTokenStatus,
   RegistrationResponse,
+  type SessionCursor,
+  SessionPage,
   type UserPreferences,
   UserResponse,
 } from './generated/contract'
@@ -139,4 +141,20 @@ export async function apiChangePassword(input: {
     body: JSON.stringify(input),
   })
   if (!res.ok) throw await readError(res, 'Failed to update password')
+}
+
+/** A bounded page of live sessions; the cursor remains usable after revoking its boundary row. */
+export async function apiListSessions(cursor: SessionCursor | null): Promise<SessionPage> {
+  const query = cursor
+    ? `?${new URLSearchParams({ before: cursor.created_at, before_id: cursor.id })}`
+    : ''
+  const res = await apiFetch(`/api/auth/sessions${query}`)
+  if (!res.ok) throw await readError(res, 'Failed to load sessions')
+  return parseJson(res, SessionPage)
+}
+
+/** Revoke another session; the current session is ended through the regular logout flow. */
+export async function apiRevokeSession(id: string): Promise<void> {
+  const res = await apiFetch(`/api/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) throw await readError(res, 'Failed to revoke session')
 }

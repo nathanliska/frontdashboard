@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import ColumnElement, select, update
+from sqlalchemy import ColumnElement, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import create_opaque_token, hash_token
@@ -107,6 +107,26 @@ async def session_is_live(session_id: uuid.UUID, db: AsyncSession) -> bool:
         .where(UserSession.id == session_id, *_live(datetime.now(UTC)), User.deleted_at.is_(None))
     )
     return result.scalar_one_or_none() is not None
+
+
+async def list_live_sessions(
+    user_id: uuid.UUID,
+    db: AsyncSession,
+    *,
+    before: datetime | None = None,
+    before_id: uuid.UUID | None = None,
+    limit: int = 51,
+) -> list[UserSession]:
+    """Read a bounded page of the user's live sessions, newest sign-in first."""
+    query = (
+        select(UserSession)
+        .where(UserSession.user_id == user_id, *_live(datetime.now(UTC)))
+        .order_by(UserSession.created_at.desc(), UserSession.id.desc())
+        .limit(limit)
+    )
+    if before is not None and before_id is not None:
+        query = query.where(tuple_(UserSession.created_at, UserSession.id) < (before, before_id))
+    return list((await db.scalars(query)).all())
 
 
 async def revoke_session(session_id: uuid.UUID, db: AsyncSession) -> uuid.UUID | None:
