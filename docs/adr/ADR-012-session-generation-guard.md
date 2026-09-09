@@ -1,6 +1,6 @@
 # ADR-012: Session-Generation Guard for Auth-Boundary State Reset
 
-**Date:** 2026-07-20
+**Date:** 2026-07-20 (amended 2026-09-09 — the API client's session-expired callback is guarded too)
 
 ## Context
 
@@ -25,6 +25,8 @@ Reset all client state at every auth boundary, and guard every async write with 
   notifications** stores: each async action **captures the generation at entry** and **drops its
   post-await write if the generation changed** (a boundary crossed).
 - Logout tears down the session view and SSE stream **before** its network round-trip.
+- The API client captures the generation when a request starts and ignores a 401 that arrives
+  after the boundary moved, so an old request's expiry cannot sign out a newer session.
 
 ## Consequences
 

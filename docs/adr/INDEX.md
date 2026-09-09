@@ -32,7 +32,7 @@ feature does*, [CONTEXT.md](../../CONTEXT.md) is the current-state snapshot, and
 | [ADR-009](ADR-009-canonical-layout-mobile-projection.md) | Persisted layout is canonical on a bounded 24 x 24 grid, the stacked view is a derived projection | 2026-08-21 |
 | [ADR-010](ADR-010-argon2-off-event-loop.md) | Argon2 password hashing off the event loop | 2026-07-20 |
 | [ADR-011](ADR-011-enumeration-safe-login.md) | Enumeration-safe, constant-work authentication (login + registration) | 2026-07-25 |
-| [ADR-012](ADR-012-session-generation-guard.md) | Session-generation guard for auth-boundary state reset | 2026-07-20 |
+| [ADR-012](ADR-012-session-generation-guard.md) | Session-generation guard for auth-boundary state reset | 2026-09-09 |
 | [ADR-013](ADR-013-rate-limit-cf-connecting-ip.md) | Rate limiting — per-route limits keyed on `CF-Connecting-IP` | 2026-08-06 |
 | [ADR-014](ADR-014-fail-fast-prod-config.md) | Fail-fast production configuration validation | 2026-07-20 |
 | [ADR-015](ADR-015-sse-write-choreography.md) | SSE write choreography — build before commit, broadcast after | 2026-07-20 |

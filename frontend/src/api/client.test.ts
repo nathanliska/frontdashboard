@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // jsdom is required, not incidental: both the stub and `client.ts` use `document.cookie`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { bumpSessionGeneration } from '../stores/sessionGeneration'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import { __resetApiClientForTests, apiFetch, setSessionExpiredHandler } from './client'
 
@@ -132,6 +133,33 @@ describe('apiFetch', () => {
   })
 
   describe('what counts as being logged out', () => {
+    it.each([false, true])(
+      'ignores a prior session’s delayed 401 (retried: %s)',
+      async (retried) => {
+        const expired = vi.fn()
+        setSessionExpiredHandler(expired)
+        if (retried) vi.mocked(fetch).mockResolvedValueOnce(response(503))
+        let finish!: (res: Response) => void
+        vi.mocked(fetch).mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              finish = resolve
+            }),
+        )
+        const pending = apiFetch('/api/dashboards')
+        await vi.waitFor(() => expect(finish).toBeDefined())
+
+        bumpSessionGeneration()
+        finish(response(401))
+        expect((await pending).status).toBe(401)
+        expect(expired).not.toHaveBeenCalled()
+
+        vi.mocked(fetch).mockResolvedValueOnce(response(401))
+        await apiFetch('/api/dashboards')
+        expect(expired).toHaveBeenCalledTimes(1)
+      },
+    )
+
     it('treats 401 as the session being gone', async () => {
       const expired = vi.fn()
       setSessionExpiredHandler(expired)
