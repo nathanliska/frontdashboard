@@ -36,12 +36,14 @@ import {
   DEFAULT_TIMEZONE,
   dateKey,
   formatDayNumber,
+  formatEventCount,
   formatHeadingDate,
   formatMonthLabel,
   monthWeeksInView,
   occurrencesForDate,
   startOfDay,
 } from '../utils/calendar/calendarUtils'
+import { parseCalendarDate } from '../utils/calendar/parseCalendarDate'
 import { cn } from '../utils/shared/cn'
 
 type DashboardContext = {
@@ -66,15 +68,23 @@ export function CalendarPage() {
   const [editorLoading, setEditorLoading] = useState(false)
   const editorRequestId = useRef(0)
   const [showTrash, setShowTrash] = useState(false)
-  const [monthCursor, setMonthCursor] = useState(() => startOfDay(new Date()))
-  const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
+  const requestedDate = searchParams.get('date')
+  const [dateBase, setDateBase] = useState(requestedDate)
+  const [monthCursor, setMonthCursor] = useState(() => parseCalendarDate(requestedDate))
+  const [selectedDate, setSelectedDate] = useState(() => parseCalendarDate(requestedDate))
+  if (dateBase !== requestedDate) {
+    setDateBase(requestedDate)
+    setMonthCursor(parseCalendarDate(requestedDate))
+    setSelectedDate(parseCalendarDate(requestedDate))
+  }
   const requestedDashboardId = searchParams.get('dashboard_id')
-  const [activeDashboardId, setActiveDashboardId] = useInitialDashboardSelection(
+  const [activeDashboardId, setActiveDashboardId, selectionReady] = useInitialDashboardSelection(
     requestedDashboardId,
     'Could not load dashboards for calendar.',
   )
   const activeDashboards = useMemo(() => dashboards, [dashboards])
   const effectiveActiveDashboardId = useMemo(() => {
+    if (!selectionReady) return null
     if (
       activeDashboardId &&
       activeDashboards.some((dashboard) => dashboard.id === activeDashboardId)
@@ -82,7 +92,7 @@ export function CalendarPage() {
       return activeDashboardId
     }
     return activeDashboards[0]?.id ?? null
-  }, [activeDashboardId, activeDashboards])
+  }, [activeDashboardId, activeDashboards, selectionReady])
   const occurrenceWindow = useMemo(() => {
     if (!effectiveActiveDashboardId) return null
     return calendarWindow(monthCursor)
@@ -109,13 +119,26 @@ export function CalendarPage() {
   }, [activeDashboards, effectiveActiveDashboardId])
 
   useEffect(() => {
+    if (!selectionReady) return
     if (effectiveActiveDashboardId === activeDashboardId) return
     if (effectiveActiveDashboardId) {
-      setSearchParams({ dashboard_id: effectiveActiveDashboardId }, { replace: true })
+      setSearchParams(
+        (params) => {
+          params.set('dashboard_id', effectiveActiveDashboardId)
+          return params
+        },
+        { replace: true },
+      )
       return
     }
-    setSearchParams({}, { replace: true })
-  }, [activeDashboardId, effectiveActiveDashboardId, setSearchParams])
+    setSearchParams(
+      (params) => {
+        params.delete('dashboard_id')
+        return params
+      },
+      { replace: true },
+    )
+  }, [activeDashboardId, effectiveActiveDashboardId, setSearchParams, selectionReady])
 
   const closeEditor = useCallback(() => {
     editorRequestId.current += 1
@@ -222,9 +245,21 @@ export function CalendarPage() {
               const nextDashboardId = event.target.value || null
               setActiveDashboardId(nextDashboardId)
               if (nextDashboardId) {
-                setSearchParams({ dashboard_id: nextDashboardId }, { replace: true })
+                setSearchParams(
+                  (params) => {
+                    params.set('dashboard_id', nextDashboardId)
+                    return params
+                  },
+                  { replace: true },
+                )
               } else {
-                setSearchParams({}, { replace: true })
+                setSearchParams(
+                  (params) => {
+                    params.delete('dashboard_id')
+                    return params
+                  },
+                  { replace: true },
+                )
               }
             }}
             className="min-w-0 max-w-44 sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
@@ -337,6 +372,7 @@ export function CalendarPage() {
                       key={day.toISOString()}
                       type="button"
                       onClick={() => setSelectedDate(startOfDay(day))}
+                      aria-label={`${formatHeadingDate(day)}: ${formatEventCount(dayOccurrences.length)}. Show day`}
                       className="group min-h-0 min-w-0 appearance-none bg-transparent p-0 text-left"
                     >
                       <div

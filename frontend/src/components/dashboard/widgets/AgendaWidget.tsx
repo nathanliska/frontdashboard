@@ -1,7 +1,7 @@
 import { AlertCircle, CalendarDays, CheckCircle2, Clock3, Repeat2 } from 'lucide-react'
 import type { AgendaItem } from '../../../resources/agendaData'
 import { useAgendaItems } from '../../../resources/agendaData'
-import { dateKey, formatOccurrenceTime } from '../../../utils/calendar/calendarUtils'
+import { dateKey, formatOccurrenceSpan } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
 import { ParticipantDots } from '../../calendar/ParticipantDots'
 import { WidgetErrorState } from '../WidgetErrorState'
@@ -132,5 +132,5 @@ function formatAgendaMeta(item: AgendaItem): string {
           day: 'numeric',
         }).format(new Date(item.startsAt))
 
-  return `${dayLabel} · ${formatOccurrenceTime(item.startsAt, item.endsAt, item.allDay)}`
+  return `${dayLabel} · ${formatOccurrenceSpan(item.startsAt, item.endsAt, item.allDay)}`
 }

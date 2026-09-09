@@ -97,6 +97,8 @@ _Last updated: 2026-09-09_
   value-producers resolve `T | null`, void ones resolve `boolean`, and the store owns the error
   toast. Dialogs close, inputs clear, and navigation happen only on a truthy result, so a failed
   create/rename/widget-add/share-add keeps the user's input instead of discarding it.
+- Calendar widget day cells link to the full calendar at that local date and dashboard, including
+  overflow and compact-dot views. Every week stays in view at any widget size; the grid never scrolls.
 - Widget types: **list** (bind existing or auto-create), **clock**, **calendar**, **agenda**
   (today/overdue/upcoming). Add-widget wizard picks type → resource where applicable.
 

@@ -235,3 +235,8 @@ export function monthWeeksInView(monthDate: Date): Date[] {
 
   return days
 }
+
+/** "1 event" or "3 events", for a label a screen reader will read aloud. */
+export function formatEventCount(count: number): string {
+  return `${count} ${count === 1 ? 'event' : 'events'}`
+}

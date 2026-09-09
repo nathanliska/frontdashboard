@@ -1,13 +1,17 @@
 import { CalendarDays, Clock3 } from 'lucide-react'
 import { memo } from 'react'
+import { Link } from 'react-router'
 import type { CalendarOccurrence } from '../../../api/calendar'
 import { useContainerSize } from '../../../hooks/useContainerSize'
+import { ROUTES } from '../../../routes'
 import {
   CALENDAR_WEEKDAY_LABELS,
   CALENDAR_WEEKDAY_LABELS_COMPACT,
   dateKey,
   formatCalendarOccurrenceCellTitle,
   formatDayNumber,
+  formatEventCount,
+  formatHeadingDate,
   formatMonthLabel,
   formatOccurrenceSpan,
   formatOccurrenceTime,
@@ -79,10 +83,12 @@ export const DayCalendarWidget = memo(function DayCalendarWidget({
 })
 
 export const WeekCalendarWidget = memo(function WeekCalendarWidget({
+  dashboardId,
   days,
   occurrencesByDate,
   compact,
 }: {
+  dashboardId: string
   days: Date[]
   occurrencesByDate: Map<string, CalendarOccurrence[]>
   compact: boolean
@@ -103,10 +109,12 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
           const isToday = dateKey(day) === dateKey(new Date())
 
           return (
-            <div
+            <Link
               key={day.toISOString()}
+              to={`${ROUTES.calendar}?${new URLSearchParams({ dashboard_id: dashboardId, date: dateKey(day) })}`}
+              aria-label={`${formatHeadingDate(day)}: ${formatEventCount(dayOccurrences.length)}. Open day`}
               className={cn(
-                'rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 min-h-0 min-w-0 overflow-hidden flex flex-col',
+                'rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 min-h-0 min-w-0 overflow-hidden flex flex-col focus-visible:outline-2 focus-visible:outline-sky-400',
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
             >
@@ -126,7 +134,7 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
                 titleOnly={compact}
                 measureRef={index === 0 ? cellBodyRef : null}
               />
-            </div>
+            </Link>
           )
         })}
       </div>
@@ -135,6 +143,7 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
 })
 
 export const MonthCalendarWidget = memo(function MonthCalendarWidget({
+  dashboardId,
   days,
   occurrencesByDate,
   compact,
@@ -144,6 +153,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
   viewCompact,
   onViewChange,
 }: {
+  dashboardId: string
   days: Date[]
   occurrencesByDate: Map<string, CalendarOccurrence[]>
   compact: boolean
@@ -154,8 +164,8 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
   onViewChange: (value: CalendarWidgetView) => void | Promise<void>
 }) {
   const weekdayLabels = compact ? CALENDAR_WEEKDAY_LABELS_COMPACT : CALENDAR_WEEKDAY_LABELS
-  // Measured because CSS cannot count rows, and one cell answers for all of them: `auto-rows-fr`
-  // gives every cell the same height, so the body of the first is the height of every other.
+  // Measured because CSS cannot count rows, and equal fractional rows give every cell the same
+  // height, so the body of the first is the height of every other.
   const [cellBodyRef, cellBody] = useContainerSize({ width: 0, height: 57 })
 
   return (
@@ -200,17 +210,21 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
           const isToday = dateKey(day) === dateKey(new Date())
 
           return (
-            <div
+            <Link
               key={day.toISOString()}
+              to={`${ROUTES.calendar}?${new URLSearchParams({ dashboard_id: dashboardId, date: dateKey(day) })}`}
+              aria-label={`${formatHeadingDate(day)}: ${formatEventCount(dayOccurrences.length)}. Open day`}
               className={cn(
+                'border border-zinc-800 bg-zinc-950/60 min-h-0 min-w-0 overflow-hidden flex focus-visible:outline-2 focus-visible:outline-sky-400',
+                // One line, so a row a laptop viewport leaves at ~19px still shows the whole cell.
                 ultraCompact
-                  ? 'rounded border border-zinc-800 bg-zinc-950/60 p-0.5 min-h-0 min-w-0 overflow-hidden'
-                  : 'rounded-md border border-zinc-800 bg-zinc-950/60 p-1 min-h-0 min-w-0 overflow-hidden flex flex-col',
+                  ? 'rounded px-0.5 items-center justify-between gap-0.5'
+                  : 'rounded-md p-1 flex-col',
                 !inMonth && 'opacity-45',
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
             >
-              <div className={cn(ultraCompact ? 'mb-0.5' : 'mb-1 shrink-0')}>
+              <div className={cn('flex shrink-0', !ultraCompact && 'mb-1')}>
                 <CalendarDayNumber
                   value={formatDayNumber(day)}
                   isToday={isToday}
@@ -219,7 +233,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
                 />
               </div>
               {ultraCompact ? (
-                <div className="flex items-center gap-0.5">
+                <div className="flex items-center gap-0.5 min-w-0">
                   {dayOccurrences.slice(0, 2).map((occurrence) => (
                     <span
                       key={`${occurrence.event_id}:${occurrence.original_start}`}
@@ -243,7 +257,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
                   measureRef={index === 0 ? cellBodyRef : null}
                 />
               )}
-            </div>
+            </Link>
           )
         })}
       </div>
