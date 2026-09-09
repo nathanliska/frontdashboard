@@ -1,3 +1,4 @@
+import { currentSessionGeneration } from '../stores/sessionGeneration'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 
 // Both names, because only production can prefix the cookie (`__Host-` requires Secure). Ordered,
@@ -63,6 +64,7 @@ export function __resetApiClientForTests(): void {
 }
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const generation = currentSessionGeneration()
   const method = (init.method ?? 'GET').toUpperCase()
   const headers = new Headers(init.headers)
   if (MUTATING.has(method) && init.body && !headers.has('Content-Type')) {
@@ -93,7 +95,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     // 401 only. Not 403 — that is the permission layer ("editor access required"), and treating
     // it as a session failure would sign you out for opening someone else's dashboard.
     if (res.status === 401) {
-      onSessionExpired()
+      if (generation === currentSessionGeneration()) onSessionExpired()
       return res
     }
 

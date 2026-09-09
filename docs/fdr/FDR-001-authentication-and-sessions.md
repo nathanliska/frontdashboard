@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-08-13
+**Last reviewed:** 2026-09-09
 
 ## Overview
 
@@ -105,6 +105,7 @@ ADR-010.
 
 **Decision:** Login, logout, verification, and unauthenticated startup clear all client state; a
 session-generation counter drops any in-flight async write whose boundary has since been crossed.
+A delayed 401 from a request begun before that boundary cannot expire the new session.
 **Why:** Prevents one account's cached or in-flight data from leaking into the next account in the
 same tab. See ADR-012.
 **Tradeoff:** Every account-scoped store must adopt the generation-guard pattern and a reset hook.
