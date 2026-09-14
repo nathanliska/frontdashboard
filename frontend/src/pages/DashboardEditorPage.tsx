@@ -168,6 +168,7 @@ export function DashboardEditorPage() {
           dashboard={{
             id: dashboard.id,
             name: dashboard.name,
+            user_id: dashboard.user_id,
             can_manage_shares: dashboard.can_manage_shares,
           }}
           onClose={() => setShowEditDashboard(false)}

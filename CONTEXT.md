@@ -73,7 +73,7 @@ _Last updated: 2026-09-09_
   removed (2026-07-27)** — trash is the only put-away state, for dashboards and lists alike.
 - Editor: react-grid-layout drag/resize, saves with optimistic version. A 409 is resolved in the
   client — re-read, replay the drag onto the server's layout, retry once — and only a second one
-  raises the conflict banner offering a reload; settings modal (rename/share).
+  raises the conflict banner offering a reload; settings modal (rename; share as owner, or a read-only roster as editor).
 - **The canonical grid is 24 x 24 and both axes are hard bounds.** A board is one screen: row height
   is derived so 24 rows and their gaps fill the room below the grid, and nothing — drag, resize,
   collision push or server-side placement — may leave it. A gesture whose *result* would leave the

@@ -1,7 +1,7 @@
 # FDR-004: Sharing & Access
 
 **Status:** Active
-**Last reviewed:** 2026-08-16
+**Last reviewed:** 2026-09-09
 
 ## Overview
 
@@ -124,7 +124,8 @@ This *is* the access model:
 
 Any member may list the dashboard's members (`GET /members` — owner first, with display names):
 member names are already mutually visible in the activity feed, and the surfaces that attach
-people to things are editor surfaces, not owner ones. Managing shares stays owner-only.
+people to things are editor surfaces, not owner ones. An editor sees that roster read-only in the
+dashboard settings, with the owner marked; managing shares stays owner-only.
 
 ## Related
 

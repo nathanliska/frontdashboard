@@ -88,8 +88,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   ([FDR-007](fdr/FDR-007-notifications-and-activity.md) §5). Remaining are product questions rather
   than missing code: whether a shared user is warned **again before the purge**, since the reaper
   later takes the cascade including lists and events they authored themselves, and whether they get
-  any route back at all — restore is owner-only. Related and cheap: an editor cannot see who else has
-  access, which may be deliberate or merely unbuilt. *(Small, product decisions first)*
+  any route back at all — restore is owner-only. *(Small, product decisions first)*
 - **#59 — Changing an email address is unbuilt.** An address entered at signup is permanent, and the
   case-insensitive unique index reserves it forever with no account deletion (#56) to release it.
   Constraints: the new address must be verified **before** the switch or a typo locks the account out
