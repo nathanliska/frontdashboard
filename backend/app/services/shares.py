@@ -6,6 +6,7 @@ of the queries' WHERE clauses, not because more types can arrive without a migra
 """
 
 import uuid
+from typing import NoReturn
 
 from fastapi import HTTPException, status
 from sqlalchemy import false, or_, select
@@ -15,8 +16,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.dashboard import Dashboard
 from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
-from app.schemas.shares import DashboardMemberResponse, ShareCreate, ShareResponse
+from app.schemas.shares import (
+    DashboardMemberResponse,
+    InheritedDashboardAccessResponse,
+    ResourceAccessResponse,
+    ShareCreate,
+    ShareResponse,
+)
 from app.services import permissions
+from app.sse.choreography import Fanout
+
+
+def dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
+    """Address a frame to everyone who can see the dashboard, owner included."""
+    return Fanout(message, dashboard_audience_user_ids(dashboard, shares))
 
 
 def dashboard_audience_user_ids(dashboard: Dashboard, shares: list[ResourceShare]) -> set[uuid.UUID]:
@@ -26,6 +39,19 @@ def dashboard_audience_user_ids(dashboard: Dashboard, shares: list[ResourceShare
     audience — broadcasting too narrowly leaves a tab stale with nothing to indicate it.
     """
     return {dashboard.user_id} | {share.principal_id for share in shares if share.principal_type == PrincipalType.user}
+
+
+def dashboard_managed_permissions_response(dashboard: Dashboard) -> ResourceAccessResponse:
+    """What a list's or event's /shares answers: no direct shares, access inherited from its dashboard."""
+    return ResourceAccessResponse(
+        direct_shares=[],
+        inherited_dashboards=[InheritedDashboardAccessResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name)],
+    )
+
+
+def raise_dashboard_managed_permissions_error(resource: str) -> NoReturn:
+    """The 409 for a write to a child's /shares; `resource` is the noun the message opens with."""
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{resource} permissions are managed on the parent dashboard")
 
 
 async def load_dashboard_access(
@@ -192,14 +218,10 @@ async def resolve_share_responses(
     db: AsyncSession,
 ) -> list[ShareResponse]:
     """Resolve principal_name for each share."""
-    from app.models.user import User as UserModel
-
     user_ids = {s.principal_id for s in shares if s.principal_type == PrincipalType.user}
-
     users_by_id: dict[uuid.UUID, str] = {}
-
     if user_ids:
-        ur = await db.execute(select(UserModel.id, UserModel.display_name).where(UserModel.id.in_(user_ids)))
+        ur = await db.execute(select(User.id, User.display_name).where(User.id.in_(user_ids)))
         users_by_id = {row[0]: row[1] for row in ur.all()}
 
     result = []

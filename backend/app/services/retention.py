@@ -10,7 +10,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, delete, func, or_, select
+from sqlalchemy import CursorResult, Delete, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import metrics
@@ -46,29 +46,30 @@ _REAP_ADVISORY_LOCK_KEY = 0x2026_0738
 _EMAIL_VERIFICATION_SHIPPED = datetime(2026, 4, 30, tzinfo=UTC)
 
 
+async def _deleted(db: AsyncSession, statement: Delete) -> int:
+    return cast("CursorResult[Any]", await db.execute(statement)).rowcount
+
+
 async def reap_expired_auth_rows(db: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
     """Delete inert auth rows. Returns per-table deleted counts. Caller owns the commit."""
     now = now or datetime.now(UTC)
     counts: dict[str, int] = {}
 
     for name, model in _EXPIRING_TOKEN_TABLES:
-        result = cast("CursorResult[Any]", await db.execute(delete(model).where(model.expires_at < now)))
-        counts[name] = result.rowcount
+        result = await _deleted(db, delete(model).where(model.expires_at < now))
+        counts[name] = result
 
     # A session carries both its clocks (ADR-003), so "inert" is decidable from the row alone —
     # the same predicate `services/sessions._live` already refuses to authenticate against.
-    session_result = cast(
-        "CursorResult[Any]",
-        await db.execute(
-            delete(UserSession).where(
-                or_(
-                    UserSession.expires_at < now,
-                    UserSession.last_used_at < now - timedelta(days=settings.session_idle_days),
-                )
+    counts["sessions"] = await _deleted(
+        db,
+        delete(UserSession).where(
+            or_(
+                UserSession.expires_at < now,
+                UserSession.last_used_at < now - timedelta(days=settings.session_idle_days),
             )
         ),
     )
-    counts["sessions"] = session_result.rowcount
     return counts
 
 
@@ -81,8 +82,8 @@ async def reap_expired_history(db: AsyncSession, *, now: datetime | None = None)
     # Sequential scans, deliberately: four a day beats an index write on every event. Notifications
     # go first so an interrupted sweep strands a reference rather than orphaning a notification.
     for name, model in (("notifications", Notification), ("activity_events", ActivityEvent)):
-        result = cast("CursorResult[Any]", await db.execute(delete(model).where(model.created_at < cutoff)))
-        counts[name] = result.rowcount
+        result = await _deleted(db, delete(model).where(model.created_at < cutoff))
+        counts[name] = result
 
     return counts
 
@@ -104,27 +105,21 @@ async def reap_expired_trash(db: AsyncSession, *, now: datetime | None = None) -
     doomed_lists = or_(List.deleted_at < cutoff, List.dashboard_id.in_(expired_dashboard_ids))
     doomed_list_ids = select(List.id).where(doomed_lists).scalar_subquery()
     # Only as a list's cascade: an item deleted on its own is already gone (ADR-007).
-    item_result = cast(
-        "CursorResult[Any]",
-        await db.execute(delete(ListItem).where(ListItem.list_id.in_(doomed_list_ids))),
+    item_result = await _deleted(
+        db,
+        delete(ListItem).where(ListItem.list_id.in_(doomed_list_ids)),
     )
-    list_result = cast("CursorResult[Any]", await db.execute(delete(List).where(doomed_lists)))
-    counts["lists"] = list_result.rowcount
-    counts["list_items"] = item_result.rowcount
+    counts["lists"] = await _deleted(db, delete(List).where(doomed_lists))
+    counts["list_items"] = item_result
 
     doomed_events = or_(
         CalendarEvent.deleted_at < cutoff,
         CalendarEvent.dashboard_id.in_(expired_dashboard_ids),
     )
-    event_result = cast("CursorResult[Any]", await db.execute(delete(CalendarEvent).where(doomed_events)))
-    counts["calendar_events"] = event_result.rowcount
+    counts["calendar_events"] = await _deleted(db, delete(CalendarEvent).where(doomed_events))
 
     await db.execute(delete(DashboardWidget).where(DashboardWidget.dashboard_id.in_(expired_dashboard_ids)))
-    dashboard_result = cast(
-        "CursorResult[Any]",
-        await db.execute(delete(Dashboard).where(Dashboard.deleted_at < cutoff)),
-    )
-    counts["dashboards"] = dashboard_result.rowcount
+    counts["dashboards"] = await _deleted(db, delete(Dashboard).where(Dashboard.deleted_at < cutoff))
     return counts
 
 
@@ -219,8 +214,7 @@ async def reap_abandoned_signups(db: AsyncSession, *, now: datetime | None = Non
     await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id.in_(candidates)))
     await db.execute(delete(Dashboard).where(Dashboard.id.in_(doomed_dashboards)))
 
-    user_result = cast("CursorResult[Any]", await db.execute(delete(User).where(User.id.in_(candidates))))
-    return {"abandoned_signups": user_result.rowcount}
+    return {"abandoned_signups": await _deleted(db, delete(User).where(User.id.in_(candidates)))}
 
 
 async def run_reaper_once() -> dict[str, int] | None:

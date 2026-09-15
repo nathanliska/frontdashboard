@@ -56,10 +56,6 @@ def effective_role(
     return strongest
 
 
-def can_read(role: EffectiveRole) -> bool:  # noqa: ARG001
-    return True
-
-
 def can_edit(role: EffectiveRole) -> bool:
     """True for owner and editor. Covers all content mutations."""
     return is_at_least(role, EffectiveRole.editor)

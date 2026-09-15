@@ -28,7 +28,7 @@ from app.schemas.calendar import (
     TrashedEventPage,
     TrashedEventSummary,
 )
-from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessResponse
+from app.schemas.shares import ResourceAccessResponse
 from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.calendar import (
@@ -42,10 +42,13 @@ from app.services.calendar import (
 from app.services.quota import assert_under_quota, limit_message
 from app.services.shares import (
     dashboard_audience_user_ids,
+    dashboard_fanout,
+    dashboard_managed_permissions_response,
     list_accessible_dashboard_ids,
     load_dashboard_access,
+    raise_dashboard_managed_permissions_error,
 )
-from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
+from app.sse.choreography import ClientIdHeader, commit_and_broadcast
 from app.sse.events import build_activity_sse_dict
 
 logger = logging.getLogger(__name__)
@@ -59,11 +62,6 @@ _TRASH_PAGE_SIZE = 200
 def _echo_stamp(client_id: str | None) -> dict[str, str]:
     """The payload field the issuing tab matches its own echo on; absent when the write carried none."""
     return {} if client_id is None else {"origin_client_id": client_id}
-
-
-def _dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
-    """Address a frame to everyone who can see the dashboard, owner included."""
-    return Fanout(message, dashboard_audience_user_ids(dashboard, shares))
 
 
 async def _get_event_access(
@@ -161,20 +159,6 @@ def _occurrence_response(occurrence, participants: list[CalendarEventParticipant
     )
 
 
-def _dashboard_managed_permissions_response(dashboard: Dashboard) -> ResourceAccessResponse:
-    return ResourceAccessResponse(
-        direct_shares=[],
-        inherited_dashboards=[InheritedDashboardAccessResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name)],
-    )
-
-
-def _raise_dashboard_managed_permissions_error() -> None:
-    raise HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail="Event permissions are managed on the parent dashboard",
-    )
-
-
 @router.post("/events", status_code=status.HTTP_201_CREATED, response_model=CalendarEventResponse)
 @limiter.limit(WRITE_LIMIT)
 async def create_event(
@@ -241,11 +225,7 @@ async def create_event(
         payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)} | _echo_stamp(client_id),
     )
     event_message = await build_activity_sse_dict(db, activity)
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(event)
     return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
 
@@ -495,11 +475,7 @@ async def update_event(
         payload={"title": event.title, "recurring": event.recurrence is not None, "dashboard_id": str(dashboard.id)} | _echo_stamp(client_id),
     )
     event_message = await build_activity_sse_dict(db, activity)
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(event)
     return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
 
@@ -572,11 +548,7 @@ async def update_occurrence(
         | _echo_stamp(client_id),
     )
     event_message = await build_activity_sse_dict(db, activity)
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(override)
 
     if not occurrence:
@@ -617,11 +589,7 @@ async def delete_event(
     event.deleted_at = datetime.now(UTC)
     event.updated_by = current_user.id
     event_message = await build_activity_sse_dict(db, activity)
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
 
 
 @router.post("/events/{event_id}/restore", response_model=CalendarEventResponse)
@@ -660,11 +628,7 @@ async def restore_event(
         payload={"title": event.title, "restored": True, "dashboard_id": str(dashboard.id)} | _echo_stamp(client_id),
     )
     event_message = await build_activity_sse_dict(db, activity)
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(event)
     return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
 
@@ -704,7 +668,7 @@ async def list_event_shares(
 ) -> ResourceAccessResponse:
     """Show that event access is inherited from the parent dashboard."""
     _event, dashboard, _shares, _role = await _get_event_access(event_id, current_user, db)
-    return _dashboard_managed_permissions_response(dashboard)
+    return dashboard_managed_permissions_response(dashboard)
 
 
 @router.post("/events/{event_id}/shares", status_code=status.HTTP_201_CREATED)
@@ -718,7 +682,7 @@ async def add_event_share(
 ) -> None:
     """Reject direct event sharing because dashboards own permissions."""
     await _get_event_access(event_id, current_user, db)
-    _raise_dashboard_managed_permissions_error()
+    raise_dashboard_managed_permissions_error("Event")
 
 
 @router.patch("/events/{event_id}/shares/{share_id}")
@@ -733,7 +697,7 @@ async def update_event_share(
 ) -> None:
     """Reject direct event share updates because dashboards own permissions."""
     await _get_event_access(event_id, current_user, db)
-    _raise_dashboard_managed_permissions_error()
+    raise_dashboard_managed_permissions_error("Event")
 
 
 @router.delete("/events/{event_id}/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -748,4 +712,4 @@ async def delete_event_share(
 ) -> None:
     """Reject direct event share deletion because dashboards own permissions."""
     await _get_event_access(event_id, current_user, db)
-    _raise_dashboard_managed_permissions_error()
+    raise_dashboard_managed_permissions_error("Event")

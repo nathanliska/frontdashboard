@@ -6,11 +6,44 @@ transaction as the mutation that triggered it.
 """
 
 import uuid
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.activity import ActivityEvent, EventType
+from app.models.dashboard import Dashboard
+from app.models.user import User
+from app.sse.events import build_activity_sse_dict
+
+
+async def build_event_message(
+    db: AsyncSession,
+    *,
+    event_type: EventType,
+    current_user: User,
+    dashboard: Dashboard,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    payload: dict[str, Any] | None = None,
+    client_id: str | None = None,
+    entity_version: int = 1,
+) -> dict:
+    """Log an activity row for a dashboard-scoped write and return the frame that announces it."""
+    event_payload = {"dashboard_id": str(dashboard.id), **(payload or {})}
+    if client_id is not None:
+        event_payload["origin_client_id"] = client_id
+    activity = log_event(
+        db,
+        event_type=event_type,
+        actor_id=current_user.id,
+        actor_display_name=current_user.display_name,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_version=entity_version,
+        payload=event_payload,
+    )
+    return await build_activity_sse_dict(db, activity)
 
 
 def log_event(

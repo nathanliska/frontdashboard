@@ -16,7 +16,7 @@ from app.models.activity import ChangedField
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.list import List, ListType
 from app.models.notification import Notification
-from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType, ShareRole, as_share_role
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType, as_share_role
 from app.models.user import User
 from app.schemas.dashboards import (
     GRID_COLUMNS,
@@ -39,7 +39,7 @@ from app.schemas.dashboards import (
 )
 from app.schemas.shares import DashboardMemberResponse, ShareResponse, ShareUpdate
 from app.services import permissions
-from app.services.activity import EventType, log_event
+from app.services.activity import EventType, build_event_message
 from app.services.notifications import stage_notification
 from app.services.preferences import (
     favorite_dashboard_ids_from_preferences,
@@ -48,7 +48,7 @@ from app.services.preferences import (
 from app.services.quota import assert_under_quota, limit_message
 from app.services.retention import purge_dashboard
 from app.services.shares import (
-    dashboard_audience_user_ids,
+    dashboard_fanout,
     get_resource_share,
     get_resource_shares,
     load_dashboard_access,
@@ -56,7 +56,7 @@ from app.services.shares import (
     resolve_share_responses,
 )
 from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
-from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
+from app.sse.events import build_notification_sse_dicts
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 
@@ -294,11 +294,6 @@ async def _remove_dashboard_from_user_preferences(
         user.preferences = remove_dashboard_from_preferences(user.preferences, dashboard.id)
 
 
-def _dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
-    """Address a frame to everyone who can see the dashboard, owner included."""
-    return Fanout(message, dashboard_audience_user_ids(dashboard, shares))
-
-
 async def _build_dashboard_event_message(
     db: AsyncSession,
     *,
@@ -313,20 +308,17 @@ async def _build_dashboard_event_message(
 ) -> dict:
     # Name every dashboard event after its dashboard: the feed renders "You rearranged widgets on
     # X", and a layout or widget write has no other reason to carry the name.
-    event_payload = {"dashboard_id": str(dashboard.id), "name": dashboard.name, **(payload or {})}
-    if client_id is not None:
-        event_payload["origin_client_id"] = client_id
-    activity = log_event(
+    return await build_event_message(
         db,
         event_type=event_type,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
+        current_user=current_user,
+        dashboard=dashboard,
         entity_type=entity_type,
         entity_id=entity_id or dashboard.id,
+        payload={"name": dashboard.name, **(payload or {})},
+        client_id=client_id,
         entity_version=dashboard.version if entity_version is None else entity_version,
-        payload=event_payload,
     )
-    return await build_activity_sse_dict(db, activity)
 
 
 def _dashboard_share_event_payload(
@@ -346,30 +338,6 @@ def _dashboard_share_event_payload(
     }
 
 
-def _dashboard_share_event_type(action: str) -> EventType:
-    if action == "updated":
-        return EventType.dashboard_share_updated
-    return EventType.dashboard_share_removed
-
-
-def _dashboard_share_notification_copy(
-    *,
-    action: str,
-    actor_name: str,
-    dashboard_name: str,
-    role: ShareRole,
-) -> tuple[str, str]:
-    if action == "updated":
-        return (
-            "Dashboard access updated",
-            f'{actor_name} changed your access to "{dashboard_name}" to {role.value}.',
-        )
-    return (
-        "Dashboard access removed",
-        f'{actor_name} removed your access to "{dashboard_name}".',
-    )
-
-
 def _stage_dashboard_share_notification(
     db: AsyncSession,
     *,
@@ -381,44 +349,24 @@ def _stage_dashboard_share_notification(
     if share.principal_type != PrincipalType.user or share.principal_id == current_user.id:
         return None
 
-    title, body = _dashboard_share_notification_copy(
-        action=action,
-        actor_name=current_user.display_name,
-        dashboard_name=dashboard.name,
-        role=as_share_role(share.role),
-    )
+    if action == "updated":
+        event_type = EventType.dashboard_share_updated
+        title = "Dashboard access updated"
+        body = f'{current_user.display_name} changed your access to "{dashboard.name}" to {as_share_role(share.role).value}.'
+    else:
+        event_type = EventType.dashboard_share_removed
+        title = "Dashboard access removed"
+        body = f'{current_user.display_name} removed your access to "{dashboard.name}".'
     notification = stage_notification(
         db,
         user_id=share.principal_id,
-        type=_dashboard_share_event_type(action).value,
+        type=event_type.value,
         title=title,
         body=body,
         reference_type="dashboard",
         reference_id=dashboard.id,
     )
     return share.principal_id, notification
-
-
-def _collect_dashboard_share_notifications(
-    db: AsyncSession,
-    *,
-    dashboard: Dashboard,
-    shares: list[ResourceShare],
-    current_user: User,
-    action: str,
-) -> list[tuple[uuid.UUID, Notification]]:
-    notifications: list[tuple[uuid.UUID, Notification]] = []
-    for share in shares:
-        notification = _stage_dashboard_share_notification(
-            db,
-            dashboard=dashboard,
-            share=share,
-            current_user=current_user,
-            action=action,
-        )
-        if notification is not None:
-            notifications.append(notification)
-    return notifications
 
 
 def _collect_dashboard_access_notifications(
@@ -518,7 +466,7 @@ async def create_dashboard(
     await commit_and_broadcast(
         db,
         actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, [])],
+        fanouts=[dashboard_fanout(event_message, dashboard, [])],
     )
     await db.refresh(dashboard)
     return _to_summary(
@@ -559,11 +507,7 @@ async def update_dashboard_meta(
         },
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(dashboard)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
     access_description = "Owned by you" if dashboard.user_id == current_user.id else "Shared directly with you"
@@ -620,7 +564,7 @@ async def delete_dashboard(
     await commit_and_broadcast(
         db,
         actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
+        fanouts=[dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
     )
 
 
@@ -685,11 +629,7 @@ async def restore_dashboard(
         payload={"changed_fields": [ChangedField.restored]},
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(dashboard)
     return _to_summary(
         dashboard,
@@ -815,11 +755,7 @@ async def update_layout(
         payload=payload,
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(dashboard)
     widgets = await _load_widgets(dashboard.id, db)
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
@@ -998,11 +934,7 @@ async def add_widget(
         },
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(dashboard)
     widgets = await _load_widgets(dashboard.id, db)
     return _to_response(
@@ -1073,11 +1005,7 @@ async def update_widget(
         },
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(widget)
     return WidgetResponseAdapter.validate_python(widget)
 
@@ -1129,11 +1057,7 @@ async def delete_widget(
         },
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
 
 
 @router.get("/{dashboard_id}/members", response_model=list[DashboardMemberResponse])
@@ -1188,13 +1112,7 @@ async def update_dashboard_share(
     current_shares = await get_resource_shares(ResourceType.dashboard, dashboard.id, db)
     notification_messages = await _build_notification_messages(
         db,
-        _collect_dashboard_share_notifications(
-            db,
-            dashboard=dashboard,
-            shares=[share],
-            current_user=current_user,
-            action="updated",
-        ),
+        [n] if (n := _stage_dashboard_share_notification(db, dashboard=dashboard, share=share, current_user=current_user, action="updated")) else [],
     )
     event_message = await _build_dashboard_event_message(
         db,
@@ -1207,7 +1125,7 @@ async def update_dashboard_share(
     await commit_and_broadcast(
         db,
         actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, current_shares), *_notification_fanouts(notification_messages)],
+        fanouts=[dashboard_fanout(event_message, dashboard, current_shares), *_notification_fanouts(notification_messages)],
     )
     await db.refresh(share)
     return (await resolve_share_responses([share], db))[0]
@@ -1232,13 +1150,7 @@ async def delete_dashboard_share(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
     notification_messages = await _build_notification_messages(
         db,
-        _collect_dashboard_share_notifications(
-            db,
-            dashboard=dashboard,
-            shares=[share],
-            current_user=current_user,
-            action="removed",
-        ),
+        [n] if (n := _stage_dashboard_share_notification(db, dashboard=dashboard, share=share, current_user=current_user, action="removed")) else [],
     )
     event_message = await _build_dashboard_event_message(
         db,
@@ -1257,7 +1169,7 @@ async def delete_dashboard_share(
     await commit_and_broadcast(
         db,
         actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
+        fanouts=[dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
     )
 
 
@@ -1303,8 +1215,4 @@ async def leave_dashboard(
     await db.delete(share)
     # Audience computed before the delete, so the leaver's other tabs still get the frame and
     # drop the dashboard through the ordinary share_removed handling.
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
