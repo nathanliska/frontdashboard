@@ -36,10 +36,9 @@ export type {
 
 import type { DashboardSummary as DashboardSummaryType } from './generated/contract'
 
-// Layout items are generated now: the backend types `layout` as `list[LayoutItem]` and owns
-// the write-side bounds. `{i, x, y, w, h}` IS the layout state — react-grid-layout's transient
-// per-item bookkeeping (static, minW, moved…) is dropped by the backend on save and re-derived by
-// the library every render, so nothing here needs to preserve it.
+// Layout items are generated: the backend types `layout` as `list[LayoutItem]` and owns the
+// write-side bounds. `{i, x, y, w, h}` IS the state; react-grid-layout's transient bookkeeping is
+// dropped by the backend on save and re-derived every render, so nothing here preserves it.
 
 // A create is the response union's mirror: `widget_type` discriminates, each variant carries its
 // own typed config, and only the list variant can bind a resource.

@@ -393,11 +393,9 @@ export function handleListResourceEvent(
     // Only patch when the event carries the new values; otherwise fall through to
     // invalidate-and-refetch so an older/unknown payload still converges.
     if (affectedListId && values) {
-      // If the cache has no data yet (never loaded, still in flight, or the last fetch
-      // errored), there is nothing to patch — treat that as divergence up front rather than
-      // letting patchListDetailById's `if (!state.data) return state` guard silently no-op
-      // the updater below. Otherwise `diverged` would stay false and this event would be
-      // neither applied nor recorded, so the eventual GET resolves with pre-event data forever.
+      // No data yet (never loaded, in flight, or errored) means nothing to patch: count that as
+      // divergence up front, or patchListDetailById's null guard no-ops and the event is neither
+      // applied nor recorded, so the eventual GET resolves with pre-event data forever.
       let diverged = listDetailQuery.getState({ listId: affectedListId }).data === null
       if (!diverged) {
         patchListDetailById(affectedListId, (detail) => {

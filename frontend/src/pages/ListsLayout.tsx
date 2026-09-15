@@ -13,6 +13,8 @@ import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { CreateListModal } from '../components/lists/CreateListModal'
 import { ListSidebarRow } from '../components/lists/ListSidebarRow'
 import { SortableList, useSortableRow } from '../components/lists/SortableList'
+import { DashboardSelect } from '../components/ui/DashboardSelect'
+import { TrashRow } from '../components/ui/TrashRow'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import {
   createList,
@@ -88,11 +90,15 @@ export function ListsLayout() {
   useEffect(() => {
     if (!dashboardsReady) return
     if (effectiveDashboardId === requestedDashboardId) return
-    const next = new URLSearchParams(searchParams)
-    if (effectiveDashboardId) next.set('dashboard_id', effectiveDashboardId)
-    else next.delete('dashboard_id')
-    setSearchParams(next, { replace: true })
-  }, [dashboardsReady, effectiveDashboardId, requestedDashboardId, searchParams, setSearchParams])
+    setSearchParams(
+      (params) => {
+        if (effectiveDashboardId) params.set('dashboard_id', effectiveDashboardId)
+        else params.delete('dashboard_id')
+        return params
+      },
+      { replace: true },
+    )
+  }, [dashboardsReady, effectiveDashboardId, requestedDashboardId, setSearchParams])
 
   const loadTrash = useCallback(() => {
     if (!effectiveDashboardId) return
@@ -123,10 +129,9 @@ export function ListsLayout() {
   const activeDashboard = dashboards.find((d) => d.id === effectiveDashboardId) ?? null
   const showVisibleCreate = showCreate && Boolean(effectiveDashboardId)
 
-  // Gate list reordering to exactly the set the backend will renumber: an unfiltered Active
-  // view on a known dashboard with at least 2 rows to reorder. A type filter or the Trash
-  // view would make the optimistic set diverge from the server's live set, so drag is
-  // disabled entirely (no handle) rather than offered and 409ing.
+  // Reordering is offered only for exactly the set the backend renumbers: the unfiltered Active
+  // view on a known dashboard with 2+ rows. A filtered or Trash view would diverge from the
+  // server's set, so there is no handle at all rather than a drag that 409s.
   const canReorderLists =
     typeFilter === 'all' && !showTrash && effectiveDashboardId != null && filteredLists.length >= 2
 
@@ -226,37 +231,21 @@ export function ListsLayout() {
     }
   }
 
-  function daysUntilPurge(trashed: TrashedList): number {
-    return Math.max(0, Math.ceil((new Date(trashed.purge_at).getTime() - Date.now()) / 86_400_000))
-  }
-
   return (
     <div className="flex flex-col h-full gap-4">
       <div className="flex flex-col gap-2 shrink-0">
         <div className={cn('flex items-center gap-2 min-w-0 min-h-10', PAGE_HEADER_RESERVE)}>
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Lists</h1>
-          {/* Labelled explicitly: without it the accessible name is the selected option, so a
-              screen reader announces the dashboard's name and not what the control does. */}
-          <select
-            name="dashboard"
-            aria-label="Dashboard"
-            value={effectiveDashboardId ?? ''}
+          <DashboardSelect
+            value={effectiveDashboardId}
+            dashboards={dashboards}
             disabled={dashboardsLoading || dashboards.length === 0}
-            onChange={(event) => {
-              const nextDashboardId = event.target.value || null
+            onChange={(nextDashboardId) => {
               setShowCreate(false)
               setDashboardId(nextDashboardId)
               navigate(indexUrl(nextDashboardId))
             }}
-            className="min-w-0 max-w-44 sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
-          >
-            <option value="">Select dashboard</option>
-            {dashboards.map((dashboard) => (
-              <option key={dashboard.id} value={dashboard.id}>
-                {dashboard.name}
-              </option>
-            ))}
-          </select>
+          />
           <button
             type="button"
             onClick={() => setShowCreate((v) => !v)}
@@ -329,42 +318,22 @@ export function ListsLayout() {
             ) : filteredTrash.length === 0 ? (
               <p className="text-sm text-zinc-600 px-1">Nothing in the trash.</p>
             ) : (
-              filteredTrash.map((trashed) => {
-                const days = daysUntilPurge(trashed)
-                return (
-                  <div
-                    key={trashed.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-zinc-300">{trashed.name}</p>
-                      <p className="text-xs text-zinc-600">
-                        {days === 0
-                          ? 'Will be permanently deleted soon'
-                          : `Permanently deleted in ${days} day${days === 1 ? '' : 's'}`}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => void handleRestoreList(trashed)}
-                        disabled={restoringId === trashed.id || purgingId === trashed.id}
-                        className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
-                      >
-                        {restoringId === trashed.id ? 'Restoring…' : 'Restore'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handlePurgeList(trashed)}
-                        disabled={restoringId === trashed.id || purgingId === trashed.id}
-                        className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-500 transition-colors hover:border-red-900 hover:text-red-400 disabled:opacity-50"
-                      >
-                        {purgingId === trashed.id ? 'Deleting…' : 'Delete permanently'}
-                      </button>
-                    </div>
-                  </div>
-                )
-              })
+              filteredTrash.map((trashed) => (
+                <TrashRow
+                  key={trashed.id}
+                  name={trashed.name}
+                  purgeAt={trashed.purge_at}
+                  busy={
+                    restoringId === trashed.id
+                      ? 'restoring'
+                      : purgingId === trashed.id
+                        ? 'purging'
+                        : null
+                  }
+                  onRestore={() => void handleRestoreList(trashed)}
+                  onPurge={() => void handlePurgeList(trashed)}
+                />
+              ))
             )
           ) : loading ? (
             <p className="text-sm text-zinc-600 px-1">Loading…</p>

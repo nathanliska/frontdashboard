@@ -463,10 +463,9 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
                 (status === 403 || status === 404)
               const isLatestRequest = isLatestDashboardRequest(id, currentLoad.latestRequestSerial)
 
-              // 404/403 land here — editor page reads loadError to show an error state.
-              // For background SSE refreshes, keep the current dashboard visible unless
-              // the event explicitly represents an access change and the server confirms
-              // the dashboard is now forbidden or missing for this user.
+              // 404/403 land here and the editor page reads loadError. A background SSE refresh
+              // keeps the current dashboard visible unless the event is an access change and the
+              // server confirms the dashboard is now forbidden or missing for this user.
               if (isLatestRequest && (showLoading || shouldSurfaceBackgroundAccessLoss)) {
                 guard.set({
                   dashboard: shouldSurfaceBackgroundAccessLoss ? null : get().dashboard,

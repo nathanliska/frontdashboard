@@ -10,6 +10,7 @@ import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialo
 import { CalendarTrashPanel } from '../components/calendar/CalendarTrashPanel'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
 import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
+import { DashboardSelect } from '../components/ui/DashboardSelect'
 import { useContainerSize } from '../hooks/useContainerSize'
 import { useInitialDashboardSelection } from '../hooks/useInitialDashboardSelection'
 import { useLocalToday } from '../hooks/useLocalDay'
@@ -82,17 +83,13 @@ export function CalendarPage() {
     requestedDashboardId,
     'Could not load dashboards for calendar.',
   )
-  const activeDashboards = useMemo(() => dashboards, [dashboards])
   const effectiveActiveDashboardId = useMemo(() => {
     if (!selectionReady) return null
-    if (
-      activeDashboardId &&
-      activeDashboards.some((dashboard) => dashboard.id === activeDashboardId)
-    ) {
+    if (activeDashboardId && dashboards.some((dashboard) => dashboard.id === activeDashboardId)) {
       return activeDashboardId
     }
-    return activeDashboards[0]?.id ?? null
-  }, [activeDashboardId, activeDashboards, selectionReady])
+    return dashboards[0]?.id ?? null
+  }, [activeDashboardId, dashboards, selectionReady])
   const occurrenceWindow = useMemo(() => {
     if (!effectiveActiveDashboardId) return null
     return calendarWindow(monthCursor)
@@ -114,31 +111,29 @@ export function CalendarPage() {
   )
   const today = useLocalToday()
   const activeDashboard = useMemo<DashboardContext | null>(() => {
-    const summary = activeDashboards.find((d) => d.id === effectiveActiveDashboardId)
+    const summary = dashboards.find((d) => d.id === effectiveActiveDashboardId)
     return summary ? { id: summary.id, name: summary.name } : null
-  }, [activeDashboards, effectiveActiveDashboardId])
+  }, [dashboards, effectiveActiveDashboardId])
 
-  useEffect(() => {
-    if (!selectionReady) return
-    if (effectiveActiveDashboardId === activeDashboardId) return
-    if (effectiveActiveDashboardId) {
+  const setDashboardParam = useCallback(
+    (dashboardId: string | null) => {
       setSearchParams(
         (params) => {
-          params.set('dashboard_id', effectiveActiveDashboardId)
+          if (dashboardId) params.set('dashboard_id', dashboardId)
+          else params.delete('dashboard_id')
           return params
         },
         { replace: true },
       )
-      return
-    }
-    setSearchParams(
-      (params) => {
-        params.delete('dashboard_id')
-        return params
-      },
-      { replace: true },
-    )
-  }, [activeDashboardId, effectiveActiveDashboardId, setSearchParams, selectionReady])
+    },
+    [setSearchParams],
+  )
+
+  useEffect(() => {
+    if (!selectionReady) return
+    if (effectiveActiveDashboardId !== activeDashboardId)
+      setDashboardParam(effectiveActiveDashboardId)
+  }, [activeDashboardId, effectiveActiveDashboardId, setDashboardParam, selectionReady])
 
   const closeEditor = useCallback(() => {
     editorRequestId.current += 1
@@ -236,41 +231,15 @@ export function CalendarPage() {
       <div className="flex flex-col gap-2 shrink-0">
         <div className={cn('flex items-center gap-2 min-w-0 min-h-10', PAGE_HEADER_RESERVE)}>
           <h1 className="min-w-0 flex-1 text-xl font-semibold text-zinc-100 truncate">Calendar</h1>
-          <select
-            name="dashboard"
-            aria-label="Dashboard"
-            value={effectiveActiveDashboardId ?? ''}
+          <DashboardSelect
+            value={effectiveActiveDashboardId}
+            dashboards={dashboards}
             disabled={dashboardsLoading || dashboards.length === 0}
-            onChange={(event) => {
-              const nextDashboardId = event.target.value || null
+            onChange={(nextDashboardId) => {
               setActiveDashboardId(nextDashboardId)
-              if (nextDashboardId) {
-                setSearchParams(
-                  (params) => {
-                    params.set('dashboard_id', nextDashboardId)
-                    return params
-                  },
-                  { replace: true },
-                )
-              } else {
-                setSearchParams(
-                  (params) => {
-                    params.delete('dashboard_id')
-                    return params
-                  },
-                  { replace: true },
-                )
-              }
+              setDashboardParam(nextDashboardId)
             }}
-            className="min-w-0 max-w-44 sm:max-w-none flex-1 lg:flex-none rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700 disabled:text-zinc-600"
-          >
-            <option value="">Select dashboard</option>
-            {activeDashboards.map((dashboard) => (
-              <option key={dashboard.id} value={dashboard.id}>
-                {dashboard.name}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         {!activeDashboard && (
           <p className="text-sm text-zinc-500">Choose a dashboard to view and edit its events.</p>
