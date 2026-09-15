@@ -2,8 +2,12 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
-import { useAuthStore } from '../stores/auth'
-import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
+import {
+  makeListItem as baseListItem,
+  makeListSummary as baseListSummary,
+  deferred,
+} from '../test/fixtures'
+import { signIn } from '../test/signIn'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import {
   __resetListDataForTests,
@@ -75,16 +79,6 @@ function makeListDetail(overrides: Partial<ListDetail> = {}): ListDetail {
   return { ...makeListSummary(), items: [makeListItem()], ...overrides }
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res
-    reject = rej
-  })
-  return { promise, resolve, reject }
-}
-
 function ListProbe() {
   const summaries = useListSummaries('dash-1')
   const detail = useListDetail('list-1')
@@ -107,15 +101,7 @@ describe('listData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     __resetListDataForTests()
-    useAuthStore.setState({
-      status: 'authenticated',
-      user: {
-        id: 'user-1',
-        email: 'user@example.com',
-        display_name: 'Example User',
-        preferences: {},
-      },
-    })
+    signIn()
   })
 
   afterEach(() => {

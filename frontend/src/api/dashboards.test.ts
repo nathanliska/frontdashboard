@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { deferred } from '../test/fixtures'
 import { apiGetDashboard, apiGetDashboardShares, apiListDashboards } from './dashboards'
 
 const { apiFetch } = vi.hoisted(() => ({
@@ -15,16 +16,6 @@ const DASHBOARD_ID = '11111111-1111-4111-8111-111111111111'
 const OWNER_ID = '22222222-2222-4222-8222-222222222222'
 const VIEWER_ID = '33333333-3333-4333-8333-333333333333'
 const SHARE_ID = '44444444-4444-4444-8444-444444444444'
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res
-    reject = rej
-  })
-  return { promise, resolve, reject }
-}
 
 describe('dashboard share request dedupe', () => {
   beforeEach(() => {

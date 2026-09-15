@@ -4,6 +4,7 @@ import * as React from 'react'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dashboard, DashboardWidget, LayoutItem } from '../../api/dashboards'
+import { makeDashboard as makeSharedDashboard } from '../../test/fixtures'
 import { DashboardGrid } from './DashboardGrid'
 
 const gridSpy = vi.hoisted(() => ({
@@ -121,18 +122,12 @@ function setWidth(width: number): void {
 }
 
 function makeDashboard(): Dashboard {
-  return {
-    id: 'dash-1',
-    user_id: 'user-1',
+  return makeSharedDashboard({
     name: 'Shared Board',
     is_shared: true,
     can_edit: false,
     can_manage_shares: false,
-    is_favorite: false,
-    layout: [],
-    version: 1,
-    widgets: [],
-  }
+  })
 }
 
 function makeClockWidget(id: string): DashboardWidget {

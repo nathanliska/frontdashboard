@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '../../api/dashboards'
+import { makeDashboardSummary } from '../../test/fixtures'
 import { CreateDashboardModal } from './CreateDashboardModal'
 
 vi.mock('../../api/users', () => ({
@@ -9,20 +10,7 @@ vi.mock('../../api/users', () => ({
 }))
 
 function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummary {
-  return {
-    id: 'dash-new',
-    user_id: 'user-1',
-    name: 'New Board',
-    access_description: 'Owned by you',
-    is_shared: false,
-    can_edit: true,
-    can_manage_shares: true,
-    is_favorite: false,
-    version: 1,
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
-    ...overrides,
-  }
+  return makeDashboardSummary({ id: 'dash-new', name: 'New Board', ...overrides })
 }
 
 describe('CreateDashboardModal', () => {

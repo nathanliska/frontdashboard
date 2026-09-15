@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dashboard, DashboardSummary, TrashedDashboard } from '../api/dashboards'
 import { ApiError } from '../api/http'
-import { RESYNC_SIGNAL, type SseEvent } from '../hooks/useSSE'
+import { RESYNC_SIGNAL } from '../hooks/useSSE'
+import { makeDashboard, makeDashboardSummary, makeSseEvent } from '../test/fixtures'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import { useAuthStore } from './auth'
 import { useConnectionStore } from './connection'
@@ -68,60 +69,12 @@ vi.mock('../api/dashboards', () => ({
 
 vi.mock('./toast', async () => (await import('../test/toast')).toastMock({ error: toastError }))
 
-function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummary {
-  return {
-    id: 'dash-1',
-    user_id: 'user-1',
-    name: 'Primary Dashboard',
-    access_description: 'Owned by you',
-    is_shared: false,
-    can_edit: true,
-    can_manage_shares: true,
-    is_favorite: false,
-    version: 1,
-    created_at: '2026-04-05T00:00:00Z',
-    updated_at: '2026-04-05T00:00:00Z',
-    ...overrides,
-  }
-}
-
-function makeDashboard(overrides: Partial<Dashboard> = {}): Dashboard {
-  return {
-    id: 'dash-1',
-    user_id: 'user-1',
-    name: 'Primary Dashboard',
-    is_shared: false,
-    can_edit: true,
-    can_manage_shares: true,
-    is_favorite: false,
-    layout: [],
-    version: 1,
-    widgets: [],
-    ...overrides,
-  }
-}
-
 function makeTrashed(overrides: Partial<TrashedDashboard> = {}): TrashedDashboard {
   return {
     id: 'dash-9',
     name: 'Old Dashboard',
     deleted_at: '2026-04-05T00:00:00Z',
     purge_at: '2026-05-05T00:00:00Z',
-    ...overrides,
-  }
-}
-
-function makeSseEvent(overrides: Partial<SseEvent> = {}): SseEvent {
-  return {
-    event_id: 1,
-    event_type: 'dashboard.updated',
-    entity_type: 'dashboard',
-    entity_id: 'dash-1',
-    entity_version: 1,
-    actor_id: 'user-1',
-    actor_display_name: 'Example User',
-    payload: { dashboard_id: 'dash-1' },
-    created_at: '2026-04-05T00:00:00Z',
     ...overrides,
   }
 }
@@ -173,7 +126,7 @@ describe('useDashboardStore', () => {
     })
 
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: makeDashboard(),
     })
@@ -184,18 +137,20 @@ describe('useDashboardStore', () => {
     expect(apiListDashboards).not.toHaveBeenCalled()
     expect(useAuthStore.getState().user?.preferences?.favorite_dashboard_ids).toEqual(['dash-1'])
     expect(useDashboardStore.getState().dashboard?.is_favorite).toBe(true)
-    expect(useDashboardStore.getState().summaries).toEqual([makeSummary({ is_favorite: true })])
+    expect(useDashboardStore.getState().summaries).toEqual([
+      makeDashboardSummary({ is_favorite: true }),
+    ])
   })
 
   it('refreshes summaries and the active dashboard for matching dashboard SSE events', async () => {
-    const nextSummary = makeSummary({ name: 'Renamed Dashboard' })
+    const nextSummary = makeDashboardSummary({ name: 'Renamed Dashboard' })
     const nextDashboard = makeDashboard({ name: 'Renamed Dashboard' })
 
     apiListDashboards.mockResolvedValue([nextSummary])
     apiGetDashboard.mockResolvedValue(nextDashboard)
 
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: makeDashboard(),
     })
@@ -211,8 +166,12 @@ describe('useDashboardStore', () => {
   it('updates summaries locally for layout-only dashboard events without refetching', async () => {
     useDashboardStore.setState({
       summaries: [
-        makeSummary({ id: 'dash-1', updated_at: '2026-04-05T00:00:00Z', version: 1 }),
-        makeSummary({ id: 'dash-2', name: 'Older Dashboard', updated_at: '2026-04-04T00:00:00Z' }),
+        makeDashboardSummary({ id: 'dash-1', updated_at: '2026-04-05T00:00:00Z', version: 1 }),
+        makeDashboardSummary({
+          id: 'dash-2',
+          name: 'Older Dashboard',
+          updated_at: '2026-04-04T00:00:00Z',
+        }),
       ],
       summariesLoaded: true,
       dashboard: null,
@@ -239,7 +198,7 @@ describe('useDashboardStore', () => {
   })
 
   it('leaves summaries unchanged for widget-only dashboard events without refetching', async () => {
-    const originalSummary = makeSummary({ updated_at: '2026-04-05T00:00:00Z', version: 3 })
+    const originalSummary = makeDashboardSummary({ updated_at: '2026-04-05T00:00:00Z', version: 3 })
     useDashboardStore.setState({
       summaries: [originalSummary],
       summariesLoaded: true,
@@ -263,7 +222,7 @@ describe('useDashboardStore', () => {
 
   it('queues a forced summaries reload when a previous summaries request is already in flight', async () => {
     let resolveFirstRequest!: (value: DashboardSummary[]) => void
-    const refreshedSummaries = [makeSummary({ id: 'dash-2', name: 'Shared Later' })]
+    const refreshedSummaries = [makeDashboardSummary({ id: 'dash-2', name: 'Shared Later' })]
 
     apiListDashboards
       .mockImplementationOnce(
@@ -329,11 +288,11 @@ describe('useDashboardStore', () => {
   })
 
   it('reloads the active dashboard after dashboard share changes', async () => {
-    apiListDashboards.mockResolvedValue([makeSummary()])
+    apiListDashboards.mockResolvedValue([makeDashboardSummary()])
     apiGetDashboard.mockResolvedValue(makeDashboard())
 
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: makeDashboard(),
     })
@@ -353,7 +312,7 @@ describe('useDashboardStore', () => {
 
   it('suppresses all reloads for a local share role-change echo (share_updated)', async () => {
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: makeDashboard(),
     })
@@ -375,11 +334,11 @@ describe('useDashboardStore', () => {
   })
 
   it('still reloads summaries and the active dashboard for local share echoes', async () => {
-    apiListDashboards.mockResolvedValue([makeSummary({ is_shared: true })])
+    apiListDashboards.mockResolvedValue([makeDashboardSummary({ is_shared: true })])
     apiGetDashboard.mockResolvedValue(makeDashboard({ is_shared: true }))
 
     useDashboardStore.setState({
-      summaries: [makeSummary({ is_shared: false })],
+      summaries: [makeDashboardSummary({ is_shared: false })],
       summariesLoaded: true,
       dashboard: makeDashboard({ is_shared: false }),
     })
@@ -403,7 +362,7 @@ describe('useDashboardStore', () => {
 
   it('skips active dashboard refetch for layout-only events when the local dashboard is already current', async () => {
     useDashboardStore.setState({
-      summaries: [makeSummary({ version: 1 })],
+      summaries: [makeDashboardSummary({ version: 1 })],
       summariesLoaded: true,
       dashboard: makeDashboard({ version: 2 }),
       loadError: false,
@@ -608,7 +567,7 @@ describe('useDashboardStore', () => {
   })
 
   it('createDashboard resolves the summary on success', async () => {
-    const summary = makeSummary({ id: 'dash-new', name: 'X' })
+    const summary = makeDashboardSummary({ id: 'dash-new', name: 'X' })
     apiCreateDashboard.mockResolvedValue(summary)
     useDashboardStore.setState({ summaries: [] })
 
@@ -618,7 +577,7 @@ describe('useDashboardStore', () => {
   })
 
   it('renameDashboard resolves false on failure and true on success', async () => {
-    useDashboardStore.setState({ summaries: [makeSummary()], dashboard: makeDashboard() })
+    useDashboardStore.setState({ summaries: [makeDashboardSummary()], dashboard: makeDashboard() })
 
     apiUpdateDashboardMeta.mockRejectedValueOnce(new Error('boom'))
     await expect(useDashboardStore.getState().renameDashboard('dash-1', 'New')).resolves.toBe(false)
@@ -770,7 +729,7 @@ describe('useDashboardStore', () => {
     const randomUuidSpy = vi
       .spyOn(globalThis.crypto, 'randomUUID')
       .mockReturnValue('33333333-3333-4333-8333-333333333333')
-    const renamedSummary = makeSummary({
+    const renamedSummary = makeDashboardSummary({
       name: 'Renamed Dashboard',
       version: 2,
     })
@@ -778,7 +737,7 @@ describe('useDashboardStore', () => {
     apiUpdateDashboardMeta.mockResolvedValue(renamedSummary)
 
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: makeDashboard(),
     })
@@ -809,7 +768,7 @@ describe('useDashboardStore', () => {
     apiGetDashboard.mockRejectedValue(new ApiError('Dashboard not found', 404))
 
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: makeDashboard(),
       loadError: false,
@@ -1001,12 +960,12 @@ describe('useDashboardStore', () => {
   })
 
   it('refreshes only summaries for unrelated dashboard SSE events', async () => {
-    const nextSummary = makeSummary({ id: 'dash-2', name: 'New Shared Dashboard' })
+    const nextSummary = makeDashboardSummary({ id: 'dash-2', name: 'New Shared Dashboard' })
 
-    apiListDashboards.mockResolvedValue([makeSummary(), nextSummary])
+    apiListDashboards.mockResolvedValue([makeDashboardSummary(), nextSummary])
 
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: makeDashboard(),
     })
@@ -1021,11 +980,11 @@ describe('useDashboardStore', () => {
 
     expect(apiListDashboards).toHaveBeenCalledTimes(1)
     expect(apiGetDashboard).not.toHaveBeenCalled()
-    expect(useDashboardStore.getState().summaries).toEqual([makeSummary(), nextSummary])
+    expect(useDashboardStore.getState().summaries).toEqual([makeDashboardSummary(), nextSummary])
   })
 
   it('refreshes summaries for dashboard events after an empty successful load', async () => {
-    const nextSummary = makeSummary({ id: 'dash-2', name: 'New Shared Dashboard' })
+    const nextSummary = makeDashboardSummary({ id: 'dash-2', name: 'New Shared Dashboard' })
 
     apiListDashboards.mockResolvedValue([nextSummary])
 
@@ -1050,11 +1009,11 @@ describe('useDashboardStore', () => {
   it('debounces summary refreshes across rapid dashboard SSE events', async () => {
     vi.useFakeTimers()
 
-    const nextSummary = makeSummary({ id: 'dash-2', name: 'Burst Update' })
+    const nextSummary = makeDashboardSummary({ id: 'dash-2', name: 'Burst Update' })
     apiListDashboards.mockResolvedValue([nextSummary])
 
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: null,
     })
@@ -1087,7 +1046,7 @@ describe('useDashboardStore', () => {
 
   it('settles a pending debounced summaries-refresh promise on reset instead of hanging', async () => {
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: null,
     })
@@ -1172,7 +1131,7 @@ describe('useDashboardStore', () => {
     apiDeleteDashboard.mockResolvedValue(undefined)
     apiGetTrash.mockResolvedValue([makeTrashed({ id: 'dash-1' })])
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       trash: [],
       trashLoaded: true,
@@ -1199,7 +1158,9 @@ describe('useDashboardStore', () => {
   })
 
   it('restoreDashboard updates both caches locally and suppresses its SSE echo', async () => {
-    apiRestoreDashboard.mockResolvedValue(makeSummary({ id: 'dash-9', name: 'Old Dashboard' }))
+    apiRestoreDashboard.mockResolvedValue(
+      makeDashboardSummary({ id: 'dash-9', name: 'Old Dashboard' }),
+    )
     useDashboardStore.setState({
       summaries: [],
       summariesLoaded: true,
@@ -1230,9 +1191,9 @@ describe('useDashboardStore', () => {
 
   it('reloads the trash cache for a restore done in another session', async () => {
     apiGetTrash.mockResolvedValue([])
-    apiListDashboards.mockResolvedValue([makeSummary()])
+    apiListDashboards.mockResolvedValue([makeDashboardSummary()])
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       trash: [makeTrashed({ id: 'dash-1' })],
       trashLoaded: true,
@@ -1251,7 +1212,7 @@ describe('useDashboardStore', () => {
 
   it('resetDashboardData clears store fields', () => {
     useDashboardStore.setState({
-      summaries: [makeSummary()],
+      summaries: [makeDashboardSummary()],
       summariesLoaded: true,
       dashboard: makeDashboard(),
       loadError: true,
@@ -1279,7 +1240,7 @@ describe('useDashboardStore', () => {
     const loading = useDashboardStore.getState().loadSummaries()
     resetDashboardData() // account boundary while the fetch is in flight
 
-    resolveList([makeSummary()])
+    resolveList([makeDashboardSummary()])
     await loading
 
     // The stale account's summaries must not land in the new session's store.
@@ -1288,13 +1249,13 @@ describe('useDashboardStore', () => {
   })
 
   it('a fresh loadSummaries refetches after a reset (no stale summariesLoaded)', async () => {
-    apiListDashboards.mockResolvedValue([makeSummary({ id: 'a' })])
+    apiListDashboards.mockResolvedValue([makeDashboardSummary({ id: 'a' })])
     await useDashboardStore.getState().loadSummaries()
     expect(useDashboardStore.getState().summariesLoaded).toBe(true)
 
     resetDashboardData() // account boundary
 
-    apiListDashboards.mockResolvedValue([makeSummary({ id: 'b' })])
+    apiListDashboards.mockResolvedValue([makeDashboardSummary({ id: 'b' })])
     await useDashboardStore.getState().loadSummaries()
     // Without the reset, summariesLoaded would short-circuit the second load and
     // the new account would see account A's card.
@@ -1312,7 +1273,7 @@ describe('useDashboardStore', () => {
     const creating = useDashboardStore.getState().createDashboard({ name: 'New Dashboard' })
     resetDashboardData()
 
-    resolveCreate(makeSummary({ id: 'new-1', name: 'New Dashboard' }))
+    resolveCreate(makeDashboardSummary({ id: 'new-1', name: 'New Dashboard' }))
     await creating.catch(() => {})
 
     // The prepend write is a literal value, not a merge over current state, so a stale
