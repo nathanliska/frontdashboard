@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #63, #64, #65◐, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #64, #65◐, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -98,11 +98,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   "already in use" response **reintroduces the enumeration oracle**
   ([ADR-011](adr/ADR-011-enumeration-safe-login.md)) — it has to say "check your new address" and
   silently do nothing when taken. *(Medium)*
-- **#63 — `test_the_liveness_predicate_is_shared` failed once, unreproduced.** `resolve_session`
-  treated a session as expired while `session_is_live` still called it live, at the
-  `session_idle_days + 1s` boundary. Did not recur across ten runs; both paths take their own
-  `datetime.now(UTC)` so clock skew was ruled out, and the mechanism is unknown. A fixed clock
-  injected into `_live` would make the question unaskable. *(Small, Low severity)*
 - **#64 — Move the rate limiter off its synchronous Redis client.** slowapi's storage is a
   synchronous client called per rate-limited request, so with the store unreachable the connect cost is
   paid on the event loop rather than beside it
