@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dashboard_invite import DashboardInvite
-from tests.helpers import create_calendar_event, create_dashboard, create_list, register_client, set_csrf
+from tests.helpers import MemberFactory, create_calendar_event, create_dashboard, create_list, set_csrf
 
 
 async def _create_invite(client: AsyncClient, dashboard_id: str, role: str = "editor") -> dict:
@@ -16,12 +16,11 @@ async def _create_invite(client: AsyncClient, dashboard_id: str, role: str = "ed
     return resp.json()
 
 
-async def test_invite_round_trip_grants_the_carried_role(auth_client: AsyncClient) -> None:
+async def test_invite_round_trip_grants_the_carried_role(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"], "editor")
 
-    invitee = await register_client("invitee@example.com")
-    set_csrf(invitee)
+    invitee = await accounts("invitee@example.com")
 
     preview = await invitee.get(f"/api/invites/{invite['code']}")
     assert preview.status_code == 200, preview.text
@@ -37,30 +36,25 @@ async def test_invite_round_trip_grants_the_carried_role(auth_client: AsyncClien
     shared = [d for d in listing.json() if d["id"] == dashboard["id"]]
     assert len(shared) == 1, listing.json()
     assert shared[0]["can_edit"] is True
-    await invitee.aclose()
 
 
-async def test_accepting_records_activity_the_feed_can_name(auth_client: AsyncClient) -> None:
+async def test_accepting_records_activity_the_feed_can_name(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """The accepter's own feed has to say what they joined, and that they joined rather than granted."""
     dashboard = await create_dashboard(auth_client, name="Kitchen")
     invite = await _create_invite(auth_client, dashboard["id"], "editor")
 
-    invitee = await register_client("invitee-activity@example.com")
-    try:
-        set_csrf(invitee)
-        assert (await invitee.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
+    invitee = await accounts("invitee-activity@example.com")
+    assert (await invitee.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
 
-        feed = (await invitee.get("/api/activity")).json()
-        joined = next(event for event in feed if event["event_type"] == "dashboard.share_added")
-        assert joined["payload"]["dashboard_name"] == "Kitchen"
-        assert joined["payload"]["role"] == "editor"
-        # Without this the same event type reads as "You granted … access", which inverts the actor.
-        assert joined["payload"]["share_action"] == "joined"
-    finally:
-        await invitee.aclose()
+    feed = (await invitee.get("/api/activity")).json()
+    joined = next(event for event in feed if event["event_type"] == "dashboard.share_added")
+    assert joined["payload"]["dashboard_name"] == "Kitchen"
+    assert joined["payload"]["role"] == "editor"
+    # Without this the same event type reads as "You granted … access", which inverts the actor.
+    assert joined["payload"]["share_action"] == "joined"
 
 
-async def test_preview_does_not_consume_the_invite(auth_client: AsyncClient) -> None:
+async def test_preview_does_not_consume_the_invite(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"])
 
@@ -68,32 +62,26 @@ async def test_preview_does_not_consume_the_invite(auth_client: AsyncClient) -> 
     for _ in range(3):
         assert (await auth_client.get(f"/api/invites/{invite['code']}")).status_code == 200
 
-    invitee = await register_client("scanner-victim@example.com")
-    set_csrf(invitee)
+    invitee = await accounts("scanner-victim@example.com")
     assert (await invitee.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
-    await invitee.aclose()
 
 
-async def test_an_invite_can_only_be_redeemed_once(auth_client: AsyncClient) -> None:
+async def test_an_invite_can_only_be_redeemed_once(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"])
 
-    first = await register_client("first@example.com")
-    set_csrf(first)
+    first = await accounts("first@example.com")
     assert (await first.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
 
-    second = await register_client("second@example.com")
-    set_csrf(second)
+    second = await accounts("second@example.com")
     replay = await second.post(f"/api/invites/{invite['code']}/accept")
     assert replay.status_code == 404, replay.text
 
     listing = await second.get("/api/dashboards")
     assert dashboard["id"] not in [d["id"] for d in listing.json()]
-    await first.aclose()
-    await second.aclose()
 
 
-async def test_revoked_invite_cannot_be_previewed_or_redeemed(auth_client: AsyncClient) -> None:
+async def test_revoked_invite_cannot_be_previewed_or_redeemed(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"])
 
@@ -102,10 +90,8 @@ async def test_revoked_invite_cannot_be_previewed_or_redeemed(auth_client: Async
 
     assert (await auth_client.get(f"/api/invites/{invite['code']}")).status_code == 404
 
-    invitee = await register_client("too-late@example.com")
-    set_csrf(invitee)
+    invitee = await accounts("too-late@example.com")
     assert (await invitee.post(f"/api/invites/{invite['code']}/accept")).status_code == 404
-    await invitee.aclose()
 
 
 async def test_expired_invite_is_rejected(auth_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -141,19 +127,17 @@ async def test_listing_invites_never_returns_codes(auth_client: AsyncClient) -> 
     assert "code" not in listing.json()[0]
 
 
-async def test_only_share_managers_can_mint_or_revoke_invites(auth_client: AsyncClient) -> None:
+async def test_only_share_managers_can_mint_or_revoke_invites(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"], "editor")
 
-    editor = await register_client("editor@example.com")
-    set_csrf(editor)
+    editor = await accounts("editor@example.com")
     assert (await editor.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
 
     # An editor holds write access to the dashboard but must not be able to widen who can see it.
     minted = await editor.post(f"/api/dashboards/{dashboard['id']}/invites", json={"role": "viewer"})
     assert minted.status_code == 403, minted.text
     assert (await editor.get(f"/api/dashboards/{dashboard['id']}/invites")).status_code == 403
-    await editor.aclose()
 
 
 async def test_owner_redeeming_their_own_invite_is_a_no_op(auth_client: AsyncClient) -> None:
@@ -172,19 +156,17 @@ async def test_owner_redeeming_their_own_invite_is_a_no_op(auth_client: AsyncCli
     assert accepted.json()["role"] == "owner"
 
 
-async def test_accepting_notifies_the_owner(auth_client: AsyncClient) -> None:
+async def test_accepting_notifies_the_owner(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"])
 
-    invitee = await register_client("joiner@example.com", display_name="Joiner")
-    set_csrf(invitee)
+    invitee = await accounts("joiner@example.com", display_name="Joiner")
     assert (await invitee.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
 
     notifications = await auth_client.get("/api/notifications")
     assert notifications.status_code == 200, notifications.text
     bodies = [n["body"] for n in notifications.json()["items"]]
     assert any("Joiner" in body and dashboard["name"] in body for body in bodies), bodies
-    await invitee.aclose()
 
 
 async def test_invite_for_a_trashed_dashboard_is_rejected(auth_client: AsyncClient) -> None:
@@ -213,14 +195,13 @@ async def test_invites_cannot_be_managed_on_a_trashed_dashboard(auth_client: Asy
     trashed = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
     assert trashed.status_code == 204, trashed.text
 
-    set_csrf(auth_client)
     minted = await auth_client.post(f"/api/dashboards/{dashboard['id']}/invites", json={"role": "viewer"})
     assert minted.status_code == 404, minted.text
     assert (await auth_client.get(f"/api/dashboards/{dashboard['id']}/invites")).status_code == 404
     assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}/invites/{invite['id']}")).status_code == 404
 
 
-async def test_redeeming_when_you_already_have_more_access_does_not_downgrade(auth_client: AsyncClient) -> None:
+async def test_redeeming_when_you_already_have_more_access_does_not_downgrade(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """A link is an offer of access, not an instruction to reduce it.
 
     `create_share` upserts the role, so an editor who clicked a viewer link used to be silently
@@ -230,8 +211,7 @@ async def test_redeeming_when_you_already_have_more_access_does_not_downgrade(au
     editor_invite = await _create_invite(auth_client, dashboard["id"], "editor")
     viewer_invite = await _create_invite(auth_client, dashboard["id"], "viewer")
 
-    invitee = await register_client("no-downgrade@example.com")
-    set_csrf(invitee)
+    invitee = await accounts("no-downgrade@example.com")
     assert (await invitee.post(f"/api/invites/{editor_invite['code']}/accept")).status_code == 200
 
     accepted = await invitee.post(f"/api/invites/{viewer_invite['code']}/accept")
@@ -242,10 +222,9 @@ async def test_redeeming_when_you_already_have_more_access_does_not_downgrade(au
     listing = await invitee.get("/api/dashboards")
     shared = [d for d in listing.json() if d["id"] == dashboard["id"]]
     assert shared[0]["can_edit"] is True
-    await invitee.aclose()
 
 
-async def test_redeeming_when_already_covered_leaves_the_invite_live(auth_client: AsyncClient) -> None:
+async def test_redeeming_when_already_covered_leaves_the_invite_live(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """Single-use codes must not be spent by a redemption that grants nothing.
 
     Consuming first meant an already-shared user burned a code presumably meant for someone else.
@@ -254,44 +233,36 @@ async def test_redeeming_when_already_covered_leaves_the_invite_live(auth_client
     first = await _create_invite(auth_client, dashboard["id"], "editor")
     second = await _create_invite(auth_client, dashboard["id"], "editor")
 
-    invitee = await register_client("already-covered@example.com")
-    set_csrf(invitee)
+    invitee = await accounts("already-covered@example.com")
     assert (await invitee.post(f"/api/invites/{first['code']}/accept")).status_code == 200
     # Same role again: nothing to grant.
     assert (await invitee.post(f"/api/invites/{second['code']}/accept")).status_code == 200
 
     # The second code was never spent, so its intended recipient can still use it.
-    other = await register_client("intended@example.com")
-    set_csrf(other)
+    other = await accounts("intended@example.com")
     redeemed = await other.post(f"/api/invites/{second['code']}/accept")
     assert redeemed.status_code == 200, redeemed.text
     assert redeemed.json()["role"] == "editor"
-    await invitee.aclose()
-    await other.aclose()
 
 
-async def test_the_owner_redeeming_their_own_link_does_not_spend_it(auth_client: AsyncClient) -> None:
+async def test_the_owner_redeeming_their_own_link_does_not_spend_it(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """The owner gains nothing from their own link, so it must remain redeemable."""
     dashboard = await create_dashboard(auth_client)
     invite = await _create_invite(auth_client, dashboard["id"], "editor")
 
-    set_csrf(auth_client)
     assert (await auth_client.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
 
-    invitee = await register_client("still-usable@example.com")
-    set_csrf(invitee)
+    invitee = await accounts("still-usable@example.com")
     assert (await invitee.post(f"/api/invites/{invite['code']}/accept")).status_code == 200
-    await invitee.aclose()
 
 
-async def test_an_upgrade_still_consumes_and_grants(auth_client: AsyncClient) -> None:
+async def test_an_upgrade_still_consumes_and_grants(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """Being already shared must not block a genuine promotion."""
     dashboard = await create_dashboard(auth_client)
     viewer_invite = await _create_invite(auth_client, dashboard["id"], "viewer")
     editor_invite = await _create_invite(auth_client, dashboard["id"], "editor")
 
-    invitee = await register_client("upgrade-me@example.com")
-    set_csrf(invitee)
+    invitee = await accounts("upgrade-me@example.com")
     assert (await invitee.post(f"/api/invites/{viewer_invite['code']}/accept")).status_code == 200
 
     upgraded = await invitee.post(f"/api/invites/{editor_invite['code']}/accept")
@@ -304,10 +275,9 @@ async def test_an_upgrade_still_consumes_and_grants(auth_client: AsyncClient) ->
 
     # Consumed: the upgrade was a real redemption.
     assert (await invitee.post(f"/api/invites/{editor_invite['code']}/accept")).status_code == 404
-    await invitee.aclose()
 
 
-async def test_an_invite_grants_access_to_the_dashboards_lists_and_events(auth_client: AsyncClient) -> None:
+async def test_an_invite_grants_access_to_the_dashboards_lists_and_events(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """The composition nothing covered: invite -> share -> inherited child access.
 
     The two halves were each tested — that redeeming creates the share, and that a shared
@@ -321,8 +291,7 @@ async def test_an_invite_grants_access_to_the_dashboards_lists_and_events(auth_c
     await create_calendar_event(auth_client, dashboard["id"], title="Bin day")
     invite = await _create_invite(auth_client, dashboard["id"], "editor")
 
-    invitee = await register_client("inherits@example.com")
-    set_csrf(invitee)
+    invitee = await accounts("inherits@example.com")
 
     # Before redeeming, the dashboard's children are invisible.
     assert (await invitee.get(f"/api/lists/{a_list['id']}")).status_code == 404
@@ -348,4 +317,3 @@ async def test_an_invite_grants_access_to_the_dashboards_lists_and_events(auth_c
     # The carried role reaches the children too, not just the dashboard listing.
     added = await invitee.post(f"/api/lists/{a_list['id']}/items", json={"text": "Milk"})
     assert added.status_code == 201, added.text
-    await invitee.aclose()

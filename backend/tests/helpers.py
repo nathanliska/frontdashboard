@@ -1,7 +1,8 @@
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
@@ -12,6 +13,17 @@ CSRF = "test-csrf-token"
 
 
 def set_csrf(client: AsyncClient) -> None:
+    """Mirror the CSRF cookie the server issued into the header, so every write proves issuance."""
+    issued = [c for c in client.cookies.jar if c.name == "csrf_token" and c.domain]
+    assert issued and issued[-1].value, "the server did not issue a CSRF cookie to this client"
+    # A test pair set earlier must not sit beside the real cookie, or reads of it conflict.
+    for stale in [c for c in client.cookies.jar if c.name == "csrf_token" and not c.domain]:
+        client.cookies.jar.clear(stale.domain, stale.path, stale.name)
+    client.headers.update({"x-csrf-token": issued[-1].value})
+
+
+def fake_csrf(client: AsyncClient) -> None:
+    """The test pair for a client whose session was written straight to the database."""
     client.cookies.set("csrf_token", CSRF)
     client.headers.update({"x-csrf-token": CSRF})
 
@@ -32,6 +44,7 @@ async def register_user(
     token = app.state.email_verification_tokens[email]
     verify_resp = await client.post("/api/auth/verify-email", json={"token": token})
     assert verify_resp.status_code == 200, verify_resp.text
+    set_csrf(client)
     return verify_resp.json()
 
 
@@ -66,28 +79,25 @@ async def current_user(client: AsyncClient) -> dict:
     return resp.json()
 
 
-async def register_client(
-    email: str,
-    *,
-    display_name: str = "Member",
-    password: str = "test-password-123",
-) -> AsyncClient:
-    client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
-    await client.__aenter__()
-    await register_user(client, email, display_name=display_name, password=password)
-    return client
+MemberFactory = Callable[..., Awaitable[AsyncClient]]
+"""What the `accounts` fixture yields: a registered, verified client the fixture closes for you."""
 
 
 async def create_dashboard(client: AsyncClient, *, name: str = "Test Board", **kwargs) -> dict:
-    set_csrf(client)
     payload = {"name": name} | kwargs
     resp = await client.post("/api/dashboards", json=payload)
     assert resp.status_code == 201, resp.text
     return resp.json()
 
 
+async def add_widget(client: AsyncClient, dashboard_id: str, widget_type: str, config: dict | None = None) -> dict:
+    """Add a widget and return the dashboard as the API answers it."""
+    resp = await client.post(f"/api/dashboards/{dashboard_id}/widgets", json={"widget_type": widget_type, "config": config or {}})
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
 async def create_list(client: AsyncClient, dashboard_id: str, **kwargs) -> dict:
-    set_csrf(client)
     payload = {"name": "Shopping", "list_type": "checklist", "dashboard_id": dashboard_id} | kwargs
     resp = await client.post("/api/lists", json=payload)
     assert resp.status_code == 201, resp.text
@@ -95,14 +105,12 @@ async def create_list(client: AsyncClient, dashboard_id: str, **kwargs) -> dict:
 
 
 async def create_list_item(client: AsyncClient, list_id: str, *, text: str = "Milk") -> dict:
-    set_csrf(client)
     resp = await client.post(f"/api/lists/{list_id}/items", json={"text": text})
     assert resp.status_code == 201, resp.text
     return resp.json()
 
 
 async def create_calendar_event(client: AsyncClient, dashboard_id: str, **kwargs) -> dict:
-    set_csrf(client)
     payload = {
         "title": "Dentist",
         "starts_at": "2026-04-10T14:00:00+00:00",

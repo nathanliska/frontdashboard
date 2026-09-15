@@ -9,11 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.calendar import CalendarEvent, CalendarEventOverride, CalendarEventParticipant
 from app.routers import calendar as calendar_router
 from tests.helpers import (
+    MemberFactory,
     create_calendar_event,
     create_dashboard,
     current_user,
-    register_client,
-    set_csrf,
     share_dashboard,
 )
 
@@ -34,7 +33,6 @@ async def test_a_deleted_event_appears_in_the_trash_with_its_purge_date(auth_cli
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"], title="Bin day")
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
 
     resp = await auth_client.get("/api/calendar/events/trash")
@@ -53,20 +51,16 @@ async def test_a_live_event_is_not_in_the_trash(auth_client: AsyncClient) -> Non
     assert [e for e in resp.json()["items"] if e["id"] == event["id"]] == []
 
 
-async def test_the_trash_is_scoped_to_dashboards_the_caller_can_see(auth_client: AsyncClient) -> None:
+async def test_the_trash_is_scoped_to_dashboards_the_caller_can_see(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """Access, not authorship — but a stranger's dashboard must not leak in either."""
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"], title="Private")
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
 
-    stranger = await register_client("event-trash-stranger@example.com")
-    try:
-        resp = await stranger.get("/api/calendar/events/trash")
-        assert resp.status_code == 200
-        assert [e for e in resp.json()["items"] if e["id"] == event["id"]] == []
-    finally:
-        await stranger.__aexit__(None, None, None)
+    stranger = await accounts("event-trash-stranger@example.com")
+    resp = await stranger.get("/api/calendar/events/trash")
+    assert resp.status_code == 200
+    assert [e for e in resp.json()["items"] if e["id"] == event["id"]] == []
 
 
 async def test_events_under_a_trashed_dashboard_are_excluded(auth_client: AsyncClient) -> None:
@@ -77,60 +71,47 @@ async def test_events_under_a_trashed_dashboard_are_excluded(auth_client: AsyncC
     """
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"], title="Goes with it")
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
     assert [e["id"] for e in (await auth_client.get("/api/calendar/events/trash")).json()["items"]] == [event["id"]]
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
 
     listed = (await auth_client.get("/api/calendar/events/trash")).json()["items"]
     assert [e for e in listed if e["id"] == event["id"]] == []
 
 
-async def test_an_editor_sees_and_can_purge_what_the_owner_trashed(auth_client: AsyncClient) -> None:
+async def test_an_editor_sees_and_can_purge_what_the_owner_trashed(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """Whoever can edit the dashboard put it there and can take it back."""
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"], title="Shared")
 
-    editor = await register_client("event-trash-editor@example.com")
-    try:
-        await share_dashboard(auth_client, dashboard["id"], editor, "editor")
+    editor = await accounts("event-trash-editor@example.com")
+    await share_dashboard(auth_client, dashboard["id"], editor, "editor")
 
-        set_csrf(auth_client)
-        assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
+    assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
 
-        listed = await editor.get("/api/calendar/events/trash")
-        assert [e["id"] for e in listed.json()["items"]] == [event["id"]]
+    listed = await editor.get("/api/calendar/events/trash")
+    assert [e["id"] for e in listed.json()["items"]] == [event["id"]]
 
-        set_csrf(editor)
-        assert (await editor.delete(f"/api/calendar/events/{event['id']}/trash")).status_code == 204
-    finally:
-        await editor.__aexit__(None, None, None)
+    assert (await editor.delete(f"/api/calendar/events/{event['id']}/trash")).status_code == 204
 
 
-async def test_a_viewer_cannot_purge(auth_client: AsyncClient) -> None:
+async def test_a_viewer_cannot_purge(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"])
 
-    viewer = await register_client("event-trash-viewer@example.com")
-    try:
-        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
+    viewer = await accounts("event-trash-viewer@example.com")
+    await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
-        set_csrf(auth_client)
-        assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
+    assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
 
-        set_csrf(viewer)
-        assert (await viewer.delete(f"/api/calendar/events/{event['id']}/trash")).status_code == 403
-    finally:
-        await viewer.__aexit__(None, None, None)
+    assert (await viewer.delete(f"/api/calendar/events/{event['id']}/trash")).status_code == 403
 
 
 async def test_purge_refuses_an_event_that_is_not_trashed(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"])
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{event['id']}/trash")).status_code == 404
 
 
@@ -146,16 +127,13 @@ async def test_purging_takes_the_children_with_it(auth_client: AsyncClient, db_s
         participants=[me["id"]],
     )
 
-    set_csrf(auth_client)
     override = await auth_client.patch(
         f"/api/calendar/events/{event['id']}/occurrences",
         json={"occurrence_start": event["starts_at"], "cancelled": True},
     )
     assert override.status_code == 200, override.text
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{event['id']}/trash")).status_code == 204
 
     for model in (CalendarEvent, CalendarEventOverride, CalendarEventParticipant):
@@ -166,15 +144,12 @@ async def test_purging_takes_the_children_with_it(auth_client: AsyncClient, db_s
 async def test_purging_removes_it_from_the_trash_and_from_restore(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"])
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{event['id']}/trash")).status_code == 204
 
     listed = await auth_client.get("/api/calendar/events/trash")
     assert [e for e in listed.json()["items"] if e["id"] == event["id"]] == []
 
-    set_csrf(auth_client)
     assert (await auth_client.post(f"/api/calendar/events/{event['id']}/restore")).status_code == 404
 
 
@@ -191,7 +166,6 @@ async def test_the_cursor_walks_past_the_first_page(auth_client: AsyncClient, mo
     dashboard = await create_dashboard(auth_client)
     events = [await create_calendar_event(auth_client, dashboard["id"], title=f"E{n}") for n in range(5)]
 
-    set_csrf(auth_client)
     for event in events:
         assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
 
@@ -221,14 +195,12 @@ async def test_restoring_from_a_page_does_not_hide_the_next_one(auth_client: Asy
     dashboard = await create_dashboard(auth_client)
     events = [await create_calendar_event(auth_client, dashboard["id"], title=f"E{n}") for n in range(6)]
 
-    set_csrf(auth_client)
     for event in events:
         assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
 
     first = await _trash_page(auth_client)
     assert len(first["items"]) == 3
 
-    set_csrf(auth_client)
     restored = first["items"][0]["id"]
     assert (await auth_client.post(f"/api/calendar/events/{restored}/restore")).status_code == 200
 
@@ -248,7 +220,6 @@ async def test_a_page_that_exactly_fills_is_the_last_one(auth_client: AsyncClien
     dashboard = await create_dashboard(auth_client)
     events = [await create_calendar_event(auth_client, dashboard["id"], title=f"E{n}") for n in range(3)]
 
-    set_csrf(auth_client)
     for event in events:
         assert (await auth_client.delete(f"/api/calendar/events/{event['id']}")).status_code == 204
 
@@ -258,7 +229,6 @@ async def test_a_page_that_exactly_fills_is_the_last_one(auth_client: AsyncClien
 
     # And one more row flips it, so the None above is a real decision rather than a stuck default.
     extra = await create_calendar_event(auth_client, dashboard["id"], title="E3")
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/calendar/events/{extra['id']}")).status_code == 204
     assert (await _trash_page(auth_client))["next_cursor"] is not None
 

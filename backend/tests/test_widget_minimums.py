@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.dashboard import DashboardWidget
 from app.services.sessions import start_session
-from tests.helpers import make_db_dashboard, make_db_user, set_csrf
+from tests.helpers import fake_csrf, make_db_dashboard, make_db_user
 
 
 @pytest.mark.parametrize(
@@ -43,7 +43,7 @@ async def test_layout_write_enforces_type_and_legacy_floors(
     _, raw = await start_session(owner.id, db_session)
     await db_session.flush()
     client.cookies.set(settings.session_cookie_name, raw)
-    set_csrf(client)
+    fake_csrf(client)
     response = await client.put(
         f"/api/dashboards/{board.id}/layout",
         json={

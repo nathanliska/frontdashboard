@@ -2,15 +2,13 @@
 
 from httpx import AsyncClient
 
-from tests.helpers import create_calendar_event, create_dashboard, register_client, set_csrf
+from tests.helpers import MemberFactory, create_calendar_event, create_dashboard
 
 
-async def _join_as(auth_client: AsyncClient, dashboard_id: str, email: str, name: str, role: str = "editor") -> AsyncClient:
-    set_csrf(auth_client)
+async def _join_as(auth_client: AsyncClient, accounts: MemberFactory, dashboard_id: str, email: str, name: str, role: str = "editor") -> AsyncClient:
     invite = await auth_client.post(f"/api/dashboards/{dashboard_id}/invites", json={"role": role})
     assert invite.status_code == 201, invite.text
-    member = await register_client(email, display_name=name)
-    set_csrf(member)
+    member = await accounts(email, display_name=name)
     accepted = await member.post(f"/api/invites/{invite.json()['code']}/accept")
     assert accepted.status_code == 200, accepted.text
     return member
@@ -22,9 +20,9 @@ async def _member_id(client: AsyncClient) -> str:
     return me.json()["id"]
 
 
-async def test_create_names_participants_sorted_and_deduplicated(auth_client: AsyncClient) -> None:
+async def test_create_names_participants_sorted_and_deduplicated(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
-    zoe = await _join_as(auth_client, dashboard["id"], "zoe@example.com", "Zoe")
+    zoe = await _join_as(auth_client, accounts, dashboard["id"], "zoe@example.com", "Zoe")
     zoe_id = await _member_id(zoe)
     owner_id = await _member_id(auth_client)
 
@@ -32,15 +30,13 @@ async def test_create_names_participants_sorted_and_deduplicated(auth_client: As
 
     assert [(p["display_name"]) for p in event["participants"]] == ["Test User", "Zoe"]
     assert {p["user_id"] for p in event["participants"]} == {owner_id, zoe_id}
-    await zoe.aclose()
 
 
-async def test_a_non_member_participant_is_a_422(auth_client: AsyncClient) -> None:
+async def test_a_non_member_participant_is_a_422(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
-    stranger = await register_client("stranger@example.com")
+    stranger = await accounts("stranger@example.com")
     stranger_id = await _member_id(stranger)
 
-    set_csrf(auth_client)
     resp = await auth_client.post(
         "/api/calendar/events",
         json={
@@ -57,7 +53,6 @@ async def test_a_non_member_participant_is_a_422(auth_client: AsyncClient) -> No
     event = await create_calendar_event(auth_client, dashboard["id"])
     patched = await auth_client.patch(f"/api/calendar/events/{event['id']}", json={"participants": [stranger_id]})
     assert patched.status_code == 422, patched.text
-    await stranger.aclose()
 
 
 async def test_patch_replaces_clears_and_absence_preserves(auth_client: AsyncClient) -> None:
@@ -65,7 +60,6 @@ async def test_patch_replaces_clears_and_absence_preserves(auth_client: AsyncCli
     owner_id = await _member_id(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"], participants=[owner_id])
 
-    set_csrf(auth_client)
     # Absent field: a title-only patch must leave the set alone.
     patched = await auth_client.patch(f"/api/calendar/events/{event['id']}", json={"title": "Renamed"})
     assert [p["user_id"] for p in patched.json()["participants"]] == [owner_id]
@@ -99,16 +93,15 @@ async def test_participants_ride_every_occurrence_of_a_series(auth_client: Async
     assert all([p["user_id"] for p in o["participants"]] == [owner_id] for o in soccer)
 
 
-async def test_an_unshared_member_stays_on_the_event_by_name(auth_client: AsyncClient) -> None:
+async def test_an_unshared_member_stays_on_the_event_by_name(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """The former-member behavior: revoking access must not silently rewrite history."""
     dashboard = await create_dashboard(auth_client)
-    zoe = await _join_as(auth_client, dashboard["id"], "zoe-leaves@example.com", "Zoe")
+    zoe = await _join_as(auth_client, accounts, dashboard["id"], "zoe-leaves@example.com", "Zoe")
     zoe_id = await _member_id(zoe)
     event = await create_calendar_event(auth_client, dashboard["id"], participants=[zoe_id])
 
     shares = await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")
     share_id = next(s["id"] for s in shares.json() if s["principal_id"] == zoe_id)
-    set_csrf(auth_client)
     revoked = await auth_client.delete(f"/api/dashboards/{dashboard['id']}/shares/{share_id}")
     assert revoked.status_code == 204, revoked.text
 
@@ -118,21 +111,19 @@ async def test_an_unshared_member_stays_on_the_event_by_name(auth_client: AsyncC
     # And they are gone from the picker's source, which is what renders them "former".
     members = await auth_client.get(f"/api/dashboards/{dashboard['id']}/members")
     assert zoe_id not in {m["user_id"] for m in members.json()}
-    await zoe.aclose()
 
 
-async def test_a_former_member_can_be_kept_but_not_newly_added(auth_client: AsyncClient) -> None:
+async def test_a_former_member_can_be_kept_but_not_newly_added(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """The first participant edit after a departure must not force dropping the departed member."""
     dashboard = await create_dashboard(auth_client)
     owner_id = await _member_id(auth_client)
-    zoe = await _join_as(auth_client, dashboard["id"], "zoe-kept@example.com", "Zoe")
+    zoe = await _join_as(auth_client, accounts, dashboard["id"], "zoe-kept@example.com", "Zoe")
     zoe_id = await _member_id(zoe)
     kept = await create_calendar_event(auth_client, dashboard["id"], title="Kept", participants=[zoe_id])
     other = await create_calendar_event(auth_client, dashboard["id"], title="Other")
 
     shares = await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")
     share_id = next(s["id"] for s in shares.json() if s["principal_id"] == zoe_id)
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}/shares/{share_id}")).status_code == 204
 
     # Resubmitting the departed member alongside a newcomer is an ordinary edit, not a 422.
@@ -143,4 +134,3 @@ async def test_a_former_member_can_be_kept_but_not_newly_added(auth_client: Asyn
     # But an event that never named them cannot gain them now.
     refused = await auth_client.patch(f"/api/calendar/events/{other['id']}", json={"participants": [zoe_id]})
     assert refused.status_code == 422, refused.text
-    await zoe.aclose()

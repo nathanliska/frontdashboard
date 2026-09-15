@@ -10,12 +10,11 @@ from app.models.base import Base
 from app.models.calendar import CalendarEvent
 from app.models.list import List, ListItem
 from tests.helpers import (
+    MemberFactory,
     create_calendar_event,
     create_dashboard,
     create_list,
     create_list_item,
-    register_client,
-    set_csrf,
     share_dashboard,
 )
 
@@ -26,9 +25,7 @@ async def test_purging_a_dashboard_takes_its_whole_cascade(auth_client: AsyncCli
     await create_list_item(auth_client, lst["id"], text="milk")
     await create_calendar_event(auth_client, dashboard["id"])
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}/trash")).status_code == 204
 
     # Nothing survives the purge — children have no ON DELETE, so a missed sweep would strand rows.
@@ -58,23 +55,17 @@ async def test_purge_refuses_a_dashboard_that_is_not_trashed(auth_client: AsyncC
     """Only the trash can be emptied — a live dashboard must go through DELETE first."""
     dashboard = await create_dashboard(auth_client)
 
-    set_csrf(auth_client)
     resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}/trash")
     assert resp.status_code == 404
 
 
-async def test_purge_is_refused_to_someone_elses_trash(auth_client: AsyncClient) -> None:
+async def test_purge_is_refused_to_someone_elses_trash(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
 
-    other = await register_client("purge-other@example.com")
-    try:
-        set_csrf(other)
-        resp = await other.delete(f"/api/dashboards/{dashboard['id']}/trash")
-        assert resp.status_code == 404
-    finally:
-        await other.__aexit__(None, None, None)
+    other = await accounts("purge-other@example.com")
+    resp = await other.delete(f"/api/dashboards/{dashboard['id']}/trash")
+    assert resp.status_code == 404
 
 
 async def test_purging_returns_the_quota_it_was_holding(auth_client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,39 +76,29 @@ async def test_purging_returns_the_quota_it_was_holding(auth_client: AsyncClient
     await create_list_item(auth_client, lst["id"], text="one")
     await create_list_item(auth_client, lst["id"], text="two")
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/lists/{lst['id']}")).status_code == 204
-    set_csrf(auth_client)
     resp = await auth_client.post("/api/lists", json={"name": "next", "list_type": "checklist", "dashboard_id": dashboard["id"]})
     assert resp.status_code == 201
     next_list = resp.json()
 
     # Still full: the trashed list's items keep occupying the quota.
-    set_csrf(auth_client)
     blocked = await auth_client.post(f"/api/lists/{next_list['id']}/items", json={"text": "three"})
     assert blocked.status_code == 422
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/lists/{lst['id']}/trash")).status_code == 204
 
-    set_csrf(auth_client)
     allowed = await auth_client.post(f"/api/lists/{next_list['id']}/items", json={"text": "three"})
     assert allowed.status_code == 201
 
 
-async def test_a_viewer_cannot_purge_a_list(auth_client: AsyncClient) -> None:
+async def test_a_viewer_cannot_purge_a_list(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     lst = await create_list(auth_client, dashboard["id"])
 
-    viewer = await register_client("purge-viewer@example.com")
-    try:
-        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
+    viewer = await accounts("purge-viewer@example.com")
+    await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
-        set_csrf(auth_client)
-        assert (await auth_client.delete(f"/api/lists/{lst['id']}")).status_code == 204
+    assert (await auth_client.delete(f"/api/lists/{lst['id']}")).status_code == 204
 
-        set_csrf(viewer)
-        resp = await viewer.delete(f"/api/lists/{lst['id']}/trash")
-        assert resp.status_code == 403
-    finally:
-        await viewer.__aexit__(None, None, None)
+    resp = await viewer.delete(f"/api/lists/{lst['id']}/trash")
+    assert resp.status_code == 403
