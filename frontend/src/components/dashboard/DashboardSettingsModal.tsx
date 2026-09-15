@@ -6,6 +6,7 @@ import {
   type DashboardSummary,
 } from '../../api/dashboards'
 import type { ResourceShare, ShareRole } from '../../api/shares'
+import { useDashboardMembers } from '../../resources/membersData'
 import { toast } from '../../stores/toast'
 import { cn } from '../../utils/shared/cn'
 import { Dialog } from '../ui/Dialog'
@@ -29,7 +30,7 @@ export function DashboardSettingsModal({
   onClose,
   onRename,
 }: {
-  dashboard: Pick<DashboardSummary, 'id' | 'name' | 'can_manage_shares'>
+  dashboard: Pick<DashboardSummary, 'id' | 'name' | 'user_id' | 'can_manage_shares'>
   onClose: () => void
   onRename: (id: string, name: string) => Promise<boolean>
 }) {
@@ -37,6 +38,8 @@ export function DashboardSettingsModal({
   const [shares, setShares] = useState<ResourceShare[]>([])
   const [sharesLoading, setSharesLoading] = useState(true)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  // Editors get the roster read-only; the owner manages it through the share panel instead.
+  const members = useDashboardMembers(dashboard.can_manage_shares ? null : dashboard.id)
 
   useEffect(() => {
     if (!dashboard.can_manage_shares) {
@@ -169,6 +172,35 @@ export function DashboardSettingsModal({
               loading={sharesLoading}
               loadingMessage="Loading permissions…"
             />
+          )}
+          {!dashboard.can_manage_shares && (
+            <section aria-labelledby="dashboard-members-heading" className="space-y-2">
+              <h3 id="dashboard-members-heading" className="text-sm font-medium text-zinc-200">
+                Who has access
+              </h3>
+              <p className="text-xs text-zinc-500">Only the owner can change this.</p>
+              {members.data ? (
+                <ul className="space-y-1 text-sm text-zinc-300">
+                  {members.data.map((member) => (
+                    <li key={member.user_id}>
+                      {member.display_name}
+                      {member.user_id === dashboard.user_id && (
+                        <span className="text-zinc-500"> · owner</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : members.error ? (
+                <p className="text-sm text-zinc-500">
+                  Could not load who has access.{' '}
+                  <button type="button" onClick={members.refetch} className="text-sky-300">
+                    Try again
+                  </button>
+                </p>
+              ) : (
+                <p className="text-sm text-zinc-500">Loading…</p>
+              )}
+            </section>
           )}
         </div>
 

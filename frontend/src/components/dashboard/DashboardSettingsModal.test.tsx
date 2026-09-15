@@ -21,9 +21,12 @@ const { apiCreateInvite, apiGetInvites, apiRevokeInvite } = vi.hoisted(() => ({
 
 const toastError = vi.hoisted(() => vi.fn())
 
+const apiListDashboardMembers = vi.hoisted(() => vi.fn())
+
 vi.mock('../../api/dashboards', () => ({
   apiGetDashboard,
   apiGetDashboardShares,
+  apiListDashboardMembers,
   apiRemoveDashboardShare,
   apiUpdateDashboardShare,
 }))
@@ -55,10 +58,11 @@ function makeShare(overrides: Partial<ResourceShare> = {}): ResourceShare {
 
 function makeSummary(
   overrides: Partial<DashboardSummary> = {},
-): Pick<DashboardSummary, 'id' | 'name' | 'can_manage_shares'> {
+): Pick<DashboardSummary, 'id' | 'name' | 'user_id' | 'can_manage_shares'> {
   return {
     id: 'dash-1',
     name: 'Primary Dashboard',
+    user_id: 'user-1',
     can_manage_shares: true,
     ...overrides,
   }
@@ -172,5 +176,44 @@ describe('DashboardSettingsModal', () => {
 
     expect(apiGetDashboardShares).toHaveBeenCalledWith('dash-1')
     expect(apiGetDashboard).not.toHaveBeenCalled()
+  })
+
+  it('shows a non-owner who has access, read-only, without asking for the shares', async () => {
+    apiListDashboardMembers.mockResolvedValue([
+      { user_id: 'user-1', display_name: 'Owner One' },
+      { user_id: 'user-2', display_name: 'Viewer One' },
+    ])
+
+    render(
+      <DashboardSettingsModal
+        dashboard={makeSummary({ can_manage_shares: false })}
+        onClose={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    )
+
+    await screen.findByText('Viewer One')
+    expect(screen.getByText('Owner One').closest('li')).toHaveTextContent('· owner')
+    expect(screen.getByText('Viewer One').closest('li')).not.toHaveTextContent('owner')
+    expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument()
+    expect(apiGetDashboardShares).not.toHaveBeenCalled()
+  })
+
+  it('offers a retry when the roster fails to load', async () => {
+    apiListDashboardMembers
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce([{ user_id: 'user-2', display_name: 'Viewer One' }])
+
+    render(
+      <DashboardSettingsModal
+        dashboard={makeSummary({ can_manage_shares: false })}
+        onClose={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Viewer One')).toBeInTheDocument()
+    expect(screen.queryByText(/Failed to fetch/)).not.toBeInTheDocument()
   })
 })
