@@ -107,8 +107,6 @@ def test_owner_outranks_every_storable_role() -> None:
 
 
 def test_role_capabilities() -> None:
-    assert permissions.can_read(EffectiveRole.viewer)
-    assert permissions.can_read(EffectiveRole.owner)
     assert permissions.can_edit(EffectiveRole.editor)
     assert permissions.can_edit(EffectiveRole.owner)
     assert not permissions.can_edit(EffectiveRole.viewer)

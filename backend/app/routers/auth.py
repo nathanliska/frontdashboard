@@ -101,48 +101,24 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(settings.csrf_cookie_name, secure=_SECURE)
 
 
-async def _issue_email_verification(user: User, db: AsyncSession) -> str:
+async def _issue_token(
+    model: type[EmailVerificationToken] | type[PasswordResetToken], user: User, db: AsyncSession, *, expires_in_hours: int, path: str
+) -> str:
+    """Mint a fresh single-use token for `user`, superseding any unused one, and return its link."""
     now = datetime.now(UTC)
-    await db.execute(
-        update(EmailVerificationToken)
-        .where(
-            EmailVerificationToken.user_id == user.id,
-            EmailVerificationToken.used_at.is_(None),
-        )
-        .values(used_at=now)
-    )
+    await db.execute(update(model).where(model.user_id == user.id, model.used_at.is_(None)).values(used_at=now))
     raw_token, token_hash = create_opaque_token()
-    db.add(
-        EmailVerificationToken(
-            user_id=user.id,
-            token_hash=token_hash,
-            expires_at=now + timedelta(hours=settings.email_verification_expire_hours),
-        )
-    )
+    db.add(model(user_id=user.id, token_hash=token_hash, expires_at=now + timedelta(hours=expires_in_hours)))
     await db.flush()
-    return f"{settings.frontend_base_url.rstrip('/')}/verify-email?token={raw_token}"
+    return f"{settings.frontend_base_url.rstrip('/')}/{path}?token={raw_token}"
+
+
+async def _issue_email_verification(user: User, db: AsyncSession) -> str:
+    return await _issue_token(EmailVerificationToken, user, db, expires_in_hours=settings.email_verification_expire_hours, path="verify-email")
 
 
 async def _issue_password_reset(user: User, db: AsyncSession) -> str:
-    now = datetime.now(UTC)
-    await db.execute(
-        update(PasswordResetToken)
-        .where(
-            PasswordResetToken.user_id == user.id,
-            PasswordResetToken.used_at.is_(None),
-        )
-        .values(used_at=now)
-    )
-    raw_token, token_hash = create_opaque_token()
-    db.add(
-        PasswordResetToken(
-            user_id=user.id,
-            token_hash=token_hash,
-            expires_at=now + timedelta(hours=settings.password_reset_expire_hours),
-        )
-    )
-    await db.flush()
-    return f"{settings.frontend_base_url.rstrip('/')}/reset-password?token={raw_token}"
+    return await _issue_token(PasswordResetToken, user, db, expires_in_hours=settings.password_reset_expire_hours, path="reset-password")
 
 
 async def _create_session(user: User, response: Response, db: AsyncSession) -> None:

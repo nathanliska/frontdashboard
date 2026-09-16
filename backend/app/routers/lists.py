@@ -1,6 +1,5 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
@@ -26,52 +25,22 @@ from app.schemas.lists import (
     ListUpdate,
     TrashedListSummary,
 )
-from app.schemas.shares import InheritedDashboardAccessResponse, ResourceAccessResponse
+from app.schemas.shares import ResourceAccessResponse
 from app.services import permissions
-from app.services.activity import EventType, log_event
+from app.services.activity import EventType, build_event_message
 from app.services.dashboard_widgets import remove_resource_widgets
 from app.services.quota import assert_under_quota, limit_message
 from app.services.retention import purge_list
 from app.services.shares import (
-    dashboard_audience_user_ids,
+    dashboard_fanout,
+    dashboard_managed_permissions_response,
     list_accessible_dashboard_ids,
     load_dashboard_access,
+    raise_dashboard_managed_permissions_error,
 )
-from app.sse.choreography import ClientIdHeader, Fanout, commit_and_broadcast
-from app.sse.events import build_activity_sse_dict
+from app.sse.choreography import ClientIdHeader, commit_and_broadcast
 
 router = APIRouter(prefix="/lists", tags=["lists"])
-
-
-def _dashboard_fanout(message: dict, dashboard: Dashboard, shares: list[ResourceShare]) -> Fanout:
-    """Address a frame to everyone who can see the dashboard, owner included."""
-    return Fanout(message, dashboard_audience_user_ids(dashboard, shares))
-
-
-async def _build_list_event_message(
-    db: AsyncSession,
-    *,
-    event_type: EventType,
-    current_user: User,
-    dashboard: Dashboard,
-    entity_type: str,
-    entity_id: uuid.UUID,
-    payload: dict[str, Any] | None = None,
-    client_id: str | None = None,
-) -> dict:
-    event_payload = {"dashboard_id": str(dashboard.id), **(payload or {})}
-    if client_id is not None:
-        event_payload["origin_client_id"] = client_id
-    activity = log_event(
-        db,
-        event_type=event_type,
-        actor_id=current_user.id,
-        actor_display_name=current_user.display_name,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        payload=event_payload,
-    )
-    return await build_activity_sse_dict(db, activity)
 
 
 async def _get_list_access(
@@ -94,8 +63,8 @@ async def _get_list_access(
     return lst, dashboard, shares, role
 
 
-def _list_response(lst: List, item_count: int) -> ListResponse:
-    return ListResponse(
+def _list_fields(lst: List, item_count: int) -> dict:
+    return dict(
         id=lst.id,
         dashboard_id=lst.dashboard_id,
         name=lst.name,
@@ -108,6 +77,10 @@ def _list_response(lst: List, item_count: int) -> ListResponse:
     )
 
 
+def _list_response(lst: List, item_count: int) -> ListResponse:
+    return ListResponse(**_list_fields(lst, item_count))
+
+
 async def _mutated_list_response(db: AsyncSession, lst: List, item_count: int) -> ListResponse:
     await db.refresh(lst)
     return _list_response(lst, item_count)
@@ -116,20 +89,6 @@ async def _mutated_list_response(db: AsyncSession, lst: List, item_count: int) -
 async def _item_response(db: AsyncSession, item: ListItem) -> ListItemResponse:
     await db.refresh(item)
     return ListItemResponse.model_validate(item)
-
-
-def _dashboard_managed_permissions_response(dashboard: Dashboard) -> ResourceAccessResponse:
-    return ResourceAccessResponse(
-        direct_shares=[],
-        inherited_dashboards=[InheritedDashboardAccessResponse(dashboard_id=dashboard.id, dashboard_name=dashboard.name)],
-    )
-
-
-def _raise_dashboard_managed_permissions_error() -> None:
-    raise HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail="List permissions are managed on the parent dashboard",
-    )
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ListResponse)
@@ -190,7 +149,7 @@ async def create_list(
     db.add(lst)
     await db.flush()
 
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_created,
         current_user=current_user,
@@ -200,11 +159,7 @@ async def create_list(
         payload={"name": lst.name, "list_type": str(lst.list_type)},
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     return await _mutated_list_response(db, lst, 0)
 
 
@@ -276,7 +231,7 @@ async def reorder_lists(
         lst.sort_order = position
         lst.updated_by = current_user.id
 
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_reordered,
         current_user=current_user,
@@ -289,11 +244,7 @@ async def reorder_lists(
         },
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
 
 
 # Declared before /{list_id} so the static segment wins (same pattern as PUT /order).
@@ -326,21 +277,7 @@ async def list_list_details(
     for item in items_result.scalars().all():
         items_by_list[item.list_id].append(ListItemResponse.model_validate(item))
 
-    return [
-        ListDetailResponse(
-            id=lst.id,
-            dashboard_id=lst.dashboard_id,
-            name=lst.name,
-            list_type=lst.list_type,
-            sort_order=lst.sort_order,
-            created_by=lst.created_by,
-            created_at=lst.created_at,
-            updated_at=lst.updated_at,
-            item_count=len(items_by_list[lst.id]),
-            items=items_by_list[lst.id],
-        )
-        for lst in lists
-    ]
+    return [ListDetailResponse(**_list_fields(lst, len(items_by_list[lst.id])), items=items_by_list[lst.id]) for lst in lists]
 
 
 # Declared before GET /{list_id} so the static segment wins (same pattern as /details).
@@ -411,7 +348,7 @@ async def restore_list(
     lst.deleted_at = None
     lst.updated_by = current_user.id
 
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_created,
         current_user=current_user,
@@ -421,11 +358,7 @@ async def restore_list(
         payload={"name": lst.name, "restored": True},
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == lst.id))
     return await _mutated_list_response(db, lst, count_result.scalar_one())
 
@@ -467,18 +400,7 @@ async def get_list(
     lst, _dashboard, _shares, _role = await _get_list_access(list_id, current_user, db)
     items_result = await db.execute(select(ListItem).where(ListItem.list_id == list_id).order_by(ListItem.sort_order, ListItem.created_at))
     items = list(items_result.scalars().all())
-    return ListDetailResponse(
-        id=lst.id,
-        dashboard_id=lst.dashboard_id,
-        name=lst.name,
-        list_type=lst.list_type,
-        sort_order=lst.sort_order,
-        created_by=lst.created_by,
-        created_at=lst.created_at,
-        updated_at=lst.updated_at,
-        item_count=len(items),
-        items=[ListItemResponse.model_validate(item) for item in items],
-    )
+    return ListDetailResponse(**_list_fields(lst, len(items)), items=[ListItemResponse.model_validate(item) for item in items])
 
 
 @router.patch("/{list_id}", response_model=ListResponse)
@@ -500,7 +422,7 @@ async def update_list(
         lst.name = body.name
     lst.updated_by = current_user.id
 
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_updated,
         current_user=current_user,
@@ -510,11 +432,7 @@ async def update_list(
         payload={"name": lst.name},
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     count_result = await db.execute(select(func.count(ListItem.id)).where(ListItem.list_id == list_id))
     return await _mutated_list_response(db, lst, count_result.scalar_one())
 
@@ -538,7 +456,7 @@ async def delete_list(
     permissions.assert_can_edit(role)
     await remove_resource_widgets(ResourceType.list.value, lst.id, db)
 
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_deleted,
         current_user=current_user,
@@ -549,11 +467,7 @@ async def delete_list(
         client_id=client_id,
     )
     lst.deleted_at = datetime.now(UTC)
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
 
 
 @router.post("/{list_id}/items", status_code=status.HTTP_201_CREATED, response_model=ListItemResponse)
@@ -608,7 +522,7 @@ async def create_item(
     )
     db.add(item)
     await db.flush()
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_item_created,
         current_user=current_user,
@@ -618,11 +532,7 @@ async def create_item(
         payload={"text": item.text, "list_id": str(list_id), "list_name": lst.name},
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     return await _item_response(db, item)
 
 
@@ -660,7 +570,7 @@ async def update_item(
     # value, and the instance is flush-expired.
     changed_values = body.model_dump(mode="json", include=body.model_fields_set)
 
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_item_checked if "checked" in body.model_fields_set else EventType.list_item_updated,
         current_user=current_user,
@@ -676,11 +586,7 @@ async def update_item(
         },
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     return await _item_response(db, item)
 
 
@@ -713,7 +619,7 @@ async def delete_item(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
 
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_item_deleted,
         current_user=current_user,
@@ -724,11 +630,7 @@ async def delete_item(
         client_id=client_id,
     )
     await db.delete(item)
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
 
 
 @router.put("/{list_id}/items/order", status_code=status.HTTP_204_NO_CONTENT)
@@ -757,7 +659,7 @@ async def reorder_items(
         item.sort_order = position
         item.updated_by = current_user.id
 
-    event_message = await _build_list_event_message(
+    event_message = await build_event_message(
         db,
         event_type=EventType.list_item_reordered,
         current_user=current_user,
@@ -771,11 +673,7 @@ async def reorder_items(
         },
         client_id=client_id,
     )
-    await commit_and_broadcast(
-        db,
-        actor_id=current_user.id,
-        fanouts=[_dashboard_fanout(event_message, dashboard, shares)],
-    )
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
 
 
 @router.get("/{list_id}/shares", response_model=ResourceAccessResponse)
@@ -786,7 +684,7 @@ async def list_list_shares(
 ) -> ResourceAccessResponse:
     """Show that list access is inherited from the parent dashboard."""
     _lst, dashboard, _shares, _role = await _get_list_access(list_id, current_user, db)
-    return _dashboard_managed_permissions_response(dashboard)
+    return dashboard_managed_permissions_response(dashboard)
 
 
 @router.post("/{list_id}/shares", status_code=status.HTTP_201_CREATED)
@@ -800,7 +698,7 @@ async def add_list_share(
 ) -> None:
     """Reject direct list sharing because dashboards own permissions."""
     await _get_list_access(list_id, current_user, db)
-    _raise_dashboard_managed_permissions_error()
+    raise_dashboard_managed_permissions_error("List")
 
 
 @router.patch("/{list_id}/shares/{share_id}")
@@ -815,7 +713,7 @@ async def update_list_share(
 ) -> None:
     """Reject direct list share updates because dashboards own permissions."""
     await _get_list_access(list_id, current_user, db)
-    _raise_dashboard_managed_permissions_error()
+    raise_dashboard_managed_permissions_error("List")
 
 
 @router.delete("/{list_id}/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -830,4 +728,4 @@ async def delete_list_share(
 ) -> None:
     """Reject direct list share deletion because dashboards own permissions."""
     await _get_list_access(list_id, current_user, db)
-    _raise_dashboard_managed_permissions_error()
+    raise_dashboard_managed_permissions_error("List")
