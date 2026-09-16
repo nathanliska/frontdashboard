@@ -1,9 +1,4 @@
-"""Tests for activity event logging.
-
-Verifies that mutations emit the correct ActivityEvent rows with accurate
-event_type, actor, and entity metadata. Completeness check: after each
-mutation there should be exactly one more event than before.
-"""
+"""Activity event logging: which row each mutation writes, and what the feed reads back."""
 
 import json
 import re
@@ -19,12 +14,7 @@ from app.models.activity import ActivityEvent, EventType
 from app.services.activity import log_event
 from app.services.notifications import stage_notification
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
-from tests.helpers import add_widget, create_calendar_event, create_dashboard, create_list, create_list_item, make_db_user, register_user
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
+from tests.helpers import add_widget, create_calendar_event, create_dashboard, create_list, create_list_item, make_db_user
 
 _FEED_UTILS_PATH = Path(__file__).parents[2] / "frontend/src/utils/notifications/notificationFeedUtils.ts"
 
@@ -66,194 +56,70 @@ async def _latest_event(db_session: AsyncSession) -> ActivityEvent:
     return event
 
 
-# ---------------------------------------------------------------------------
-# List-level events
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_list_created_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
+async def test_creating_a_list_and_an_item_logs_each(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    dashboard = await create_dashboard(auth_client)
+    lst = await _make_list(auth_client, dashboard["id"])
 
     event = await _latest_event(db_session)
     assert event.event_type == EventType.list_created
     assert event.entity_type == "list"
     assert str(event.entity_id) == lst["id"]
-    assert event.actor_display_name == "Alice"
+    assert event.actor_display_name == "Test User"
 
-
-@pytest.mark.asyncio
-async def test_list_updated_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-
-    resp = await db_client.patch(f"/api/lists/{lst['id']}", json={"name": "Renamed"})
-    assert resp.status_code == 200
-
-    event = await _latest_event(db_session)
-    assert event.event_type == EventType.list_updated
-    assert str(event.entity_id) == lst["id"]
-
-
-@pytest.mark.asyncio
-async def test_list_events_include_origin_client_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice-client-mutation@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-
-    resp = await db_client.patch(
-        f"/api/lists/{lst['id']}",
-        json={"name": "Renamed"},
-        headers={"X-Client-Id": "list-rename-123"},
-    )
-    assert resp.status_code == 200
-
-    event = await _latest_event(db_session)
-    assert event.payload["origin_client_id"] == "list-rename-123"
-
-
-@pytest.mark.asyncio
-async def test_list_item_events_include_origin_client_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice-item-client-mutation@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-    item = await create_list_item(db_client, lst["id"])
-
-    resp = await db_client.patch(
-        f"/api/lists/{lst['id']}/items/{item['id']}",
-        json={"checked": True},
-        headers={"X-Client-Id": "item-check-123"},
-    )
-    assert resp.status_code == 200
-
-    event = await _latest_event(db_session)
-    assert event.payload["origin_client_id"] == "item-check-123"
-
-
-@pytest.mark.asyncio
-async def test_calendar_events_include_origin_client_id_in_payload(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice-calendar-mutation@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    event_row = await create_calendar_event(db_client, dashboard["id"])
-
-    resp = await db_client.patch(
-        f"/api/calendar/events/{event_row['id']}",
-        json={"title": "Renamed"},
-        headers={"X-Client-Id": "calendar-rename-123"},
-    )
-    assert resp.status_code == 200
-
-    event = await _latest_event(db_session)
-    assert event.event_type == EventType.calendar_event_updated
-    assert event.payload["origin_client_id"] == "calendar-rename-123"
-
-
-@pytest.mark.asyncio
-async def test_calendar_events_omit_origin_client_id_when_not_sent(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    """A tab that stamped nothing must not have other tabs' suppression logic find a stray value."""
-    await register_user(db_client, "alice-calendar-unstamped@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    event_row = await create_calendar_event(db_client, dashboard["id"])
-
-    resp = await db_client.patch(f"/api/calendar/events/{event_row['id']}", json={"title": "Renamed"})
-    assert resp.status_code == 200
-
-    event = await _latest_event(db_session)
-    assert "origin_client_id" not in event.payload
-
-
-@pytest.mark.asyncio
-async def test_list_deleted_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-
-    resp = await db_client.delete(f"/api/lists/{lst['id']}")
-    assert resp.status_code == 204
-
-    event = await _latest_event(db_session)
-    assert event.event_type == EventType.list_deleted
-    assert str(event.entity_id) == lst["id"]
-
-
-# ---------------------------------------------------------------------------
-# List item events
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_list_item_created_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-    item = await create_list_item(db_client, lst["id"], text="Eggs")
+    item = await create_list_item(auth_client, lst["id"], text="Eggs")
 
     event = await _latest_event(db_session)
     assert event.event_type == EventType.list_item_created
     assert event.entity_type == "list_item"
     assert str(event.entity_id) == item["id"]
-    assert event.actor_display_name == "Alice"
     assert event.payload["text"] == "Eggs"
     assert event.payload["list_name"] == "My List"
+    assert "origin_client_id" not in event.payload
 
 
-@pytest.mark.asyncio
-async def test_list_item_checked_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-    item = await create_list_item(db_client, lst["id"])
-
-    resp = await db_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"checked": True})
-    assert resp.status_code == 200
-
-    event = await _latest_event(db_session)
-    assert event.event_type == EventType.list_item_checked
-    assert str(event.entity_id) == item["id"]
-    assert event.payload["text"] == "Milk"
-    assert event.payload["list_name"] == "My List"
+_LIST_MUTATIONS = [
+    pytest.param("patch", "/api/lists/{list}", {"name": "Renamed"}, EventType.list_updated, None, id="list.updated"),
+    pytest.param("delete", "/api/lists/{list}", None, EventType.list_deleted, None, id="list.deleted"),
+    pytest.param("patch", "/api/lists/{list}/items/{item}", {"checked": True}, EventType.list_item_checked, "Milk", id="list.item.checked"),
+    pytest.param("patch", "/api/lists/{list}/items/{item}", {"text": "New text"}, EventType.list_item_updated, "New text", id="list.item.updated"),
+    pytest.param("delete", "/api/lists/{list}/items/{item}", None, EventType.list_item_deleted, "Milk", id="list.item.deleted"),
+]
 
 
-@pytest.mark.asyncio
-async def test_list_item_updated_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-    item = await create_list_item(db_client, lst["id"])
+@pytest.mark.parametrize(("method", "path", "body", "event_type", "text"), _LIST_MUTATIONS)
+async def test_list_mutations_log_their_event_stamped_with_the_origin_client(
+    auth_client: AsyncClient, db_session: AsyncSession, method: str, path: str, body: dict | None, event_type: EventType, text: str | None
+) -> None:
+    dashboard = await create_dashboard(auth_client)
+    lst = await _make_list(auth_client, dashboard["id"])
+    item = await create_list_item(auth_client, lst["id"])
+    on_item = "{item}" in path
 
-    resp = await db_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"text": "New text"})
-    assert resp.status_code == 200
+    resp = await auth_client.request(method, path.format(list=lst["id"], item=item["id"]), json=body, headers={"X-Client-Id": "tab-1"})
+    assert resp.status_code == (204 if method == "delete" else 200), resp.text
 
     event = await _latest_event(db_session)
-    assert event.event_type == EventType.list_item_updated
-    assert str(event.entity_id) == item["id"]
-    assert event.payload["text"] == "New text"
-    assert event.payload["list_name"] == "My List"
+    assert event.event_type == event_type
+    assert str(event.entity_id) == (item if on_item else lst)["id"]
+    assert event.payload["origin_client_id"] == "tab-1"
+    if on_item:
+        assert event.payload["text"] == text
+        assert event.payload["list_name"] == "My List"
 
 
-@pytest.mark.asyncio
-async def test_list_item_deleted_event(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-    item = await create_list_item(db_client, lst["id"])
+async def test_calendar_events_carry_the_origin_client_only_when_one_was_sent(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """A tab that stamped nothing must not have other tabs' suppression logic find a stray value."""
+    dashboard = await create_dashboard(auth_client)
+    event_row = await create_calendar_event(auth_client, dashboard["id"])
+    url = f"/api/calendar/events/{event_row['id']}"
 
-    resp = await db_client.delete(f"/api/lists/{lst['id']}/items/{item['id']}")
-    assert resp.status_code == 204
-
+    assert (await auth_client.patch(url, json={"title": "Renamed"}, headers={"X-Client-Id": "tab-1"})).status_code == 200
     event = await _latest_event(db_session)
-    assert event.event_type == EventType.list_item_deleted
-    assert str(event.entity_id) == item["id"]
-    assert event.payload["text"] == "Milk"
-    assert event.payload["list_name"] == "My List"
+    assert event.event_type == EventType.calendar_event_updated
+    assert event.payload["origin_client_id"] == "tab-1"
 
-
-# ---------------------------------------------------------------------------
-# Dashboard events
-# ---------------------------------------------------------------------------
+    assert (await auth_client.patch(url, json={"title": "Renamed again"})).status_code == 200
+    assert "origin_client_id" not in (await _latest_event(db_session)).payload
 
 
 async def test_dashboard_layout_and_widget_activity_survives_a_reload(auth_client: AsyncClient) -> None:
@@ -388,14 +254,11 @@ async def test_activity_rejects_an_absurd_number_of_filters(auth_client: AsyncCl
     assert resp.json()["detail"] == "Too many event_type filters"
 
 
-@pytest.mark.asyncio
-async def test_event_id_is_monotonically_increasing(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    """event_id values must be strictly increasing across consecutive inserts."""
-    await register_user(db_client, "alice@example.com", display_name="Alice")
-    dashboard = await create_dashboard(db_client)
-    lst = await _make_list(db_client, dashboard["id"])
-    await create_list_item(db_client, lst["id"], text="A")
-    await create_list_item(db_client, lst["id"], text="B")
+async def test_event_id_is_monotonically_increasing(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    dashboard = await create_dashboard(auth_client)
+    lst = await _make_list(auth_client, dashboard["id"])
+    await create_list_item(auth_client, lst["id"], text="A")
+    await create_list_item(auth_client, lst["id"], text="B")
 
     result = await db_session.execute(select(ActivityEvent).order_by(ActivityEvent.event_id))
     events = result.scalars().all()

@@ -124,14 +124,23 @@ async def create_calendar_event(client: AsyncClient, dashboard_id: str, **kwargs
     return resp.json()
 
 
+async def mint_invite(owner: AsyncClient, dashboard_id: str, role: str = "editor") -> dict:
+    """Mint an invite as a share manager; the body carries the code a member redeems."""
+    resp = await owner.post(f"/api/dashboards/{dashboard_id}/invites", json={"role": role})
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def accept_invite(member: AsyncClient, code: str) -> dict:
+    """Redeem an invite that is expected to succeed; a refused one is asserted on by the caller."""
+    resp = await member.post(f"/api/invites/{code}/accept")
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
 async def share_dashboard(owner: AsyncClient, dashboard_id: str, member: AsyncClient, role: str = "editor") -> None:
     """Grant access the way the product does: mint an invite as the owner, redeem it as the member.
 
     Every share passes through consent, so test setup exercises the same path a user takes.
     """
-    set_csrf(owner)
-    minted = await owner.post(f"/api/dashboards/{dashboard_id}/invites", json={"role": role})
-    assert minted.status_code == 201, minted.text
-    set_csrf(member)
-    accepted = await member.post(f"/api/invites/{minted.json()['code']}/accept")
-    assert accepted.status_code == 200, accepted.text
+    await accept_invite(member, (await mint_invite(owner, dashboard_id, role))["code"])

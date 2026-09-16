@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/http'
-import { useAuthStore } from '../stores/auth'
+import { signIn } from '../test/signIn'
 import { ProfilePage } from './ProfilePage'
 
 const { apiChangePassword } = vi.hoisted(() => ({ apiChangePassword: vi.fn() }))
@@ -33,10 +33,7 @@ function submitPasswordChange(current: string, next: string) {
 describe('changing a password', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useAuthStore.setState({
-      status: 'authenticated',
-      user: { id: 'u1', email: 'a@example.com', display_name: 'A', preferences: {} },
-    } as never)
+    signIn()
   })
 
   it('attaches a rejected new password to the new-password field, not a toast', async () => {

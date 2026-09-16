@@ -1,42 +1,69 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { Link, MemoryRouter, Route, Routes } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import type { ListDetail } from '../api/lists'
 import { stubDashboardStore } from '../test/dashboard-store'
-import { makeDashboardSummary, makeListItem, makeListSummary } from '../test/fixtures'
+import {
+  makeDashboardSummary,
+  makeListDetail,
+  makeListItem,
+  makeListSummary,
+} from '../test/fixtures'
+import { capturedOnReorder } from '../test/sortable-list'
 import { ListDetailPage } from './ListDetailPage'
 
-vi.mock('../resources/listData', () => ({
+const {
+  addListItem,
+  deleteListItem,
+  reorderListItems,
+  updateListItem,
+  updateListName,
+  mockedUseListDetail,
+  sortableListSpy,
+  refetch,
+  toastError,
+} = vi.hoisted(() => ({
   addListItem: vi.fn(),
   deleteListItem: vi.fn(),
   reorderListItems: vi.fn(),
   updateListItem: vi.fn(),
   updateListName: vi.fn(),
-  useListDetail: vi.fn(),
+  mockedUseListDetail: vi.fn(),
+  sortableListSpy: vi.fn(),
+  refetch: vi.fn(),
+  toastError: vi.fn(),
 }))
 
-import { addListItem, updateListItem, useListDetail } from '../resources/listData'
+vi.mock('../stores/toast', async () =>
+  (await import('../test/toast')).toastMock({ error: toastError }),
+)
 
-const mockedUseListDetail = vi.mocked(useListDetail)
+vi.mock('../resources/listData', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../resources/listData')>()),
+  addListItem,
+  deleteListItem,
+  reorderListItems,
+  updateListItem,
+  updateListName,
+  useListDetail: (listId: string) => mockedUseListDetail(listId),
+}))
 
-function makeDetail(): ListDetail {
-  return {
-    ...makeListSummary({ item_count: 3 }),
-    items: [
-      makeListItem({ id: 'item-bread', text: 'Bread', sort_order: 0 }),
-      makeListItem({
-        id: 'item-milk',
-        text: 'Milk',
-        sort_order: 1,
-        checked: true,
-      }),
-      makeListItem({ id: 'item-eggs', text: 'Eggs', sort_order: 2 }),
-    ],
-  }
+vi.mock('../components/lists/SortableList', async () => {
+  const { sortableListMock } = await import('../test/sortable-list')
+  return sortableListMock(sortableListSpy)
+})
+
+function showDetail(data: ListDetail, options: { refetch?: Mock } = {}) {
+  mockedUseListDetail.mockReturnValue({
+    data,
+    loading: false,
+    error: null,
+    refetch: options.refetch ?? vi.fn(),
+  })
 }
 
-function renderDetail() {
+function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/lists/list-1']}>
       <Routes>
@@ -46,21 +73,29 @@ function renderDetail() {
   )
 }
 
+beforeEach(() => {
+  vi.clearAllMocks()
+  window.localStorage.clear()
+  stubDashboardStore({ summaries: [makeDashboardSummary({ id: 'dash-1', name: 'Home' })] })
+})
+
+function makeDetail() {
+  return makeListDetail({
+    items: [
+      makeListItem({ id: 'item-bread', text: 'Bread', sort_order: 0 }),
+      makeListItem({ id: 'item-milk', text: 'Milk', sort_order: 1, checked: true }),
+      makeListItem({ id: 'item-eggs', text: 'Eggs', sort_order: 2 }),
+    ],
+  })
+}
+
 describe('ListDetailPage checked pile', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    window.localStorage.clear()
-    stubDashboardStore({ summaries: [makeDashboardSummary({ id: 'dash-1', name: 'Home' })] })
-    mockedUseListDetail.mockReturnValue({
-      data: makeDetail(),
-      loading: false,
-      error: null,
-      refetch: vi.fn(),
-    })
+    showDetail(makeDetail())
   })
 
   it('sinks checked items into a collapsed pile by default', () => {
-    renderDetail()
+    renderPage()
     const pileToggle = screen.getByRole('button', { name: 'Checked (1)' })
     expect(pileToggle).toHaveAttribute('aria-expanded', 'false')
     // Collapsed pile hides the row; the active zone keeps only unchecked items.
@@ -70,7 +105,7 @@ describe('ListDetailPage checked pile', () => {
   })
 
   it('expands the pile on demand and unchecks from it', () => {
-    renderDetail()
+    renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Checked (1)' }))
     const pile = screen.getByRole('region', { name: 'Checked items' })
     fireEvent.click(within(pile).getByRole('button', { name: 'Uncheck' }))
@@ -78,7 +113,7 @@ describe('ListDetailPage checked pile', () => {
   })
 
   it('reserves the drag-handle footprint on pile rows so text columns align', () => {
-    const { container } = renderDetail()
+    const { container } = renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Checked (1)' }))
     // Active rows show handles (2 sortable items), so the unsortable pile row must indent.
     // Asserted on the row first: `row?.querySelector` on a missing row yields undefined, which
@@ -91,19 +126,15 @@ describe('ListDetailPage checked pile', () => {
   it('keeps the footprint reserved once too few items are left to sort', () => {
     // Sorting switches off below two active items. Tying the indent to that count instead of
     // to the list shifts every remaining row left the moment the last one is checked.
-    mockedUseListDetail.mockReturnValue({
-      data: {
-        ...makeListSummary({ item_count: 2 }),
+    showDetail(
+      makeListDetail({
         items: [
           makeListItem({ id: 'item-bread', text: 'Bread', sort_order: 0, checked: true }),
           makeListItem({ id: 'item-milk', text: 'Milk', sort_order: 1, checked: true }),
         ],
-      },
-      loading: false,
-      error: null,
-      refetch: vi.fn(),
-    })
-    const { container } = renderDetail()
+      }),
+    )
+    const { container } = renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Checked (2)' }))
     expect(screen.getByText('All checked.')).toBeInTheDocument()
     for (const id of ['item-bread', 'item-milk']) {
@@ -114,7 +145,7 @@ describe('ListDetailPage checked pile', () => {
   })
 
   it('renders checked items in place when the pile is toggled off, and remembers it', () => {
-    renderDetail()
+    renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Sink checked items into a pile' }))
     expect(screen.getByText('Milk')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Checked (1)' })).not.toBeInTheDocument()
@@ -124,7 +155,7 @@ describe('ListDetailPage checked pile', () => {
   it('re-reads the new list’s pile preference when only the route param changes', () => {
     // The route element is never remounted across :listId changes, so the preference must
     // come from a subscription keyed on listId, not from mount-time state.
-    mockedUseListDetail.mockImplementation((listId) => ({
+    mockedUseListDetail.mockImplementation((listId: string) => ({
       data:
         listId === 'list-2'
           ? {
@@ -163,11 +194,70 @@ describe('ListDetailPage checked pile', () => {
   })
 
   it('restores a checked item from the add box instead of duplicating it', () => {
-    renderDetail()
+    renderPage()
     const input = screen.getByRole('combobox', { name: 'Add item' })
     fireEvent.change(input, { target: { value: 'milk' } })
     fireEvent.submit(input)
     expect(updateListItem).toHaveBeenCalledWith('list-1', 'item-milk', { checked: false })
     expect(addListItem).not.toHaveBeenCalled()
+  })
+})
+
+describe('ListDetailPage item reordering', () => {
+  // Reordering is offered only when it can actually do something: an editable list with enough
+  // items to have an order worth changing.
+  it.each([
+    { name: 'an editable list with three items', detail: {}, handles: 3, disabled: false },
+    { name: 'a single-item list', detail: { itemIds: ['a'] }, handles: 0, disabled: true },
+  ])('renders $handles drag handles for $name', ({ detail, handles, disabled }) => {
+    showDetail(makeListDetail({ itemIds: ['a', 'b', 'c'], ...detail }))
+
+    renderPage()
+
+    expect(screen.queryAllByLabelText('Reorder item')).toHaveLength(handles)
+    expect(sortableListSpy).toHaveBeenCalledWith(disabled, expect.any(Function))
+  })
+
+  it('wires the SortableList onReorder callback to reorderListItems(listId, orderedIds)', () => {
+    showDetail(makeListDetail({ itemIds: ['a', 'b', 'c'] }))
+    renderPage()
+
+    capturedOnReorder(sortableListSpy)(['b', 'a', 'c'])
+
+    expect(reorderListItems).toHaveBeenCalledWith('list-1', ['b', 'a', 'c'])
+  })
+
+  describe('with the checked pile on', () => {
+    function withPile() {
+      showDetail(
+        makeListDetail({
+          items: [
+            makeListItem({ id: 'bread', sort_order: 0 }),
+            makeListItem({ id: 'milk', sort_order: 1, checked: true }),
+            makeListItem({ id: 'eggs', sort_order: 2 }),
+            makeListItem({ id: 'rice', sort_order: 3 }),
+          ],
+        }),
+        { refetch },
+      )
+      renderPage()
+    }
+
+    it('submits the full set, holding checked items at their stored positions', () => {
+      withPile()
+      capturedOnReorder(sortableListSpy)(['rice', 'bread', 'eggs'])
+      expect(reorderListItems).toHaveBeenCalledWith('list-1', ['rice', 'milk', 'bread', 'eggs'])
+    })
+
+    it('resyncs instead of submitting when the list changed under the drag', () => {
+      withPile()
+      // "milk" was active when the drag started and is checked by the time it drops, so the
+      // merge cannot place it. The nearest valid set is the stored order — a 204 that would
+      // throw the drop away without saying so.
+      capturedOnReorder(sortableListSpy)(['rice', 'milk', 'bread', 'eggs'])
+      expect(reorderListItems).not.toHaveBeenCalled()
+      expect(toastError).toHaveBeenCalledWith('Could not save order — refreshed.')
+      expect(refetch).toHaveBeenCalled()
+    })
   })
 })

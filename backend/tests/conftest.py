@@ -27,7 +27,7 @@ from app.limiter import limiter
 from app.main import app
 from app.models.user import User
 from app.routers import auth as auth_router
-from tests.helpers import MemberFactory, register_user, set_csrf
+from tests.helpers import MemberFactory, register_user
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -261,19 +261,7 @@ async def db_client(client: AsyncClient) -> AsyncGenerator[AsyncClient]:
 @pytest.fixture
 async def auth_client(db_client: AsyncClient) -> AsyncGenerator[AsyncClient]:
     """Client pre-authenticated as a throwaway test user."""
-    resp = await db_client.post(
-        "/api/auth/register",
-        json={
-            "email": "testuser@example.com",
-            "password": "testpassword123",
-            "display_name": "Test User",
-        },
-    )
-    assert resp.status_code == 201
-    token = app.state.email_verification_tokens["testuser@example.com"]
-    verify_resp = await db_client.post("/api/auth/verify-email", json={"token": token})
-    assert verify_resp.status_code == 200
-    set_csrf(db_client)
+    await register_user(db_client, "testuser@example.com", display_name="Test User", password="testpassword123")
     yield db_client
 
 

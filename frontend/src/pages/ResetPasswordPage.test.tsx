@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiCheckPasswordResetToken } from '../api/auth'
 import { useAuthStore } from '../stores/auth'
+import { signIn } from '../test/signIn'
 import { ResetPasswordPage } from './ResetPasswordPage'
 
 vi.mock('../api/auth', async () => {
@@ -57,10 +58,7 @@ describe('ResetPasswordPage', () => {
     // The reported confusion: opening someone else's reset link while signed in gave no hint that
     // the two were unrelated. The link's own owner stays unnamed — that would be an oracle.
     mockedCheck.mockResolvedValue(true)
-    useAuthStore.setState({
-      status: 'authenticated',
-      user: { email: 'me@example.com' } as never,
-    })
+    signIn({ email: 'me@example.com' })
 
     renderAt('?token=live')
 
