@@ -55,10 +55,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
     setSessionExpiredHandler(handleSessionExpired)
     authInitPromise = (async () => {
-      // One question, one answer. There is no silent-refresh step any more: the session cookie
-      // either resolves to a live row or it does not, so /me is the whole of the check.
-      // bootReady (the route chunk preload) rides along so answering doesn't just trade the
-      // boot screen for a suspense fallback; it never rejects and caps its own wait.
+      // One question, one answer: the cookie resolves to a live row or it does not, so /me is the
+      // whole check. bootReady (the route chunk preload) rides along so answering doesn't trade
+      // the boot screen for a suspense fallback; it never rejects and caps its own wait.
       let user: User | null
       try {
         ;[user] = await Promise.all([apiGetMe(), bootReady])

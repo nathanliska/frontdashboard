@@ -7,6 +7,7 @@ import { DashboardCardGrid } from '../components/dashboard/DashboardCardGrid'
 import { DashboardSettingsModal } from '../components/dashboard/DashboardSettingsModal'
 import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { LoadingBlock } from '../components/ui/Spinner'
+import { TrashRow } from '../components/ui/TrashRow'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 import { confirm } from '../stores/confirm'
@@ -141,10 +142,6 @@ export function DashboardsPage() {
     }
   }
 
-  function daysUntilPurge(trashed: TrashedDashboard): number {
-    return Math.max(0, Math.ceil((new Date(trashed.purge_at).getTime() - Date.now()) / 86_400_000))
-  }
-
   if (summariesLoading && summaries.length === 0) {
     return <LoadingBlock />
   }
@@ -234,42 +231,22 @@ export function DashboardsPage() {
               <p className="text-sm text-zinc-600">Nothing in the trash.</p>
             ) : (
               <div className="space-y-1">
-                {trash.map((trashed) => {
-                  const days = daysUntilPurge(trashed)
-                  return (
-                    <div
-                      key={trashed.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm text-zinc-300 truncate">{trashed.name}</p>
-                        <p className="text-xs text-zinc-600">
-                          {days === 0
-                            ? 'Will be permanently deleted soon'
-                            : `Permanently deleted in ${days} day${days === 1 ? '' : 's'}`}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void handleRestore(trashed)}
-                          disabled={restoringId === trashed.id || purgingId === trashed.id}
-                          className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-50"
-                        >
-                          {restoringId === trashed.id ? 'Restoring…' : 'Restore'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handlePurge(trashed)}
-                          disabled={restoringId === trashed.id || purgingId === trashed.id}
-                          className="shrink-0 rounded border border-zinc-800 px-2.5 py-1 text-xs text-zinc-500 transition-colors hover:border-red-900 hover:text-red-400 disabled:opacity-50"
-                        >
-                          {purgingId === trashed.id ? 'Deleting…' : 'Delete permanently'}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
+                {trash.map((trashed) => (
+                  <TrashRow
+                    key={trashed.id}
+                    name={trashed.name}
+                    purgeAt={trashed.purge_at}
+                    busy={
+                      restoringId === trashed.id
+                        ? 'restoring'
+                        : purgingId === trashed.id
+                          ? 'purging'
+                          : null
+                    }
+                    onRestore={() => void handleRestore(trashed)}
+                    onPurge={() => void handlePurge(trashed)}
+                  />
+                ))}
               </div>
             )}
           </section>

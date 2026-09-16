@@ -105,10 +105,9 @@ export function createScopedQuery<Scope, Data>({
   }
 
   function notify(entry: ScopedQueryEntry<Scope, Data>) {
-    // Snapshot, for the same reason `invalidateWhere` does: `Set.forEach` visits entries added
-    // during iteration, so a listener that subscribed synchronously would be invoked in this same
-    // pass. Today's listeners are `useSyncExternalStore` callbacks that only schedule a render, so
-    // this is insurance rather than a live bug — but it is one refactor away from being one.
+    // Snapshot: `Set.forEach` visits entries added mid-iteration, so a listener that subscribed
+    // synchronously would run in this same pass. Insurance today, since every listener only
+    // schedules a render, and one refactor away from a live bug.
     for (const listener of [...entry.listeners]) {
       listener()
     }
@@ -197,11 +196,9 @@ export function createScopedQuery<Scope, Data>({
   ): void {
     const activeOnly = options.activeOnly ?? true
 
-    // Iterate a snapshot, not the live map. `fetch` runs synchronously up to its first await, and
-    // one of those first statements is `touch`, which deletes and re-inserts the entry to move it
-    // to the back of the LRU order. A Map iterator *does* visit entries inserted during iteration,
-    // so iterating live would hand this loop the same entry again on the very next step — matching
-    // the predicate, fetching, touching, re-inserting — until the heap gave out.
+    // Iterate a snapshot: `fetch` runs synchronously up to its first await, and `touch` there
+    // re-inserts the entry at the back of the LRU. A live Map iterator visits inserted entries, so
+    // this loop would meet the same entry again on the very next step, until the heap gave out.
     for (const entry of [...entries.values()]) {
       if (!predicate(entry.scope)) continue
       entry.stale = true
@@ -222,11 +219,9 @@ export function createScopedQuery<Scope, Data>({
     // listener is arbitrary component code that may re-enter the cache and reorder it mid-loop.
     for (const entry of [...entries.values()]) {
       if (!predicate(entry.scope)) continue
-      // Deliberately does not touch `stale`. A patch writes part of an entry; it is not a
-      // refetch, so it cannot resolve "the server has changes we haven't seen". Only fetch()
-      // clears `stale`, because only fetch() writes authoritative full data. Clearing it here
-      // would silently discard an invalidate whose fetch was skipped for lack of listeners,
-      // losing that update until a resync.
+      // Leaves `stale` alone: a patch writes part of an entry, not authoritative full data, so
+      // only fetch() may clear it. Clearing here would discard an invalidate whose fetch was
+      // skipped for lack of listeners, losing that update until a resync.
       setState(entry, updater(entry.state, entry.scope))
     }
   }

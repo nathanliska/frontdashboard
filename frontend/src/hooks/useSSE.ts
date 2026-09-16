@@ -317,10 +317,9 @@ export function useSSE(): void {
     es.addEventListener('notification.created', onNotification)
     es.addEventListener('resync', onResync)
 
-    // A backgrounded tab — a phone locking, mostly — can have its stream torn down without
-    // `error` ever firing, so neither the browser's retry nor the backoff below ever starts and
-    // the tab returns looking live. `readyState` is the only signal: SSE pings are comment lines
-    // the spec never surfaces to JavaScript, and a quiet household delivers nothing for hours.
+    // A backgrounded tab (a phone locking, mostly) can lose its stream without `error` firing, so
+    // neither the browser's retry nor the backoff below starts and the tab returns looking live.
+    // `readyState` is the only signal: SSE pings are comment lines JavaScript never sees.
     function handleVisibilityChange() {
       if (document.visibilityState !== 'visible') return
       if (es.readyState !== EventSource.CLOSED) return
