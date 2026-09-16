@@ -16,6 +16,12 @@ class ShareUpdate(BaseModel):
     role: ShareRole
 
 
+class OwnerTransfer(BaseModel):
+    """The member who becomes the owner; they must already hold a share on the dashboard."""
+
+    user_id: uuid.UUID
+
+
 class DashboardMemberResponse(BaseModel):
     """One person with access to a dashboard, owner included — a picker row, not a grant.
 

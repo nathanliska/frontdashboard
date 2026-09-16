@@ -249,6 +249,12 @@ export function formatActivityEvent(event: ActivityEvent): ActivityPresentation 
       }
     }
     case 'dashboard.share_updated':
+      if (payloadString(payload, 'share_action') === 'transferred') {
+        return {
+          badge: 'Sharing',
+          summary: `You handed over ${quoted(payloadString(payload, 'dashboard_name'), 'a dashboard')} to its new owner.`,
+        }
+      }
       return {
         badge: 'Sharing',
         summary: `You changed access on ${quoted(payloadString(payload, 'dashboard_name'), 'a dashboard')}.`,

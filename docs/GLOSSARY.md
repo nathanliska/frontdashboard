@@ -59,7 +59,7 @@ in the abstract) are not defined here.
 
 **Participant** — A member named on a calendar event as who it is *about*. A visual label only: grants no access, sends no notification, and survives the member losing dashboard access. See [FDR-006](fdr/FDR-006-calendar-and-events.md).
 
-**Owner** — The creator of a resource. Stored as the **absence** of a share row, but resolved as a named role: `effective_role` returns `EffectiveRole.owner`. Full control including delete and share. See [FDR-004](fdr/FDR-004-sharing-and-access.md).
+**Owner** — The creator of a resource, or the member it was handed to. Stored as the **absence** of a share row, but resolved as a named role: `effective_role` returns `EffectiveRole.owner`. Full control including delete and share, and only the owner can hand it on. See [FDR-004](fdr/FDR-004-sharing-and-access.md).
 
 **Editor** *(role)* — A shared user who can edit the resource and its children.
 

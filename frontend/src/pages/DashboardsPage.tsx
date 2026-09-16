@@ -24,6 +24,7 @@ export function DashboardsPage() {
   const leaveDashboard = useDashboardStore((s) => s.leaveDashboard)
   const toggleFavorite = useDashboardStore((s) => s.toggleFavorite)
   const renameDashboard = useDashboardStore((s) => s.renameDashboard)
+  const transferDashboard = useDashboardStore((s) => s.transferDashboard)
   const trash = useDashboardStore((s) => s.trash)
   const loadTrash = useDashboardStore((s) => s.loadTrash)
   const restoreDashboard = useDashboardStore((s) => s.restoreDashboard)
@@ -277,6 +278,7 @@ export function DashboardsPage() {
           dashboard={editingDashboard}
           onClose={() => setEditingDashboardId(null)}
           onRename={renameDashboard}
+          onTransfer={transferDashboard}
         />
       )}
     </div>

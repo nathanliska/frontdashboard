@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #56, #57, #58◐, #59, #64, #65◐, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #56, #58◐, #59, #64, #65◐, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -76,14 +76,8 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   `User.deleted_at` is filtered in 8 places across 4 modules but **nothing sets it**. Every `NOT
   NULL` FK to `users.id` blocks the row and none carry `ON DELETE`, so deletion has to *resolve*
   each — the decision to settle first is reassign-authorship versus anonymise-in-place, because they
-  want different schemas. Blocked in practice on #57: an owner leaving today would take every
-  dashboard they own with them. *(Medium)*
-- **#57 — Dashboard ownership cannot be transferred.** Owner is modelled as the *absence* of a share
-  ([ADR-001](adr/ADR-001-per-resource-sharing.md)), so a transfer is three coupled writes rather than
-  one. Nothing can do it today, so **a shared household dashboard dies with whoever created it**, and
-  it is what blocks #56 from being safe. To settle: whether the old owner is demoted or dropped,
-  whether the new owner must already be a share principal (probably yes — it avoids inviting and
-  promoting in one unreviewable step), and what happens to `granted_by` rows they issued. *(Medium)*
+  want different schemas. Ownership can now be handed to a member (FDR-004 §8), so the rule can be
+  "transfer or delete what you own that is shared, then go". *(Medium)*
 - **#58◐ — Losing access to a shared dashboard.** Both silent paths now notify
   ([FDR-007](fdr/FDR-007-notifications-and-activity.md) §5). Remaining are product questions rather
   than missing code: whether a shared user is warned **again before the purge**, since the reaper

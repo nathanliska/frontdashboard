@@ -22,6 +22,7 @@ export function SharePanel({
   items,
   onUpdate,
   onRemove,
+  onTransfer,
   title = 'Permissions',
   description = 'Share this resource with people.',
   emptyMessage = 'Only you can access this right now.',
@@ -35,6 +36,8 @@ export function SharePanel({
   items: SharePanelItem[]
   onUpdate: (item: SharePanelItem, role: ShareRole) => void | Promise<void>
   onRemove: (item: SharePanelItem) => void | Promise<void>
+  /** Offered only where the caller can hand the resource over, so a row shows it only then. */
+  onTransfer?: (item: SharePanelItem) => void | Promise<void>
   title?: string
   description?: string
   emptyMessage?: string
@@ -94,6 +97,7 @@ export function SharePanel({
           currentAccessLabel={currentAccessLabel}
           onUpdate={handleUpdate}
           onRemove={handleRemove}
+          onTransfer={onTransfer}
         />
       </div>
     </section>

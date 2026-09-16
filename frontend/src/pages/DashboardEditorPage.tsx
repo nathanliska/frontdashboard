@@ -23,6 +23,7 @@ export function DashboardEditorPage() {
   const resolveConflict = useDashboardStore((s) => s.resolveConflict)
   const addWidget = useDashboardStore((s) => s.addWidget)
   const renameDashboard = useDashboardStore((s) => s.renameDashboard)
+  const transferDashboard = useDashboardStore((s) => s.transferDashboard)
   const [showAddWidget, setShowAddWidget] = useState(false)
   const [showEditDashboard, setShowEditDashboard] = useState(false)
   const closeRestrictedModals = useEffectEvent(() => {
@@ -173,6 +174,7 @@ export function DashboardEditorPage() {
           }}
           onClose={() => setShowEditDashboard(false)}
           onRename={renameDashboard}
+          onTransfer={transferDashboard}
         />
       )}
     </div>

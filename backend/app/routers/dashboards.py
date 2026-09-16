@@ -37,7 +37,7 @@ from app.schemas.dashboards import (
     WidgetResponseAdapter,
     minimum_widget_size,
 )
-from app.schemas.shares import DashboardMemberResponse, ShareResponse, ShareUpdate
+from app.schemas.shares import DashboardMemberResponse, OwnerTransfer, ShareCreate, ShareResponse, ShareUpdate
 from app.services import permissions
 from app.services.activity import EventType, build_event_message
 from app.services.notifications import stage_notification
@@ -48,6 +48,7 @@ from app.services.preferences import (
 from app.services.quota import assert_under_quota, limit_message
 from app.services.retention import purge_dashboard
 from app.services.shares import (
+    create_share,
     dashboard_fanout,
     get_resource_share,
     get_resource_shares,
@@ -1171,6 +1172,79 @@ async def delete_dashboard_share(
         actor_id=current_user.id,
         fanouts=[dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
     )
+
+
+@router.post("/{dashboard_id}/owner", response_model=DashboardSummary)
+@limiter.limit(WRITE_LIMIT)
+async def transfer_dashboard_ownership(
+    request: Request,
+    dashboard_id: uuid.UUID,
+    body: OwnerTransfer,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    client_id: ClientIdHeader = None,
+    db: AsyncSession = Depends(get_db),
+) -> DashboardSummary:
+    """Hand the dashboard to a member; the caller stays on as an editor.
+
+    Owner is the absence of a share row (ADR-001), so this is three writes in one transaction:
+    the creator column moves, the new owner's grant goes, and the old owner gets an editor grant.
+    The new owner must already be a member — inviting and promoting in one step would put someone
+    in charge who never accepted anything.
+    """
+    dashboard, shares, role = await load_dashboard_access(dashboard_id, current_user, db)
+    permissions.assert_can_manage_shares(role)
+    if body.user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already own this dashboard")
+    share = next((s for s in shares if s.principal_type == PrincipalType.user and s.principal_id == body.user_id), None)
+    if share is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The new owner must already be a member of this dashboard")
+
+    notification = stage_notification(
+        db,
+        user_id=body.user_id,
+        type=EventType.dashboard_share_updated.value,
+        title="Dashboard ownership transferred",
+        body=f'{current_user.display_name} made you the owner of "{dashboard.name}".',
+        reference_type="dashboard",
+        reference_id=dashboard.id,
+    )
+    notification_messages = await _build_notification_messages(db, [(body.user_id, notification)])
+    event_message = await _build_dashboard_event_message(
+        db,
+        event_type=EventType.dashboard_share_updated,
+        current_user=current_user,
+        dashboard=dashboard,
+        payload={
+            "dashboard_name": dashboard.name,
+            "changed_fields": [ChangedField.shares],
+            "share_action": "transferred",
+            "share_event_type": EventType.dashboard_share_updated.value,
+            "share_id": str(share.id),
+            "principal_type": str(share.principal_type),
+            "principal_id": str(share.principal_id),
+            "role": EffectiveRole.owner.value,
+        },
+        client_id=client_id,
+    )
+    dashboard.user_id = body.user_id
+    await db.delete(share)
+    await db.flush()
+    await create_share(
+        ResourceType.dashboard,
+        dashboard.id,
+        ShareCreate(principal_type=PrincipalType.user, principal_id=current_user.id, role=EffectiveRole.editor),
+        granted_by=body.user_id,
+        db=db,
+    )
+    # Audience from before the writes: both parties are members either way.
+    await commit_and_broadcast(
+        db,
+        actor_id=current_user.id,
+        fanouts=[dashboard_fanout(event_message, dashboard, shares), *_notification_fanouts(notification_messages)],
+    )
+    await db.refresh(dashboard)
+    return _to_summary(dashboard, "Shared directly with you", True, can_edit=True, can_manage_shares=False)
 
 
 @router.delete("/{dashboard_id}/membership", status_code=status.HTTP_204_NO_CONTENT)

@@ -1,7 +1,7 @@
 # FDR-004: Sharing & Access
 
 **Status:** Active
-**Last reviewed:** 2026-09-09
+**Last reviewed:** 2026-09-16
 
 ## Overview
 
@@ -114,11 +114,28 @@ nothing remembers the departure. No block list is needed: with direct grants gon
 re-attachment always requires the leaver to redeem a new code. The owner is not notified of a
 leave; the departure is visible only in the leaver's own feed.
 
+### 8. Ownership can be handed to a member (decided 2026-09-16)
+
+**Decision:** `POST /dashboards/{id}/owner` makes an existing member the owner. The caller stays on
+as an editor, granted by the new owner; every other grant, and who issued it, is untouched. The new
+owner must already hold a share — a stranger cannot be named. Owner-only, one transaction: the
+creator column moves, the new owner's grant goes, the old owner's editor grant is written.
+**Why:** With owner modelled as the absence of a row (decision 2), a shared household dashboard
+otherwise dies with whoever created it — a member losing access has no route back but the owner
+(FDR-007 §5), and an account cannot be deleted while it owns anything shared. Requiring an existing
+member keeps every grant a consent act (decision 6): inviting and promoting in one step would put
+someone in charge who never accepted anything.
+**Tradeoff:** The old owner is demoted, not dropped — dropping them would be a removal they did not
+ask for, and leaving (decision 7) is one click if they want out. The new owner is notified and the
+feed records the hand-over on the old owner's side under `dashboard.share_updated` with
+`share_action: transferred`, so no new event type reaches the clients.
+
 ## Access
 
 This *is* the access model:
 
-- **Owner** (`EffectiveRole.owner`) — creator; full control including delete and share.
+- **Owner** (`EffectiveRole.owner`) — creator, or whoever they handed it to (decision 8); full
+  control including delete and share.
 - **Editor** — edit the resource and its children.
 - **Viewer** — read-only.
 

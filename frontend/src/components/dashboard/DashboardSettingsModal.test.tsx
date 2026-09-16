@@ -13,6 +13,9 @@ const { apiGetDashboard, apiGetDashboardShares, apiRemoveDashboardShare, apiUpda
     apiUpdateDashboardShare: vi.fn(),
   }))
 
+const { confirm } = vi.hoisted(() => ({ confirm: vi.fn() }))
+vi.mock('../../stores/confirm', () => ({ confirm }))
+
 const { apiCreateInvite, apiGetInvites, apiRevokeInvite } = vi.hoisted(() => ({
   apiCreateInvite: vi.fn(),
   apiGetInvites: vi.fn(),
@@ -85,7 +88,12 @@ describe('DashboardSettingsModal', () => {
     apiRemoveDashboardShare.mockResolvedValue(undefined)
 
     render(
-      <DashboardSettingsModal dashboard={makeSummary()} onClose={vi.fn()} onRename={vi.fn()} />,
+      <DashboardSettingsModal
+        dashboard={makeSummary()}
+        onClose={vi.fn()}
+        onRename={vi.fn()}
+        onTransfer={vi.fn()}
+      />,
     )
 
     await screen.findByText('Viewer One')
@@ -104,13 +112,43 @@ describe('DashboardSettingsModal', () => {
     })
   })
 
+  it('asks before handing the dashboard over, then closes on success', async () => {
+    apiGetDashboardShares.mockResolvedValue([makeShare()])
+    const onTransfer = vi.fn().mockResolvedValue(true)
+    const onClose = vi.fn()
+    confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+
+    render(
+      <DashboardSettingsModal
+        dashboard={makeSummary()}
+        onClose={onClose}
+        onRename={vi.fn()}
+        onTransfer={onTransfer}
+      />,
+    )
+    await screen.findByText('Viewer One')
+
+    fireEvent.click(screen.getByLabelText('Make Viewer One the owner'))
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+    expect(onTransfer).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByLabelText('Make Viewer One the owner'))
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledWith('dash-1', 'user-2'))
+    expect(onClose).toHaveBeenCalled()
+  })
+
   it('keeps the modal open and the typed name when a rename fails', async () => {
     apiGetDashboardShares.mockResolvedValue([])
     const onClose = vi.fn()
     const onRename = vi.fn().mockResolvedValue(false)
 
     render(
-      <DashboardSettingsModal dashboard={makeSummary()} onClose={onClose} onRename={onRename} />,
+      <DashboardSettingsModal
+        dashboard={makeSummary()}
+        onClose={onClose}
+        onRename={onRename}
+        onTransfer={vi.fn()}
+      />,
     )
     await screen.findByText('Only you can access this dashboard right now.')
 
@@ -129,7 +167,12 @@ describe('DashboardSettingsModal', () => {
     const onRename = vi.fn().mockResolvedValue(true)
 
     render(
-      <DashboardSettingsModal dashboard={makeSummary()} onClose={onClose} onRename={onRename} />,
+      <DashboardSettingsModal
+        dashboard={makeSummary()}
+        onClose={onClose}
+        onRename={onRename}
+        onTransfer={vi.fn()}
+      />,
     )
     await screen.findByText('Only you can access this dashboard right now.')
 
@@ -153,7 +196,12 @@ describe('DashboardSettingsModal', () => {
     })
 
     render(
-      <DashboardSettingsModal dashboard={makeSummary()} onClose={vi.fn()} onRename={vi.fn()} />,
+      <DashboardSettingsModal
+        dashboard={makeSummary()}
+        onClose={vi.fn()}
+        onRename={vi.fn()}
+        onTransfer={vi.fn()}
+      />,
     )
     await screen.findByText('Only you can access this dashboard right now.')
 
@@ -169,7 +217,12 @@ describe('DashboardSettingsModal', () => {
     apiGetDashboardShares.mockResolvedValue([])
 
     render(
-      <DashboardSettingsModal dashboard={makeSummary()} onClose={vi.fn()} onRename={vi.fn()} />,
+      <DashboardSettingsModal
+        dashboard={makeSummary()}
+        onClose={vi.fn()}
+        onRename={vi.fn()}
+        onTransfer={vi.fn()}
+      />,
     )
 
     await screen.findByText('Only you can access this dashboard right now.')
@@ -189,6 +242,7 @@ describe('DashboardSettingsModal', () => {
         dashboard={makeSummary({ can_manage_shares: false })}
         onClose={vi.fn()}
         onRename={vi.fn()}
+        onTransfer={vi.fn()}
       />,
     )
 
@@ -209,6 +263,7 @@ describe('DashboardSettingsModal', () => {
         dashboard={makeSummary({ can_manage_shares: false })}
         onClose={vi.fn()}
         onRename={vi.fn()}
+        onTransfer={vi.fn()}
       />,
     )
 

@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { Crown, Trash2 } from 'lucide-react'
 import { memo } from 'react'
 import type { ShareRole } from '../../../api/shares'
 import type { SharePanelItem, ShareRoleOption } from '../../../utils/share/sharePanelTypes'
@@ -9,12 +9,14 @@ export const ShareAccessRow = memo(function ShareAccessRow({
   roleOptions,
   onUpdate,
   onRemove,
+  onTransfer,
 }: {
   item: SharePanelItem
   busy: boolean
   roleOptions: ShareRoleOption[]
   onUpdate: (item: SharePanelItem, role: ShareRole) => void | Promise<void>
   onRemove: (item: SharePanelItem) => void | Promise<void>
+  onTransfer?: (item: SharePanelItem) => void | Promise<void>
 }) {
   return (
     <li className="flex items-center gap-3 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2">
@@ -38,6 +40,18 @@ export const ShareAccessRow = memo(function ShareAccessRow({
           </option>
         ))}
       </select>
+      {onTransfer && (
+        <button
+          type="button"
+          onClick={() => void onTransfer(item)}
+          disabled={busy}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:text-amber-300 transition-colors disabled:opacity-50"
+          aria-label={`Make ${item.principal_name} the owner`}
+          title="Make owner"
+        >
+          <Crown size={14} />
+        </button>
+      )}
       <button
         type="button"
         onClick={() => void onRemove(item)}
