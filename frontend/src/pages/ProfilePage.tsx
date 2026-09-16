@@ -21,7 +21,6 @@ export function ProfilePage() {
   const summariesLoading = useDashboardStore((s) => s.summariesLoading)
   const loadSummaries = useDashboardStore((s) => s.loadSummaries)
   const [editingProfile, setEditingProfile] = useState(false)
-  const [showSessions, setShowSessions] = useState(false)
   const [editingPassword, setEditingPassword] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
@@ -134,18 +133,6 @@ export function ProfilePage() {
       <div className={cn('flex min-h-10 items-center', PAGE_HEADER_RESERVE)}>
         <h1 className="text-xl font-semibold text-zinc-100">Profile</h1>
       </div>
-
-      <section className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
-        <button
-          type="button"
-          aria-expanded={showSessions}
-          onClick={() => setShowSessions((open) => !open)}
-          className="w-full px-5 py-4 text-left text-sm font-medium text-zinc-200 hover:bg-zinc-800"
-        >
-          Active sessions
-        </button>
-        {showSessions && <SessionsPanel />}
-      </section>
 
       <section className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
         <div className="flex items-center gap-4 px-5 py-4">
@@ -350,6 +337,9 @@ export function ProfilePage() {
             )}
           </div>
         </div>
+      </section>
+      <section className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+        <SessionsPanel />
       </section>
     </div>
   )
