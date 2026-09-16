@@ -126,6 +126,7 @@ class SessionSummary(BaseModel):
     last_used_at: datetime
     expires_at: datetime
     is_current: bool
+    device_name: str | None = None
 
 
 class SessionCursor(BaseModel):

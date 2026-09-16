@@ -41,41 +41,43 @@ export function SessionsPanel() {
       {!data && loading && <LoadingBlock label="Loading sessions" />}
       {data && (
         <ul className="space-y-3">
-          {data.items.map((session) => (
-            <li
-              key={session.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 p-3"
-            >
-              <div className="space-y-1 text-sm">
-                <p className="text-zinc-200">
-                  {session.is_current ? 'This session' : 'Other session'}
-                </p>
-                <p className="text-zinc-400">
-                  Signed in{' '}
-                  <time dateTime={session.created_at}>
-                    {new Date(session.created_at).toLocaleString()}
-                  </time>
-                </p>
-                <p className="text-zinc-400">
-                  Last active{' '}
-                  <time dateTime={session.last_used_at}>
-                    {new Date(session.last_used_at).toLocaleString()}
-                  </time>
-                </p>
-              </div>
-              {!session.is_current && (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => void revoke(session.id)}
-                  aria-label={`Revoke session signed in ${new Date(session.created_at).toLocaleString()}`}
-                  className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
-                >
-                  {revoking === session.id ? 'Revoking…' : 'Revoke'}
-                </button>
-              )}
-            </li>
-          ))}
+          {data.items.map((session) => {
+            const device = session.device_name ?? 'Unknown device'
+            const signedIn = new Date(session.created_at).toLocaleString()
+            return (
+              <li
+                key={session.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 p-3"
+              >
+                <div className="space-y-1 text-sm">
+                  <p className="text-zinc-200">
+                    {device}
+                    {session.is_current && <span className="ml-2 text-zinc-500">This session</span>}
+                  </p>
+                  <p className="text-zinc-400">
+                    Signed in <time dateTime={session.created_at}>{signedIn}</time>
+                  </p>
+                  <p className="text-zinc-400">
+                    Last active{' '}
+                    <time dateTime={session.last_used_at}>
+                      {new Date(session.last_used_at).toLocaleString()}
+                    </time>
+                  </p>
+                </div>
+                {!session.is_current && (
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => void revoke(session.id)}
+                    aria-label={`Revoke session ${device} signed in ${signedIn}`}
+                    className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+                  >
+                    {revoking === session.id ? 'Revoking…' : 'Revoke'}
+                  </button>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
       {data?.items.length === 0 && (

@@ -14,6 +14,7 @@ from app.auth.dependencies import (
     get_current_user,
     require_csrf,
 )
+from app.auth.device import device_label
 from app.auth.failures import auth_failure
 from app.auth.hashing import _DUMMY_HASH, hash_password, verify_password
 from app.auth.tokens import create_opaque_token, hash_token
@@ -121,7 +122,7 @@ async def _issue_password_reset(user: User, db: AsyncSession) -> str:
     return await _issue_token(PasswordResetToken, user, db, expires_in_hours=settings.password_reset_expire_hours, path="reset-password")
 
 
-async def _create_session(user: User, response: Response, db: AsyncSession) -> None:
+async def _create_session(user: User, response: Response, db: AsyncSession, *, device_name: str | None) -> None:
     """Mint a session and set the auth cookies — the only path to an authenticated session.
 
     The verification gate lives here, not only in callers, so a later caller cannot skip it.
@@ -136,7 +137,7 @@ async def _create_session(user: User, response: Response, db: AsyncSession) -> N
             detail="Email verification required",
         )
 
-    _session, raw_token = await start_session(user.id, db)
+    _session, raw_token = await start_session(user.id, db, device_name=device_name)
     _set_auth_cookies(response, raw_token, generate_csrf_token())
 
 
@@ -295,7 +296,7 @@ async def verify_email(
 
     token.used_at = now
     user.email_verified_at = now
-    await _create_session(user, response, db)
+    await _create_session(user, response, db, device_name=device_label(request.headers))
     await db.commit()
     await db.refresh(user)
     return UserResponse.model_validate(user)
@@ -405,7 +406,7 @@ async def login(
             detail="Email verification required",
         )
 
-    await _create_session(user, response, db)
+    await _create_session(user, response, db, device_name=device_label(request.headers))
     await db.commit()
     metrics.LOGIN_SUCCESSES.inc()
     return UserResponse.model_validate(user)
@@ -461,6 +462,7 @@ async def list_sessions(
                 last_used_at=row.last_used_at,
                 expires_at=row.expires_at,
                 is_current=row.id == session.id,
+                device_name=row.device_name,
             )
             for row in page
         ],

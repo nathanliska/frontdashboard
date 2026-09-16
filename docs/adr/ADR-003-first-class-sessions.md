@@ -2,6 +2,7 @@
 
 **Date:** 2026-07-20
 **Amended:** 2026-07-28 — the JWT access/refresh split was removed. The decision under it stands.
+**Amended:** 2026-09-16 — `device_name` is written at sign-in; the other client columns stay empty.
 
 ## Context
 
@@ -46,11 +47,12 @@ effect on the next request.
   now alongside an `Origin` check ([ADR-002](ADR-002-jwt-httponly-cookies-csrf.md)).
 - SSE streams re-validate their session every 30s and end when it is revoked; revocation also drops
   in-process streams immediately as a latency optimisation (see ADR-004 / ADR-015).
-- `sessions` has `ip_hash`, `user_agent_hash` and `device_name` columns, and **nothing writes
-  them.** They are left unpopulated on purpose: there is no session-management UI to read them, so
-  filling them would mean collecting client IPs for no one to look at. A plain SHA-256 of an IPv4
-  is brute-forceable in seconds, so populating `ip_hash` also needs a keyed hash to be worth the
-  name. Both are deferred to whoever builds that UI (#60).
+- `device_name` holds a coarse "browser on platform" label ("Chrome on Windows"), derived at
+  sign-in and shared by millions of installs — exactly what the session panel shows and nothing
+  finer ([FDR-001](../fdr/FDR-001-authentication-and-sessions.md) has the derivation). `ip_hash`
+  and `user_agent_hash` stay empty: a raw User-Agent is fingerprinting material, and a plain
+  SHA-256 of an IPv4 is brute-forceable in seconds, so populating `ip_hash` would need a keyed
+  hash and a reader — neither exists.
 
 ## Consequences
 
@@ -64,7 +66,8 @@ effect on the next request.
   for an honest client — far more readily than it would fire on a real thief, given the cookie is
   `HttpOnly` and unreadable by script. The compensating controls are the absolute timeout and
   server-side revocation. That is a genuinely weaker position against a stolen cookie, and the
-  honest mitigation is a session-management UI (#60), not the unpopulated columns above.
+  honest mitigation is the session panel — a person recognising a row and revoking it — not
+  client metadata the server would guess from.
 - **A transient network failure can no longer sign anyone out**, because there is no periodic
   re-auth call left to fail. The client still separates `401`/`403` (logged out) from `5xx`,
   timeouts and network errors (transient, retried), but that classification is no longer

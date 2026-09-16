@@ -234,7 +234,7 @@ export type SessionCursor = z.infer<typeof SessionCursor>;
 export const SessionCursor = z.object({ created_at: z.iso.datetime(), id: z.uuid() }).catchall(z.unknown());
 
 export type SessionSummary = z.infer<typeof SessionSummary>;
-export const SessionSummary = z.object({ created_at: z.iso.datetime(), expires_at: z.iso.datetime(), id: z.uuid(), is_current: z.boolean(), last_used_at: z.iso.datetime() }).catchall(z.unknown());
+export const SessionSummary = z.object({ created_at: z.iso.datetime(), device_name: z.string().nullable().optional(), expires_at: z.iso.datetime(), id: z.uuid(), is_current: z.boolean(), last_used_at: z.iso.datetime() }).catchall(z.unknown());
 
 export type SessionPage = z.infer<typeof SessionPage>;
 export const SessionPage = z.object({ items: z.array(SessionSummary), next_cursor: SessionCursor.nullable().optional() }).catchall(z.unknown());

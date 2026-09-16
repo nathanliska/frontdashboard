@@ -39,7 +39,7 @@ def _live(now: datetime) -> tuple[ColumnElement[bool], ...]:
     )
 
 
-async def start_session(user_id: uuid.UUID, db: AsyncSession) -> tuple[UserSession, str]:
+async def start_session(user_id: uuid.UUID, db: AsyncSession, *, device_name: str | None = None) -> tuple[UserSession, str]:
     """Create a session. Returns (session, raw_token).
 
     The raw token is never stored and never recoverable, so the caller must put it in the cookie
@@ -50,6 +50,7 @@ async def start_session(user_id: uuid.UUID, db: AsyncSession) -> tuple[UserSessi
     session = UserSession(
         user_id=user_id,
         token_hash=token_hash,
+        device_name=device_name,
         last_used_at=now,
         expires_at=now + timedelta(days=settings.session_absolute_days),
     )

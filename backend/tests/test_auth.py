@@ -951,7 +951,7 @@ async def test_create_session_refuses_an_unverified_user(db_session: AsyncSessio
     await db_session.flush()
 
     with pytest.raises(HTTPException) as excinfo:
-        await auth_router._create_session(user, Response(), db_session)
+        await auth_router._create_session(user, Response(), db_session, device_name=None)
 
     assert excinfo.value.status_code == 403
     sessions = await db_session.execute(select(func.count()).select_from(UserSession).where(UserSession.user_id == user.id))

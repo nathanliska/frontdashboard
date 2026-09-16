@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-09-09
+**Last reviewed:** 2026-09-16
 
 ## Overview
 
@@ -41,10 +41,14 @@ multi-user account model with immediate, per-device session control — not just
 - **Emails.** Verification and reset emails send in the background via Resend; without an API key the
   link is written to `backend/.dev-mail/` (how you get tokens in local dev).
 - **Profile page.** Display name, password change, home-dashboard preference, and active sessions.
-  The session panel pages through live sign-ins, newest first, showing sign-in and last-active times
-  and identifying the current session. Only the account owner can list or revoke them; current-session
+  The session panel pages through live sign-ins, newest first, each titled by the browser and
+  platform that signed in ("Firefox on Linux", or "Unknown device"), with sign-in and last-active
+  times and the current session marked. Only the account owner can list or revoke them; current-session
   revocation uses the ordinary Sign out flow. A successful revocation removes its row locally.
-  Refresh explicitly checks changes on other devices. IP addresses and device metadata remain uncollected.
+  Refresh explicitly checks changes on other devices. The label comes from the User-Agent's
+  browser and platform tokens and is all that is recorded: no IP address and no User-Agent string
+  ([ADR-003](../adr/ADR-003-first-class-sessions.md)). A desktop-mode iPad sends the Mac string and
+  so reads as Mac; a definite coarse answer beats a hedge every Mac user would see.
 - **A refused password change keeps you signed in, and says which field was wrong.** Mistyping the
   current password answers **403**, not 401 — a 401 is the client's only signal that a session is
   gone, so it signed people out of the form they were using. Both refusals, the wrong current
