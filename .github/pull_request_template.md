@@ -14,6 +14,7 @@
 
 - No behavior change for existing clients.
 - Migration included — additive, so an image rollback is still safe.
+- Migration included — it rewrites existing rows, so an image rollback is not safe on its own.
 - Migration included — destructive, so it is not.
 - API contract regenerated (`make contracts`) and committed.
 - Touches auth, sharing, SSE audience or the retention sweeps.

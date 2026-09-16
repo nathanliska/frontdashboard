@@ -289,6 +289,11 @@ from that:
   the build on it. Tailwind's `@container` is inline-size, so a query on **height** is hand-written
   CSS against a class that sets `container-type: size` — which puts the rule and the element in
   different files, guarded from the other side by `test_css_container_coverage.py`.
+- **A widget's size thresholds are pixels; the defaults feeding them are grid cells, and nothing
+  links the two.** Changing `_default_widget_size` or the grid basis silently re-prices every
+  `@max-[Npx]` in every widget — halving a default width that way left a list widget hiding its own
+  add box, the tile's only way to write. Re-derive the thresholds in the same change, against the
+  pixels a default widget actually gets at the narrowest board that still renders a grid.
 - `useContainerSize` arms its observer from a **callback ref**, not an effect over a `useRef`.
   Every caller renders a spinner before the element it measures, so an effect finds `null` at the
   first commit and — having no dependencies — never runs again, leaving the initial size standing
