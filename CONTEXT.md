@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-09-09_
+_Last updated: 2026-09-16_
 
 ## What's built
 
@@ -50,8 +50,9 @@ _Last updated: 2026-09-09_
   only the file path — the links are bearer credentials, so they stay out of the log stream; any
   other environment logs that the mail was dropped. HTML templates exist for all three flows.
 - Profile page: display name, password change, home-dashboard preference, and a paged active-session
-  panel. Sessions show sign-in/last-active times and the current-session marker; another session can
-  be revoked without a follow-up GET. Refresh is explicit, and IP/device metadata is not collected.
+  panel. Sessions are titled by browser and platform ("Chrome on Windows") and show sign-in/last-active
+  times and the current-session marker; another session can be revoked without a follow-up GET.
+  Refresh is explicit. The coarse label is all that is recorded — no IP, no User-Agent string.
 - **Client state resets at every auth boundary** (login, logout, email verification, unauthenticated
   startup): notifications, resource caches, and the dashboard store (fields, in-flight request
   machinery) are all cleared. A shared session-generation counter guards every

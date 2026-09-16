@@ -17,6 +17,7 @@ const page: SessionPage = {
       last_used_at: '2026-09-06T11:00:00Z',
       expires_at: '2026-10-06T10:00:00Z',
       is_current: true,
+      device_name: null,
     },
     {
       id: 'other',
@@ -24,6 +25,7 @@ const page: SessionPage = {
       last_used_at: '2026-09-06T09:00:00Z',
       expires_at: '2026-10-05T10:00:00Z',
       is_current: false,
+      device_name: 'Firefox on Linux',
     },
   ],
   next_cursor: null,
@@ -43,9 +45,13 @@ describe('session management', () => {
       </StrictMode>,
     )
     expect(await screen.findByText('This session')).toBeInTheDocument()
+    expect(screen.getByText('Unknown device')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /^Revoke session Firefox on Linux/ }),
+    ).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /^Revoke session/ })).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: /^Revoke session/ }))
-    await waitFor(() => expect(screen.queryByText('Other session')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument())
     expect(api.apiRevokeSession).toHaveBeenCalledWith('other')
     expect(api.apiListSessions).toHaveBeenCalledTimes(1)
   })
@@ -54,7 +60,7 @@ describe('session management', () => {
     api.apiRevokeSession.mockRejectedValueOnce(new ApiError('Session not found', 404))
     render(<SessionsPanel />)
     fireEvent.click(await screen.findByRole('button', { name: /^Revoke session/ }))
-    await waitFor(() => expect(screen.queryByText('Other session')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -63,20 +69,20 @@ describe('session management', () => {
     render(<SessionsPanel />)
     fireEvent.click(await screen.findByRole('button', { name: /^Revoke session/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Temporarily unavailable')
-    expect(screen.getByText('Other session')).toBeInTheDocument()
+    expect(screen.getByText('Firefox on Linux')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^Revoke session/ }))
-    await waitFor(() => expect(screen.queryByText('Other session')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument())
     expect(api.apiListSessions).toHaveBeenCalledTimes(1)
   })
 
   it('filters revoked rows from a later refresh snapshot', async () => {
     render(<SessionsPanel />)
     fireEvent.click(await screen.findByRole('button', { name: /^Revoke session/ }))
-    await waitFor(() => expect(screen.queryByText('Other session')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Refresh sessions' }))
     await act(async () => {})
     expect(api.apiListSessions).toHaveBeenCalledTimes(2)
-    expect(screen.queryByText('Other session')).not.toBeInTheDocument()
+    expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument()
   })
 
   it('uses the returned cursor even after revoking the last row', async () => {
@@ -86,7 +92,7 @@ describe('session management', () => {
       .mockResolvedValueOnce({ items: [], next_cursor: null })
     render(<SessionsPanel />)
     fireEvent.click(await screen.findByRole('button', { name: /^Revoke session/ }))
-    await waitFor(() => expect(screen.queryByText('Other session')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Older sessions' }))
     expect(await screen.findByText('No sessions on this page.')).toBeInTheDocument()
     expect(api.apiListSessions).toHaveBeenLastCalledWith(cursor)

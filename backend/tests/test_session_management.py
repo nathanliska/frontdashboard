@@ -33,7 +33,7 @@ async def test_session_list_exposes_only_live_owned_metadata(client: AsyncClient
     assert set(rows) == {str(current.id), str(other.id)}
     assert rows[str(current.id)]["is_current"] is True
     assert rows[str(other.id)]["is_current"] is False
-    assert set(rows[str(current.id)]) == {"id", "created_at", "last_used_at", "expires_at", "is_current"}
+    assert set(rows[str(current.id)]) == {"id", "created_at", "last_used_at", "expires_at", "is_current", "device_name"}
     assert raw not in response.text
 
 
