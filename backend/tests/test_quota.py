@@ -4,7 +4,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.config import settings
-from tests.helpers import create_dashboard, create_list, create_list_item, register_client, set_csrf
+from tests.helpers import MemberFactory, create_dashboard, create_list, create_list_item
 
 
 @pytest.fixture
@@ -21,7 +21,6 @@ async def test_creating_past_the_cap_is_refused(auth_client: AsyncClient, tiny_q
     await create_list_item(auth_client, lst["id"], text="one")
     await create_list_item(auth_client, lst["id"], text="two")
 
-    set_csrf(auth_client)
     resp = await auth_client.post(f"/api/lists/{lst['id']}/items", json={"text": "three"})
     assert resp.status_code == 422
     assert "limit of 2 list items" in resp.json()["detail"]
@@ -38,10 +37,8 @@ async def test_trashed_rows_still_occupy_the_quota(auth_client: AsyncClient, tin
     first = await create_list(auth_client, dashboard["id"], name="one")
     await create_list(auth_client, dashboard["id"], name="two")
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/lists/{first['id']}")).status_code == 204
 
-    set_csrf(auth_client)
     resp = await auth_client.post(
         "/api/lists",
         json={"name": "three", "list_type": "checklist", "dashboard_id": dashboard["id"]},
@@ -58,15 +55,13 @@ async def test_a_full_account_can_still_read_and_edit(auth_client: AsyncClient, 
 
     assert (await auth_client.get(f"/api/lists/{lst['id']}")).status_code == 200
 
-    set_csrf(auth_client)
     edited = await auth_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"text": "renamed"})
     assert edited.status_code == 200
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/lists/{lst['id']}/items/{item['id']}")).status_code == 204
 
 
-async def test_another_users_rows_do_not_count_against_you(auth_client: AsyncClient, tiny_quota: None) -> None:
+async def test_another_users_rows_do_not_count_against_you(auth_client: AsyncClient, tiny_quota: None, accounts: MemberFactory) -> None:
     """The cap keys on the creator, so a co-member cannot exhaust someone else's allowance."""
     dashboard = await create_dashboard(auth_client)
     lst = await create_list(auth_client, dashboard["id"])
@@ -74,21 +69,17 @@ async def test_another_users_rows_do_not_count_against_you(auth_client: AsyncCli
     await create_list_item(auth_client, lst["id"], text="two")
 
     # A second dashboard owner is untouched by the first one being full.
-    other = await register_client("quota-other@example.com")
-    try:
-        other_dashboard = await create_dashboard(other)
-        other_list = await create_list(other, other_dashboard["id"])
-        created = await create_list_item(other, other_list["id"], text="mine")
-        assert created["text"] == "mine"
-    finally:
-        await other.__aexit__(None, None, None)
+    other = await accounts("quota-other@example.com")
+    other_dashboard = await create_dashboard(other)
+    other_list = await create_list(other, other_dashboard["id"])
+    created = await create_list_item(other, other_list["id"], text="mine")
+    assert created["text"] == "mine"
 
 
 async def test_the_dashboard_cap_binds_on_its_own_axis(auth_client: AsyncClient, tiny_quota: None) -> None:
     # Registration already leaves one dashboard behind, so the cap of 2 admits exactly one more.
     await create_dashboard(auth_client, name="one")
 
-    set_csrf(auth_client)
     resp = await auth_client.post("/api/dashboards", json={"name": "two"})
     assert resp.status_code == 422
     assert "limit of 2 dashboards" in resp.json()["detail"]

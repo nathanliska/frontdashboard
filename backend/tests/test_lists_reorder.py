@@ -11,11 +11,10 @@ from app.models.activity import ActivityEvent, EventType
 from app.models.list import List, ListItem
 from app.schemas.lists import ItemReorder, ListReorder
 from tests.helpers import (
+    MemberFactory,
     create_dashboard,
     create_list,
     create_list_item,
-    register_client,
-    set_csrf,
     share_dashboard,
 )
 
@@ -110,7 +109,6 @@ async def test_reorder_items_renumbers(
     list_id, item_ids = await make_list_with_items(["a", "b", "c"])
     reordered = [item_ids[2], item_ids[0], item_ids[1]]
 
-    set_csrf(auth_client)
     res = await auth_client.put(f"/api/lists/{list_id}/items/order", json={"item_ids": reordered})
     assert res.status_code == 204
 
@@ -124,7 +122,6 @@ async def test_reorder_items_rejects_mismatched_set(
     make_list_with_items,
 ) -> None:
     list_id, item_ids = await make_list_with_items(["a", "b"])
-    set_csrf(auth_client)
     res = await auth_client.put(
         f"/api/lists/{list_id}/items/order",
         json={"item_ids": [item_ids[0], str(uuid.uuid4())]},
@@ -137,7 +134,6 @@ async def test_reorder_items_requires_all_ids(
     make_list_with_items,
 ) -> None:
     list_id, item_ids = await make_list_with_items(["a", "b", "c"])
-    set_csrf(auth_client)
     res = await auth_client.put(f"/api/lists/{list_id}/items/order", json={"item_ids": [item_ids[0]]})
     assert res.status_code == 409
 
@@ -164,7 +160,6 @@ async def test_reorder_lists_renumbers(
     dash_id, list_ids = await make_dashboard_with_lists(["L1", "L2", "L3"])
     reordered = [list_ids[2], list_ids[1], list_ids[0]]
 
-    set_csrf(auth_client)
     res = await auth_client.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": reordered})
     assert res.status_code == 204
 
@@ -178,7 +173,6 @@ async def test_reorder_lists_rejects_mismatched_set(
     make_dashboard_with_lists,
 ) -> None:
     dash_id, list_ids = await make_dashboard_with_lists(["L1", "L2"])
-    set_csrf(auth_client)
     res = await auth_client.put(
         "/api/lists/order",
         json={"dashboard_id": dash_id, "list_ids": [list_ids[0], str(uuid.uuid4())]},
@@ -197,7 +191,6 @@ async def test_new_list_appends_last_after_reorder(
     dash_id, list_ids = await make_dashboard_with_lists(["L1", "L2", "L3"])
     reordered = [list_ids[2], list_ids[0], list_ids[1]]
 
-    set_csrf(auth_client)
     res = await auth_client.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": reordered})
     assert res.status_code == 204
 
@@ -221,14 +214,12 @@ async def test_reorder_items_excludes_soft_deleted(
     list_id, item_ids = await make_list_with_items(["a", "b", "c"])
     deleted_id = item_ids[1]
 
-    set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/lists/{list_id}/items/{deleted_id}")
     assert delete_resp.status_code == 204
 
     remaining = [item_ids[0], item_ids[2]]
     reordered = [remaining[1], remaining[0]]
 
-    set_csrf(auth_client)
     res = await auth_client.put(f"/api/lists/{list_id}/items/order", json={"item_ids": reordered})
     assert res.status_code == 204
 
@@ -244,11 +235,9 @@ async def test_reorder_items_rejects_submission_including_deleted(
     list_id, item_ids = await make_list_with_items(["a", "b", "c"])
     deleted_id = item_ids[1]
 
-    set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/lists/{list_id}/items/{deleted_id}")
     assert delete_resp.status_code == 204
 
-    set_csrf(auth_client)
     res = await auth_client.put(f"/api/lists/{list_id}/items/order", json={"item_ids": item_ids})
     assert res.status_code == 409
 
@@ -272,7 +261,6 @@ async def test_reorder_lists_emits_exactly_one_event(
     reordered = [list_ids[2], list_ids[0], list_ids[1]]
 
     before = await _reorder_event_count(db_session, EventType.list_reordered)
-    set_csrf(auth_client)
     res = await auth_client.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": reordered})
     assert res.status_code == 204
     after = await _reorder_event_count(db_session, EventType.list_reordered)
@@ -295,7 +283,6 @@ async def test_reorder_items_emits_exactly_one_event(
     reordered = [item_ids[2], item_ids[0], item_ids[1]]
 
     before = await _reorder_event_count(db_session, EventType.list_item_reordered)
-    set_csrf(auth_client)
     res = await auth_client.put(f"/api/lists/{list_id}/items/order", json={"item_ids": reordered})
     assert res.status_code == 204
     after = await _reorder_event_count(db_session, EventType.list_item_reordered)
@@ -314,69 +301,41 @@ async def test_reorder_items_emits_exactly_one_event(
 # ---------------------------------------------------------------------------
 
 
-async def test_reorder_lists_requires_access(
-    auth_client: AsyncClient,
-    make_dashboard_with_lists,
-) -> None:
+async def test_reorder_lists_requires_access(auth_client: AsyncClient, make_dashboard_with_lists, accounts: MemberFactory) -> None:
     dash_id, list_ids = await make_dashboard_with_lists(["L1", "L2"])
 
-    other = await register_client("no-access-reorder-lists@example.com")
-    try:
-        set_csrf(other)
-        res = await other.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": list_ids})
-        assert res.status_code == 404
-    finally:
-        await other.__aexit__(None, None, None)
+    other = await accounts("no-access-reorder-lists@example.com")
+    res = await other.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": list_ids})
+    assert res.status_code == 404
 
 
-async def test_reorder_lists_forbidden_for_viewer(
-    auth_client: AsyncClient,
-    make_dashboard_with_lists,
-) -> None:
+async def test_reorder_lists_forbidden_for_viewer(auth_client: AsyncClient, make_dashboard_with_lists, accounts: MemberFactory) -> None:
     dash_id, list_ids = await make_dashboard_with_lists(["L1", "L2"])
 
-    viewer = await register_client("viewer-reorder-lists@example.com")
-    try:
-        await share_dashboard(auth_client, dash_id, viewer, "viewer")
+    viewer = await accounts("viewer-reorder-lists@example.com")
+    await share_dashboard(auth_client, dash_id, viewer, "viewer")
 
-        set_csrf(viewer)
-        res = await viewer.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": list_ids})
-        assert res.status_code == 403
-    finally:
-        await viewer.__aexit__(None, None, None)
+    res = await viewer.put("/api/lists/order", json={"dashboard_id": dash_id, "list_ids": list_ids})
+    assert res.status_code == 403
 
 
-async def test_reorder_items_requires_access(
-    auth_client: AsyncClient,
-    make_list_with_items,
-) -> None:
+async def test_reorder_items_requires_access(auth_client: AsyncClient, make_list_with_items, accounts: MemberFactory) -> None:
     list_id, item_ids = await make_list_with_items(["a", "b"])
 
-    other = await register_client("no-access-reorder-items@example.com")
-    try:
-        set_csrf(other)
-        res = await other.put(f"/api/lists/{list_id}/items/order", json={"item_ids": item_ids})
-        assert res.status_code == 404
-    finally:
-        await other.__aexit__(None, None, None)
+    other = await accounts("no-access-reorder-items@example.com")
+    res = await other.put(f"/api/lists/{list_id}/items/order", json={"item_ids": item_ids})
+    assert res.status_code == 404
 
 
-async def test_reorder_items_forbidden_for_viewer(
-    auth_client: AsyncClient,
-    make_list_with_items,
-) -> None:
+async def test_reorder_items_forbidden_for_viewer(auth_client: AsyncClient, make_list_with_items, accounts: MemberFactory) -> None:
     list_id, item_ids = await make_list_with_items(["a", "b"])
 
     # Find the dashboard that owns this list so we can share it as viewer.
     list_detail = (await auth_client.get(f"/api/lists/{list_id}")).json()
     dash_id = list_detail["dashboard_id"]
 
-    viewer = await register_client("viewer-reorder-items@example.com")
-    try:
-        await share_dashboard(auth_client, dash_id, viewer, "viewer")
+    viewer = await accounts("viewer-reorder-items@example.com")
+    await share_dashboard(auth_client, dash_id, viewer, "viewer")
 
-        set_csrf(viewer)
-        res = await viewer.put(f"/api/lists/{list_id}/items/order", json={"item_ids": item_ids})
-        assert res.status_code == 403
-    finally:
-        await viewer.__aexit__(None, None, None)
+    res = await viewer.put(f"/api/lists/{list_id}/items/order", json={"item_ids": item_ids})
+    assert res.status_code == 403

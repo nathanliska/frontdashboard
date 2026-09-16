@@ -11,18 +11,18 @@ from app.models.dashboard import Dashboard
 from app.models.list import List, ListItem
 from app.schemas.dashboards import GRID_COLUMNS, GRID_ROWS
 from tests.helpers import (
+    MemberFactory,
+    add_widget,
     create_calendar_event,
     create_dashboard,
     create_list,
     create_list_item,
     current_user,
-    register_client,
-    set_csrf,
     share_dashboard,
 )
 
 
-async def test_home_dashboard_listing_and_shared_access(auth_client: AsyncClient) -> None:
+async def test_home_dashboard_listing_and_shared_access(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     me = await auth_client.get("/api/auth/me")
     assert me.status_code == 200
     home_dashboard_id = me.json()["preferences"]["home_dashboard_id"]
@@ -41,36 +41,32 @@ async def test_home_dashboard_listing_and_shared_access(auth_client: AsyncClient
     assert owned_detail.status_code == 200
     assert owned_detail.json()["name"] == "Projects"
 
-    owner = await register_client("dashboard-owner@example.com", display_name="Owner")
-    try:
-        shared_dashboard = await create_dashboard(owner, name="Shared Board")
+    owner = await accounts("dashboard-owner@example.com", display_name="Owner")
+    shared_dashboard = await create_dashboard(owner, name="Shared Board")
 
-        await share_dashboard(owner, shared_dashboard["id"], auth_client, "viewer")
+    await share_dashboard(owner, shared_dashboard["id"], auth_client, "viewer")
 
-        list_resp = await auth_client.get("/api/dashboards")
-        assert list_resp.status_code == 200
-        dashboards = {item["id"]: item for item in list_resp.json()}
-        assert owned_dashboard["id"] in dashboards
-        assert dashboards[owned_dashboard["id"]]["access_description"] == "Owned by you"
-        assert dashboards[owned_dashboard["id"]]["can_edit"] is True
-        assert dashboards[owned_dashboard["id"]]["can_manage_shares"] is True
-        assert dashboards[shared_dashboard["id"]]["access_description"] == "Shared directly with you"
-        assert dashboards[shared_dashboard["id"]]["is_shared"] is True
-        assert dashboards[shared_dashboard["id"]]["can_edit"] is False
-        assert dashboards[shared_dashboard["id"]]["can_manage_shares"] is False
+    list_resp = await auth_client.get("/api/dashboards")
+    assert list_resp.status_code == 200
+    dashboards = {item["id"]: item for item in list_resp.json()}
+    assert owned_dashboard["id"] in dashboards
+    assert dashboards[owned_dashboard["id"]]["access_description"] == "Owned by you"
+    assert dashboards[owned_dashboard["id"]]["can_edit"] is True
+    assert dashboards[owned_dashboard["id"]]["can_manage_shares"] is True
+    assert dashboards[shared_dashboard["id"]]["access_description"] == "Shared directly with you"
+    assert dashboards[shared_dashboard["id"]]["is_shared"] is True
+    assert dashboards[shared_dashboard["id"]]["can_edit"] is False
+    assert dashboards[shared_dashboard["id"]]["can_manage_shares"] is False
 
-        shared_detail = await auth_client.get(f"/api/dashboards/{shared_dashboard['id']}")
-        assert shared_detail.status_code == 200
-        assert shared_detail.json()["can_edit"] is False
-        assert shared_detail.json()["can_manage_shares"] is False
-    finally:
-        await owner.__aexit__(None, None, None)
+    shared_detail = await auth_client.get(f"/api/dashboards/{shared_dashboard['id']}")
+    assert shared_detail.status_code == 200
+    assert shared_detail.json()["can_edit"] is False
+    assert shared_detail.json()["can_manage_shares"] is False
 
 
 async def test_the_direct_grant_route_is_gone(auth_client: AsyncClient) -> None:
     """Access is granted only through invite redemption; a POST here must stay unroutable."""
     dashboard = await create_dashboard(auth_client)
-    set_csrf(auth_client)
     response = await auth_client.post(
         f"/api/dashboards/{dashboard['id']}/shares",
         json={"principal_type": "user", "principal_id": str(uuid.uuid4()), "role": "viewer"},
@@ -80,7 +76,6 @@ async def test_the_direct_grant_route_is_gone(auth_client: AsyncClient) -> None:
 
 async def test_dashboard_create_refuses_initial_shares(auth_client: AsyncClient) -> None:
     """The field went with the direct grant; extra="forbid" makes sending it a hard error."""
-    set_csrf(auth_client)
     response = await auth_client.post(
         "/api/dashboards",
         json={
@@ -94,7 +89,6 @@ async def test_dashboard_create_refuses_initial_shares(auth_client: AsyncClient)
 async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Planning")
 
-    set_csrf(auth_client)
     meta_resp = await auth_client.patch(
         f"/api/dashboards/{dashboard['id']}",
         json={"name": "Renamed"},
@@ -106,7 +100,6 @@ async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> Non
     assert meta["version"] == 0
 
     layout = [{"i": "sample-widget", "x": 0, "y": 0, "w": 4, "h": 6}]
-    set_csrf(auth_client)
     layout_resp = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
         json={"layout": layout, "version": 0},
@@ -115,7 +108,6 @@ async def test_update_dashboard_meta_and_layout(auth_client: AsyncClient) -> Non
     assert layout_resp.json()["layout"] == layout
     assert layout_resp.json()["version"] == 1
 
-    set_csrf(auth_client)
     conflict_resp = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
         json={"layout": layout, "version": 0},
@@ -132,15 +124,9 @@ async def test_widget_config_updates_are_validated_against_the_widget_type(auth_
     """
     dashboard = await create_dashboard(auth_client, name="Config Guard")
 
-    set_csrf(auth_client)
-    add_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "clock", "config": {"timezone": "UTC"}},
-    )
-    assert add_resp.status_code == 201
-    widget_id = add_resp.json()["widgets"][0]["id"]
+    add_resp = await add_widget(auth_client, dashboard["id"], "clock", {"timezone": "UTC"})
+    widget_id = add_resp["widgets"][0]["id"]
 
-    set_csrf(auth_client)
     poison_resp = await auth_client.patch(
         f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
         json={"config": {"timezone": 123}},
@@ -154,18 +140,15 @@ async def test_widget_config_updates_are_validated_against_the_widget_type(auth_
 
 
 async def test_dashboard_names_are_trimmed_and_bounded(auth_client: AsyncClient) -> None:
-    set_csrf(auth_client)
     created = await auth_client.post("/api/dashboards", json={"name": "  Planning  "})
     assert created.status_code == 201
     assert created.json()["name"] == "Planning"
 
     dashboard_id = created.json()["id"]
-    set_csrf(auth_client)
     renamed = await auth_client.patch(f"/api/dashboards/{dashboard_id}", json={"name": "  Renamed  "})
     assert renamed.status_code == 200
     assert renamed.json()["name"] == "Renamed"
 
-    set_csrf(auth_client)
     assert (await auth_client.post("/api/dashboards", json={"name": "   "})).status_code == 422
     assert (await auth_client.post("/api/dashboards", json={"name": "x" * 101})).status_code == 422
     assert (await auth_client.patch(f"/api/dashboards/{dashboard_id}", json={"name": None})).status_code == 422
@@ -174,7 +157,6 @@ async def test_dashboard_names_are_trimmed_and_bounded(auth_client: AsyncClient)
 async def test_client_id_header_is_bounded(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
 
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         f"/api/dashboards/{dashboard['id']}",
         json={"name": "Renamed"},
@@ -184,45 +166,41 @@ async def test_client_id_header_is_bounded(auth_client: AsyncClient) -> None:
     assert resp.status_code == 422
 
 
-async def test_delete_moves_to_trash_and_restore_brings_everything_back(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_delete_moves_to_trash_and_restore_brings_everything_back(
+    auth_client: AsyncClient, db_session: AsyncSession, accounts: MemberFactory
+) -> None:
     """DELETE is a trash move: children and shares survive, and restore reverses it."""
-    viewer = await register_client("trash-viewer@example.com", display_name="Viewer")
-    try:
-        dashboard = await create_dashboard(auth_client, name="Trashable")
-        lst = await create_list(auth_client, dashboard["id"], name="Kept List")
-        await create_list_item(auth_client, lst["id"], text="kept")
-        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
+    viewer = await accounts("trash-viewer@example.com", display_name="Viewer")
+    dashboard = await create_dashboard(auth_client, name="Trashable")
+    lst = await create_list(auth_client, dashboard["id"], name="Kept List")
+    await create_list_item(auth_client, lst["id"], text="kept")
+    await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
-        set_csrf(auth_client)
-        assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
+    assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
 
-        # Invisible to everyone through every normal door — owner and shared viewer alike.
-        assert (await auth_client.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
-        assert (await viewer.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
-        assert dashboard["id"] not in [d["id"] for d in (await auth_client.get("/api/dashboards")).json()]
-        assert (await auth_client.get(f"/api/lists/{lst['id']}")).status_code == 404
+    # Invisible to everyone through every normal door — owner and shared viewer alike.
+    assert (await auth_client.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
+    assert (await viewer.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
+    assert dashboard["id"] not in [d["id"] for d in (await auth_client.get("/api/dashboards")).json()]
+    assert (await auth_client.get(f"/api/lists/{lst['id']}")).status_code == 404
 
-        # But present in the owner's trash, with a purge deadline — and only the owner's.
-        trash = (await auth_client.get("/api/dashboards/trash")).json()
-        assert [t["id"] for t in trash] == [dashboard["id"]]
-        assert trash[0]["purge_at"] > trash[0]["deleted_at"]
-        assert (await viewer.get("/api/dashboards/trash")).json() == []
+    # But present in the owner's trash, with a purge deadline — and only the owner's.
+    trash = (await auth_client.get("/api/dashboards/trash")).json()
+    assert [t["id"] for t in trash] == [dashboard["id"]]
+    assert trash[0]["purge_at"] > trash[0]["deleted_at"]
+    assert (await viewer.get("/api/dashboards/trash")).json() == []
 
-        # The viewer cannot restore it; the owner can.
-        set_csrf(viewer)
-        assert (await viewer.post(f"/api/dashboards/{dashboard['id']}/restore")).status_code == 404
-        set_csrf(auth_client)
-        restored = await auth_client.post(f"/api/dashboards/{dashboard['id']}/restore")
-        assert restored.status_code == 200
-        assert restored.json()["name"] == "Trashable"
+    # The viewer cannot restore it; the owner can.
+    assert (await viewer.post(f"/api/dashboards/{dashboard['id']}/restore")).status_code == 404
+    restored = await auth_client.post(f"/api/dashboards/{dashboard['id']}/restore")
+    assert restored.status_code == 200
+    assert restored.json()["name"] == "Trashable"
 
-        # Back for both parties, share intact, children intact.
-        assert (await viewer.get(f"/api/dashboards/{dashboard['id']}")).status_code == 200
-        detail = (await auth_client.get(f"/api/lists/{lst['id']}")).json()
-        assert [i["text"] for i in detail["items"]] == ["kept"]
-        assert (await auth_client.get("/api/dashboards/trash")).json() == []
-    finally:
-        await viewer.aclose()
+    # Back for both parties, share intact, children intact.
+    assert (await viewer.get(f"/api/dashboards/{dashboard['id']}")).status_code == 200
+    detail = (await auth_client.get(f"/api/lists/{lst['id']}")).json()
+    assert [i["text"] for i in detail["items"]] == ["kept"]
+    assert (await auth_client.get("/api/dashboards/trash")).json() == []
 
 
 async def test_reaper_purges_expired_trash_and_lingering_soft_deletes(auth_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -247,7 +225,6 @@ async def test_reaper_purges_expired_trash_and_lingering_soft_deletes(auth_clien
     db_event.deleted_at = now
     await db_session.flush()
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
 
     # Inside the window nothing is purged.
@@ -265,7 +242,6 @@ async def test_reaper_purges_expired_trash_and_lingering_soft_deletes(auth_clien
 async def test_update_dashboard_meta_rejects_legacy_favorite_field(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Legacy Favorite")
 
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         f"/api/dashboards/{dashboard['id']}",
         json={"is_favorite": True},
@@ -273,41 +249,37 @@ async def test_update_dashboard_meta_rejects_legacy_favorite_field(auth_client: 
     assert resp.status_code == 422
 
 
-async def test_dashboard_favorites_are_per_user_preferences(auth_client: AsyncClient) -> None:
-    shared_user = await register_client("favorite-viewer@example.com", display_name="Viewer")
-    try:
-        dashboard = await create_dashboard(auth_client, name="Shared Favorite")
+async def test_dashboard_favorites_are_per_user_preferences(auth_client: AsyncClient, accounts: MemberFactory) -> None:
+    shared_user = await accounts("favorite-viewer@example.com", display_name="Viewer")
+    dashboard = await create_dashboard(auth_client, name="Shared Favorite")
 
-        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
+    await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
 
-        shared_dashboards_resp = await shared_user.get("/api/dashboards")
-        assert shared_dashboards_resp.status_code == 200
-        shared_dashboard = next(item for item in shared_dashboards_resp.json() if item["id"] == dashboard["id"])
-        assert shared_dashboard["is_favorite"] is False
+    shared_dashboards_resp = await shared_user.get("/api/dashboards")
+    assert shared_dashboards_resp.status_code == 200
+    shared_dashboard = next(item for item in shared_dashboards_resp.json() if item["id"] == dashboard["id"])
+    assert shared_dashboard["is_favorite"] is False
 
-        set_csrf(shared_user)
-        viewer_favorite_resp = await shared_user.patch(
-            "/api/auth/preferences",
-            json={"favorite_dashboard_ids": [dashboard["id"]]},
-        )
-        assert viewer_favorite_resp.status_code == 200
-        assert viewer_favorite_resp.json()["preferences"]["favorite_dashboard_ids"] == [dashboard["id"]]
+    viewer_favorite_resp = await shared_user.patch(
+        "/api/auth/preferences",
+        json={"favorite_dashboard_ids": [dashboard["id"]]},
+    )
+    assert viewer_favorite_resp.status_code == 200
+    assert viewer_favorite_resp.json()["preferences"]["favorite_dashboard_ids"] == [dashboard["id"]]
 
-        shared_dashboards_resp = await shared_user.get("/api/dashboards")
-        assert shared_dashboards_resp.status_code == 200
-        shared_dashboard = next(item for item in shared_dashboards_resp.json() if item["id"] == dashboard["id"])
-        assert shared_dashboard["is_favorite"] is True
+    shared_dashboards_resp = await shared_user.get("/api/dashboards")
+    assert shared_dashboards_resp.status_code == 200
+    shared_dashboard = next(item for item in shared_dashboards_resp.json() if item["id"] == dashboard["id"])
+    assert shared_dashboard["is_favorite"] is True
 
-        shared_detail_resp = await shared_user.get(f"/api/dashboards/{dashboard['id']}")
-        assert shared_detail_resp.status_code == 200
-        assert shared_detail_resp.json()["is_favorite"] is True
+    shared_detail_resp = await shared_user.get(f"/api/dashboards/{dashboard['id']}")
+    assert shared_detail_resp.status_code == 200
+    assert shared_detail_resp.json()["is_favorite"] is True
 
-        owner_dashboards_resp = await auth_client.get("/api/dashboards")
-        assert owner_dashboards_resp.status_code == 200
-        owner_dashboard = next(item for item in owner_dashboards_resp.json() if item["id"] == dashboard["id"])
-        assert owner_dashboard["is_favorite"] is False
-    finally:
-        await shared_user.__aexit__(None, None, None)
+    owner_dashboards_resp = await auth_client.get("/api/dashboards")
+    assert owner_dashboards_resp.status_code == 200
+    owner_dashboard = next(item for item in owner_dashboards_resp.json() if item["id"] == dashboard["id"])
+    assert owner_dashboard["is_favorite"] is False
 
 
 async def test_deleting_a_list_strips_its_widget_from_every_layout(auth_client: AsyncClient) -> None:
@@ -320,26 +292,13 @@ async def test_deleting_a_list_strips_its_widget_from_every_layout(auth_client: 
     """
     dashboard = await create_dashboard(auth_client, name="Chores")
 
-    set_csrf(auth_client)
-    list_widget = (
-        await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/widgets",
-            json={"widget_type": "list", "config": {"name": "Errands", "list_type": "todo"}},
-        )
-    ).json()["widgets"][0]
+    list_widget = (await add_widget(auth_client, dashboard["id"], "list", {"name": "Errands", "list_type": "todo"}))["widgets"][0]
 
-    set_csrf(auth_client)
-    after_clock = (
-        await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/widgets",
-            json={"widget_type": "clock", "config": {"timezone": "UTC"}},
-        )
-    ).json()
+    after_clock = await add_widget(auth_client, dashboard["id"], "clock", {"timezone": "UTC"})
     clock_widget_id = next(w["id"] for w in after_clock["widgets"] if w["widget_type"] == "clock")
     version_before = after_clock["version"]
     assert {item["i"] for item in after_clock["layout"]} == {list_widget["id"], clock_widget_id}
 
-    set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/lists/{list_widget['resource_id']}")
     assert delete_resp.status_code == 204, delete_resp.text
 
@@ -354,13 +313,8 @@ async def test_deleting_a_list_strips_its_widget_from_every_layout(auth_client: 
 async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Widgets")
 
-    set_csrf(auth_client)
-    add_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "list", "config": {"name": "Errands", "list_type": "todo"}},
-    )
-    assert add_resp.status_code == 201
-    payload = add_resp.json()
+    add_resp = await add_widget(auth_client, dashboard["id"], "list", {"name": "Errands", "list_type": "todo"})
+    payload = add_resp
     assert payload["version"] == 1
     assert len(payload["widgets"]) == 1
     widget = payload["widgets"][0]
@@ -373,7 +327,6 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
     assert list_resp.status_code == 200
     assert list_resp.json()["name"] == "Errands"
 
-    set_csrf(auth_client)
     update_resp = await auth_client.patch(
         f"/api/dashboards/{dashboard['id']}/widgets/{widget['id']}",
         json={"config": {"title": "Pinned Errands"}},
@@ -387,7 +340,6 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
         "list_type": None,
     }
 
-    set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}/widgets/{widget['id']}")
     assert delete_resp.status_code == 204
 
@@ -406,20 +358,14 @@ async def test_widget_created_list_appends_last_after_reorder(auth_client: Async
     lst1 = await create_list(auth_client, dashboard["id"], name="L1")
     lst2 = await create_list(auth_client, dashboard["id"], name="L2")
 
-    set_csrf(auth_client)
     reorder_resp = await auth_client.put(
         "/api/lists/order",
         json={"dashboard_id": dashboard["id"], "list_ids": [lst2["id"], lst1["id"]]},
     )
     assert reorder_resp.status_code == 204
 
-    set_csrf(auth_client)
-    add_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "list", "config": {"name": "Errands", "list_type": "todo"}},
-    )
-    assert add_resp.status_code == 201
-    widget = add_resp.json()["widgets"][0]
+    add_resp = await add_widget(auth_client, dashboard["id"], "list", {"name": "Errands", "list_type": "todo"})
+    widget = add_resp["widgets"][0]
 
     lists = (await auth_client.get(f"/api/lists?dashboard_id={dashboard['id']}")).json()
     assert lists[-1]["id"] == widget["resource_id"]
@@ -430,19 +376,10 @@ async def test_widget_created_list_appends_last_after_reorder(auth_client: Async
 async def test_calendar_widget_starts_larger_than_the_others(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Calendar Widgets")
 
-    set_csrf(auth_client)
-    calendar_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "calendar", "config": {"view": "month"}},
-    )
-    clock_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "clock", "config": {}},
-    )
-    assert calendar_resp.status_code == 201
-    assert clock_resp.status_code == 201
+    await add_widget(auth_client, dashboard["id"], "calendar", {"view": "month"})
+    clock_resp = await add_widget(auth_client, dashboard["id"], "clock")
 
-    board = clock_resp.json()
+    board = clock_resp
     layout = {item["i"]: item for item in board["layout"]}
     by_type = {widget["widget_type"]: layout[widget["id"]] for widget in board["widgets"]}
     calendar, clock = by_type["calendar"], by_type["clock"]
@@ -461,7 +398,6 @@ async def test_calendar_widget_starts_larger_than_the_others(auth_client: AsyncC
 async def test_dashboard_calendar_routes_and_delete(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Calendar Dashboard")
 
-    set_csrf(auth_client)
     create_resp = await auth_client.post(
         "/api/calendar/events",
         json={
@@ -488,7 +424,6 @@ async def test_dashboard_calendar_routes_and_delete(auth_client: AsyncClient) ->
     assert len(occurrences_resp.json()) == 1
     assert occurrences_resp.json()[0]["title"] == "Launch Review"
 
-    set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
     assert delete_resp.status_code == 204
 
@@ -496,10 +431,9 @@ async def test_dashboard_calendar_routes_and_delete(auth_client: AsyncClient) ->
     assert get_resp.status_code == 404
 
 
-async def test_delete_dashboard_clears_dashboard_preferences(auth_client: AsyncClient) -> None:
+async def test_delete_dashboard_clears_dashboard_preferences(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client, name="Temporary Home")
 
-    set_csrf(auth_client)
     owner_pref_resp = await auth_client.patch(
         "/api/auth/preferences",
         json={"home_dashboard_id": dashboard["id"], "favorite_dashboard_ids": [dashboard["id"]]},
@@ -508,135 +442,115 @@ async def test_delete_dashboard_clears_dashboard_preferences(auth_client: AsyncC
     assert owner_pref_resp.json()["preferences"]["home_dashboard_id"] == dashboard["id"]
     assert owner_pref_resp.json()["preferences"]["favorite_dashboard_ids"] == [dashboard["id"]]
 
-    shared_user = await register_client("dashboard-shared@example.com", display_name="Shared User")
-    try:
-        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
+    shared_user = await accounts("dashboard-shared@example.com", display_name="Shared User")
+    await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
 
-        set_csrf(shared_user)
-        shared_pref_resp = await shared_user.patch(
-            "/api/auth/preferences",
-            json={"home_dashboard_id": dashboard["id"], "favorite_dashboard_ids": [dashboard["id"]]},
-        )
-        assert shared_pref_resp.status_code == 200
-        assert shared_pref_resp.json()["preferences"]["home_dashboard_id"] == dashboard["id"]
-        assert shared_pref_resp.json()["preferences"]["favorite_dashboard_ids"] == [dashboard["id"]]
+    shared_pref_resp = await shared_user.patch(
+        "/api/auth/preferences",
+        json={"home_dashboard_id": dashboard["id"], "favorite_dashboard_ids": [dashboard["id"]]},
+    )
+    assert shared_pref_resp.status_code == 200
+    assert shared_pref_resp.json()["preferences"]["home_dashboard_id"] == dashboard["id"]
+    assert shared_pref_resp.json()["preferences"]["favorite_dashboard_ids"] == [dashboard["id"]]
 
-        set_csrf(auth_client)
-        delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
-        assert delete_resp.status_code == 204
+    delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
+    assert delete_resp.status_code == 204
 
-        owner_me_resp = await auth_client.get("/api/auth/me")
-        assert owner_me_resp.status_code == 200
-        assert owner_me_resp.json()["preferences"]["home_dashboard_id"] is None
-        assert owner_me_resp.json()["preferences"]["favorite_dashboard_ids"] == []
+    owner_me_resp = await auth_client.get("/api/auth/me")
+    assert owner_me_resp.status_code == 200
+    assert owner_me_resp.json()["preferences"]["home_dashboard_id"] is None
+    assert owner_me_resp.json()["preferences"]["favorite_dashboard_ids"] == []
 
-        shared_me_resp = await shared_user.get("/api/auth/me")
-        assert shared_me_resp.status_code == 200
-        assert shared_me_resp.json()["preferences"]["home_dashboard_id"] is None
-        assert shared_me_resp.json()["preferences"]["favorite_dashboard_ids"] == []
-    finally:
-        await shared_user.__aexit__(None, None, None)
+    shared_me_resp = await shared_user.get("/api/auth/me")
+    assert shared_me_resp.status_code == 200
+    assert shared_me_resp.json()["preferences"]["home_dashboard_id"] is None
+    assert shared_me_resp.json()["preferences"]["favorite_dashboard_ids"] == []
 
 
-async def test_removing_dashboard_share_clears_removed_users_preferences(auth_client: AsyncClient) -> None:
+async def test_removing_dashboard_share_clears_removed_users_preferences(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client, name="Shared Temporary Favorite")
 
-    shared_user = await register_client("dashboard-share-cleanup@example.com", display_name="Cleanup User")
-    try:
-        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
-        (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
-        share_id = share["id"]
+    shared_user = await accounts("dashboard-share-cleanup@example.com", display_name="Cleanup User")
+    await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
+    (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
+    share_id = share["id"]
 
-        set_csrf(shared_user)
-        shared_pref_resp = await shared_user.patch(
-            "/api/auth/preferences",
-            json={"home_dashboard_id": dashboard["id"], "favorite_dashboard_ids": [dashboard["id"]]},
-        )
-        assert shared_pref_resp.status_code == 200
+    shared_pref_resp = await shared_user.patch(
+        "/api/auth/preferences",
+        json={"home_dashboard_id": dashboard["id"], "favorite_dashboard_ids": [dashboard["id"]]},
+    )
+    assert shared_pref_resp.status_code == 200
 
-        set_csrf(auth_client)
-        delete_share_resp = await auth_client.delete(
-            f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
-        )
-        assert delete_share_resp.status_code == 204
+    delete_share_resp = await auth_client.delete(
+        f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
+    )
+    assert delete_share_resp.status_code == 204
 
-        shared_me_resp = await shared_user.get("/api/auth/me")
-        assert shared_me_resp.status_code == 200
-        assert shared_me_resp.json()["preferences"]["home_dashboard_id"] is None
-        assert shared_me_resp.json()["preferences"]["favorite_dashboard_ids"] == []
-    finally:
-        await shared_user.__aexit__(None, None, None)
+    shared_me_resp = await shared_user.get("/api/auth/me")
+    assert shared_me_resp.status_code == 200
+    assert shared_me_resp.json()["preferences"]["home_dashboard_id"] is None
+    assert shared_me_resp.json()["preferences"]["favorite_dashboard_ids"] == []
 
 
-async def test_dashboard_share_mutations_emit_activity_events(
-    auth_client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
+async def test_dashboard_share_mutations_emit_activity_events(auth_client: AsyncClient, db_session: AsyncSession, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client, name="Shared Activity Board")
 
-    shared_user = await register_client("dashboard-share-events@example.com", display_name="Shared User")
-    try:
-        shared_user_me = await current_user(shared_user)
+    shared_user = await accounts("dashboard-share-events@example.com", display_name="Shared User")
+    shared_user_me = await current_user(shared_user)
 
-        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
-        (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
-        share_id = share["id"]
+    await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
+    (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
+    share_id = share["id"]
 
-        set_csrf(auth_client)
-        update_share_resp = await auth_client.patch(
-            f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
-            json={"role": "editor"},
+    update_share_resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
+        json={"role": "editor"},
+    )
+    assert update_share_resp.status_code == 200
+
+    delete_share_resp = await auth_client.delete(
+        f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
+    )
+    assert delete_share_resp.status_code == 204
+
+    result = await db_session.execute(
+        select(ActivityEvent)
+        .where(
+            ActivityEvent.entity_type == "dashboard",
+            ActivityEvent.entity_id == dashboard["id"],
+            ActivityEvent.event_type.in_(
+                [
+                    "dashboard.share_added",
+                    "dashboard.share_updated",
+                    "dashboard.share_removed",
+                ]
+            ),
         )
-        assert update_share_resp.status_code == 200
+        .order_by(ActivityEvent.event_id)
+    )
+    share_events = result.scalars().all()
 
-        set_csrf(auth_client)
-        delete_share_resp = await auth_client.delete(
-            f"/api/dashboards/{dashboard['id']}/shares/{share_id}",
-        )
-        assert delete_share_resp.status_code == 204
-
-        result = await db_session.execute(
-            select(ActivityEvent)
-            .where(
-                ActivityEvent.entity_type == "dashboard",
-                ActivityEvent.entity_id == dashboard["id"],
-                ActivityEvent.event_type.in_(
-                    [
-                        "dashboard.share_added",
-                        "dashboard.share_updated",
-                        "dashboard.share_removed",
-                    ]
-                ),
-            )
-            .order_by(ActivityEvent.event_id)
-        )
-        share_events = result.scalars().all()
-
-        assert [event.event_type for event in share_events] == [
-            "dashboard.share_added",
-            "dashboard.share_updated",
-            "dashboard.share_removed",
-        ]
-        # "joined", not "added": the grant is the joiner redeeming an invite, logged from their side.
-        assert [event.payload["share_action"] for event in share_events] == [
-            "joined",
-            "updated",
-            "removed",
-        ]
-        # The joined event names no principal — its actor *is* the person; the owner-side
-        # mutations still carry one.
-        assert share_events[0].actor_id == uuid.UUID(shared_user_me["id"])
-        assert all(event.payload["principal_id"] == shared_user_me["id"] for event in share_events[1:])
-        assert share_events[0].payload["role"] == "viewer"
-        assert share_events[1].payload["role"] == "editor"
-        assert share_events[2].payload["role"] == "editor"
-    finally:
-        await shared_user.__aexit__(None, None, None)
+    assert [event.event_type for event in share_events] == [
+        "dashboard.share_added",
+        "dashboard.share_updated",
+        "dashboard.share_removed",
+    ]
+    # "joined", not "added": the grant is the joiner redeeming an invite, logged from their side.
+    assert [event.payload["share_action"] for event in share_events] == [
+        "joined",
+        "updated",
+        "removed",
+    ]
+    # The joined event names no principal — its actor *is* the person; the owner-side
+    # mutations still carry one.
+    assert share_events[0].actor_id == uuid.UUID(shared_user_me["id"])
+    assert all(event.payload["principal_id"] == shared_user_me["id"] for event in share_events[1:])
+    assert share_events[0].payload["role"] == "viewer"
+    assert share_events[1].payload["role"] == "editor"
+    assert share_events[2].payload["role"] == "editor"
 
 
-async def test_trashing_a_shared_dashboard_notifies_the_people_who_lose_access(
-    auth_client: AsyncClient,
-) -> None:
+async def test_trashing_a_shared_dashboard_notifies_the_people_who_lose_access(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """Trashing hides the dashboard from everyone it was shared with.
 
     The SSE frame reaches only whoever is connected at that instant; the stored notification is
@@ -644,28 +558,24 @@ async def test_trashing_a_shared_dashboard_notifies_the_people_who_lose_access(
     """
     dashboard = await create_dashboard(auth_client, name="Doomed Board")
 
-    shared_user = await register_client("dashboard-trash-notify@example.com", display_name="Shared User")
-    try:
-        await share_dashboard(auth_client, dashboard["id"], shared_user, "editor")
+    shared_user = await accounts("dashboard-trash-notify@example.com", display_name="Shared User")
+    await share_dashboard(auth_client, dashboard["id"], shared_user, "editor")
 
-        set_csrf(auth_client)
-        delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
-        assert delete_resp.status_code == 204
+    delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
+    assert delete_resp.status_code == 204
 
-        # The access loss the notification is explaining.
-        assert (await shared_user.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
+    # The access loss the notification is explaining.
+    assert (await shared_user.get(f"/api/dashboards/{dashboard['id']}")).status_code == 404
 
-        shared_items = (await shared_user.get("/api/notifications")).json()["items"]
-        trashed = [n for n in shared_items if n["type"] == "dashboard.deleted"]
-        assert len(trashed) == 1
-        assert trashed[0]["reference_id"] == dashboard["id"]
-        assert "Doomed Board" in trashed[0]["body"]
+    shared_items = (await shared_user.get("/api/notifications")).json()["items"]
+    trashed = [n for n in shared_items if n["type"] == "dashboard.deleted"]
+    assert len(trashed) == 1
+    assert trashed[0]["reference_id"] == dashboard["id"]
+    assert "Doomed Board" in trashed[0]["body"]
 
-        # The actor already knows; notifying the deleter would be noise.
-        owner_items = (await auth_client.get("/api/notifications")).json()["items"]
-        assert [n for n in owner_items if n["type"] == "dashboard.deleted"] == []
-    finally:
-        await shared_user.__aexit__(None, None, None)
+    # The actor already knows; notifying the deleter would be noise.
+    owner_items = (await auth_client.get("/api/notifications")).json()["items"]
+    assert [n for n in owner_items if n["type"] == "dashboard.deleted"] == []
 
 
 async def test_dashboard_mutations_emit_activity_events(
@@ -674,42 +584,32 @@ async def test_dashboard_mutations_emit_activity_events(
 ) -> None:
     dashboard = await create_dashboard(auth_client, name="Realtime Board")
 
-    set_csrf(auth_client)
     rename_resp = await auth_client.patch(
         f"/api/dashboards/{dashboard['id']}",
         json={"name": "Realtime Board Renamed"},
     )
     assert rename_resp.status_code == 200
 
-    set_csrf(auth_client)
     layout_resp = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
         json={"layout": [{"i": "sample", "x": 0, "y": 0, "w": 4, "h": 6}], "version": 0},
     )
     assert layout_resp.status_code == 200
 
-    set_csrf(auth_client)
-    add_widget_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "clock", "config": {"title": "UTC Clock"}},
-    )
-    assert add_widget_resp.status_code == 201
-    widget_id = add_widget_resp.json()["widgets"][0]["id"]
+    add_widget_resp = await add_widget(auth_client, dashboard["id"], "clock", {"title": "UTC Clock"})
+    widget_id = add_widget_resp["widgets"][0]["id"]
 
-    set_csrf(auth_client)
     update_widget_resp = await auth_client.patch(
         f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
         json={"config": {"title": "Updated Clock"}},
     )
     assert update_widget_resp.status_code == 200
 
-    set_csrf(auth_client)
     delete_widget_resp = await auth_client.delete(
         f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
     )
     assert delete_widget_resp.status_code == 204
 
-    set_csrf(auth_client)
     delete_dashboard_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
     assert delete_dashboard_resp.status_code == 204
 
@@ -722,83 +622,69 @@ async def test_dashboard_mutations_emit_activity_events(
 
 
 async def test_dashboard_update_events_include_current_version_and_origin_client_id(
-    auth_client: AsyncClient,
-    db_session: AsyncSession,
+    auth_client: AsyncClient, db_session: AsyncSession, accounts: MemberFactory
 ) -> None:
     dashboard = await create_dashboard(auth_client, name="Contract Board")
-    shared_user = await register_client("dashboard-contract-viewer@example.com", display_name="Viewer")
+    shared_user = await accounts("dashboard-contract-viewer@example.com", display_name="Viewer")
 
-    try:
-        set_csrf(auth_client)
-        layout_resp = await auth_client.put(
-            f"/api/dashboards/{dashboard['id']}/layout",
-            json={"layout": [{"i": "sample", "x": 0, "y": 0, "w": 4, "h": 6}], "version": 0},
+    layout_resp = await auth_client.put(
+        f"/api/dashboards/{dashboard['id']}/layout",
+        json={"layout": [{"i": "sample", "x": 0, "y": 0, "w": 4, "h": 6}], "version": 0},
+    )
+    assert layout_resp.status_code == 200
+
+    add_widget_resp = await add_widget(auth_client, dashboard["id"], "clock", {"title": "UTC Clock"})
+    widget_id = add_widget_resp["widgets"][0]["id"]
+
+    rename_resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}",
+        headers={"X-Client-Id": "rename-123"},
+        json={"name": "Contract Board Renamed"},
+    )
+    assert rename_resp.status_code == 200
+
+    update_widget_resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
+        headers={"X-Client-Id": "widget-123"},
+        json={"config": {"title": "Updated Clock"}},
+    )
+    assert update_widget_resp.status_code == 200
+
+    await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
+    (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
+    update_share_resp = await auth_client.patch(
+        f"/api/dashboards/{dashboard['id']}/shares/{share['id']}",
+        headers={"X-Client-Id": "share-123"},
+        json={"role": "editor"},
+    )
+    assert update_share_resp.status_code == 200
+
+    result = await db_session.execute(
+        select(ActivityEvent)
+        .where(
+            ActivityEvent.entity_type == "dashboard",
+            ActivityEvent.entity_id == dashboard["id"],
         )
-        assert layout_resp.status_code == 200
+        .order_by(ActivityEvent.event_id)
+    )
+    events = result.scalars().all()
 
-        set_csrf(auth_client)
-        add_widget_resp = await auth_client.post(
-            f"/api/dashboards/{dashboard['id']}/widgets",
-            json={"widget_type": "clock", "config": {"title": "UTC Clock"}},
-        )
-        assert add_widget_resp.status_code == 201
-        widget_id = add_widget_resp.json()["widgets"][0]["id"]
+    rename_event = next(event for event in events if event.payload.get("origin_client_id") == "rename-123")
+    widget_event = next(event for event in events if event.payload.get("origin_client_id") == "widget-123")
+    share_event = next(event for event in events if event.payload.get("origin_client_id") == "share-123")
 
-        set_csrf(auth_client)
-        rename_resp = await auth_client.patch(
-            f"/api/dashboards/{dashboard['id']}",
-            headers={"X-Client-Id": "rename-123"},
-            json={"name": "Contract Board Renamed"},
-        )
-        assert rename_resp.status_code == 200
-
-        set_csrf(auth_client)
-        update_widget_resp = await auth_client.patch(
-            f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
-            headers={"X-Client-Id": "widget-123"},
-            json={"config": {"title": "Updated Clock"}},
-        )
-        assert update_widget_resp.status_code == 200
-
-        await share_dashboard(auth_client, dashboard["id"], shared_user, "viewer")
-        (share,) = (await auth_client.get(f"/api/dashboards/{dashboard['id']}/shares")).json()
-        set_csrf(auth_client)
-        update_share_resp = await auth_client.patch(
-            f"/api/dashboards/{dashboard['id']}/shares/{share['id']}",
-            headers={"X-Client-Id": "share-123"},
-            json={"role": "editor"},
-        )
-        assert update_share_resp.status_code == 200
-
-        result = await db_session.execute(
-            select(ActivityEvent)
-            .where(
-                ActivityEvent.entity_type == "dashboard",
-                ActivityEvent.entity_id == dashboard["id"],
-            )
-            .order_by(ActivityEvent.event_id)
-        )
-        events = result.scalars().all()
-
-        rename_event = next(event for event in events if event.payload.get("origin_client_id") == "rename-123")
-        widget_event = next(event for event in events if event.payload.get("origin_client_id") == "widget-123")
-        share_event = next(event for event in events if event.payload.get("origin_client_id") == "share-123")
-
-        assert rename_event.entity_version == 2
-        assert rename_event.payload["changed_fields"] == ["name"]
-        assert widget_event.entity_version == 2
-        assert widget_event.payload["changed_fields"] == ["widgets"]
-        assert share_event.event_type == "dashboard.share_updated"
-        assert share_event.entity_version == 2
-        assert share_event.payload["changed_fields"] == ["shares"]
-    finally:
-        await shared_user.__aexit__(None, None, None)
+    assert rename_event.entity_version == 2
+    assert rename_event.payload["changed_fields"] == ["name"]
+    assert widget_event.entity_version == 2
+    assert widget_event.payload["changed_fields"] == ["widgets"]
+    assert share_event.event_type == "dashboard.share_updated"
+    assert share_event.entity_version == 2
+    assert share_event.payload["changed_fields"] == ["shares"]
 
 
 async def test_empty_dashboard_patch_is_rejected(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
 
-    set_csrf(auth_client)
     resp = await auth_client.patch(f"/api/dashboards/{dashboard['id']}", json={})
     assert resp.status_code == 422
 
@@ -815,11 +701,9 @@ async def test_binding_the_same_list_twice_is_a_conflict(auth_client: AsyncClien
     lst = await create_list(auth_client, dashboard["id"], name="Bound")
 
     payload = {"widget_type": "list", "resource_type": "list", "resource_id": lst["id"]}
-    set_csrf(auth_client)
     first = await auth_client.post(f"/api/dashboards/{dashboard['id']}/widgets", json=payload)
     assert first.status_code == 201
 
-    set_csrf(auth_client)
     second = await auth_client.post(f"/api/dashboards/{dashboard['id']}/widgets", json=payload)
     assert second.status_code == 409
     assert "already on this dashboard" in second.json()["detail"]

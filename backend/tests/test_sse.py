@@ -17,7 +17,7 @@ from app.models.activity import EventType
 from app.services.activity import current_event_id
 from app.sse.events import connected_dict
 from app.sse.manager import _QUEUE_MAX, OVERFLOW_SENTINEL, REVOKED_SENTINEL, SseManager
-from tests.helpers import register_user, set_csrf
+from tests.helpers import register_user
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -212,12 +212,10 @@ async def test_activity_events_build_correct_sse_payloads(
 
     await register_user(db_client, "alice@example.com", display_name="Alice")
 
-    set_csrf(db_client)
     dash_resp = await db_client.post("/api/dashboards", json={"name": "SSE Test"})
     assert dash_resp.status_code == 201
     dashboard_id = dash_resp.json()["id"]
 
-    set_csrf(db_client)
     create_resp = await db_client.post("/api/lists", json={"name": "SSE Test List", "list_type": "checklist", "dashboard_id": dashboard_id})
     assert create_resp.status_code == 201
 

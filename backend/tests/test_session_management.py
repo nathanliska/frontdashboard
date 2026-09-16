@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.services.sessions import resolve_session, start_session
-from tests.helpers import make_db_user, set_csrf
+from tests.helpers import fake_csrf, make_db_user
 
 
 async def test_session_list_exposes_only_live_owned_metadata(client: AsyncClient, db_session: AsyncSession) -> None:
@@ -45,7 +45,7 @@ async def test_revocation_is_owned_csrf_protected_and_effective(client: AsyncCli
     foreign, foreign_raw = await start_session(stranger.id, db_session)
     client.cookies.set(settings.session_cookie_name, raw)
     assert (await client.delete(f"/api/auth/sessions/{other.id}")).status_code == 403
-    set_csrf(client)
+    fake_csrf(client)
     for target in (foreign.id, uuid.uuid4()):
         response = await client.delete(f"/api/auth/sessions/{target}")
         assert response.status_code == 404
@@ -68,7 +68,7 @@ async def test_session_cursor_survives_revoking_the_boundary_row(client: AsyncCl
         session.created_at = timestamp
     await db_session.flush()
     client.cookies.set(settings.session_cookie_name, raw)
-    set_csrf(client)
+    fake_csrf(client)
     first = (await client.get("/api/auth/sessions")).json()
     assert len(first["items"]) == 50
     cursor = first["next_cursor"]

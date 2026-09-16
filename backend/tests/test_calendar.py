@@ -11,12 +11,11 @@ from app.models.calendar import CalendarEvent
 from app.routers import calendar as calendar_router
 from app.services.sessions import start_session
 from tests.helpers import (
+    MemberFactory,
     create_calendar_event,
     create_dashboard,
     make_db_dashboard,
     make_db_user,
-    register_client,
-    set_csrf,
     share_dashboard,
 )
 
@@ -28,26 +27,23 @@ async def test_create_private_calendar_event(auth_client: AsyncClient) -> None:
     assert event["recurrence"] is None
 
 
-async def test_shared_dashboard_event_visible_to_shared_user(auth_client: AsyncClient) -> None:
+async def test_shared_dashboard_event_visible_to_shared_user(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     await create_calendar_event(auth_client, dashboard["id"], title="Family Dinner")
 
-    viewer = await register_client("calendar-viewer@example.com")
-    try:
-        await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
+    viewer = await accounts("calendar-viewer@example.com")
+    await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
-        resp = await viewer.get(
-            "/api/calendar/events",
-            params={
-                "window_start": "2026-04-10T00:00:00+00:00",
-                "window_end": "2026-04-11T00:00:00+00:00",
-                "dashboard_id": dashboard["id"],
-            },
-        )
-        assert resp.status_code == 200
-        assert len(resp.json()) == 1
-    finally:
-        await viewer.__aexit__(None, None, None)
+    resp = await viewer.get(
+        "/api/calendar/events",
+        params={
+            "window_start": "2026-04-10T00:00:00+00:00",
+            "window_end": "2026-04-11T00:00:00+00:00",
+            "dashboard_id": dashboard["id"],
+        },
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
 
 
 async def test_list_private_occurrences_for_recurring_event(auth_client: AsyncClient) -> None:
@@ -85,7 +81,6 @@ async def test_occurrence_override_updates_one_instance(auth_client: AsyncClient
         recurrence={"frequency": "daily", "interval": 1, "count": 3},
     )
 
-    set_csrf(auth_client)
     patch_resp = await auth_client.patch(
         f"/api/calendar/events/{event['id']}/occurrences",
         json={
@@ -110,7 +105,6 @@ async def test_edited_occurrences_on_one_series_are_capped(auth_client: AsyncCli
         title="Standup",
         recurrence={"frequency": "daily", "interval": 1, "count": 3},
     )
-    set_csrf(auth_client)
 
     async def edit(day: int, title: str):
         return await auth_client.patch(
@@ -125,23 +119,19 @@ async def test_edited_occurrences_on_one_series_are_capped(auth_client: AsyncCli
     assert (await edit(11, "Moved again")).status_code == 200
 
 
-async def test_viewer_cannot_edit_event(auth_client: AsyncClient) -> None:
+async def test_viewer_cannot_edit_event(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"])
-    client = await register_client("calendar-viewer-edit@example.com")
-    try:
-        me = await client.get("/api/auth/me")
-        assert me.status_code == 200
-        await share_dashboard(auth_client, dashboard["id"], client, "viewer")
+    client = await accounts("calendar-viewer-edit@example.com")
+    me = await client.get("/api/auth/me")
+    assert me.status_code == 200
+    await share_dashboard(auth_client, dashboard["id"], client, "viewer")
 
-        set_csrf(client)
-        update_resp = await client.patch(
-            f"/api/calendar/events/{event['id']}",
-            json={"title": "Hijacked"},
-        )
-        assert update_resp.status_code == 403
-    finally:
-        await client.__aexit__(None, None, None)
+    update_resp = await client.patch(
+        f"/api/calendar/events/{event['id']}",
+        json={"title": "Hijacked"},
+    )
+    assert update_resp.status_code == 403
 
 
 async def test_event_detail_update_and_delete(auth_client: AsyncClient) -> None:
@@ -152,7 +142,6 @@ async def test_event_detail_update_and_delete(auth_client: AsyncClient) -> None:
     assert detail_resp.status_code == 200
     assert detail_resp.json()["title"] == "Planning Session"
 
-    set_csrf(auth_client)
     update_resp = await auth_client.patch(
         f"/api/calendar/events/{event['id']}",
         json={"title": "Updated Planning Session"},
@@ -160,7 +149,6 @@ async def test_event_detail_update_and_delete(auth_client: AsyncClient) -> None:
     assert update_resp.status_code == 200
     assert update_resp.json()["title"] == "Updated Planning Session"
 
-    set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/calendar/events/{event['id']}")
     assert delete_resp.status_code == 204
 
@@ -179,17 +167,14 @@ async def test_event_shares_are_dashboard_managed(auth_client: AsyncClient) -> N
     assert payload["direct_shares"] == []
     assert payload["inherited_dashboards"][0]["dashboard_id"] == dashboard["id"]
 
-    set_csrf(auth_client)
     create_resp = await auth_client.post(f"/api/calendar/events/{event['id']}/shares")
     assert create_resp.status_code == 409
     assert create_resp.json()["detail"] == "Event permissions are managed on the parent dashboard"
 
-    set_csrf(auth_client)
     update_resp = await auth_client.patch(f"/api/calendar/events/{event['id']}/shares/{share_id}")
     assert update_resp.status_code == 409
     assert update_resp.json()["detail"] == "Event permissions are managed on the parent dashboard"
 
-    set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/calendar/events/{event['id']}/shares/{share_id}")
     assert delete_resp.status_code == 409
     assert delete_resp.json()["detail"] == "Event permissions are managed on the parent dashboard"
@@ -199,7 +184,6 @@ async def test_empty_event_patch_is_rejected(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"])
 
-    set_csrf(auth_client)
     resp = await auth_client.patch(f"/api/calendar/events/{event['id']}", json={})
     assert resp.status_code == 422
 
@@ -366,7 +350,6 @@ async def test_flipping_an_existing_event_to_all_day_snaps_it_too(auth_client: A
         all_day=False,
     )
 
-    set_csrf(auth_client)
     flipped = await auth_client.patch(f"/api/calendar/events/{event['id']}", json={"all_day": True})
     assert flipped.status_code == 200, flipped.text
     assert flipped.json()["starts_at"] == "2026-07-25T04:00:00Z"
@@ -472,7 +455,6 @@ async def test_an_override_rescues_a_series_the_window_bounds_would_drop(auth_cl
         ends_at="2019-01-02T15:00:00+00:00",
         recurrence={"frequency": "daily", "interval": 1, "until": "2019-01-05T14:00:00+00:00"},
     )
-    set_csrf(auth_client)
     moved = await auth_client.patch(
         f"/api/calendar/events/{event['id']}/occurrences",
         json={
@@ -505,7 +487,6 @@ async def test_clearing_recurrence_removes_its_occurrence_overrides(auth_client:
         recurrence={"frequency": "daily", "interval": 1, "count": 3},
     )
 
-    set_csrf(auth_client)
     override = await auth_client.patch(
         f"/api/calendar/events/{event['id']}/occurrences",
         json={
@@ -518,7 +499,6 @@ async def test_clearing_recurrence_removes_its_occurrence_overrides(auth_client:
     )
     assert override.status_code == 200, override.text
 
-    set_csrf(auth_client)
     cleared = await auth_client.patch(f"/api/calendar/events/{event['id']}", json={"recurrence": None})
     assert cleared.status_code == 200, cleared.text
 
@@ -540,7 +520,6 @@ async def test_clearing_recurrence_removes_its_occurrence_overrides(auth_client:
 
 async def test_a_repeating_event_whose_occurrence_outlasts_a_month_is_refused(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
-    set_csrf(auth_client)
     response = await auth_client.post(
         "/api/calendar/events",
         json={

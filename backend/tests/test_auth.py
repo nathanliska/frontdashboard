@@ -17,7 +17,7 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.session import UserSession
 from app.models.user import User
 from app.routers import auth as auth_router
-from tests.helpers import CSRF, create_dashboard, register_client, set_csrf
+from tests.helpers import MemberFactory, create_dashboard, set_csrf
 
 _REGISTER_URL = "/api/auth/register"
 _LOGIN_URL = "/api/auth/login"
@@ -461,7 +461,6 @@ async def test_there_is_no_refresh_endpoint(auth_client: AsyncClient) -> None:
     Its mandatory round trip was what a deploy or proxy 502 landed on, so a client still calling
     it would be relying on behaviour the server no longer has.
     """
-    set_csrf(auth_client)
     assert (await auth_client.post(_REFRESH_URL)).status_code == 404
 
 
@@ -566,6 +565,7 @@ def test_clearing_prefixed_cookies_keeps_them_secure(monkeypatch) -> None:
 
 
 async def test_logout_requires_csrf(auth_client: AsyncClient) -> None:
+    auth_client.headers.pop("x-csrf-token")
     resp = await auth_client.post(_LOGOUT_URL)
     assert resp.status_code == 403
 
@@ -593,7 +593,6 @@ async def test_the_session_cookie_is_dead_after_logout(auth_client: AsyncClient)
 
 
 async def test_update_profile(auth_client: AsyncClient) -> None:
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         _PROFILE_URL,
         json={"display_name": "Updated User"},
@@ -610,14 +609,12 @@ async def test_update_profile(auth_client: AsyncClient) -> None:
 
 
 async def test_update_profile_rejects_blank_display_name(auth_client: AsyncClient) -> None:
-    set_csrf(auth_client)
     resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "   "})
     assert resp.status_code == 422
     assert resp.json()["detail"] == "Display name cannot be empty"
 
 
 async def test_update_profile_rejects_overlong_display_name(auth_client: AsyncClient) -> None:
-    set_csrf(auth_client)
     resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "x" * 101})
     assert resp.status_code == 422
     assert resp.json()["detail"] == "Display name must be at most 100 characters"
@@ -630,7 +627,6 @@ async def test_profile_and_preferences_reject_empty_or_unknown_patches(auth_clie
         (_PREFERENCES_URL, {}),
         (_PREFERENCES_URL, {"home_dashbord_id": None}),
     ):
-        set_csrf(auth_client)
         response = await auth_client.patch(url, json=payload)
         assert response.status_code == 422
 
@@ -700,7 +696,6 @@ async def test_a_freshly_used_session_costs_no_write(auth_client: AsyncClient, d
 
 
 async def test_change_password_updates_login_credentials(auth_client: AsyncClient) -> None:
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         _PASSWORD_URL,
         json={"current_password": "testpassword123", "new_password": "betterpassword456"},
@@ -710,7 +705,7 @@ async def test_change_password_updates_login_credentials(auth_client: AsyncClien
     assert "session" not in resp.cookies
 
     set_csrf(auth_client)
-    logout = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": CSRF})
+    logout = await auth_client.post(_LOGOUT_URL)
     assert logout.status_code == 204
 
     old_login = await auth_client.post(
@@ -732,7 +727,6 @@ async def test_change_password_rejects_wrong_current_password(auth_client: Async
     A 401 is the client's only signal for "logged out", so answering a mistyped current password
     with one signed the user out of a form they were still using.
     """
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         _PASSWORD_URL,
         json={"current_password": "wrong-password", "new_password": "betterpassword456"},
@@ -745,7 +739,6 @@ async def test_change_password_rejects_wrong_current_password(auth_client: Async
 async def test_update_preferences_accepts_accessible_dashboard(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Secondary Dashboard")
 
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         _PREFERENCES_URL,
         json={"home_dashboard_id": dashboard["id"]},
@@ -754,26 +747,21 @@ async def test_update_preferences_accepts_accessible_dashboard(auth_client: Asyn
     assert resp.json()["preferences"]["home_dashboard_id"] == dashboard["id"]
 
 
-async def test_update_preferences_rejects_inaccessible_dashboard(auth_client: AsyncClient) -> None:
-    other = await register_client("owner@example.com", display_name="Owner")
-    try:
-        dashboard = await create_dashboard(other, name="Other Dashboard")
+async def test_update_preferences_rejects_inaccessible_dashboard(auth_client: AsyncClient, accounts: MemberFactory) -> None:
+    other = await accounts("owner@example.com", display_name="Owner")
+    dashboard = await create_dashboard(other, name="Other Dashboard")
 
-        set_csrf(auth_client)
-        resp = await auth_client.patch(
-            _PREFERENCES_URL,
-            json={"home_dashboard_id": dashboard["id"]},
-        )
-        assert resp.status_code == 404
-        assert resp.json()["detail"] == "Dashboard not found"
-    finally:
-        await other.__aexit__(None, None, None)
+    resp = await auth_client.patch(
+        _PREFERENCES_URL,
+        json={"home_dashboard_id": dashboard["id"]},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Dashboard not found"
 
 
 async def test_update_preferences_accepts_accessible_favorite_dashboards(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client, name="Favorite Dashboard")
 
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         _PREFERENCES_URL,
         json={"favorite_dashboard_ids": [dashboard["id"]]},
@@ -782,20 +770,16 @@ async def test_update_preferences_accepts_accessible_favorite_dashboards(auth_cl
     assert resp.json()["preferences"]["favorite_dashboard_ids"] == [dashboard["id"]]
 
 
-async def test_update_preferences_rejects_inaccessible_favorite_dashboard(auth_client: AsyncClient) -> None:
-    other = await register_client("favorite-owner@example.com", display_name="Favorite Owner")
-    try:
-        dashboard = await create_dashboard(other, name="Other Favorite Dashboard")
+async def test_update_preferences_rejects_inaccessible_favorite_dashboard(auth_client: AsyncClient, accounts: MemberFactory) -> None:
+    other = await accounts("favorite-owner@example.com", display_name="Favorite Owner")
+    dashboard = await create_dashboard(other, name="Other Favorite Dashboard")
 
-        set_csrf(auth_client)
-        resp = await auth_client.patch(
-            _PREFERENCES_URL,
-            json={"favorite_dashboard_ids": [dashboard["id"]]},
-        )
-        assert resp.status_code == 404
-        assert resp.json()["detail"] == "Dashboard not found"
-    finally:
-        await other.__aexit__(None, None, None)
+    resp = await auth_client.patch(
+        _PREFERENCES_URL,
+        json={"favorite_dashboard_ids": [dashboard["id"]]},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Dashboard not found"
 
 
 async def test_the_session_cookie_hashes_to_a_real_session_row(auth_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -839,7 +823,6 @@ async def test_password_change_revokes_other_sessions_but_not_the_callers(auth_c
     other = await _second_device()
     assert (await other.get(_ME_URL)).status_code == 200
 
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         _PASSWORD_URL,
         json={"current_password": "testpassword123", "new_password": "newpassword456"},
@@ -857,7 +840,6 @@ async def test_password_change_revokes_other_sessions_but_not_the_callers(auth_c
 async def test_logout_revokes_only_the_current_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
     other = await _second_device()
 
-    set_csrf(auth_client)
     resp = await auth_client.post(_LOGOUT_URL)
     assert resp.status_code == 204
 
@@ -873,8 +855,6 @@ async def test_logout_revokes_the_calling_session(auth_client: AsyncClient, db_s
 
     It reads the session from that cookie, so it can never no-op.
     """
-    set_csrf(auth_client)
-
     resp = await auth_client.post(_LOGOUT_URL)
     assert resp.status_code == 204
 
@@ -1013,6 +993,7 @@ async def test_csrf_rejections_are_attributed_to_csrf(auth_client: AsyncClient) 
     """In http_responses_total these land on whichever route was targeted; here they name the cause."""
     before = _auth_failures("csrf", "token_missing")
 
+    auth_client.headers.pop("x-csrf-token")
     resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "No CSRF"})
 
     assert resp.status_code == 403

@@ -19,7 +19,7 @@ from app.models.activity import ActivityEvent, EventType
 from app.services.activity import log_event
 from app.services.notifications import stage_notification
 from app.sse.events import build_activity_sse_dict, build_notification_sse_dicts
-from tests.helpers import CSRF, create_calendar_event, create_dashboard, create_list, create_list_item, make_db_user, register_user, set_csrf
+from tests.helpers import add_widget, create_calendar_event, create_dashboard, create_list, create_list_item, make_db_user, register_user
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -90,7 +90,6 @@ async def test_list_updated_event(db_client: AsyncClient, db_session: AsyncSessi
     dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
-    set_csrf(db_client)
     resp = await db_client.patch(f"/api/lists/{lst['id']}", json={"name": "Renamed"})
     assert resp.status_code == 200
 
@@ -105,11 +104,10 @@ async def test_list_events_include_origin_client_id_in_payload(db_client: AsyncC
     dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
-    set_csrf(db_client)
     resp = await db_client.patch(
         f"/api/lists/{lst['id']}",
         json={"name": "Renamed"},
-        headers={"X-Client-Id": "list-rename-123", "x-csrf-token": CSRF},
+        headers={"X-Client-Id": "list-rename-123"},
     )
     assert resp.status_code == 200
 
@@ -124,11 +122,10 @@ async def test_list_item_events_include_origin_client_id_in_payload(db_client: A
     lst = await _make_list(db_client, dashboard["id"])
     item = await create_list_item(db_client, lst["id"])
 
-    set_csrf(db_client)
     resp = await db_client.patch(
         f"/api/lists/{lst['id']}/items/{item['id']}",
         json={"checked": True},
-        headers={"X-Client-Id": "item-check-123", "x-csrf-token": CSRF},
+        headers={"X-Client-Id": "item-check-123"},
     )
     assert resp.status_code == 200
 
@@ -142,11 +139,10 @@ async def test_calendar_events_include_origin_client_id_in_payload(db_client: As
     dashboard = await create_dashboard(db_client)
     event_row = await create_calendar_event(db_client, dashboard["id"])
 
-    set_csrf(db_client)
     resp = await db_client.patch(
         f"/api/calendar/events/{event_row['id']}",
         json={"title": "Renamed"},
-        headers={"X-Client-Id": "calendar-rename-123", "x-csrf-token": CSRF},
+        headers={"X-Client-Id": "calendar-rename-123"},
     )
     assert resp.status_code == 200
 
@@ -162,7 +158,6 @@ async def test_calendar_events_omit_origin_client_id_when_not_sent(db_client: As
     dashboard = await create_dashboard(db_client)
     event_row = await create_calendar_event(db_client, dashboard["id"])
 
-    set_csrf(db_client)
     resp = await db_client.patch(f"/api/calendar/events/{event_row['id']}", json={"title": "Renamed"})
     assert resp.status_code == 200
 
@@ -176,7 +171,6 @@ async def test_list_deleted_event(db_client: AsyncClient, db_session: AsyncSessi
     dashboard = await create_dashboard(db_client)
     lst = await _make_list(db_client, dashboard["id"])
 
-    set_csrf(db_client)
     resp = await db_client.delete(f"/api/lists/{lst['id']}")
     assert resp.status_code == 204
 
@@ -213,7 +207,6 @@ async def test_list_item_checked_event(db_client: AsyncClient, db_session: Async
     lst = await _make_list(db_client, dashboard["id"])
     item = await create_list_item(db_client, lst["id"])
 
-    set_csrf(db_client)
     resp = await db_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"checked": True})
     assert resp.status_code == 200
 
@@ -231,7 +224,6 @@ async def test_list_item_updated_event(db_client: AsyncClient, db_session: Async
     lst = await _make_list(db_client, dashboard["id"])
     item = await create_list_item(db_client, lst["id"])
 
-    set_csrf(db_client)
     resp = await db_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"text": "New text"})
     assert resp.status_code == 200
 
@@ -249,7 +241,6 @@ async def test_list_item_deleted_event(db_client: AsyncClient, db_session: Async
     lst = await _make_list(db_client, dashboard["id"])
     item = await create_list_item(db_client, lst["id"])
 
-    set_csrf(db_client)
     resp = await db_client.delete(f"/api/lists/{lst['id']}/items/{item['id']}")
     assert resp.status_code == 204
 
@@ -273,23 +264,16 @@ async def test_dashboard_layout_and_widget_activity_survives_a_reload(auth_clien
     """
     dashboard = await create_dashboard(auth_client, name="Board")
 
-    set_csrf(auth_client)
-    add_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "clock", "config": {}},
-    )
-    assert add_resp.status_code == 201
-    added = add_resp.json()
+    add_resp = await add_widget(auth_client, dashboard["id"], "clock")
+    added = add_resp
     widget_id = added["widgets"][0]["id"]
 
-    set_csrf(auth_client)
     layout_resp = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
         json={"layout": [{"i": widget_id, "x": 2, "y": 1, "w": 4, "h": 6}], "version": added["version"]},
     )
     assert layout_resp.status_code == 200
 
-    set_csrf(auth_client)
     delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}")
     assert delete_resp.status_code == 204
 
@@ -314,15 +298,10 @@ async def test_layout_event_names_only_a_widget_the_dashboard_owns(auth_client: 
     apart — and a gesture naming a widget from elsewhere must not reach this feed.
     """
     dashboard = await create_dashboard(auth_client, name="Board")
-    set_csrf(auth_client)
-    add_resp = await auth_client.post(
-        f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "clock", "config": {}},
-    )
-    added = add_resp.json()
+    add_resp = await add_widget(auth_client, dashboard["id"], "clock")
+    added = add_resp
     widget_id = added["widgets"][0]["id"]
 
-    set_csrf(auth_client)
     moved = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
         json={
@@ -335,14 +314,9 @@ async def test_layout_event_names_only_a_widget_the_dashboard_owns(auth_client: 
 
     # A widget id from somewhere else would otherwise put a foreign widget type in this feed.
     other = await create_dashboard(auth_client, name="Elsewhere")
-    set_csrf(auth_client)
-    other_add = await auth_client.post(
-        f"/api/dashboards/{other['id']}/widgets",
-        json={"widget_type": "calendar", "config": {}},
-    )
-    foreign_widget_id = other_add.json()["widgets"][0]["id"]
+    other_add = await add_widget(auth_client, other["id"], "calendar")
+    foreign_widget_id = other_add["widgets"][0]["id"]
 
-    set_csrf(auth_client)
     spoofed = await auth_client.put(
         f"/api/dashboards/{dashboard['id']}/layout",
         json={
@@ -368,9 +342,7 @@ async def test_restore_names_the_dashboard_it_brought_back(auth_client: AsyncCli
     """Restore staged only `changed_fields`, so the feed could only say "a dashboard"."""
     dashboard = await create_dashboard(auth_client, name="Kitchen")
 
-    set_csrf(auth_client)
     assert (await auth_client.delete(f"/api/dashboards/{dashboard['id']}")).status_code == 204
-    set_csrf(auth_client)
     assert (await auth_client.post(f"/api/dashboards/{dashboard['id']}/restore")).status_code == 200
 
     feed = (await auth_client.get("/api/activity")).json()
@@ -384,7 +356,6 @@ async def test_the_feed_withholds_nothing_from_its_own_log(auth_client: AsyncCli
     lst = await create_list(auth_client, dashboard["id"], name="Chores")
     item = await create_list_item(auth_client, lst["id"], text="Vacuum")
 
-    set_csrf(auth_client)
     check_resp = await auth_client.patch(f"/api/lists/{lst['id']}/items/{item['id']}", json={"checked": True})
     assert check_resp.status_code == 200
 

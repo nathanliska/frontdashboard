@@ -27,6 +27,7 @@ from app.limiter import limiter
 from app.main import app
 from app.models.user import User
 from app.routers import auth as auth_router
+from tests.helpers import MemberFactory, register_user, set_csrf
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -272,4 +273,24 @@ async def auth_client(db_client: AsyncClient) -> AsyncGenerator[AsyncClient]:
     token = app.state.email_verification_tokens["testuser@example.com"]
     verify_resp = await db_client.post("/api/auth/verify-email", json={"token": token})
     assert verify_resp.status_code == 200
+    set_csrf(db_client)
     yield db_client
+
+
+@pytest.fixture
+async def accounts(client: AsyncClient) -> AsyncGenerator[MemberFactory]:
+    """Register further accounts on their own clients; every one is closed at teardown.
+
+    Depends on `client` so the database override and the integration marker come with it.
+    """
+    del client
+    clients: list[AsyncClient] = []
+
+    async def register(email: str, *, display_name: str = "Member", password: str = "test-password-123") -> AsyncClient:
+        member = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        clients.append(member)
+        await register_user(member, email, display_name=display_name, password=password)
+        return member
+
+    yield register
+    await asyncio.gather(*(c.aclose() for c in clients), return_exceptions=True)

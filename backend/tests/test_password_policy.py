@@ -6,7 +6,6 @@ from httpx import AsyncClient
 
 from app.main import app
 from app.services.passwords import COMMON_PASSWORDS, assert_password_not_common
-from tests.helpers import set_csrf
 
 _LISTED = "password123"
 _STRONG = "chalk-viper-tundra-97"
@@ -64,7 +63,6 @@ async def test_the_refusal_cannot_be_used_to_probe_for_accounts(db_client: Async
 
 
 async def test_changing_to_a_breached_password_is_refused(auth_client: AsyncClient) -> None:
-    set_csrf(auth_client)
     resp = await auth_client.patch(
         "/api/auth/password",
         json={"current_password": "testpassword123", "new_password": _LISTED},
