@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '../stores/auth'
+import { signIn } from '../test/signIn'
 import { VerifyEmailPage } from './VerifyEmailPage'
 
 const verifyEmail = vi.fn()
@@ -37,7 +38,7 @@ describe('VerifyEmailPage account switching', () => {
 
   it('asks before swapping the session of a signed-in visitor', async () => {
     // Verifying signs you in as the link's account, so doing it silently changes who someone is.
-    useAuthStore.setState({ status: 'authenticated', user: { email: 'me@example.com' } as never })
+    signIn({ email: 'me@example.com' })
 
     renderAt('?token=abc')
 
@@ -47,7 +48,7 @@ describe('VerifyEmailPage account switching', () => {
   })
 
   it('verifies once the switch is confirmed', async () => {
-    useAuthStore.setState({ status: 'authenticated', user: { email: 'me@example.com' } as never })
+    signIn({ email: 'me@example.com' })
 
     renderAt('?token=abc')
     fireEvent.click(await screen.findByRole('button', { name: /continue/i }))

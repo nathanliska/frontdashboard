@@ -2,28 +2,15 @@
 
 from httpx import AsyncClient
 
-from tests.helpers import MemberFactory, create_dashboard, set_csrf
-
-
-async def _create_invite(client: AsyncClient, dashboard_id: str, role: str) -> dict:
-    set_csrf(client)
-    resp = await client.post(f"/api/dashboards/{dashboard_id}/invites", json={"role": role})
-    assert resp.status_code == 201, resp.text
-    return resp.json()
-
-
-async def _join(client: AsyncClient, code: str) -> None:
-    set_csrf(client)
-    accepted = await client.post(f"/api/invites/{code}/accept")
-    assert accepted.status_code == 200, accepted.text
+from tests.helpers import MemberFactory, create_dashboard, share_dashboard
 
 
 async def test_members_lists_owner_first_then_by_name(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     zoe = await accounts("zoe@example.com", display_name="Zoe")
     ada = await accounts("ada@example.com", display_name="Ada")
-    await _join(zoe, (await _create_invite(auth_client, dashboard["id"], "editor"))["code"])
-    await _join(ada, (await _create_invite(auth_client, dashboard["id"], "viewer"))["code"])
+    await share_dashboard(auth_client, dashboard["id"], zoe, "editor")
+    await share_dashboard(auth_client, dashboard["id"], ada, "viewer")
 
     resp = await auth_client.get(f"/api/dashboards/{dashboard['id']}/members")
     assert resp.status_code == 200, resp.text
@@ -37,7 +24,7 @@ async def test_any_member_may_list_members(auth_client: AsyncClient, accounts: M
     """Unlike `/shares`, which is owner-only: an editor's picker has to be able to load this."""
     dashboard = await create_dashboard(auth_client)
     viewer = await accounts("viewer@example.com", display_name="Viewer")
-    await _join(viewer, (await _create_invite(auth_client, dashboard["id"], "viewer"))["code"])
+    await share_dashboard(auth_client, dashboard["id"], viewer, "viewer")
 
     resp = await viewer.get(f"/api/dashboards/{dashboard['id']}/members")
     assert resp.status_code == 200, resp.text
@@ -60,7 +47,7 @@ async def test_members_are_exactly_the_sse_audience(auth_client: AsyncClient, db
 
     dashboard = await create_dashboard(auth_client)
     zoe = await accounts("zoe-audience@example.com", display_name="Zoe")
-    await _join(zoe, (await _create_invite(auth_client, dashboard["id"], "viewer"))["code"])
+    await share_dashboard(auth_client, dashboard["id"], zoe, "viewer")
 
     row = (await db_session.execute(select(DashboardModel).where(DashboardModel.id == dashboard["id"]))).scalar_one()
     shares = await get_resource_shares(ResourceType.dashboard, row.id, db_session)

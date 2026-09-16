@@ -8,6 +8,7 @@ import { useConfirmStore } from '../stores/confirm'
 import { resetDashboardData, useDashboardStore } from '../stores/dashboard'
 import { stubDashboardStore } from '../test/dashboard-store'
 import { makeDashboardSummary as makeSummary } from '../test/fixtures'
+import { signIn } from '../test/signIn'
 import { DashboardsPage } from './DashboardsPage'
 
 const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }))
@@ -37,17 +38,12 @@ describe('DashboardsPage', () => {
   beforeEach(() => {
     // Module-level load/debounce state lives outside the store, so setState alone won't clear it.
     resetDashboardData()
+    signIn({
+      email: 'test@example.com',
+      display_name: 'Test User',
+      preferences: { home_dashboard_id: null, favorite_dashboard_ids: [] },
+    })
     useAuthStore.setState({
-      status: 'authenticated',
-      user: {
-        id: 'user-1',
-        email: 'test@example.com',
-        display_name: 'Test User',
-        preferences: {
-          home_dashboard_id: null,
-          favorite_dashboard_ids: [],
-        },
-      },
       init: vi.fn(),
       login: vi.fn(),
       register: vi.fn(),

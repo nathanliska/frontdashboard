@@ -6,11 +6,10 @@ Every grant is an invite the member redeemed; leaving is the other half of that 
 
 from httpx import AsyncClient
 
-from tests.helpers import MemberFactory, create_dashboard, current_user, set_csrf, share_dashboard
+from tests.helpers import MemberFactory, accept_invite, create_dashboard, current_user, mint_invite, share_dashboard
 
 
 async def _leave(client: AsyncClient, dashboard_id: str) -> int:
-    set_csrf(client)
     return (await client.delete(f"/api/dashboards/{dashboard_id}/membership")).status_code
 
 
@@ -102,13 +101,6 @@ async def test_leaving_clears_a_home_pointing_at_the_dashboard(auth_client: Asyn
     assert me["preferences"]["home_dashboard_id"] is None
 
 
-async def _mint_invite(owner: AsyncClient, dashboard_id: str, role: str = "editor") -> str:
-    set_csrf(owner)
-    resp = await owner.post(f"/api/dashboards/{dashboard_id}/invites", json={"role": role})
-    assert resp.status_code == 201, resp.text
-    return resp.json()["code"]
-
-
 async def test_leaving_is_not_a_ban_an_invite_re_admits(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     """Re-entry needs a fresh consent act, and an invite is one.
 
@@ -116,15 +108,14 @@ async def test_leaving_is_not_a_ban_an_invite_re_admits(auth_client: AsyncClient
     their history.
     """
     dashboard = await create_dashboard(auth_client)
-    code = await _mint_invite(auth_client, dashboard["id"])
+    code = (await mint_invite(auth_client, dashboard["id"]))["code"]
 
     member = await accounts("leave-rejoin@example.com")
     await share_dashboard(auth_client, dashboard["id"], member, "editor")
     assert await _leave(member, dashboard["id"]) == 204
 
-    accepted = await member.post(f"/api/invites/{code}/accept")
-    assert accepted.status_code == 200, accepted.text
-    assert accepted.json()["role"] == "editor"
+    accepted = await accept_invite(member, code)
+    assert accepted["role"] == "editor"
 
     assert dashboard["id"] in [d["id"] for d in (await member.get("/api/dashboards")).json()]
 

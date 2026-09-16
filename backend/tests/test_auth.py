@@ -17,7 +17,7 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.session import UserSession
 from app.models.user import User
 from app.routers import auth as auth_router
-from tests.helpers import MemberFactory, create_dashboard, set_csrf
+from tests.helpers import MemberFactory, create_dashboard
 
 _REGISTER_URL = "/api/auth/register"
 _LOGIN_URL = "/api/auth/login"
@@ -704,7 +704,6 @@ async def test_change_password_updates_login_credentials(auth_client: AsyncClien
     # The calling session is kept as-is — see the note on `change_password`.
     assert "session" not in resp.cookies
 
-    set_csrf(auth_client)
     logout = await auth_client.post(_LOGOUT_URL)
     assert logout.status_code == 204
 

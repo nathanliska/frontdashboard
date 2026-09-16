@@ -3,6 +3,7 @@ import type { Dashboard, DashboardSummary, TrashedDashboard } from '../api/dashb
 import { ApiError } from '../api/http'
 import { RESYNC_SIGNAL } from '../hooks/useSSE'
 import { makeDashboard, makeDashboardSummary, makeSseEvent } from '../test/fixtures'
+import { signIn } from '../test/signIn'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import { useAuthStore } from './auth'
 import { useConnectionStore } from './connection'
@@ -84,17 +85,12 @@ describe('useDashboardStore', () => {
     vi.clearAllMocks()
     // Clear module-level load/layout-drain state so an in-flight drain from a prior test can't leak.
     resetDashboardData()
+    signIn({
+      email: 'test@example.com',
+      display_name: 'Test User',
+      preferences: { home_dashboard_id: 'dash-1', favorite_dashboard_ids: [] },
+    })
     useAuthStore.setState({
-      status: 'authenticated',
-      user: {
-        id: 'user-1',
-        email: 'test@example.com',
-        display_name: 'Test User',
-        preferences: {
-          home_dashboard_id: 'dash-1',
-          favorite_dashboard_ids: [],
-        },
-      },
       init: vi.fn(),
       login: vi.fn(),
       register: vi.fn(),

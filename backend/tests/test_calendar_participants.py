@@ -2,15 +2,12 @@
 
 from httpx import AsyncClient
 
-from tests.helpers import MemberFactory, create_calendar_event, create_dashboard
+from tests.helpers import MemberFactory, create_calendar_event, create_dashboard, share_dashboard
 
 
 async def _join_as(auth_client: AsyncClient, accounts: MemberFactory, dashboard_id: str, email: str, name: str, role: str = "editor") -> AsyncClient:
-    invite = await auth_client.post(f"/api/dashboards/{dashboard_id}/invites", json={"role": role})
-    assert invite.status_code == 201, invite.text
     member = await accounts(email, display_name=name)
-    accepted = await member.post(f"/api/invites/{invite.json()['code']}/accept")
-    assert accepted.status_code == 200, accepted.text
+    await share_dashboard(auth_client, dashboard_id, member, role)
     return member
 
 
