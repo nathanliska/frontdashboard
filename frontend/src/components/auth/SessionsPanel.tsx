@@ -28,7 +28,21 @@ export function SessionsPanel() {
 
   const disabled = loading || revoking !== null
   return (
-    <div className="space-y-4 border-t border-zinc-800 px-5 py-4">
+    <div className="space-y-4 px-5 py-4">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-sm font-medium text-zinc-200">Active sessions</h2>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            setRevokeError(null)
+            refetch()
+          }}
+          className="text-sm text-sky-300 disabled:opacity-50"
+        >
+          Refresh sessions
+        </button>
+      </div>
       <p className="text-sm text-zinc-400">
         Sign-ins that can still access your account. Activity times are approximate. Refresh to
         check for changes on other devices.
@@ -84,16 +98,6 @@ export function SessionsPanel() {
         <p className="text-sm text-zinc-400">No sessions on this page.</p>
       )}
       <div className="flex flex-wrap gap-3 text-sm text-sky-300">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            setRevokeError(null)
-            refetch()
-          }}
-        >
-          Refresh sessions
-        </button>
         {cursor && (
           <button type="button" disabled={disabled} onClick={() => setCursor(null)}>
             Newest sessions
