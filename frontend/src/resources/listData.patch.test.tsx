@@ -2,8 +2,8 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
-import { useAuthStore } from '../stores/auth'
 import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
+import { signIn } from '../test/signIn'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import {
   __resetListDataForTests,
@@ -94,15 +94,7 @@ describe('list.item.checked / list.item.updated patching', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     __resetListDataForTests()
-    useAuthStore.setState({
-      status: 'authenticated',
-      user: {
-        id: 'user-1',
-        email: 'user@example.com',
-        display_name: 'Example User',
-        preferences: {},
-      },
-    })
+    signIn()
   })
 
   it('flips checked in cache from a remote actor event, no GET', async () => {

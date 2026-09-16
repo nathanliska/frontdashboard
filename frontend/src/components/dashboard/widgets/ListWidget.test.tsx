@@ -8,6 +8,7 @@ import { resetDashboardData, useDashboardStore } from '../../../stores/dashboard
 import {
   makeListDetail as baseListDetail,
   makeListItem as baseListItem,
+  deferred,
 } from '../../../test/fixtures'
 import { setPileEnabled } from '../../lists/checkedPile'
 import { ListWidget } from './ListWidget'
@@ -39,16 +40,6 @@ function makeListDetail(overrides: Partial<ListDetail> = {}): ListDetail {
 
 function makeListItem(overrides: Partial<ListItem> = {}): ListItem {
   return baseListItem({ text: 'Buy milk', created_at: AT, updated_at: AT, ...overrides })
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res
-    reject = rej
-  })
-  return { promise, resolve, reject }
 }
 
 describe('ListWidget', () => {

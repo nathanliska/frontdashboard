@@ -3,8 +3,8 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/http'
 import type { ListDetail } from '../api/lists'
-import { useAuthStore } from '../stores/auth'
 import { makeListDetail, makeListSummary } from '../test/fixtures'
+import { signIn } from '../test/signIn'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import {
   __resetListDataForTests,
@@ -70,18 +70,6 @@ function summaries(ids: string[]) {
   return ids.map((id) => makeListSummary({ id }))
 }
 
-function authenticate() {
-  useAuthStore.setState({
-    status: 'authenticated',
-    user: {
-      id: 'user-1',
-      email: 'user@example.com',
-      display_name: 'Example User',
-      preferences: {},
-    },
-  })
-}
-
 /**
  * Items and lists run the same optimistic-reorder protocol over different caches, so the mirrored
  * cases are stated once and run against both. Behavior on only one side — self-echo suppression
@@ -138,7 +126,7 @@ describe.each(REORDER_KINDS)(
     beforeEach(() => {
       vi.clearAllMocks()
       __resetListDataForTests()
-      authenticate()
+      signIn()
     })
 
     it('applies the new order optimistically and issues no refetch on success', async () => {
@@ -226,7 +214,7 @@ describe('reorderListItems / list.item.reordered — item-specific behavior', ()
   beforeEach(() => {
     vi.clearAllMocks()
     __resetListDataForTests()
-    authenticate()
+    signIn()
   })
 
   it('reorders detail items from a remote actor payload without issuing a GET', async () => {

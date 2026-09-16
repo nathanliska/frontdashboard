@@ -3,10 +3,10 @@ import { act, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { handleCalendarResourceEvent } from '../resources/calendarData'
 import { handleListResourceEvent } from '../resources/listData'
-import { useAuthStore } from '../stores/auth'
 import { useConnectionStore } from '../stores/connection'
 import { resetDashboardData, useDashboardStore } from '../stores/dashboard'
 import { useNotificationsStore } from '../stores/notifications'
+import { signIn } from '../test/signIn'
 import { APP_RESYNC_EVENT, SSE_AUTH_PROBE_EVERY, SSE_RECONNECT_MAX_MS, useSSE } from './useSSE'
 
 const { handlerCallOrder } = vi.hoisted(() => ({
@@ -121,15 +121,7 @@ describe('useSSE', () => {
     globalThis.EventSource = MockEventSource as unknown as typeof EventSource
     window.history.pushState({}, '', '/dashboards')
 
-    useAuthStore.setState({
-      status: 'authenticated',
-      user: {
-        id: 'user-1',
-        email: 'user@example.com',
-        display_name: 'Example User',
-        preferences: {},
-      },
-    })
+    signIn()
 
     useDashboardStore.setState({
       handleDashboardEvent: vi.fn().mockResolvedValue(undefined),
@@ -425,15 +417,7 @@ describe('useSSE reconnect backoff', () => {
     globalThis.EventSource = MockEventSource as unknown as typeof EventSource
     window.history.pushState({}, '', '/dashboards')
 
-    useAuthStore.setState({
-      status: 'authenticated',
-      user: {
-        id: 'user-1',
-        email: 'user@example.com',
-        display_name: 'Example User',
-        preferences: {},
-      },
-    })
+    signIn()
 
     useDashboardStore.setState({
       handleDashboardEvent: vi.fn().mockResolvedValue(undefined),

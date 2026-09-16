@@ -2,9 +2,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ListDetail, ListSummary } from '../api/lists'
 import { stubDashboardStore } from '../test/dashboard-store'
-import { makeDashboardSummary } from '../test/fixtures'
+import {
+  makeDashboardSummary,
+  makeListDetail,
+  makeListItem,
+  makeListSummary,
+} from '../test/fixtures'
 import { ListDetailPage } from './ListDetailPage'
 import { ListsLayout } from './ListsLayout'
 
@@ -24,44 +28,6 @@ import { deleteList, useListDetail, useListSummaries } from '../resources/listDa
 
 const mockedUseListSummaries = vi.mocked(useListSummaries)
 const mockedUseListDetail = vi.mocked(useListDetail)
-
-function makeSummary(overrides: Partial<ListSummary> = {}): ListSummary {
-  return {
-    id: 'list-1',
-    dashboard_id: 'dash-1',
-    name: 'Weekend chores',
-    list_type: 'checklist',
-    sort_order: 0,
-    created_by: 'user-1',
-    created_at: '2026-04-21T00:00:00Z',
-    updated_at: '2026-04-21T00:00:00Z',
-    item_count: 1,
-    ...overrides,
-  }
-}
-
-function makeDetail(overrides: Partial<ListDetail> = {}): ListDetail {
-  return {
-    ...makeSummary(),
-    items: [
-      {
-        id: 'item-1',
-        list_id: 'list-1',
-        text: 'Take out recycling',
-        checked: false,
-        sort_order: 0,
-        due_date: null,
-        priority: null,
-        category: null,
-        assigned_to: null,
-        created_by: 'user-1',
-        created_at: '2026-04-21T00:00:00Z',
-        updated_at: '2026-04-21T00:00:00Z',
-      },
-    ],
-    ...overrides,
-  }
-}
 
 function LocationProbe() {
   const location = useLocation()
@@ -98,8 +64,12 @@ describe('ListsLayout / ListDetailPage', () => {
   })
 
   it('renders the selected list directly from the URL path', async () => {
-    const groceriesSummary = makeSummary({ id: 'list-2', name: 'Groceries', list_type: 'grocery' })
-    const groceriesDetail = makeDetail({
+    const groceriesSummary = makeListSummary({
+      id: 'list-2',
+      name: 'Groceries',
+      list_type: 'grocery',
+    })
+    const groceriesDetail = makeListDetail({
       id: 'list-2',
       name: 'Groceries',
       list_type: 'grocery',
@@ -122,7 +92,7 @@ describe('ListsLayout / ListDetailPage', () => {
     })
 
     mockedUseListSummaries.mockReturnValue({
-      data: [makeSummary(), groceriesSummary],
+      data: [makeListSummary(), groceriesSummary],
       loading: false,
       error: null,
       refetch: () => {},
@@ -140,8 +110,12 @@ describe('ListsLayout / ListDetailPage', () => {
   })
 
   it('navigates to the list path when a list row is clicked', async () => {
-    const groceriesSummary = makeSummary({ id: 'list-2', name: 'Groceries', list_type: 'grocery' })
-    const groceriesDetail = makeDetail({
+    const groceriesSummary = makeListSummary({
+      id: 'list-2',
+      name: 'Groceries',
+      list_type: 'grocery',
+    })
+    const groceriesDetail = makeListDetail({
       id: 'list-2',
       name: 'Groceries',
       list_type: 'grocery',
@@ -164,7 +138,7 @@ describe('ListsLayout / ListDetailPage', () => {
     })
 
     mockedUseListSummaries.mockReturnValue({
-      data: [makeSummary(), groceriesSummary],
+      data: [makeListSummary(), groceriesSummary],
       loading: false,
       error: null,
       refetch: () => {},
@@ -190,13 +164,13 @@ describe('ListsLayout / ListDetailPage', () => {
     vi.mocked(deleteList).mockResolvedValue(undefined)
 
     mockedUseListSummaries.mockReturnValue({
-      data: [makeSummary()],
+      data: [makeListSummary()],
       loading: false,
       error: null,
       refetch: () => {},
     })
     mockedUseListDetail.mockImplementation((listId) => ({
-      data: listId === 'list-1' ? makeDetail() : null,
+      data: listId === 'list-1' ? makeListDetail({ items: [makeListItem()] }) : null,
       loading: false,
       error: null,
       refetch: () => {},
@@ -222,13 +196,13 @@ describe('ListsLayout / ListDetailPage', () => {
     vi.mocked(deleteList).mockRejectedValue(new Error('Failed to delete list.'))
 
     mockedUseListSummaries.mockReturnValue({
-      data: [makeSummary()],
+      data: [makeListSummary()],
       loading: false,
       error: null,
       refetch: () => {},
     })
     mockedUseListDetail.mockImplementation((listId) => ({
-      data: listId === 'list-1' ? makeDetail() : null,
+      data: listId === 'list-1' ? makeListDetail({ items: [makeListItem()] }) : null,
       loading: false,
       error: null,
       refetch: () => {},

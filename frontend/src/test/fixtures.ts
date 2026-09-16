@@ -1,5 +1,6 @@
 import type { Dashboard, DashboardSummary } from '../api/dashboards'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
+import type { SseEvent } from '../hooks/useSSE'
 
 /**
  * Shared entity fixtures for tests.
@@ -97,4 +98,31 @@ export function makeListDetail(
     items,
     ...rest,
   }
+}
+
+/** A server frame as the SSE hook hands it to the resource routers. */
+export function makeSseEvent(overrides: Partial<SseEvent> = {}): SseEvent {
+  return {
+    event_id: 1,
+    event_type: 'dashboard.updated',
+    entity_type: 'dashboard',
+    entity_id: 'dash-1',
+    entity_version: 1,
+    actor_id: 'user-1',
+    actor_display_name: 'Example User',
+    payload: { dashboard_id: 'dash-1' },
+    created_at: '2026-04-05T00:00:00Z',
+    ...overrides,
+  }
+}
+
+/** A promise the test settles by hand, to hold a request open across an assertion. */
+export function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
