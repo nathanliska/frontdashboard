@@ -185,6 +185,9 @@ export const NotificationPageResponse = z.object({ items: z.array(NotificationRe
 export type NotificationSseEvent = z.infer<typeof NotificationSseEvent>;
 export const NotificationSseEvent = z.object({ body: z.string(), created_at: z.string(), id: z.string(), read_at: z.string().nullable(), reference_id: z.string().nullable(), reference_type: z.string().nullable(), title: z.string(), type: z.string() }).catchall(z.unknown());
 
+export type OwnerTransfer = z.infer<typeof OwnerTransfer>;
+export const OwnerTransfer = z.object({ user_id: z.uuid() }).catchall(z.unknown());
+
 export type PasswordChangeRequest = z.infer<typeof PasswordChangeRequest>;
 export const PasswordChangeRequest = z.object({ current_password: z.string(), new_password: z.string().min(8).max(128) }).catchall(z.unknown());
 

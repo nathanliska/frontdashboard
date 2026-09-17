@@ -7,6 +7,7 @@ import {
 } from '../../api/dashboards'
 import type { ResourceShare, ShareRole } from '../../api/shares'
 import { useDashboardMembers } from '../../resources/membersData'
+import { confirm } from '../../stores/confirm'
 import { toast } from '../../stores/toast'
 import { cn } from '../../utils/shared/cn'
 import { Dialog } from '../ui/Dialog'
@@ -29,20 +30,25 @@ export function DashboardSettingsModal({
   dashboard,
   onClose,
   onRename,
+  onTransfer,
 }: {
   dashboard: Pick<DashboardSummary, 'id' | 'name' | 'user_id' | 'can_manage_shares'>
   onClose: () => void
   onRename: (id: string, name: string) => Promise<boolean>
+  onTransfer: (id: string, userId: string) => Promise<boolean>
 }) {
   const [submitting, setSubmitting] = useState(false)
   const [shares, setShares] = useState<ResourceShare[]>([])
   const [sharesLoading, setSharesLoading] = useState(true)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  // Fixed at mount: the only way it changes while open is a transfer, which closes the modal, and
+  // re-rendering as the read-only roster for that last frame would fetch it for nothing.
+  const [canManageShares] = useState(dashboard.can_manage_shares)
   // Editors get the roster read-only; the owner manages it through the share panel instead.
-  const members = useDashboardMembers(dashboard.can_manage_shares ? null : dashboard.id)
+  const members = useDashboardMembers(canManageShares ? null : dashboard.id)
 
   useEffect(() => {
-    if (!dashboard.can_manage_shares) {
+    if (!canManageShares) {
       setShares([])
       setSharesLoading(false)
       return
@@ -67,7 +73,7 @@ export function DashboardSettingsModal({
     return () => {
       cancelled = true
     }
-  }, [dashboard.can_manage_shares, dashboard.id])
+  }, [canManageShares, dashboard.id])
 
   useEffect(() => {
     nameInputRef.current?.focus()
@@ -126,6 +132,13 @@ export function DashboardSettingsModal({
     }
   }
 
+  async function handleTransfer(item: SharePanelItem) {
+    const message = `Make ${item.principal_name} the owner of "${dashboard.name}"? You will stay on as an editor and can no longer manage sharing or delete it.`
+    if (!(await confirm(message, { confirmLabel: 'Make owner' }))) return
+    // The panel is owner-only, so a successful transfer has nothing left to show here.
+    if (await onTransfer(dashboard.id, item.principal_id)) onClose()
+  }
+
   async function handleRemoveShare(item: SharePanelItem) {
     const share = findShare(item)
     if (!share) return
@@ -159,12 +172,13 @@ export function DashboardSettingsModal({
             />
           </div>
 
-          {dashboard.can_manage_shares && (
+          {canManageShares && (
             <SharePanel
               dashboardId={dashboard.id}
               items={shareItems}
               onUpdate={handleRoleChange}
               onRemove={handleRemoveShare}
+              onTransfer={handleTransfer}
               title="Permissions"
               description="Choose who should be able to view or edit this dashboard."
               emptyMessage="Only you can access this dashboard right now."
@@ -173,7 +187,7 @@ export function DashboardSettingsModal({
               loadingMessage="Loading permissions…"
             />
           )}
-          {!dashboard.can_manage_shares && (
+          {!canManageShares && (
             <section aria-labelledby="dashboard-members-heading" className="space-y-2">
               <h3 id="dashboard-members-heading" className="text-sm font-medium text-zinc-200">
                 Who has access

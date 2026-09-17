@@ -19,6 +19,7 @@ import {
   apiPurgeDashboard,
   apiRemoveWidget,
   apiRestoreDashboard,
+  apiTransferDashboardOwnership,
   apiUpdateDashboardMeta,
   apiUpdateLayout,
   apiUpdateWidget,
@@ -152,6 +153,7 @@ export interface DashboardState {
   leaveDashboard: (id: string) => Promise<boolean>
   toggleFavorite: (id: string, current: boolean) => Promise<boolean>
   renameDashboard: (id: string, name: string) => Promise<boolean>
+  transferDashboard: (id: string, userId: string) => Promise<boolean>
   loadTrash: (force?: boolean) => Promise<void>
   restoreDashboard: (id: string) => Promise<DashboardSummary | null>
   purgeDashboard: (id: string) => Promise<boolean>
@@ -377,6 +379,24 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
         return true
       } catch {
         toast.error('Failed to rename dashboard.')
+        return false
+      }
+    },
+
+    async transferDashboard(id, userId) {
+      const guard = sessionGuard()
+      try {
+        const updated = await apiTransferDashboardOwnership(id, userId)
+        guard.set((s) => ({
+          summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
+          dashboard:
+            s.dashboard?.id === id
+              ? { ...s.dashboard, user_id: updated.user_id, can_manage_shares: false }
+              : s.dashboard,
+        }))
+        return true
+      } catch {
+        toast.error('Failed to transfer ownership.')
         return false
       }
     },

@@ -238,6 +238,19 @@ export async function apiUpdateDashboardShare(
   return parseJson(res, ShareResponse)
 }
 
+/** Make a member the owner. The response is the caller's own summary afterwards: editor, not owner. */
+export async function apiTransferDashboardOwnership(
+  dashboardId: string,
+  userId: string,
+): Promise<DashboardSummary> {
+  const res = await apiFetch(`/api/dashboards/${dashboardId}/owner`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  })
+  if (!res.ok) throw await readError(res, 'Failed to transfer ownership')
+  return parseJson(res, DashboardSummary)
+}
+
 export async function apiRemoveDashboardShare(dashboardId: string, shareId: string): Promise<void> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/shares/${shareId}`, {
     method: 'DELETE',

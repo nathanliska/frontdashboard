@@ -1,6 +1,6 @@
 # ADR-001: Per-Resource `ResourceShare` Sharing (Groups Removed)
 
-**Date:** 2026-07-20 (amended 2026-08-08)
+**Date:** 2026-07-20 (amended 2026-08-08; amended 2026-09-16 — ownership can be transferred)
 
 ## Context
 
@@ -58,6 +58,8 @@ therefore a migration that drops one CHECK and one FK, not a redesign.
   but `permissions.effective_role` returns `EffectiveRole.owner` rather than `None`. The storable
   subset `ShareRole` is derived from that enum as a `Literal`, keeping `owner` unrequestable while
   killing the `if role:` guard that read the owner as "no access" ([AGENTS.md](../../AGENTS.md)).
+  The cost is that moving ownership is three coupled writes in one transaction rather than a role
+  change ([FDR-004 §8](../fdr/FDR-004-sharing-and-access.md)).
 - **Trashed-visibility invariant lives in the access helpers**: querying a child table directly
   bypasses the trashed-dashboard filter, so all child access must route through the shares service.
 - **A share row cannot outlive what it names**: the FKs mean a purged dashboard takes its grants

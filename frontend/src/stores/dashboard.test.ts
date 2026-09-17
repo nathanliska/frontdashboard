@@ -23,6 +23,7 @@ const {
   apiRemoveWidget,
   apiPurgeDashboard,
   apiRestoreDashboard,
+  apiTransferDashboardOwnership,
   apiUpdateDashboardMeta,
   apiUpdateLayout,
   apiUpdateWidget,
@@ -36,6 +37,7 @@ const {
   apiRemoveWidget: vi.fn(),
   apiPurgeDashboard: vi.fn(),
   apiRestoreDashboard: vi.fn(),
+  apiTransferDashboardOwnership: vi.fn(),
   apiUpdateDashboardMeta: vi.fn(),
   apiUpdateLayout: vi.fn(),
   apiUpdateWidget: vi.fn(),
@@ -63,6 +65,7 @@ vi.mock('../api/dashboards', () => ({
   apiRemoveWidget,
   apiPurgeDashboard,
   apiRestoreDashboard,
+  apiTransferDashboardOwnership,
   apiUpdateDashboardMeta,
   apiUpdateLayout,
   apiUpdateWidget,
@@ -581,6 +584,28 @@ describe('useDashboardStore', () => {
 
     apiUpdateDashboardMeta.mockResolvedValueOnce(makeDashboard({ name: 'New' }))
     await expect(useDashboardStore.getState().renameDashboard('dash-1', 'New')).resolves.toBe(true)
+  })
+
+  it('transferDashboard hands the held dashboard over and drops share management', async () => {
+    useDashboardStore.setState({ dashboard: makeDashboard(), summaries: [makeDashboardSummary()] })
+
+    apiTransferDashboardOwnership.mockRejectedValueOnce(new Error('boom'))
+    await expect(useDashboardStore.getState().transferDashboard('dash-1', 'user-2')).resolves.toBe(
+      false,
+    )
+    expect(toastError).toHaveBeenCalledWith('Failed to transfer ownership.')
+
+    apiTransferDashboardOwnership.mockResolvedValueOnce(
+      makeDashboardSummary({ user_id: 'user-2', can_manage_shares: false }),
+    )
+    await expect(useDashboardStore.getState().transferDashboard('dash-1', 'user-2')).resolves.toBe(
+      true,
+    )
+    expect(useDashboardStore.getState().dashboard).toMatchObject({
+      user_id: 'user-2',
+      can_manage_shares: false,
+    })
+    expect(useDashboardStore.getState().summaries[0]).toMatchObject({ user_id: 'user-2' })
   })
 
   it('addWidget resolves false on failure and true on success', async () => {

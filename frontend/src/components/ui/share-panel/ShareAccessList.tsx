@@ -12,6 +12,7 @@ export function ShareAccessList({
   currentAccessLabel,
   onUpdate,
   onRemove,
+  onTransfer,
 }: {
   items: SharePanelItem[]
   roleOptions: ShareRoleOption[]
@@ -22,6 +23,7 @@ export function ShareAccessList({
   currentAccessLabel: string
   onUpdate: (item: SharePanelItem, role: ShareRole) => void | Promise<void>
   onRemove: (item: SharePanelItem) => void | Promise<void>
+  onTransfer?: (item: SharePanelItem) => void | Promise<void>
 }) {
   return (
     <div className="space-y-2">
@@ -40,6 +42,7 @@ export function ShareAccessList({
               roleOptions={roleOptions}
               onUpdate={onUpdate}
               onRemove={onRemove}
+              onTransfer={onTransfer}
             />
           ))}
         </ul>

@@ -117,7 +117,9 @@ _Last updated: 2026-09-16_
   was removed, so access never appears without the recipient acting.
 - A member can **leave** a shared dashboard (card menu → Leave, `DELETE /{id}/membership`) — their
   own share is removed, preferences cleaned up, and the feed records "you left". The owner cannot
-  leave; their exit is deleting the dashboard ([FDR-004](docs/fdr/FDR-004-sharing-and-access.md)).
+  leave; their exits are deleting the dashboard or **handing it to a member** (settings modal →
+  crown on a row, `POST /{id}/owner`), after which they stay on as an editor
+  ([FDR-004](docs/fdr/FDR-004-sharing-and-access.md)).
 
 **Lists**
 - Master/detail lists UI with nested routes + mobile slide nav; items support check, due date,
