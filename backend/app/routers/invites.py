@@ -157,7 +157,10 @@ async def accept_invite(
     if invite is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
 
-    result = await db.execute(select(Dashboard).where(Dashboard.id == invite.dashboard_id))
+    # Locked: an account deletion holds this row across its precondition and purge, so redeeming
+    # against a dashboard it is taking waits here and then finds it gone, rather than grafting a
+    # share onto a row about to vanish.
+    result = await db.execute(select(Dashboard).where(Dashboard.id == invite.dashboard_id).with_for_update())
     dashboard = result.scalar_one_or_none()
     if dashboard is None or dashboard.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")

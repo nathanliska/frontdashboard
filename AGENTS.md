@@ -251,9 +251,11 @@ from that:
   `PUT /layout` compares client against server version and 409s on mismatch.
 - Adding a table with a `dashboard_id` or `users` foreign key means adding it to the matching
   sweep in `services/retention.py`, and deciding in `services/accounts.py` whether an account
-  deletion removes its rows or leaves them naming the tombstone. The retention FKs don't cascade,
-  so a missed one either outlives the purge or rolls back the whole tick; a deletion never removes
-  the user row, so a missed one there fails silently instead.
+  deletion removes its rows or leaves them naming the tombstone. No `dashboard_id` FK cascades, so
+  a missed one there either outlives the purge or rolls back the whole tick. On `users.id` it is
+  mixed — the auth-adjacent tables cascade, the ownership, authorship, presence and share columns
+  do not, and `activity_events` carries no FK at all — and because a deletion never removes the
+  user row, a missed one there can only ever fail silently.
 - A new model module must be imported in `alembic/env.py` and needs its own hand-authored
   migration; the test schema is built by `alembic upgrade head`.
 - Any test touching Postgres must go through the `test_database` fixture, or it is auto-marked a

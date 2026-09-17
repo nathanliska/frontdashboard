@@ -1197,7 +1197,10 @@ async def transfer_dashboard_ownership(
     if body.user_id == current_user.id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already own this dashboard")
     share = next((s for s in shares if s.principal_type == PrincipalType.user and s.principal_id == body.user_id), None)
-    if share is None:
+    # Locked and re-read: a member deleting their account sheds this share and tombstones the row
+    # in one transaction, and handing a dashboard to an account on its way out would strand it.
+    target = (await db.execute(select(User).where(User.id == body.user_id).with_for_update())).scalar_one_or_none()
+    if share is None or target is None or target.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The new owner must already be a member of this dashboard")
 
     notification = stage_notification(
