@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-09-16
+**Last reviewed:** 2026-09-18
 
 ## Overview
 
@@ -51,11 +51,11 @@ multi-user account model with immediate, per-device session control — not just
   so reads as Mac; a definite coarse answer beats a hedge every Mac user would see.
 - **An account can be deleted, from the profile page, against the password.** Refused while the
   person owns a dashboard someone else can see — hand it over ([FDR-004 §8](FDR-004-sharing-and-access.md))
-  or delete it first. Otherwise their own dashboards are purged outright, their memberships,
-  invites and notifications go, every session ends, and the address is free to register again.
-  What they added to other people's dashboards, and where they were named on them, stays,
-  credited to "Deleted user" (decision 7); the other members get the same "left" frame a leave
-  sends.
+  or delete it first. Otherwise their own dashboards are purged outright, their memberships, the
+  invites they issued and their own notifications go, every session ends, their rows in the
+  activity log are renamed to the tombstone's, and the address is free to register again. What
+  they added to other people's dashboards, and where they were named on them, stays, credited to
+  "Deleted user" (decision 7); the other members get the same "left" frame a leave sends.
 - **A refused password change keeps you signed in, and says which field was wrong.** Mistyping the
   current password answers **403**, not 401 — a 401 is the client's only signal that a session is
   gone, so it signed people out of the form they were using. Both refusals, the wrong current
@@ -130,27 +130,56 @@ same tab. See ADR-012.
 
 ### 7. Deleting an account tombstones the row rather than removing it (decided 2026-09-16)
 
-**Decision:** `DELETE /auth/account` re-checks the password, purges every dashboard the person owns
-(trashed ones included), removes their memberships, invites and notifications, revokes every
-session, and rewrites the `users` row in place: a reserved-domain email carrying the id, an
-unusable password hash, "Deleted user" as the name, `deleted_at` set. The row is never removed.
-Owning a *live* dashboard others can see is a 409 naming it; a trashed one is not, since its
-members were told at trash time and only the owner could have restored it.
-**Why:** The authorship columns (`created_by`, `updated_by`, `actor_id`) and the presence rows
-(assignee, event participant) point at `users.id` with no cascade, and that is right — a list item
-or event on a shared dashboard belongs to the household, not to the person who typed it, and a
-leave already keeps them. The tombstone is what lets every one of those keep pointing somewhere
-and render as "Deleted user"; only the person's *access* — the share rows — is withdrawn, with
-the same frame to the remaining members as a leave. Purging owned dashboards rather than trashing
+**Decision:** `DELETE /auth/account` re-checks the password, locks the account and the dashboards
+it owns, purges every one of those dashboards (trashed ones included), removes their memberships,
+the invites they issued and their own notifications, revokes every session, renames them to
+"Deleted user" across the activity log, and rewrites the `users` row in place: a
+reserved-domain email carrying the id, an unusable password hash, "Deleted user", `deleted_at`
+set. The row is never removed. Owning a *live* dashboard others can see is a 409 naming it; a
+trashed one is not, since its members were told at trash time and only the owner could have
+restored it.
+**Why:** The authorship columns (`created_by`, `updated_by`) and the presence rows (assignee,
+event participant) point at `users.id` with no cascade, and that is right — a list item or event
+on a shared dashboard belongs to the household, not to the person who typed it, and a leave
+already keeps them. The tombstone is what lets every one of those keep pointing somewhere and
+render as "Deleted user"; only the person's *access* — the share rows — is withdrawn, with the
+same frame to the remaining members as a leave. Purging owned dashboards rather than trashing
 them follows from the 409: by the time the call succeeds, no one else could see them, and a trash
 nobody can sign in to restore from is a 30-day delay with no beneficiary.
+**What the lock buys:** the precondition and the purge become one critical section. `accept_invite`
+takes the same dashboard row before it consumes the code, so a redemption racing the purge waits and
+then finds the dashboard gone — the ordinary "no longer valid" answer. Consuming first would hold
+the invite row the purge deletes while waiting on the dashboard the purge holds: a deadlock. The
+account itself is a transaction-scoped advisory lock rather than a lock on the `users` row. It
+serialises a second submit of the same deletion, and `transfer_dashboard_ownership` takes it for the
+incoming owner, so a hand-over waits out a deletion and then refuses the tombstone instead of
+stranding a dashboard on it. Nothing else takes it, so no ordinary write can deadlock against it. A
+lock on the row would: a password reset spends its token and then writes the user row, while the
+deletion holds the row and sweeps that token. Leaving the row unlocked does let a write from the
+person's own second tab land while the deletion runs: a dashboard created in that moment outlives
+it, owned by the tombstone and reachable by no one; an invite redeemed in it leaves "Deleted user"
+listed as a member until the owner removes them; and a list item added to a dashboard being purged
+fails the deletion once, which a retry clears. Only the person deleting can cause any of these, so
+they are accepted rather than locked against. One race is not theirs: the retention reaper sweeps
+expired tokens and sessions before trashed dashboards, the reverse of this call's order, so a tick
+that meets this account's expired token and a trashed dashboard of theirs crossing 30 days in the
+same moment deadlocks with it. One side fails, and the next tick or a retry clears it.
+**What is not erased:** `activity_events` snapshots the actor's name rather than joining to it, so
+the name is rewritten there. That is hygiene at rest rather than something the person is shown —
+the feed is self-scoped, and a deleted account can never sign in to read its own. The *payloads*
+keep what they wrote (a list item's text, an event's title) until the 90-day history sweep takes
+the rows. Notifications already delivered to other people quote the name in their body and are
+left alone, like a sent message; they age out on the same sweep. A redeemed invite keeps
+`redeemed_by` pointing at the tombstone until the reaper prunes it after expiry. Say so before
+calling the account erased: it is detached and anonymised, not expunged.
 **Tradeoff:** A `users` tombstone is the one soft-deleted row nothing can clear — the exception to
 [ADR-007](../adr/ADR-007-soft-delete-boundary.md)'s invariant, recorded there. Because the row is
 never removed, no `users.id` foreign key can ever refuse a deletion, so a table this path forgets
 fails silently: its rows keep naming the tombstone. The reaper's abandoned-signup sweep and this
-path both list those FKs by hand, and a new one belongs in both. The precondition is unlocked: an
-invite redeemed in the window between the check and the purge lands on a dashboard that then
-vanishes, the same outcome as an owner deleting a dashboard right after someone joined.
+path both list those FKs by hand, and a new one belongs in both. The rename is also a single
+unbounded `UPDATE` inside the deletion's transaction — bounded in practice only by the 90-day
+horizon — so an account noisy enough to exceed the 15s statement timeout would fail to delete
+itself and keep failing; batching it is the fix if that ever stops being hypothetical.
 
 ## Access
 

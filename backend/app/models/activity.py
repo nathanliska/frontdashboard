@@ -87,7 +87,8 @@ class ActivityEvent(Base):
         unique=True,
     )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    # actor_id + actor_display_name snapshot — name preserved after user leaves/deletes
+    # actor_id + actor_display_name snapshot, so a feed row survives the actor leaving. Account
+    # deletion rewrites the name to the tombstone's (FDR-001 §7); a leave still keeps it.
     actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     actor_display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     # Polymorphic entity reference — no FK (can point to list, list_item, group_member, etc.)
