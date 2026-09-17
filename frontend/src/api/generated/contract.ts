@@ -2,6 +2,9 @@
   import { z } from "zod";
 
 // <Schemas>
+export type AccountDeleteRequest = z.infer<typeof AccountDeleteRequest>;
+export const AccountDeleteRequest = z.object({ password: z.string() }).catchall(z.unknown());
+
 export type ActivityEventResponse = z.infer<typeof ActivityEventResponse>;
 export const ActivityEventResponse = z.object({ actor_display_name: z.string(), actor_id: z.uuid(), created_at: z.iso.datetime(), entity_id: z.uuid(), entity_type: z.string(), event_id: z.number().int(), event_type: z.string(), payload: z.record(z.string(), z.unknown()) }).catchall(z.unknown());
 

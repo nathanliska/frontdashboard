@@ -29,6 +29,7 @@ from app.models.share import PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
 from app.schemas.auth import (
     DISPLAY_NAME_MAX_LENGTH,
+    AccountDeleteRequest,
     LoginRequest,
     PasswordChangeRequest,
     PasswordResetConfirmRequest,
@@ -46,6 +47,7 @@ from app.schemas.auth import (
     UserResponse,
     VerifyEmailRequest,
 )
+from app.services.accounts import delete_account, shared_dashboards_owned_by
 from app.services.email import send_existing_account_email, send_password_reset_email, send_verification_email
 from app.services.password_reset import consume_password_reset_token, reset_token_is_live
 from app.services.passwords import assert_password_not_common
@@ -56,6 +58,7 @@ from app.services.sessions import (
     revoke_user_sessions,
     start_session,
 )
+from app.sse.choreography import commit_and_broadcast
 
 logger = logging.getLogger(__name__)
 
@@ -569,6 +572,41 @@ async def change_password(
     revoked_ids = await revoke_user_sessions(current_user.id, db, except_session_id=session.id)
     await db.commit()
     drop_session_streams(revoked_ids)
+
+
+@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+# Same password oracle and Argon2 cost as change_password, so the same bound.
+@limiter.limit("5/minute")
+async def delete_own_account(
+    request: Request,
+    body: AccountDeleteRequest,
+    response: Response,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete the caller's account: purge what only they could reach, tombstone the rest.
+
+    Refused while they own a dashboard others can see — hand it over or delete it first, so
+    nobody loses access as a side effect of someone else leaving.
+    """
+    if not await verify_password(body.password, current_user.password_hash):
+        raise auth_failure(
+            "account_delete",
+            "bad_password",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password is incorrect",
+        )
+    shared = await shared_dashboards_owned_by(db, current_user)
+    if shared:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Hand over or delete the dashboards you share first: {', '.join(shared)}",
+        )
+    revoked_ids, fanouts = await delete_account(db, current_user)
+    await commit_and_broadcast(db, actor_id=current_user.id, fanouts=fanouts)
+    drop_session_streams(revoked_ids)
+    _clear_auth_cookies(response)
 
 
 @router.patch("/preferences", response_model=UserResponse)

@@ -77,8 +77,8 @@ class ResourceShare(UUIDPrimaryKeyMixin, Base):
         nullable=False,
     )
     principal_type: Mapped[PrincipalType] = mapped_column(String(10), nullable=False)
-    # No cascade, matching `granted_by`: if account deletion is ever built, this FK blocks it
-    # until it decides what happens to the dashboards the person could see.
+    # No cascade, matching `granted_by`: account deletion removes these rows itself and leaves the
+    # user row as a tombstone (FDR-001 §7), so nothing here ever dangles.
     principal_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_resource_shares_principal_id"),

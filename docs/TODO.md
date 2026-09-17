@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #56, #58◐, #59, #64, #65◐, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #58◐, #59, #64, #65◐, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -72,19 +72,13 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   persistence, activity, notification and SSE, repeating the same transaction/broadcast dance per
   handler. Worth doing as the deletion it implies — one unit of work plus a staged outbox, routers as
   thin adapters — not as a speculative layer. *(Large)*
-- **#56 — Account deletion is wanted and unbuilt, and the schema pretends otherwise.**
-  `User.deleted_at` is filtered in 8 places across 4 modules but **nothing sets it**. Every `NOT
-  NULL` FK to `users.id` blocks the row and none carry `ON DELETE`, so deletion has to *resolve*
-  each — the decision to settle first is reassign-authorship versus anonymise-in-place, because they
-  want different schemas. Ownership can now be handed to a member (FDR-004 §8), so the rule can be
-  "transfer or delete what you own that is shared, then go". *(Medium)*
 - **#58◐ — Losing access to a shared dashboard.** Both silent paths now notify
   ([FDR-007](fdr/FDR-007-notifications-and-activity.md) §5). Remaining are product questions rather
   than missing code: whether a shared user is warned **again before the purge**, since the reaper
   later takes the cascade including lists and events they authored themselves, and whether they get
   any route back at all — restore is owner-only. *(Small, product decisions first)*
 - **#59 — Changing an email address is unbuilt.** An address entered at signup is permanent, and the
-  case-insensitive unique index reserves it forever with no account deletion (#56) to release it.
+  case-insensitive unique index reserves it until the account is deleted (FDR-001 §7).
   Constraints: the new address must be verified **before** the switch or a typo locks the account out
   permanently; the old address should be notified, since that is how a takeover is detected; and it
   needs a pending-change record distinct from `email_verification_tokens`. The trap: an obvious

@@ -27,7 +27,10 @@ _Last updated: 2026-09-16_
   failure during a deploy signed users out, and reuse detection that read a *lost response* as
   theft. Both were observed in production. The trade taken knowingly: no theft detection.
 - Password reset via email; authenticated password change and profile rename. Rate limits on all
-  auth endpoints. A new password is screened against the breach-derived common-password list
+  auth endpoints. **An account can delete itself** (profile page, against the password): own
+  dashboards are purged, memberships and sessions go, the address is free again, and the `users`
+  row stays as a "Deleted user" tombstone so what they wrote on shared dashboards keeps its author.
+  Refused while they own a dashboard others can see ([FDR-001 §7](docs/fdr/FDR-001-authentication-and-sessions.md)). A new password is screened against the breach-derived common-password list
   (`services/passwords.py`) at registration, reset and change — length alone let `password123`
   through. Existing passwords are not re-screened.
 - **A link that changes who you are says so first.** The reset page checks its token before

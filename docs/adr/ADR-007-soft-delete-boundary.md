@@ -64,6 +64,9 @@ free the space — which is exactly what the old boundary lacked. Now:
   entity is classified by answering that, not by asking whether it is "content" or a "container".
 - **No unreachable recovery paths.** Every tombstone in the schema now has an endpoint that can
   clear it. That is the invariant this record exists to protect; a tombstone without one is a bug.
+  The one deliberate exception is a deleted **user**: it is not recoverable content but the anchor
+  every authorship column points at, kept so those rows never dangle
+  ([FDR-001 §7](../fdr/FDR-001-authentication-and-sessions.md)).
 - **Dropping `list_items.deleted_at` was one-way.** The migration deletes tombstoned rows before
   dropping the column, because dropping it first would resurrect every one of them into its list.
   A rollback restores the column, not the rows.

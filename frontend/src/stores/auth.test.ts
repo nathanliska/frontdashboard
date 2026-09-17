@@ -15,6 +15,7 @@ vi.mock('./dashboard', () => ({ resetDashboardData }))
 
 const {
   apiChangePassword,
+  apiDeleteAccount,
   apiGetMe,
   apiLogin,
   apiLogout,
@@ -24,6 +25,7 @@ const {
   apiUpdateProfile,
 } = vi.hoisted(() => ({
   apiChangePassword: vi.fn(),
+  apiDeleteAccount: vi.fn(),
   apiGetMe: vi.fn(),
   apiLogin: vi.fn(),
   apiLogout: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock('../api/client', () => ({
 
 vi.mock('../api/auth', () => ({
   apiChangePassword,
+  apiDeleteAccount,
   apiGetMe,
   apiLogin,
   apiLogout,
@@ -150,6 +153,18 @@ describe('useAuthStore', () => {
     expect(useAuthStore.getState().user).toBeNull()
     expect(registeredReset).toHaveBeenCalledTimes(2)
     expect(resetDashboardData).toHaveBeenCalledTimes(2)
+  })
+
+  it('signs out locally after the server deletes the account, without a logout call', async () => {
+    apiDeleteAccount.mockResolvedValue(undefined)
+    useAuthStore.setState({ status: 'authenticated', user })
+
+    await useAuthStore.getState().deleteAccount('pw')
+
+    expect(useAuthStore.getState().status).toBe('unauthenticated')
+    expect(registeredReset).toHaveBeenCalledTimes(1)
+    expect(resetDashboardData).toHaveBeenCalledTimes(1)
+    expect(apiLogout).not.toHaveBeenCalled()
   })
 
   it('cancels an active confirmation on logout', async () => {

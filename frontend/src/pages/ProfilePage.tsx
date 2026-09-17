@@ -1,4 +1,4 @@
-import { Check, Home, LockKeyhole, Pencil, X } from 'lucide-react'
+import { Check, Home, LockKeyhole, Pencil, Trash2, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { ApiError } from '../api/http'
@@ -16,12 +16,16 @@ export function ProfilePage() {
   const updateProfile = useAuthStore((s) => s.updateProfile)
   const updatePreferences = useAuthStore((s) => s.updatePreferences)
   const changePassword = useAuthStore((s) => s.changePassword)
+  const deleteAccount = useAuthStore((s) => s.deleteAccount)
   const summaries = useDashboardStore((s) => s.summaries)
   const summariesLoaded = useDashboardStore((s) => s.summariesLoaded)
   const summariesLoading = useDashboardStore((s) => s.summariesLoading)
   const loadSummaries = useDashboardStore((s) => s.loadSummaries)
   const [editingProfile, setEditingProfile] = useState(false)
   const [editingPassword, setEditingPassword] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | undefined>()
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
   // Errors live per field so they can be attached to the input that caused them.
@@ -86,6 +90,24 @@ export function ProfilePage() {
       toast.success('Profile updated.')
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  async function handleDeleteSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const password = String(new FormData(event.currentTarget).get('delete-password') ?? '')
+    if (!password) {
+      setDeleteError('Enter your password.')
+      return
+    }
+    setDeleteBusy(true)
+    setDeleteError(undefined)
+    try {
+      await deleteAccount(password)
+    } catch (error) {
+      // Both refusals belong on the field: a wrong password, and a dashboard still shared.
+      setDeleteError(error instanceof Error ? error.message : 'Failed to delete account.')
+      setDeleteBusy(false)
     }
   }
 
@@ -337,6 +359,57 @@ export function ProfilePage() {
             )}
           </div>
         </div>
+
+        <div className="flex items-center justify-between gap-4 border-t border-zinc-800/80 px-5 py-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <Trash2 size={15} className="mt-0.5 shrink-0 text-zinc-500" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-zinc-100">Delete account</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Your own dashboards are deleted for good. What you added to dashboards others own
+                stays, credited to a deleted user.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteError(undefined)
+              setDeleting((value) => !value)
+            }}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100"
+          >
+            {deleting ? <X size={14} /> : <Trash2 size={14} />}
+            {deleting ? 'Close' : 'Delete'}
+          </button>
+        </div>
+
+        {deleting ? (
+          <form
+            onSubmit={(event) => void handleDeleteSubmit(event)}
+            className="space-y-4 border-t border-zinc-800/80 px-5 py-4"
+          >
+            <FormField
+              id="delete-password"
+              name="delete-password"
+              label="Confirm your password"
+              type="password"
+              autoComplete="current-password"
+              hint="Dashboards you share must be handed over or deleted first."
+              error={deleteError}
+              required
+            />
+            <div className="flex items-center justify-end">
+              <button
+                type="submit"
+                disabled={deleteBusy}
+                className="rounded-lg bg-red-500/90 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-60"
+              >
+                {deleteBusy ? 'Deleting...' : 'Delete my account'}
+              </button>
+            </div>
+          </form>
+        ) : null}
       </section>
       <section className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
         <SessionsPanel />

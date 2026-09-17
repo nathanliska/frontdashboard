@@ -118,6 +118,12 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class AccountDeleteRequest(BaseModel):
+    """Re-authentication for the one irreversible operation an account has."""
+
+    password: str
+
+
 class SessionSummary(BaseModel):
     """Public session metadata; neither the credential nor its hash is exposed."""
 

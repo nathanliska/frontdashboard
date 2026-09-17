@@ -48,7 +48,7 @@ migration and no backfill.
 ## Consequences
 
 - **Counts are computed, never stored.** A `COUNT` bounded by `LIMIT :cap` costs the same whether an
-  account is empty or full, and it self-heals: when the reaper or a future account deletion removes
+  account is empty or full, and it self-heals: when the reaper or an account deletion removes
   rows, the allowance returns with no counter to decrement and no path that can forget to.
 - **The check is unlocked.** Two concurrent creates can both pass at one below the cap and overshoot
   by one. Meaningless for a storage bound, and not worth serialising every create to prevent.

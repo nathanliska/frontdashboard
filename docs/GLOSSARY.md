@@ -97,7 +97,9 @@ a non-zero count of it is a sign the reaper has stopped rather than that the dat
 real, as opposed to the `deleted_at` stamp that put it there. Done on demand from the trash, or by
 the reaper at the retention horizon. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
 
-**Soft delete** — Marking a row deleted via `deleted_at` and filtering it in every query, rather than removing it. Carried by `User`, `Dashboard`, `List` and `CalendarEvent`; list items and widgets are removed outright, because a tombstone earns its cost only where reconstructing the row by hand would be a real loss. Every tombstone has a reachable way to clear it — restore, purge, or the reaper at 30 days. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
+**Soft delete** — Marking a row deleted via `deleted_at` and filtering it in every query, rather than removing it. Carried by `User`, `Dashboard`, `List` and `CalendarEvent`; list items and widgets are removed outright, because a tombstone earns its cost only where reconstructing the row by hand would be a real loss. Every tombstone has a reachable way to clear it — restore, purge, or the reaper at 30 days — except a deleted user, kept for good as the row authorship points at. See [ADR-007](adr/ADR-007-soft-delete-boundary.md).
+
+**Deleted user** — The `users` row left behind by account deletion: address replaced by a reserved-domain one, password unusable, name "Deleted user", `deleted_at` set. Never removed, so everything the person wrote or was named on keeps its author. See [FDR-001 §7](fdr/FDR-001-authentication-and-sessions.md).
 
 **Layout version** — The `dashboard.version` integer used for optimistic concurrency on layout saves; a client/server mismatch is a 409. See [ADR-008](adr/ADR-008-layout-version-occ.md).
 
