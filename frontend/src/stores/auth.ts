@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   apiChangePassword,
+  apiDeleteAccount,
   apiGetMe,
   apiLogin,
   apiLogout,
@@ -43,6 +44,7 @@ interface AuthState {
   updatePreferences: (prefs: UserPreferences) => Promise<void>
   updateProfile: (input: { display_name?: string }) => Promise<void>
   changePassword: (input: { current_password: string; new_password: string }) => Promise<void>
+  deleteAccount: (password: string) => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>()((set, get) => ({
@@ -131,6 +133,15 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   // FormField, never a toast).
   async changePassword(input) {
     await apiChangePassword(input)
+  },
+
+  async deleteAccount(password) {
+    const gen = currentSessionGeneration()
+    await apiDeleteAccount(password)
+    if (gen !== currentSessionGeneration()) return // a newer sign-in owns the tab now
+    // The server already ended every session, so this is the local half of a sign-out only.
+    set({ status: 'unauthenticated', user: null })
+    resetSessionData()
   },
 }))
 

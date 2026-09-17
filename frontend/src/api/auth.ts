@@ -142,6 +142,15 @@ export async function apiChangePassword(input: {
   if (!res.ok) throw await readError(res, 'Failed to update password')
 }
 
+/** Irreversible: the server signs every device out and frees the address. 403 is a wrong password. */
+export async function apiDeleteAccount(password: string): Promise<void> {
+  const res = await apiFetch('/api/auth/account', {
+    method: 'DELETE',
+    body: JSON.stringify({ password }),
+  })
+  if (!res.ok) throw await readError(res, 'Failed to delete account')
+}
+
 /** A bounded page of live sessions; the cursor remains usable after revoking its boundary row. */
 export async function apiListSessions(cursor: SessionCursor | null): Promise<SessionPage> {
   const query = cursor

@@ -49,6 +49,13 @@ multi-user account model with immediate, per-device session control — not just
   browser and platform tokens and is all that is recorded: no IP address and no User-Agent string
   ([ADR-003](../adr/ADR-003-first-class-sessions.md)). A desktop-mode iPad sends the Mac string and
   so reads as Mac; a definite coarse answer beats a hedge every Mac user would see.
+- **An account can be deleted, from the profile page, against the password.** Refused while the
+  person owns a dashboard someone else can see — hand it over ([FDR-004 §8](FDR-004-sharing-and-access.md))
+  or delete it first. Otherwise their own dashboards are purged outright, their memberships,
+  invites and notifications go, every session ends, and the address is free to register again.
+  What they added to other people's dashboards, and where they were named on them, stays,
+  credited to "Deleted user" (decision 7); the other members get the same "left" frame a leave
+  sends.
 - **A refused password change keeps you signed in, and says which field was wrong.** Mistyping the
   current password answers **403**, not 401 — a 401 is the client's only signal that a session is
   gone, so it signed people out of the form they were using. Both refusals, the wrong current
@@ -120,6 +127,30 @@ with a retry.
 **Why:** Prevents one account's cached or in-flight data from leaking into the next account in the
 same tab. See ADR-012.
 **Tradeoff:** Every account-scoped store must adopt the generation-guard pattern and a reset hook.
+
+### 7. Deleting an account tombstones the row rather than removing it (decided 2026-09-16)
+
+**Decision:** `DELETE /auth/account` re-checks the password, purges every dashboard the person owns
+(trashed ones included), removes their memberships, invites and notifications, revokes every
+session, and rewrites the `users` row in place: a reserved-domain email carrying the id, an
+unusable password hash, "Deleted user" as the name, `deleted_at` set. The row is never removed.
+Owning a *live* dashboard others can see is a 409 naming it; a trashed one is not, since its
+members were told at trash time and only the owner could have restored it.
+**Why:** The authorship columns (`created_by`, `updated_by`, `actor_id`) and the presence rows
+(assignee, event participant) point at `users.id` with no cascade, and that is right — a list item
+or event on a shared dashboard belongs to the household, not to the person who typed it, and a
+leave already keeps them. The tombstone is what lets every one of those keep pointing somewhere
+and render as "Deleted user"; only the person's *access* — the share rows — is withdrawn, with
+the same frame to the remaining members as a leave. Purging owned dashboards rather than trashing
+them follows from the 409: by the time the call succeeds, no one else could see them, and a trash
+nobody can sign in to restore from is a 30-day delay with no beneficiary.
+**Tradeoff:** A `users` tombstone is the one soft-deleted row nothing can clear — the exception to
+[ADR-007](../adr/ADR-007-soft-delete-boundary.md)'s invariant, recorded there. Because the row is
+never removed, no `users.id` foreign key can ever refuse a deletion, so a table this path forgets
+fails silently: its rows keep naming the tombstone. The reaper's abandoned-signup sweep and this
+path both list those FKs by hand, and a new one belongs in both. The precondition is unlocked: an
+invite redeemed in the window between the check and the purge lands on a dashboard that then
+vanishes, the same outcome as an owner deleting a dashboard right after someone joined.
 
 ## Access
 
