@@ -3,10 +3,10 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.activity import ChangedField, EventType
+from app.models.activity import ActivityEvent, ChangedField, EventType
 from app.models.dashboard import Dashboard
 from app.models.dashboard_invite import DashboardInvite
 from app.models.email_verification_token import EmailVerificationToken
@@ -21,6 +21,24 @@ from app.services.shares import dashboard_fanout, get_resource_shares
 from app.sse.choreography import Fanout
 
 DELETED_DISPLAY_NAME = "Deleted user"
+
+
+async def lock_account(db: AsyncSession, user: User) -> bool:
+    """Take the row locks the deletion needs, before its precondition is read.
+
+    The dashboards are held `FOR UPDATE` because a write that would add a member conflicts with
+    it: `accept_invite` and `transfer_dashboard_ownership` take the same row, and any insert into
+    `resource_shares` takes `FOR KEY SHARE` on the parent through its foreign key. The user row is
+    held the weaker `FOR NO KEY UPDATE` — enough to serialise a second submit of this same
+    deletion, and compatible with the key-share every insert naming this actor takes, so an
+    ordinary write from another tab cannot deadlock against it.
+
+    Returns False for an account a first submit tombstoned while this one waited.
+    """
+    await db.execute(select(User.id).where(User.id == user.id).with_for_update(key_share=True))
+    await db.execute(select(Dashboard.id).where(Dashboard.user_id == user.id).order_by(Dashboard.id).with_for_update())
+    await db.refresh(user)
+    return user.deleted_at is None
 
 
 async def shared_dashboards_owned_by(db: AsyncSession, user: User) -> list[str]:
@@ -39,8 +57,8 @@ async def delete_account(db: AsyncSession, user: User) -> tuple[list[uuid.UUID],
 
     Authorship and presence on other people's dashboards — items, events, assignments,
     participations — stay and render from the tombstone's name, exactly as after a leave.
-    Caller checks `shared_dashboards_owned_by` first and owns the commit; returns the revoked
-    session ids to drop after it and the "left" frames for each dashboard's remaining members.
+    Caller locks first, checks `shared_dashboards_owned_by`, and owns the commit; returns the
+    revoked session ids to drop after it and the "left" frames for each dashboard's members.
     """
     memberships = (
         await db.execute(
@@ -84,6 +102,10 @@ async def delete_account(db: AsyncSession, user: User) -> tuple[list[uuid.UUID],
     await db.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id))
     await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
     revoked = await revoke_user_sessions(user.id, db)
+    # The frames above keep the name, so the members hear "X left" as they would from a leave.
+    # The rows are at-rest residue no surface can read back — the feed is self-scoped — so this is
+    # hygiene against a future reader rather than something the person is shown (FDR-001 §7).
+    await db.execute(update(ActivityEvent).where(ActivityEvent.actor_id == user.id).values(actor_display_name=DELETED_DISPLAY_NAME))
 
     # `.invalid` is reserved and never resolves; the id keeps it unique so the address is free again.
     user.email = f"{user.id}@deleted.invalid"

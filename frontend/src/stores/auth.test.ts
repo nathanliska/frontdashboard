@@ -155,6 +155,21 @@ describe('useAuthStore', () => {
     expect(resetDashboardData).toHaveBeenCalledTimes(2)
   })
 
+  it('drops the local sign-out when a newer session already owns the tab', async () => {
+    const { promise, resolve } = deferred<void>()
+    apiDeleteAccount.mockReturnValue(promise)
+    useAuthStore.setState({ status: 'authenticated', user })
+
+    const pending = useAuthStore.getState().deleteAccount('pw')
+    bumpSessionGeneration() // a fresh sign-in claimed the tab while the request was in flight
+    resolve()
+    await pending
+
+    expect(useAuthStore.getState().status).toBe('authenticated')
+    expect(registeredReset).not.toHaveBeenCalled()
+    expect(resetDashboardData).not.toHaveBeenCalled()
+  })
+
   it('signs out locally after the server deletes the account, without a logout call', async () => {
     apiDeleteAccount.mockResolvedValue(undefined)
     useAuthStore.setState({ status: 'authenticated', user })
@@ -162,6 +177,7 @@ describe('useAuthStore', () => {
     await useAuthStore.getState().deleteAccount('pw')
 
     expect(useAuthStore.getState().status).toBe('unauthenticated')
+    expect(useAuthStore.getState().user).toBeNull()
     expect(registeredReset).toHaveBeenCalledTimes(1)
     expect(resetDashboardData).toHaveBeenCalledTimes(1)
     expect(apiLogout).not.toHaveBeenCalled()
