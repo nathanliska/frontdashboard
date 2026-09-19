@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #58◐, #59, #64, #65◐, #73, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #59, #64, #65◐, #73, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -72,11 +72,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   persistence, activity, notification and SSE, repeating the same transaction/broadcast dance per
   handler. Worth doing as the deletion it implies — one unit of work plus a staged outbox, routers as
   thin adapters — not as a speculative layer. *(Large)*
-- **#58◐ — Losing access to a shared dashboard.** Both silent paths now notify
-  ([FDR-007](fdr/FDR-007-notifications-and-activity.md) §5). Remaining are product questions rather
-  than missing code: whether a shared user is warned **again before the purge**, since the reaper
-  later takes the cascade including lists and events they authored themselves, and whether they get
-  any route back at all — restore is owner-only. *(Small, product decisions first)*
 - **#59 — Changing an email address is unbuilt.** An address entered at signup is permanent, and the
   case-insensitive unique index reserves it until the account is deleted (FDR-001 §7).
   Constraints: the new address must be verified **before** the switch or a typo locks the account out
