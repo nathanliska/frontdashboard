@@ -172,6 +172,8 @@ async def _deliver(raw: str) -> None:
     message, user_ids, actor_id, origin = decode(raw)
     if origin == WORKER_ID:
         return
+    # The one legitimate broadcast outside `commit_and_broadcast`: the frame is a sibling
+    # worker's, already committed there.
     await manager.broadcast(message, user_ids=user_ids, actor_id=actor_id)
 
 
