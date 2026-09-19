@@ -180,6 +180,9 @@ def _default_widget_size(widget_type: str) -> tuple[int, int]:
 
     Both divide 24 exactly, which is what keeps a board tiling rather than going ragged: a height of
     9 leaves 24 // 9 == 2 rows of widgets and wastes the remainder, costing three full-size slots.
+
+    The widgets' own size thresholds are pixels tuned against these defaults, and nothing links the
+    two: change a size here and re-check them, or a default-sized widget can hide its own controls.
     """
     if widget_type == "calendar":
         return (12, 8)
