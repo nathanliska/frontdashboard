@@ -1,7 +1,7 @@
 # FDR-007: Notifications & Activity Feed
 
 **Status:** Active
-**Last reviewed:** 2026-08-26
+**Last reviewed:** 2026-09-19
 
 ## Overview
 
@@ -121,8 +121,9 @@ been deleted". The SSE frame reaches only whoever is connected at that instant; 
 what a returning user sees. It matters more than a missing courtesy because the reaper eventually
 purges the cascade, **including lists and events those users authored themselves**.
 **Tradeoff:** The notification explains the loss but cannot undo it — restore is owner-only, so a
-shared user still has no route back. Whether they should be warned again *before* the purge, rather
-than only at the moment of trashing, is open ([#58](../TODO.md)).
+shared user has no route back. That is decided, not a gap: trashing is the owner's call, and a
+member who wants their rows back asks the owner to restore within the 30 days. There is no second
+warning before the purge — it would repeat a fact they cannot act on.
 
 ## Access
 
