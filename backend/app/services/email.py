@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 from dataclasses import dataclass
 from string import Template
@@ -8,7 +9,7 @@ import httpx
 from app import metrics
 from app.config import Environment, settings
 from app.services.dev_mail import write_dev_message
-from app.services.email_templates import EXISTING_ACCOUNT_HTML, PASSWORD_RESET_HTML, VERIFICATION_HTML
+from app.services.email_templates import EMAIL_CHANGE_LAYOUT_HTML, EXISTING_ACCOUNT_HTML, PASSWORD_RESET_HTML, VERIFICATION_HTML
 
 logger = logging.getLogger(__name__)
 _RESEND_EMAILS_URL = "https://api.resend.com/emails"
@@ -114,6 +115,58 @@ async def send_existing_account_email(email: str) -> None:
             ),
         ),
         operation="existing_account",
+    )
+
+
+async def send_email_change_confirmation(new_email: str, confirm_url: str) -> None:
+    expiry = _expiry_text(settings.email_change_expire_hours)
+    lead = "Confirm that this is the new email address for your FrontDashboard account. Nothing changes until you do."
+    aside = "If you did not ask for this, ignore this email and the address will not be used."
+    await _deliver(
+        _Message(
+            to=new_email,
+            subject="Confirm your new FrontDashboard email",
+            html=Template(EMAIL_CHANGE_LAYOUT_HTML).substitute(
+                title="Confirm your new email",
+                lead=lead,
+                action_url=confirm_url,
+                action_label="Confirm email",
+                expiry_text=expiry,
+                aside=aside,
+                reason="You received this because this address was entered as the new email for an account.",
+            ),
+            text=f"{lead}\n\n{confirm_url}\n\n{expiry}\n\n{aside}",
+        ),
+        operation="email_change",
+    )
+
+
+async def send_email_change_notice(old_email: str, new_email: str) -> None:
+    """Warn the current address that a change is pending, and say how to stop it.
+
+    The only takeover signal the account's owner gets, since the old address is not asked to
+    confirm (FDR-001 §8). `new_email` is whatever the requester typed, so it is escaped.
+    """
+    reset_url = f"{settings.frontend_base_url.rstrip('/')}/forgot-password"
+    lead = f"Someone signed in to your FrontDashboard account asked to change its email address to {new_email}."
+    aside = "It takes effect only once that address confirms it. If this was you, no action is needed."
+    stop = "If it was not you, reset your password now. Until the change is confirmed, that cancels it and signs out every device."
+    await _deliver(
+        _Message(
+            to=old_email,
+            subject="A change to your FrontDashboard email was requested",
+            html=Template(EMAIL_CHANGE_LAYOUT_HTML).substitute(
+                title="Email change requested",
+                lead=f"{html.escape(lead)} {stop}",
+                action_url=reset_url,
+                action_label="Reset password",
+                expiry_text="",
+                aside=aside,
+                reason="You received this because this is the current email address of the account.",
+            ),
+            text=f"{lead}\n\n{aside}\n\n{stop}\n{reset_url}",
+        ),
+        operation="email_change_notice",
     )
 
 

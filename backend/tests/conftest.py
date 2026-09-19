@@ -166,6 +166,8 @@ async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
     app.state.email_verification_tokens = {}
     app.state.password_reset_tokens = {}
     app.state.existing_account_emails = []
+    app.state.email_change_tokens = {}
+    app.state.email_change_notices = []
 
     async def _capture_verification_email(email: str, verification_url: str) -> None:
         query = parse_qs(urlparse(verification_url).query)
@@ -181,6 +183,15 @@ async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
     monkeypatch.setattr("app.routers.auth.send_verification_email", _capture_verification_email)
     monkeypatch.setattr("app.routers.auth.send_password_reset_email", _capture_password_reset_email)
     monkeypatch.setattr("app.routers.auth.send_existing_account_email", _capture_existing_account_email)
+
+    async def _capture_email_change_confirmation(new_email: str, confirm_url: str) -> None:
+        app.state.email_change_tokens[new_email] = parse_qs(urlparse(confirm_url).query)["token"][0]
+
+    async def _capture_email_change_notice(old_email: str, new_email: str) -> None:
+        app.state.email_change_notices.append((old_email, new_email))
+
+    monkeypatch.setattr("app.routers.auth.send_email_change_confirmation", _capture_email_change_confirmation)
+    monkeypatch.setattr("app.routers.auth.send_email_change_notice", _capture_email_change_notice)
     yield
     limiter._storage.reset()
 

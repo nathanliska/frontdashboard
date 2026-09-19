@@ -14,6 +14,7 @@ from app.config import settings
 from app.models.activity import ActivityEvent
 from app.models.calendar import CalendarEvent, CalendarEventParticipant
 from app.models.dashboard import Dashboard
+from app.models.email_change_token import EmailChangeToken
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.list import List
 from app.models.notification import Notification
@@ -50,13 +51,17 @@ async def test_expired_tokens_deleted_and_live_ones_kept(db_session):
     ev_exp = EmailVerificationToken(user_id=user.id, token_hash=f"eve-{uuid.uuid4()}", expires_at=now - timedelta(hours=1))
     pr_live = PasswordResetToken(user_id=user.id, token_hash=f"prl-{uuid.uuid4()}", expires_at=now + timedelta(hours=1))
     pr_exp = PasswordResetToken(user_id=user.id, token_hash=f"pre-{uuid.uuid4()}", expires_at=now - timedelta(hours=1))
-    db_session.add_all([ev_live, ev_exp, pr_live, pr_exp])
+    ec_live = EmailChangeToken(user_id=user.id, new_email="l@example.com", token_hash=f"ecl-{uuid.uuid4()}", expires_at=now + timedelta(hours=1))
+    ec_exp = EmailChangeToken(user_id=user.id, new_email="e@example.com", token_hash=f"ece-{uuid.uuid4()}", expires_at=now - timedelta(hours=1))
+    db_session.add_all([ev_live, ev_exp, pr_live, pr_exp, ec_live, ec_exp])
     await db_session.flush()
 
     counts = await reap_expired_auth_rows(db_session, now=now)
 
     assert counts["email_verification_tokens"] == 1
     assert counts["password_reset_tokens"] == 1
+    assert counts["email_change_tokens"] == 1
+    assert await db_session.get(EmailChangeToken, ec_live.id) is not None
     assert await db_session.get(EmailVerificationToken, ev_live.id) is not None
     assert await db_session.get(PasswordResetToken, pr_live.id) is not None
     # A session in current use is untouched.

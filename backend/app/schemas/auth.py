@@ -118,6 +118,17 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class EmailChangeRequest(BaseModel):
+    """A new address, and re-authentication for asking."""
+
+    new_email: NormalizedEmail
+    password: str
+
+
+class EmailChangeConfirmRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+
 class AccountDeleteRequest(BaseModel):
     """Re-authentication for the one irreversible operation an account has."""
 

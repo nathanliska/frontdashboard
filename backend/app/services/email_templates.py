@@ -150,3 +150,55 @@ PASSWORD_RESET_HTML = """\
 </body>
 </html>
 """
+
+# One layout for the two address-change mails; every value substituted into it is escaped by the caller.
+EMAIL_CHANGE_LAYOUT_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background:#09090b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+    <tr>
+      <td align="center" style="padding:48px 16px;">
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:480px;">
+          <tr>
+            <td style="padding-bottom:28px;">
+              <span style="font-size:14px;font-weight:600;color:#f4f4f5;letter-spacing:0.06em;">FrontDashboard</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:32px;">
+              <h1 style="margin:0 0 10px;font-size:20px;font-weight:600;color:#f4f4f5;line-height:1.3;">${title}</h1>
+              <p style="margin:0 0 28px;font-size:14px;line-height:1.65;color:#a1a1aa;">
+                ${lead}
+              </p>
+              <a href="${action_url}" style="display:inline-block;background:#f4f4f5;color:#09090b;font-size:14px;font-weight:600;text-decoration:none;padding:11px 28px;border-radius:8px;">
+                ${action_label}
+              </a>
+              <p style="margin:28px 0 0;font-size:12px;color:#71717a;line-height:1.5;">
+                Or paste this link into your browser:<br>
+                <span style="color:#a1a1aa;word-break:break-all;">${action_url}</span>
+              </p>
+              <p style="margin:16px 0 0;font-size:12px;color:#52525b;">${expiry_text}</p>
+              <hr style="margin:24px 0;border:none;border-top:1px solid #27272a;">
+              <p style="margin:0;font-size:12px;color:#52525b;">${aside}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding-top:24px;">
+              <p style="margin:0;font-size:12px;color:#3f3f46;">
+                ${reason}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""

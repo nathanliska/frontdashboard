@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.activity import ActivityEvent, ChangedField, EventType
 from app.models.dashboard import Dashboard
 from app.models.dashboard_invite import DashboardInvite
+from app.models.email_change_token import EmailChangeToken
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
@@ -30,8 +31,8 @@ _ACCOUNT_LOCK_NAMESPACE = 0x2026_0918
 async def lock_live_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     """Serialise against a concurrent deletion of this account; None if it is already gone.
 
-    An advisory lock rather than a row lock: nothing else takes it, so a write to the user row or
-    anything under it can never wait on a deletion that is itself waiting on that write.
+    An advisory lock rather than a row lock: every holder takes it before touching a row, and an
+    ordinary write never takes it at all, so nothing waits on it while holding what a holder needs.
     """
     await db.execute(select(func.pg_advisory_xact_lock(_ACCOUNT_LOCK_NAMESPACE, func.hashtext(str(user_id)))))
     query = select(User).where(User.id == user_id).execution_options(populate_existing=True)
@@ -113,6 +114,8 @@ async def delete_account(db: AsyncSession, user: User) -> tuple[list[uuid.UUID],
     await db.execute(delete(Notification).where(Notification.user_id == user.id))
     await db.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id))
     await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id))
+    # After the reset tokens: a confirm and a reset both take the two tables in this order.
+    await db.execute(delete(EmailChangeToken).where(EmailChangeToken.user_id == user.id))
     revoked = await revoke_user_sessions(user.id, db)
     # The frames above keep the name, so the members hear "X left" as they would from a leave.
     # The rows are at-rest residue no surface can read back — the feed is self-scoped — so this is

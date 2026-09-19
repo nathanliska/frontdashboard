@@ -59,6 +59,20 @@ async def test_development_writes_the_message_to_the_outbox(outbox: Path, monkey
     assert str(written[0]) in logs.text
 
 
+async def test_the_address_change_mails_render_and_escape_the_requested_address(outbox: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The notice quotes whatever the requester typed, to someone who may not be the requester."""
+    monkeypatch.setattr(email_service.settings, "environment", Environment.development)
+
+    await email_service.send_email_change_confirmation("new@example.com", "http://localhost/confirm-email-change?token=abc")
+    await email_service.send_email_change_notice("old@example.com", "<b>new</b>@example.com")
+
+    pages = "".join(page.read_text(encoding="utf-8") for page in outbox.glob("*.html"))
+    assert "confirm-email-change?token=abc" in pages
+    assert "&lt;b&gt;new&lt;/b&gt;@example.com" in pages
+    assert "<b>new</b>" not in pages
+    assert "/forgot-password" in pages
+
+
 async def test_non_development_drops_the_mail_without_logging_the_link(
     outbox: Path, monkeypatch: pytest.MonkeyPatch, logs: pytest.LogCaptureFixture
 ) -> None:
