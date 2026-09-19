@@ -133,10 +133,8 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - CI runs lint, tests, `ty` type checking and the frontend build on every push and PR — except
   docs-only changes (`docs/**`, `**.md` at any depth), which skip it. On a PR touching only one
   side, the other side's job is skipped. Keep it green.
-- **Six guards are backend tests that read frontend source**: `test_activity.py`,
-  `test_grid_basis_coverage.py`, `test_css_container_coverage.py`, `test_nav_breakpoint_coverage.py`,
-  `test_frontend_pin_coverage.py` and `test_toolchain_coverage.py`. Repo checks runs their unit cases
-  for either side, independently of the Backend job's side filter. Run `make test` before a PR.
+- Six guards are backend tests that read frontend source, so a frontend-only change can fail
+  them; Repo checks runs them for either side. Run `make test` before a PR.
 - MCP servers are declared once per tool — `.mcp.json` for Claude Code, `.codex/config.toml` for
   Codex. Nothing syncs them; change both or one agent silently loses the server.
 
@@ -145,12 +143,11 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - `backend/` — Python 3.14+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 17.
 - `frontend/` — React 19 + TypeScript, Vite, Tailwind CSS, Zustand stores, react-grid-layout v2.
 - Infra — Docker Compose (dev + prod variants), Caddy reverse proxy (prod), `uv` and `npm`.
-- **Valkey** — bundled in each stack, holding the rate-limit windows and the SSE fan-out stream. Not
-  a cache and not a source of truth: nothing durable lives there, and both consumers keep serving
-  without it ([ADR-013](docs/adr/ADR-013-rate-limit-cf-connecting-ip.md),
-  [ADR-004](docs/adr/ADR-004-sse-over-websocket.md)). The engine is the only thing that carries that
-  name: `REDIS_URL`, the `redis://` scheme, the compose service and redis-py all keep theirs,
-  because what they name is the protocol Valkey speaks. Don't "fix" that inconsistency.
+- **Valkey** — holds the rate-limit windows and the SSE fan-out stream. Nothing durable lives
+  there, and both consumers keep serving without it
+  ([ADR-013](docs/adr/ADR-013-rate-limit-cf-connecting-ip.md),
+  [ADR-004](docs/adr/ADR-004-sse-over-websocket.md)). `REDIS_URL`, `redis://` and redis-py keep
+  their names on purpose — they name the protocol. Don't "fix" that.
 - **Sharing model**: per-resource `ResourceShare` rows. Dashboards are shared directly with users
   (viewer/editor, owner = creator); lists and calendar events **inherit** access from the
   dashboard whose widget binds them, so their `/shares` endpoints are deliberate 409 stubs.
@@ -164,10 +161,9 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   refresh token, no `/auth/refresh`, no localStorage tokens
   ([ADR-002](docs/adr/ADR-002-jwt-httponly-cookies-csrf.md),
   [ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
-- **Real-time**: SSE, not WebSocket; one multiplexed connection per open tab, fanned out by user —
-  a laptop, a phone and a second tab are three streams, not one. Fan-out reaches the other workers
-  over a Valkey stream: delivered locally first, published after, and a lost frame is repaired by the
-  reader's resync on recovery rather than retried.
+- **Real-time**: SSE, not WebSocket; one multiplexed connection per open tab, fanned out by user.
+  Fan-out reaches other workers over a Valkey stream, and a lost frame is repaired by the reader's
+  resync rather than retried.
 - **State**: Zustand stores shared between widgets and full pages. REST for the initial fetch, SSE
   for incremental updates.
 - **API contract**: the backend's OpenAPI document is authoritative. The frontend's types are
@@ -196,56 +192,30 @@ so if you are wondering whether a convention bites, this table is the answer.
 | The header reserve is released where the floating menu button hides | `hamburgerReserveCoverage.test.ts` | Below, *Frontend Principles* |
 | `--breakpoint-nav` is the sum of the terms it is derived from | `test_nav_breakpoint_coverage.py` | Below, *Frontend Principles* |
 
-The six named under *Tooling* are backend tests reading frontend source — the combination covered by Repo checks independently of the side-specific jobs.
-
-These guards read source, so a refactor can make one **pass having checked nothing** — the
-dangerous failure, because a silent guard looks exactly like a satisfied one. Three rules follow
-from that:
-
-- A guard that discovers what to check must fail when it discovers nothing. Parametrizing over the
-  discovery is how: `empty_parameter_set_mark = "fail_at_collect"` turns an empty set into a
-  collection error, where the default skips and exits 0. A guard that instead reads a fixed list
-  asserts on it directly, as `test_rate_limit_coverage.py` does. Assert the discovery before
-  anything consumes it: `max()`, `next()` and `split(...)[1]` all raise on empty with Python's
-  message, not the guard's.
-- Enumerate router sources through `backend/tests/conventions.py`, which walks with `rglob` so a
-  router that grows into a package stays covered. Another directory may be globbed directly.
-- Match the shape you mean. A guard scraping `case '...'` for event types must require the dotted
-  form, or an unrelated inner `switch` joins the result and a `default:` truncates the scan.
+These guards read source, so a refactor can make one **pass having checked nothing**, which looks
+exactly like a satisfied one. A guard that discovers what to check must fail when it discovers
+nothing (`empty_parameter_set_mark = "fail_at_collect"`), router sources are enumerated through
+`backend/tests/conventions.py`, and a scrape matches the exact shape it means.
 
 ## Backend Principles
 
 - Every non-GET route needs `_csrf: None = Depends(require_csrf)` **and**
-  `@limiter.limit(WRITE_LIMIT)` with a `request: Request` parameter. CSRF is a dependency, not
-  middleware, and slowapi's app-wide limit cannot see through included-router nesting — so both
-  are per route, and `test_rate_limit_coverage.py` fails the build on a missing limit. Beware that
-  same nesting in any audit over `app.routes`, which passes having checked nothing.
+  `@limiter.limit(WRITE_LIMIT)` with a `request: Request` parameter. Both are per route: slowapi
+  cannot see through included-router nesting, and neither can an audit over `app.routes`.
 - A route creating a row in a table with no retention horizon takes `assert_under_quota(...)` first.
-  Counts include trashed rows on purpose — a live-only count is bypassed by delete-and-recreate
-  ([ADR-020](docs/adr/ADR-020-resource-quotas.md)). No guard enforces this; adding one wants a
-  registry of quota-bearing tables rather than a scrape.
-- Reject an authentication attempt with `raise auth_failure(...)`, never a bare `HTTPException`:
-  building the 401/403 and counting it are one call, and `test_auth_failure_coverage.py` fails the
-  build on a bare raise in the auth layer. Authorization refusals are a different thing and stay out.
-- One role vocabulary, two types. `EffectiveRole` (owner/editor/viewer) is what
-  `permissions.effective_role` computes — owner for the creator, 404 for no access. `ShareRole` —
-  what a row stores and a client may request — is a `Literal` subset **derived** from it, so
-  `owner` is unrequestable by construction. Don't reintroduce a second enum, and go through
-  `as_share_role` when narrowing a stored value.
+  Counts include trashed rows on purpose ([ADR-020](docs/adr/ADR-020-resource-quotas.md)).
+- Reject an authentication attempt with `raise auth_failure(...)`, never a bare `HTTPException`.
+  Authorization refusals are a different thing and stay out.
+- One role vocabulary, two types: `EffectiveRole` is computed, `ShareRole` is the `Literal` subset
+  **derived** from it that a row stores, so `owner` is unrequestable. Don't add a second enum;
+  narrow a stored value through `as_share_role`.
 - Child resources reach access through `load_dashboard_access` / `list_accessible_dashboard_ids`,
   which filter trashed dashboards. Querying a child table directly breaks that invariant.
-- SSE ordering is load-bearing. Commit and fan out through `commit_and_broadcast(...)`; a router
-  never calls `manager.broadcast` directly — `test_sse_choreography_coverage.py` fails the build on
-  that, and the fan-out reader in `sse/broker.py` is the one legitimate caller elsewhere, delivering
-  a sibling worker's already-committed frame. Still yours: build the event dict *before* the call,
-  and address it with `dashboard_audience_user_ids(...)`.
-- **Anything reaching Valkey degrades; it never fails the request.** The limiter falls back to
-  per-process buckets and the fan-out to local-only delivery, each with a metric saying so. A
-  third consumer that raises when Valkey is down turns a degradation into an outage.
-- A new **labelled** metric names its children at import, over the bounded set of label values it
-  can take. A child is created on first use and so is born at 1, leaving `increase()` nothing to
-  diff against and reporting 0 through the very event it counts; `test_observability_coverage.py`
-  fails the build on an empty family. Only a genuinely unbounded label (route) is exempt.
+- Commit and fan out through `commit_and_broadcast(...)`, never `manager.broadcast`. Build the
+  event dict *before* the call, and address it with `dashboard_audience_user_ids(...)`.
+- **Anything reaching Valkey degrades; it never fails the request**, and says so with a metric.
+- A new **labelled** metric names its children at import, or `increase()` reports 0 through the
+  first event it counts. Only a genuinely unbounded label (route) is exempt.
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single commit.
 - Layout and widget writes need the dashboard row lock and a `dashboard.version` bump;
   `PUT /layout` compares client against server version and 409s on mismatch.
@@ -272,39 +242,23 @@ from that:
   echo obliges you to patch whatever the refetch would have refreshed.
 - A wire vocabulary the client branches on — `changed_fields`, resync `scopes` — is closed and
   generated from the backend enum, and an unrecognised value must **widen** the response: refetch,
-  don't suppress. A newer backend must never talk an older tab out of refreshing;
-  `test_changed_fields_coverage.py` fails the build on a producer inventing a value.
+  don't suppress.
 - A new activity event type needs a `formatActivityEvent` case **and** a place in one of
-  `ACTIVITY_CATEGORIES`, or it renders as a raw string and no filter can reach it;
-  `test_activity.py` fails the build on either.
+  `ACTIVITY_CATEGORIES`, or it renders as a raw string and no filter can reach it.
 - `isOwnFeedActivity` is the only gate on live activity appends, and must keep answering exactly
-  what `GET /api/activity` would — actor and active filter. A frame it admits that the
-  endpoint would not serve back is a row the next reload silently deletes.
+  what `GET /api/activity` would, or the next reload silently deletes the row.
 - A new resource cache calls `registerResourceReset(...)` at module scope, beside the cache it
   clears. `stores/auth.ts` calls the registry, not each reset by name.
-- A widget that responds to its own size splits by *what the size decides*. Spacing, type scale and
-  visibility are a CSS container query — no measurement, no render per resize tick, and `cqi` in a
-  `clamp()` scales instead of snapping between two fixed sizes. Only what CSS cannot decide — how
-  many rows fit, which label set to use, a number react-grid-layout needs — earns a
-  `useContainerSize`. A container-scoped variant whose ancestor never declares `@container` matches
-  nothing and silently stays put, which jsdom cannot see; `containerQueryCoverage.test.ts` fails
-  the build on it. Tailwind's `@container` is inline-size, so a query on **height** is hand-written
-  CSS against a class that sets `container-type: size` — which puts the rule and the element in
-  different files, guarded from the other side by `test_css_container_coverage.py`.
-- `useContainerSize` arms its observer from a **callback ref**, not an effect over a `useRef`.
-  Every caller renders a spinner before the element it measures, so an effect finds `null` at the
-  first commit and — having no dependencies — never runs again, leaving the initial size standing
-  for the element's life. Written the obvious way, a measuring hook is silently dead.
-- A pixel constant standing in for a class — a pill's row pitch, a header's reserve — belongs in
-  the file that writes the class. Apart, the two drift with nothing to catch it: jsdom sees neither
-  a media query nor a rendered height, so only a person resizing the window would notice.
-- The sidebar has **two** states, not three: a labelled rail, and off-canvas behind the floating
-  menu button below `nav:` (77rem): the grid's stack threshold plus the widest rail plus the page
-  padding, the width at which the rail costs more than the grid it leaves. `--breakpoint-nav` is
-  that sum, not a picked number, and `test_nav_breakpoint_coverage.py` fails the build when a
-  term moves alone. That button overlaps the page, so a page header applies
-  `PAGE_HEADER_RESERVE` rather than spelling the pair out again;
-  `hamburgerReserveCoverage.test.ts` fails the build on a second copy or a half that drifted.
+- A widget responding to its own size uses a CSS container query for spacing, type and visibility;
+  only what CSS cannot decide (how many rows fit, a number react-grid-layout needs) earns a
+  `useContainerSize`. The variant's ancestor must declare `@container`, which jsdom cannot see.
+- `useContainerSize` arms its observer from a **callback ref**, not an effect over a `useRef` —
+  every caller renders a spinner first, so an effect finds `null` once and never runs again.
+- A pixel constant standing in for a class belongs in the file that writes the class; apart, the
+  two drift with nothing to catch it.
+- The sidebar has **two** states: a labelled rail, and off-canvas below `nav:`. `--breakpoint-nav`
+  is a derived sum, not a picked number, and a page header applies `PAGE_HEADER_RESERVE` rather
+  than spelling the reserve out again.
 - Only `401` means logged out. Not `403`, which is the permission layer, and never a `5xx`,
   timeout or network rejection.
 - `apiFetch` is the only network entry for `/api`; every success body goes through
@@ -319,25 +273,19 @@ from that:
 - Pick the lowest test layer that exercises the change, but do not stop below the layer where the
   bug could occur.
 - If a change alters *how* a result is produced rather than *what* it is, asserting on the result
-  proves nothing. Scoped-query eviction and the calendar window predicate both shipped tests that
-  passed against the unfixed code. Assert on the mechanism instead — `getState` rather than the
-  DOM, a counter on what reached the expander rather than the response body.
-- Prove a test by breaking the thing back: stash the change, watch it fail, restore. A performance
-  or caching test that has never been seen to fail is not evidence. Restore by reversing the edit
-  or with `git stash pop` — never `git checkout <file>` while the real change is uncommitted,
-  which "restores" HEAD and destroys the work it sat on.
-- **Break the boundary, not just the rule.** Deleting a comparison and flipping `>=` to `>` are
-  different mutations, and cases chosen to read well rarely sit on the edge: `401, 500, 503` all
-  survive narrowing `status >= 400`. Test the value the comparison turns on.
-- **A closed port is not an outage.** Timing a failure path against `connection refused` measures
-  nothing: a downed host blackholes instead, and the same connect cost 0.26s one way and 45s the
-  other. Stop the real service, or assert on the setting that bounds it rather than on the clock.
-- **A number going into a doc must be the reproducible one.** A container's reported memory moved
-  7.8 to 6.4 MiB across samples of the same image while RSS held at 22.3 — quote what the process
-  holds, not what the sample happened to say, or the next reader cannot get your figure back.
-- Argon2 runs at its **minimum** cost across the backend suite — the real profile is ~64 MiB and
-  four threads per operation, and most tests register or log in. Take the `production_argon2`
-  fixture to assert on the real profile; `test_hashing.py` guards it against a dependency bump.
+  proves nothing. Assert on the mechanism — `getState` rather than the DOM, a call counter rather
+  than the response body.
+- Prove a test by breaking the thing back: stash the change, watch it fail, restore. Restore by
+  reversing the edit or with `git stash pop` — never `git checkout <file>` while the real change is
+  uncommitted, which destroys the work it sat on.
+- **Break the boundary, not just the rule.** Flipping `>=` to `>` is a different mutation from
+  deleting the comparison; test the value the comparison turns on.
+- **A closed port is not an outage.** `connection refused` returns instantly where a downed host
+  blackholes. Stop the real service, or assert on the setting that bounds it, not the clock.
+- A number going into a doc must be the reproducible one — what the process holds, not what one
+  sample happened to say.
+- Argon2 runs at its **minimum** cost across the backend suite; take the `production_argon2`
+  fixture to assert on the real profile.
 
 ## Documentation Updates
 
@@ -352,7 +300,8 @@ from that:
   the right section and cross-link the owning FDR/ADR (`glossary` skill).
 - A backlog finding shipping or being deferred → remove or update its `docs/TODO.md` item in the
   same change. The execution detail lives in the commit; don't reproduce it in a doc.
-- A new standing rule or gotcha → this file.
+- A new repo-wide standing rule → this file, in a line or two. A gotcha belongs at the code it
+  governs or in its FDR; this file is a loose guide, not a ledger.
 
 ## Git Hooks
 
