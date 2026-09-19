@@ -48,6 +48,10 @@ just rolled back to.
 
 - If the migration was **additive** (new nullable column, new table), older code ignores it and the
   rollback is safe. This is the common case.
+- If it **rewrote existing rows** — rescaled a coordinate, renormalized a value — the schema still
+  matches but the *data* no longer means what the old code reads it as, and it will reject or
+  misdraw rows it wrote itself. Rolling the image back alone leaves that. Read the migration's
+  `downgrade` before trusting it: one written for a lossy transform says so.
 - If it **dropped or renamed** something the old code reads, the old code will fail against the new
   schema. Rolling back makes things worse, not better.
 
