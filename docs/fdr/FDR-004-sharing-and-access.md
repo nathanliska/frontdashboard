@@ -125,6 +125,8 @@ otherwise dies with whoever created it — a member losing access has no route b
 (FDR-007 §5), and an account cannot be deleted while it owns anything shared. Requiring an existing
 member keeps every grant a consent act (decision 6): inviting and promoting in one step would put
 someone in charge who never accepted anything.
+The incoming owner is re-read under lock and refused if their account is being deleted, so a
+hand-over cannot strand a dashboard on a tombstone ([FDR-001 §7](FDR-001-authentication-and-sessions.md)).
 **Tradeoff:** The old owner is demoted, not dropped — dropping them would be a removal they did not
 ask for, and leaving (decision 7) is one click if they want out. The new owner is notified and the
 feed records the hand-over on the old owner's side under `dashboard.share_updated` with

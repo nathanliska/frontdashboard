@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #58◐, #59, #64, #65◐, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #58◐, #59, #64, #65◐, #73, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -100,6 +100,15 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   `LIMIT`, so a request spanning many accessible dashboards multiplies that ceiling by their number.
   Worth measuring before building: `frontdashboard_http_request_seconds` on `/api/calendar/events`
   is where it would first show. *(Small, no trigger yet)*
+- **#73 — A write racing an account deletion can land on the tombstone.** A write to the user
+  row that commits just after the deletion applies to the tombstone: an owner removing the member
+  in that moment restores the member's preferences onto it, and the notification it stages misses
+  the sweep. Nothing reads a tombstone, so this is residue at rest, but a rename from the person's
+  own second tab would undo the anonymisation. For the user row, `deleted_at IS NULL` in the
+  `WHERE` closes it: the update waits on the tombstone write and then matches nothing. A staged
+  notification needs more, since its insert's check reads a snapshot where the account is live —
+  the stager taking the account's advisory lock in shared mode, or accepting it as residue
+  ([FDR-001 §7](fdr/FDR-001-authentication-and-sessions.md)). *(Small)*
 - **#16◐ — Make calendar work proportional to the requested window.** The router no longer loads
   every event on every accessible dashboard. Remaining, and only worth it if a calendar is ever
   actually slow: series with a `count` limit and no `until` still load unbounded, since finding their

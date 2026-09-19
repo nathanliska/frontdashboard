@@ -39,6 +39,7 @@ from app.schemas.dashboards import (
 )
 from app.schemas.shares import DashboardMemberResponse, OwnerTransfer, ShareCreate, ShareResponse, ShareUpdate
 from app.services import permissions
+from app.services.accounts import lock_live_user
 from app.services.activity import EventType, build_event_message
 from app.services.notifications import stage_notification
 from app.services.preferences import (
@@ -1197,7 +1198,9 @@ async def transfer_dashboard_ownership(
     if body.user_id == current_user.id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already own this dashboard")
     share = next((s for s in shares if s.principal_type == PrincipalType.user and s.principal_id == body.user_id), None)
-    if share is None:
+    # A member deleting their account sheds this share and tombstones the row in one transaction,
+    # and handing a dashboard to an account on its way out would strand it.
+    if share is None or await lock_live_user(db, body.user_id) is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The new owner must already be a member of this dashboard")
 
     notification = stage_notification(

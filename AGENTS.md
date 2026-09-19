@@ -251,7 +251,7 @@ from that:
   `PUT /layout` compares client against server version and 409s on mismatch.
 - Adding a table with a `dashboard_id` or `users` foreign key means adding it to the matching
   sweep in `services/retention.py`, and deciding in `services/accounts.py` whether an account
-  deletion removes its rows or leaves them naming the tombstone. The retention FKs don't cascade,
+  deletion removes its rows or leaves them naming the tombstone. Most of those FKs don't cascade,
   so a missed one either outlives the purge or rolls back the whole tick; a deletion never removes
   the user row, so a missed one there fails silently instead.
 - A new model module must be imported in `alembic/env.py` and needs its own hand-authored

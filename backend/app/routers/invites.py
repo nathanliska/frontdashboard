@@ -157,7 +157,10 @@ async def accept_invite(
     if invite is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
 
-    result = await db.execute(select(Dashboard).where(Dashboard.id == invite.dashboard_id))
+    # Locked before the code is consumed: an account deletion holds this row across its purge, and
+    # consuming first would hold the invite row that purge deletes while waiting here — a deadlock.
+    # Waiting here instead, the redeemer finds the dashboard gone.
+    result = await db.execute(select(Dashboard).where(Dashboard.id == invite.dashboard_id).with_for_update())
     dashboard = result.scalar_one_or_none()
     if dashboard is None or dashboard.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This invite link is no longer valid")
