@@ -22,6 +22,7 @@ from app.config import Environment, settings
 from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
 from app.models.dashboard import Dashboard
+from app.models.email_change_token import EmailChangeToken
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
 from app.models.session import UserSession
@@ -30,6 +31,8 @@ from app.models.user import User
 from app.schemas.auth import (
     DISPLAY_NAME_MAX_LENGTH,
     AccountDeleteRequest,
+    EmailChangeConfirmRequest,
+    EmailChangeRequest,
     LoginRequest,
     PasswordChangeRequest,
     PasswordResetConfirmRequest,
@@ -47,8 +50,15 @@ from app.schemas.auth import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services.accounts import delete_account, lock_account, shared_dashboards_owned_by
-from app.services.email import send_existing_account_email, send_password_reset_email, send_verification_email
+from app.services.accounts import delete_account, lock_account, lock_live_user, shared_dashboards_owned_by
+from app.services.email import (
+    send_email_change_confirmation,
+    send_email_change_notice,
+    send_existing_account_email,
+    send_password_reset_email,
+    send_verification_email,
+)
+from app.services.email_change import confirm_email_change, void_email_changes
 from app.services.password_reset import consume_password_reset_token, reset_token_is_live
 from app.services.passwords import assert_password_not_common
 from app.services.sessions import (
@@ -68,6 +78,17 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # rejected them, while the metric label records the branch for us.
 _VERIFY_DETAIL = "Invalid or expired verification link"
 _RESET_DETAIL = "Invalid or expired reset link"
+_EMAIL_CHANGE_DETAIL = "Invalid or expired confirmation link"
+
+
+async def _lock_own_account(db: AsyncSession, user: User) -> None:
+    """Take the caller's account lock, refusing an account deleted while this request waited.
+
+    The re-read leaves `user` holding the tombstone, whose hash no password verifies against.
+    """
+    if await lock_live_user(db, user.id) is None:
+        raise auth_failure("session", "not_resolvable", status_code=status.HTTP_401_UNAUTHORIZED, detail="Session is no longer valid")
+
 
 _SECURE = settings.environment == Environment.production
 
@@ -106,13 +127,19 @@ def _clear_auth_cookies(response: Response) -> None:
 
 
 async def _issue_token(
-    model: type[EmailVerificationToken] | type[PasswordResetToken], user: User, db: AsyncSession, *, expires_in_hours: int, path: str
+    model: type[EmailVerificationToken] | type[PasswordResetToken] | type[EmailChangeToken],
+    user: User,
+    db: AsyncSession,
+    *,
+    expires_in_hours: int,
+    path: str,
+    **fields: str,
 ) -> str:
     """Mint a fresh single-use token for `user`, superseding any unused one, and return its link."""
     now = datetime.now(UTC)
     await db.execute(update(model).where(model.user_id == user.id, model.used_at.is_(None)).values(used_at=now))
     raw_token, token_hash = create_opaque_token()
-    db.add(model(user_id=user.id, token_hash=token_hash, expires_at=now + timedelta(hours=expires_in_hours)))
+    db.add(model(user_id=user.id, token_hash=token_hash, expires_at=now + timedelta(hours=expires_in_hours), **fields))
     await db.flush()
     return f"{settings.frontend_base_url.rstrip('/')}/{path}?token={raw_token}"
 
@@ -333,7 +360,9 @@ async def request_password_reset(
     """Issue a password reset email when the account exists."""
     result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
-    if user:
+    # Re-read under the account lock: a change of address confirming right now voids the reset
+    # links of the old one, and a link issued to it a moment later would escape that.
+    if user and (user := await lock_live_user(db, user.id)) and user.email == body.email:
         reset_url = await _issue_password_reset(user, db)
         await db.commit()
         background_tasks.add_task(send_password_reset_email, user.email, reset_url)
@@ -375,6 +404,7 @@ async def confirm_password_reset(
     if not user:
         raise auth_failure("password_reset", "unknown_user", status_code=status.HTTP_400_BAD_REQUEST, detail=_RESET_DETAIL)
 
+    await void_email_changes(user.id, db)
     user.password_hash = await hash_password(body.new_password)
     revoked_ids = await revoke_user_sessions(user.id, db)
     await db.commit()
@@ -551,6 +581,9 @@ async def change_password(
     The calling session is kept, and its cookie not re-minted: fixation is the reason to rotate
     on a credential change, and a session only ever exists after authentication.
     """
+    # Before the password is read: this voids a pending change of address, and one requested
+    # while it runs must wait for the new password rather than slip past the void.
+    await _lock_own_account(db, current_user)
     if not await verify_password(body.current_password, current_user.password_hash):
         # 403, not 401: the session is valid and this is a re-authentication for one operation.
         # A 401 here means "logged out" to the client, which signed the user out for a typo.
@@ -568,10 +601,51 @@ async def change_password(
         )
 
     assert_password_not_common(body.new_password)
+    await void_email_changes(current_user.id, db)
     current_user.password_hash = await hash_password(body.new_password)
     revoked_ids = await revoke_user_sessions(current_user.id, db, except_session_id=session.id)
     await db.commit()
     drop_session_streams(revoked_ids)
+
+
+@router.post("/email-change", status_code=status.HTTP_204_NO_CONTENT)
+# A password oracle like change_password, and each accepted call sends two mails.
+@limiter.limit("3/minute")
+async def request_email_change(
+    request: Request,
+    body: EmailChangeRequest,
+    background_tasks: BackgroundTasks,
+    _csrf: None = Depends(require_csrf),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Start a change of address: mail the new one a link, and warn the current one.
+
+    A taken address differs only in that link never being sent. The requester reads the current
+    inbox, so skipping the warning or the token there would tell them the address has an account
+    (ADR-011).
+    """
+    # Before the password is read, so a reset in flight finishes first and this checks its result.
+    await _lock_own_account(db, current_user)
+    if not await verify_password(body.password, current_user.password_hash):
+        raise auth_failure("email_change", "bad_password", status_code=status.HTTP_403_FORBIDDEN, detail="Password is incorrect")
+    taken = (await db.execute(select(User.id).where(User.email == body.new_email))).scalar_one_or_none() is not None
+    confirm_url = await _issue_token(
+        EmailChangeToken, current_user, db, expires_in_hours=settings.email_change_expire_hours, path="confirm-email-change", new_email=body.new_email
+    )
+    await db.commit()
+    if not taken:
+        background_tasks.add_task(send_email_change_confirmation, body.new_email, confirm_url)
+    background_tasks.add_task(send_email_change_notice, current_user.email, body.new_email)
+
+
+@router.post("/email-change/confirm", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def confirm_own_email_change(request: Request, body: EmailChangeConfirmRequest, db: AsyncSession = Depends(get_db)) -> None:
+    """Switch to the new address. No session is needed or minted: the mailed token is the proof."""
+    if not await confirm_email_change(body.token, db):
+        raise auth_failure("email_change", "invalid_token", status_code=status.HTTP_400_BAD_REQUEST, detail=_EMAIL_CHANGE_DETAIL)
+    await db.commit()
 
 
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)

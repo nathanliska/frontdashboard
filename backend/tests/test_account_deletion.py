@@ -291,12 +291,13 @@ async def test_a_redemption_racing_the_purge_waits_and_then_finds_the_link_dead(
         await second.commit()
 
 
-async def test_a_password_reset_does_not_queue_behind_a_deletion(
+async def test_a_password_reset_racing_a_deletion_waits_and_then_finds_its_link_dead(
     concurrent_sessions: tuple[AsyncSession, AsyncSession, uuid.UUID], auth_client: AsyncClient
 ) -> None:
-    """The reset spends its token and then writes the user row, which the deletion must not hold.
+    """The reset takes the account lock before its token, so it waits holding nothing.
 
-    Held, the deletion's own sweep of reset tokens would wait on the spent one: a deadlock.
+    Spending the token first, or the deletion holding the user row, closes a cycle: the deletion
+    sweeps that token while the reset waits to write the row.
     """
     # Requested first so it tears down last, after the savepoint that holds the reset's writes.
     first, holding, user_id = concurrent_sessions
@@ -304,15 +305,17 @@ async def test_a_password_reset_does_not_queue_behind_a_deletion(
     first.add(PasswordResetToken(user_id=user_id, token_hash=token_hash, expires_at=datetime.now(UTC) + timedelta(hours=1)))
     await first.commit()
 
-    assert await lock_account(holding, (await holding.execute(select(User).where(User.id == user_id))).scalar_one())
+    owner = (await holding.execute(select(User).where(User.id == user_id))).scalar_one()
+    assert await lock_account(holding, owner)
     reset = asyncio.create_task(auth_client.post("/api/auth/password-reset/confirm", json={"token": token, "new_password": "otter-lantern-quilt-42"}))
     try:
-        await asyncio.wait({reset}, timeout=5)
-        assert reset.done()
+        assert await _someone_waits_on_a_lock(holding)
+        await delete_account(holding, owner)
+        await holding.commit()
     finally:
         await holding.rollback()
         await asyncio.wait({reset})
-    assert reset.result().status_code == 204, reset.result().text
+    assert reset.result().status_code == 400, reset.result().text
 
 
 async def test_a_deletion_that_already_happened_answers_204_and_clears_the_cookies(auth_client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:

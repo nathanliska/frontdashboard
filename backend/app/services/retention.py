@@ -20,6 +20,7 @@ from app.models.activity import ActivityEvent
 from app.models.calendar import CalendarEvent, CalendarEventOverride, CalendarEventParticipant
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.dashboard_invite import DashboardInvite
+from app.models.email_change_token import EmailChangeToken
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.list import List, ListItem
 from app.models.notification import Notification
@@ -33,6 +34,7 @@ logger = logging.getLogger("app.retention")
 _EXPIRING_TOKEN_TABLES = (
     ("email_verification_tokens", EmailVerificationToken),
     ("password_reset_tokens", PasswordResetToken),
+    ("email_change_tokens", EmailChangeToken),
     # Same shape and the same reasoning: an expired invite can never be redeemed again.
     ("dashboard_invites", DashboardInvite),
 )

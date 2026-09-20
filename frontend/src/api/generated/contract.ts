@@ -101,6 +101,12 @@ export const DashboardUpdate = z.object({ name: z.string().min(1).max(100).nulla
 export type EffectiveRole = z.infer<typeof EffectiveRole>;
 export const EffectiveRole = z.enum(["viewer", "editor", "owner"]);
 
+export type EmailChangeConfirmRequest = z.infer<typeof EmailChangeConfirmRequest>;
+export const EmailChangeConfirmRequest = z.object({ token: z.string().min(1) }).catchall(z.unknown());
+
+export type EmailChangeRequest = z.infer<typeof EmailChangeRequest>;
+export const EmailChangeRequest = z.object({ new_email: z.email(), password: z.string() }).catchall(z.unknown());
+
 export type ValidationError = z.infer<typeof ValidationError>;
 export const ValidationError = z.object({ ctx: z.record(z.string(), z.unknown()).optional(), input: z.unknown().optional(), loc: z.array(z.union([z.string(), z.number().int()])), msg: z.string(), type: z.string() }).catchall(z.unknown());
 

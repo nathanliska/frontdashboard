@@ -81,7 +81,7 @@ SSE_STREAM_SECONDS = Histogram(
 
 # A send happens in a background task after the response has gone, so a failure is invisible to
 # every other signal here: the caller already got its 2xx and no route ever 5xxs.
-EmailOperation = Literal["verification", "password_reset", "existing_account"]
+EmailOperation = Literal["verification", "password_reset", "existing_account", "email_change", "email_change_notice"]
 EmailOutcome = Literal["sent", "outbox", "failed", "dropped"]
 
 EMAIL_SENDS = Counter(
@@ -111,8 +111,8 @@ AUTH_FAILURES = Counter(
     ["operation", "reason"],
 )
 
-# The pairs that can actually occur, not the cross product: 7 operations by 11 reasons is 77
-# series of which 60 are unreachable, and a panel of permanent zeroes reads like coverage.
+# The pairs that can actually occur, not the cross product: 8 operations by 11 reasons is 88
+# series of which 69 are unreachable, and a panel of permanent zeroes reads like coverage.
 # `test_auth_failure_coverage.py` fails the build when the code raises a pair missing here.
 AUTH_FAILURE_PAIRS = frozenset(
     {
@@ -120,6 +120,8 @@ AUTH_FAILURE_PAIRS = frozenset(
         ("csrf", "origin_rejected"),
         ("csrf", "token_missing"),
         ("csrf", "token_mismatch"),
+        ("email_change", "bad_password"),
+        ("email_change", "invalid_token"),
         ("email_verify", "already_verified"),
         ("email_verify", "invalid_token"),
         ("email_verify", "superseded_token"),

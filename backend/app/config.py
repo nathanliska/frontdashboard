@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     session_absolute_days: int = 30
     email_verification_expire_hours: int = 1
     password_reset_expire_hours: int = 1
+    email_change_expire_hours: int = 1
     # Invite links are handed out person-to-person, so they need a longer life than an
     # emailed token — but they are bearer credentials, so not an unbounded one.
     dashboard_invite_expire_hours: int = 168

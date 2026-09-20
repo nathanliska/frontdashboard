@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-09-18
+**Last reviewed:** 2026-09-19
 
 ## Overview
 
@@ -35,6 +35,10 @@ multi-user account model with immediate, per-device session control — not just
   password or rename their profile. The reset page checks the link before offering a form, so an
   expired, spent or unknown one says so instead of failing after the password is typed. The check
   reports validity only — never whose account it is — and does not consume the token.
+- **An address can be changed, against the password.** The new address gets a link and nothing
+  changes until it is confirmed; the current address is told at once, and told how to stop it.
+  Confirming works signed-out and signs no one in. A taken address looks exactly like a free one
+  to the person asking (decision 8).
 - **Following a link can change who you are, and says so.** A verification link signs you in as the
   account it was sent to; opening one while already signed in asks first. A reset link sets the
   password for its own account, which a signed-in visitor is told may not be theirs.
@@ -153,17 +157,18 @@ the invite row the purge deletes while waiting on the dashboard the purge holds:
 account itself is a transaction-scoped advisory lock rather than a lock on the `users` row. It
 serialises a second submit of the same deletion, and `transfer_dashboard_ownership` takes it for the
 incoming owner, so a hand-over waits out a deletion and then refuses the tombstone instead of
-stranding a dashboard on it. Nothing else takes it, so no ordinary write can deadlock against it. A
-lock on the row would: a password reset spends its token and then writes the user row, while the
-deletion holds the row and sweeps that token. Leaving the row unlocked does let a write from the
-person's own second tab land while the deletion runs: a dashboard created in that moment outlives
-it, owned by the tombstone and reachable by no one; an invite redeemed in it leaves "Deleted user"
-listed as a member until the owner removes them; and a list item added to a dashboard being purged
-fails the deletion once, which a retry clears. Only the person deleting can cause any of these, so
-they are accepted rather than locked against. One race is not theirs: the retention reaper sweeps
-expired tokens and sessions before trashed dashboards, the reverse of this call's order, so a tick
-that meets this account's expired token and a trashed dashboard of theirs crossing 30 days in the
-same moment deadlocks with it. One side fails, and the next tick or a retry clears it.
+stranding a dashboard on it. An ordinary write never takes it, and the few paths that do (decision
+8) take it before they touch a row, so nothing waits on it while holding what this call needs. A
+lock on the row would not have that property: a password reset writes the user row after spending
+its token, which the deletion sweeps. Leaving the row unlocked does let a write from the person's
+own second tab land while the deletion runs: a dashboard created in that moment outlives it, owned
+by the tombstone and reachable by no one; an invite redeemed in it leaves "Deleted user" listed as a
+member until the owner removes them; and a list item added to a dashboard being purged fails the
+deletion once, which a retry clears. Only the person deleting can cause any of these, so they are
+accepted rather than locked against. One race is not theirs: the retention reaper sweeps expired
+tokens and sessions before trashed dashboards, the reverse of this call's order, so a tick that
+meets this account's expired token and a trashed dashboard of theirs crossing 30 days in the same
+moment deadlocks with it. One side fails, and the next tick or a retry clears it.
 **What is not erased:** `activity_events` snapshots the actor's name rather than joining to it, so
 the name is rewritten there. That is hygiene at rest rather than something the person is shown —
 the feed is self-scoped, and a deleted account can never sign in to read its own. The *payloads*
@@ -180,6 +185,39 @@ path both list those FKs by hand, and a new one belongs in both. The rename is a
 unbounded `UPDATE` inside the deletion's transaction — bounded in practice only by the 90-day
 horizon — so an account noisy enough to exceed the 15s statement timeout would fail to delete
 itself and keep failing; batching it is the fix if that ever stops being hypothetical.
+
+### 8. An address changes on the new inbox's confirmation; the old inbox is warned, not asked (decided 2026-09-19)
+
+**Decision:** `POST /auth/email-change` takes the new address and the current password, stores a
+pending change (`email_change_tokens`, one hour, a newer request superseding an older), mails the
+new address a confirm link and the current address a notice. `POST /auth/email-change/confirm`
+spends the token, switches `users.email`, and voids reset links already mailed to the old address.
+It needs no session and mints none. Changing or resetting the password voids any pending change,
+and the notice says so.
+**Why:** The new address must prove itself *before* the switch, or a typo locks the account out for
+good. The old address is told when the change is *requested*, while it can still be stopped, rather
+than after. It is not asked to confirm: the usual reason to change an address is having lost the old
+inbox, and with no help desk a second confirmation would strand exactly those people. The password
+is the second factor instead, so a stolen session alone cannot move the account. Cancelling by
+password change needs no new endpoint and is the right reflex anyway, since it ends every session.
+**Enumeration:** the requester reads the current inbox, so everything they can observe is the same
+for a taken address as for a free one — the 204, the stored token, the notice. The one difference
+is that a taken address is never mailed its link, which only its owner could see
+([ADR-011](../adr/ADR-011-enumeration-safe-login.md)). The cost is that a person who mistypes into
+someone else's address hears nothing about why no link arrived.
+**Tradeoff:** The notice is a warning, not a veto. Whoever holds both the session and the password
+can confirm to their own inbox within seconds, and after that the old address resets nothing: the
+owner's way back is the maintainer. Requiring the old inbox to confirm is what would close that, and
+it is the thing ruled out above.
+**Serialisation:** a void is one statement, so on its own a reset requested in the milliseconds
+before a confirm commits would leave a live link in the old inbox, and a change requested during a
+password reset would survive it. Every path that moves or cancels a change — both halves of this
+flow, both halves of a reset, and a password change — therefore takes the account's advisory lock
+(decision 7) before it writes or locks a row, and re-reads what it decided on. Taken first, it
+cannot join a cycle: a reset used to spend its token and then wait, which against a deletion
+sweeping that token was a deadlock. Within the lock the confirm path still voids reset tokens before
+spending its own, because the retention sweep, which takes no account lock, walks the tables in that
+order.
 
 ## Access
 

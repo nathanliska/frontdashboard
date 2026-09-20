@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #59, #64, #65◐, #73, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #59◐, #64, #65◐, #73, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -72,14 +72,9 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   persistence, activity, notification and SSE, repeating the same transaction/broadcast dance per
   handler. Worth doing as the deletion it implies — one unit of work plus a staged outbox, routers as
   thin adapters — not as a speculative layer. *(Large)*
-- **#59 — Changing an email address is unbuilt.** An address entered at signup is permanent, and the
-  case-insensitive unique index reserves it until the account is deleted (FDR-001 §7).
-  Constraints: the new address must be verified **before** the switch or a typo locks the account out
-  permanently; the old address should be notified, since that is how a takeover is detected; and it
-  needs a pending-change record distinct from `email_verification_tokens`. The trap: an obvious
-  "already in use" response **reintroduces the enumeration oracle**
-  ([ADR-011](adr/ADR-011-enumeration-safe-login.md)) — it has to say "check your new address" and
-  silently do nothing when taken. *(Medium)*
+- **#59◐ — Changing an email address has no UI yet.** The API is built
+  ([FDR-001 §8](fdr/FDR-001-authentication-and-sessions.md)). Remaining: the profile page's form and
+  the page the confirm link opens. *(Small)*
 - **#64 — Move the rate limiter off its synchronous Redis client.** slowapi's storage is a
   synchronous client called per rate-limited request, so with the store unreachable the connect cost is
   paid on the event loop rather than beside it
