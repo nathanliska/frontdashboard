@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-09-16_
+_Last updated: 2026-09-19_
 
 ## What's built
 
@@ -26,7 +26,9 @@ _Last updated: 2026-09-16_
   token expiry bounded nothing — while costing a mandatory `/auth/refresh` round trip whose
   failure during a deploy signed users out, and reuse detection that read a *lost response* as
   theft. Both were observed in production. The trade taken knowingly: no theft detection.
-- Password reset via email; authenticated password change and profile rename. Rate limits on all
+- Password reset via email; authenticated password change, profile rename and **change of email**
+  (confirmed from the new inbox, announced to the old, cancelled by a password change —
+  [FDR-001 §8](docs/fdr/FDR-001-authentication-and-sessions.md)). Rate limits on all
   auth endpoints. **An account can delete itself** (profile page, against the password): own
   dashboards are purged, memberships and sessions go, their activity rows are renamed, the address
   is free again, and the `users` row stays as a "Deleted user" tombstone so what they wrote on

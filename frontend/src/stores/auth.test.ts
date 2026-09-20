@@ -15,6 +15,7 @@ vi.mock('./dashboard', () => ({ resetDashboardData }))
 
 const {
   apiChangePassword,
+  apiConfirmEmailChange,
   apiDeleteAccount,
   apiGetMe,
   apiLogin,
@@ -25,6 +26,7 @@ const {
   apiUpdateProfile,
 } = vi.hoisted(() => ({
   apiChangePassword: vi.fn(),
+  apiConfirmEmailChange: vi.fn(),
   apiDeleteAccount: vi.fn(),
   apiGetMe: vi.fn(),
   apiLogin: vi.fn(),
@@ -47,6 +49,7 @@ vi.mock('../api/client', () => ({
 
 vi.mock('../api/auth', () => ({
   apiChangePassword,
+  apiConfirmEmailChange,
   apiDeleteAccount,
   apiGetMe,
   apiLogin,
@@ -153,6 +156,21 @@ describe('useAuthStore', () => {
     expect(useAuthStore.getState().user).toBeNull()
     expect(registeredReset).toHaveBeenCalledTimes(2)
     expect(resetDashboardData).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not hand a confirmed address to a session that signed in while it was read', async () => {
+    const { promise, resolve } = deferred<typeof user>()
+    apiConfirmEmailChange.mockResolvedValue(undefined)
+    apiGetMe.mockReturnValue(promise)
+    useAuthStore.setState({ status: 'authenticated', user })
+
+    const pending = useAuthStore.getState().confirmEmailChange('token')
+    await Promise.resolve()
+    bumpSessionGeneration() // a different account signed in while /me was in flight
+    resolve({ ...user, email: 'someone-else@example.com' })
+    await pending
+
+    expect(useAuthStore.getState().user?.email).toBe(user.email)
   })
 
   it('drops the local sign-out when a newer session already owns the tab', async () => {

@@ -142,6 +142,29 @@ export async function apiChangePassword(input: {
   if (!res.ok) throw await readError(res, 'Failed to update password')
 }
 
+/**
+ * Always resolves the same way for a free address and a taken one (ADR-011); 403 is a wrong
+ * password. Nothing changes until the new address confirms.
+ */
+export async function apiRequestEmailChange(new_email: string, password: string): Promise<void> {
+  const res = await apiFetch('/api/auth/email-change', {
+    method: 'POST',
+    body: JSON.stringify({ new_email, password }),
+  })
+  if (!res.ok) throw await readError(res, 'Failed to request the change')
+}
+
+/** The mailed token is the credential, so this works signed out, like a reset. */
+export async function apiConfirmEmailChange(token: string): Promise<void> {
+  const res = await fetch('/api/auth/email-change/confirm', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+  if (!res.ok) throw await readError(res, 'Failed to confirm the new email')
+}
+
 /** Irreversible: the server signs every device out and frees the address. 403 is a wrong password. */
 export async function apiDeleteAccount(password: string): Promise<void> {
   const res = await apiFetch('/api/auth/account', {

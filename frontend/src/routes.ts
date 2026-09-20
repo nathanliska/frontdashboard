@@ -5,6 +5,7 @@ export const ROUTES = {
   forgotPassword: '/forgot-password',
   resetPassword: '/reset-password',
   verifyEmail: '/verify-email',
+  confirmEmailChange: '/confirm-email-change',
   dashboards: '/dashboards',
   dashboard: (id: string) => `/dashboard/${id}`,
   dashboardPattern: '/dashboard/:id',

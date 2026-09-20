@@ -23,7 +23,7 @@ function submitPasswordChange(current: string, next: string) {
       <ProfilePage />
     </MemoryRouter>,
   )
-  fireEvent.click(screen.getByRole('button', { name: /change/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^change$/i }))
   fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: current } })
   fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: next } })
   fireEvent.change(screen.getByLabelText(/confirm/i), { target: { value: next } })
