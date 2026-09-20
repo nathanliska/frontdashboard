@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   apiChangePassword,
+  apiConfirmEmailChange,
   apiDeleteAccount,
   apiGetMe,
   apiLogin,
@@ -45,6 +46,7 @@ interface AuthState {
   updateProfile: (input: { display_name?: string }) => Promise<void>
   changePassword: (input: { current_password: string; new_password: string }) => Promise<void>
   deleteAccount: (password: string) => Promise<void>
+  confirmEmailChange: (token: string) => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>()((set, get) => ({
@@ -133,6 +135,20 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   // FormField, never a toast).
   async changePassword(input) {
     await apiChangePassword(input)
+  },
+
+  async confirmEmailChange(token) {
+    const gen = currentSessionGeneration()
+    await apiConfirmEmailChange(token)
+    // The link may belong to another account than the one signed in here, and confirming returns
+    // nothing, so the address shown is re-read rather than assumed.
+    if (get().status !== 'authenticated') return
+    try {
+      const me = await apiGetMe()
+      if (me && gen === currentSessionGeneration()) set({ user: me })
+    } catch {
+      // The change already happened; a failed refresh of the address shown must not undo that.
+    }
   },
 
   async deleteAccount(password) {

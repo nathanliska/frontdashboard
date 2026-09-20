@@ -14,6 +14,7 @@ const HAMBURGER = /([a-z][\w-]*):hidden fixed top-3 left-3/
 // Rendered outside AppShell, so no floating button and nothing to reserve for. A new page with a
 // heading goes either here or under the reserve; the third case says which it forgot.
 const OUTSIDE_SHELL = [
+  'ConfirmEmailChangePage',
   'ForgotPasswordPage',
   'InvitePage',
   'LoginPage',

@@ -3,6 +3,7 @@ import { BrowserRouter, Outlet, Route, Routes, useNavigate } from 'react-router'
 import { RequireAuth } from './components/auth/RequireAuth'
 import { AppShell } from './components/layout/AppShell'
 import { LoadingBlock, LoadingScreen } from './components/ui/Spinner'
+import { ConfirmEmailChangePage } from './pages/ConfirmEmailChangePage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { InvitePage } from './pages/InvitePage'
 import { LoginPage } from './pages/LoginPage'
@@ -63,6 +64,7 @@ export default function App() {
             <Route path={ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
             <Route path={ROUTES.resetPassword} element={<ResetPasswordPage />} />
             <Route path={ROUTES.verifyEmail} element={<VerifyEmailPage />} />
+            <Route path={ROUTES.confirmEmailChange} element={<ConfirmEmailChangePage />} />
             {/* Public: the code is the credential, and the preview must be readable signed out. */}
             <Route path={ROUTES.invitePattern} element={<InvitePage />} />
 

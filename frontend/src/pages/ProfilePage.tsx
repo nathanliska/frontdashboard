@@ -2,6 +2,7 @@ import { Check, Home, LockKeyhole, Pencil, Trash2, X } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { ApiError } from '../api/http'
+import { EmailChangeRow } from '../components/auth/EmailChangeRow'
 import { SessionsPanel } from '../components/auth/SessionsPanel'
 import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { FormField } from '../components/ui/FormField'
@@ -330,6 +331,8 @@ export function ProfilePage() {
             </div>
           </form>
         ) : null}
+
+        <EmailChangeRow email={currentUser.email} />
 
         <div className="flex items-center justify-between gap-4 border-t border-zinc-800/80 px-5 py-4">
           <div className="flex min-w-0 items-start gap-3">

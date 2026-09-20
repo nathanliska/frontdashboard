@@ -35,10 +35,11 @@ multi-user account model with immediate, per-device session control — not just
   password or rename their profile. The reset page checks the link before offering a form, so an
   expired, spent or unknown one says so instead of failing after the password is typed. The check
   reports validity only — never whose account it is — and does not consume the token.
-- **An address can be changed, against the password.** The new address gets a link and nothing
-  changes until it is confirmed; the current address is told at once, and told how to stop it.
-  Confirming works signed-out and signs no one in. A taken address looks exactly like a free one
-  to the person asking (decision 8).
+- **An address can be changed, from the profile page, against the password.** The new address gets a
+  link and nothing changes until it is confirmed; the current address is told at once, and told how
+  to stop it. Confirming works signed-out and signs no one in. A taken address looks exactly like a
+  free one to the person asking (decision 8). The link opens a page with a button rather than
+  confirming on load, so a mail scanner or a link preview that fetches the URL cannot spend it.
 - **Following a link can change who you are, and says so.** A verification link signs you in as the
   account it was sent to; opening one while already signed in asks first. A reset link sets the
   password for its own account, which a signed-in visitor is told may not be theirs.
