@@ -15,6 +15,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String, nullable=False)
     preferences: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Once set, a database trigger discards every UPDATE to this row while still reporting one row
+    # matched, so a bulk backfill over `users` silently skips tombstones (FDR-001 §7).
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (Index("uq_users_email_lower", func.lower(email), unique=True),)

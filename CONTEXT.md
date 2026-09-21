@@ -33,7 +33,9 @@ _Last updated: 2026-09-20_
   dashboards are purged, memberships and sessions go, their activity rows are renamed, the address
   is free again, and the `users` row stays as a "Deleted user" tombstone so what they wrote on
   shared dashboards keeps its author.
-  Refused while they own a dashboard others can see ([FDR-001 §7](docs/fdr/FDR-001-authentication-and-sessions.md)). A new password is screened against the breach-derived common-password list
+  Refused while they own a dashboard others can see ([FDR-001 §7](docs/fdr/FDR-001-authentication-and-sessions.md)).
+  A write that commits *after* the tombstone — a rename from the person's own second tab — is
+  discarded by a `BEFORE UPDATE` trigger, so the anonymisation stands whichever writer raced it. A new password is screened against the breach-derived common-password list
   (`services/passwords.py`) at registration, reset and change — length alone let `password123`
   through. Existing passwords are not re-screened.
 - **A link that changes who you are says so first.** The reset page checks its token before
