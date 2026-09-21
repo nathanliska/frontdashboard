@@ -33,7 +33,11 @@ from app.services import permissions
 from app.services.activity import EventType, log_event
 from app.services.calendar import (
     MAX_OCCURRENCE_WINDOW,
+    MAX_RESPONSE_CANDIDATES,
+    MAX_RESPONSE_OCCURRENCES,
     CalendarExpansionError,
+    CalendarResponseTooLargeError,
+    ExpansionBudget,
     assert_expandable,
     build_overridden_occurrence,
     expand_event_occurrences,
@@ -230,6 +234,15 @@ async def create_event(
     return _event_response(event, (await _participants_by_event(db, {event.id})).get(event.id, []))
 
 
+def _too_many_occurrences() -> HTTPException:
+    """A refusal rather than a truncation: a calendar missing events it never mentions is worse than one that asks."""
+    metrics.CALENDAR_LISTING_REFUSALS.inc()
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Too many events in this window; request a shorter one or a single dashboard",
+    )
+
+
 @router.get("/events", response_model=list[CalendarOccurrenceResponse])
 async def list_occurrences(
     window_start: datetime,
@@ -262,7 +275,9 @@ async def list_occurrences(
     # Load only what could land in the window, so viewing next week doesn't cost the whole history.
     # A series is bounded by `starts_at` and, when the rule carries `until`, `until + duration`.
     # Series without `until` still load unbounded — finding a `count` end means expanding the rule.
-    series_duration = CalendarEvent.ends_at - CalendarEvent.starts_at
+    # As seconds, not the days-and-time interval a timestamp subtraction yields: adding days is done in
+    # the session's zone, so across a DST change it lands an hour off and drops an edit it should load.
+    series_duration = func.make_interval(0, 0, 0, 0, 0, 0, func.extract("epoch", CalendarEvent.ends_at - CalendarEvent.starts_at))
     series_until = cast(CalendarEvent.recurrence["until"].astext, DateTime(timezone=True))
     # `jsonb_typeof` rather than IS NOT NULL: JSONB can hold the scalar 'null', which passes an
     # IS NOT NULL test and would read as an unbounded series.
@@ -274,47 +289,68 @@ async def list_occurrences(
             series_until + series_duration > window_start,
         ),
     )
-    has_override = select(CalendarEventOverride.id).where(CalendarEventOverride.calendar_event_id == CalendarEvent.id).exists()
+    # Only the edits that can touch this window: one whose original slot falls in it (so a cancelled
+    # or moved-away occurrence is still suppressed) or whose retimed slot does. Unwindowed, every edited
+    # event would cost every request, and one editor's edits could refuse a whole dashboard.
+    edit_start = func.coalesce(CalendarEventOverride.starts_at, CalendarEventOverride.occurrence_start)
+    edit_end = func.coalesce(CalendarEventOverride.ends_at, edit_start + series_duration)
+    edit_in_window = or_(
+        (CalendarEventOverride.occurrence_start < window_end) & (CalendarEventOverride.occurrence_start + series_duration > window_start),
+        (edit_start < window_end) & (edit_end > window_start),
+    )
+    has_override = select(CalendarEventOverride.id).where(CalendarEventOverride.calendar_event_id == CalendarEvent.id, edit_in_window).exists()
     result = await db.execute(
-        select(CalendarEvent).where(
+        select(CalendarEvent)
+        .where(
             CalendarEvent.deleted_at.is_(None),
             CalendarEvent.dashboard_id.in_(dashboard_ids),
             or_(
                 recurring_in_window,
                 (CalendarEvent.starts_at < window_end) & (CalendarEvent.ends_at > window_start),
-                # Deliberately unbounded, which is what makes the bounds above safe: an override
-                # can move an occurrence outside its event's own times.
+                # What makes the bounds above safe: an override can move an occurrence outside
+                # its event's own times, so an edit landing in the window loads its event.
                 has_override,
             ),
         )
+        # One past the cap, to tell "too many" from "exactly enough" without loading the rest. No
+        # ORDER BY on purpose: the extra row only ever triggers a refusal, never a truncation.
+        .limit(MAX_RESPONSE_OCCURRENCES + 1)
     )
     events = list(result.scalars().all())
     if not events:
         return []
+    if len(events) > MAX_RESPONSE_OCCURRENCES:
+        raise _too_many_occurrences()
 
     event_ids = [event.id for event in events]
-    overrides_result = await db.execute(select(CalendarEventOverride).where(CalendarEventOverride.calendar_event_id.in_(event_ids)))
+    overrides_result = await db.execute(
+        select(CalendarEventOverride)
+        .join(CalendarEvent, CalendarEvent.id == CalendarEventOverride.calendar_event_id)
+        .where(CalendarEventOverride.calendar_event_id.in_(event_ids), edit_in_window)
+        .limit(MAX_RESPONSE_OCCURRENCES + 1)
+    )
     overrides = list(overrides_result.scalars().all())
+    if len(overrides) > MAX_RESPONSE_OCCURRENCES:
+        raise _too_many_occurrences()
     overrides_by_event: dict[uuid.UUID, dict[datetime, CalendarEventOverride]] = {event.id: {} for event in events}
     for override in overrides:
         overrides_by_event.setdefault(override.calendar_event_id, {})[override.occurrence_start] = override
 
     occurrences = []
+    budget = ExpansionBudget(MAX_RESPONSE_CANDIDATES)
     for event in events:
         try:
-            occurrences.extend(
-                expand_event_occurrences(
-                    event,
-                    overrides_by_event.get(event.id, {}),
-                    window_start,
-                    window_end,
-                )
-            )
+            occurrences.extend(expand_event_occurrences(event, overrides_by_event.get(event.id, {}), window_start, window_end, budget))
+        except CalendarResponseTooLargeError:
+            raise _too_many_occurrences() from None
         except CalendarExpansionError as exc:
             # One event the write-time check did not exist for cannot take the shared calendar
             # down with it. The counter is the signal to go and find it.
             metrics.CALENDAR_EXPANSION_SKIPS.inc()
             logger.warning("calendar event %s left out of a listing: %s", event.id, exc)
+        # Checked per event rather than after the loop: the expansion is the cost being refused.
+        if len(occurrences) > MAX_RESPONSE_OCCURRENCES:
+            raise _too_many_occurrences()
 
     occurrences.sort(key=lambda occurrence: (occurrence.occurrence_start, occurrence.title.lower()))
     participants = await _participants_by_event(db, {occurrence.event_id for occurrence in occurrences})

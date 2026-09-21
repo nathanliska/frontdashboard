@@ -7,6 +7,11 @@ from zoneinfo import ZoneInfo
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 
 MAX_EVENT_OCCURRENCES = 2000
+# Per request, because the per-event budget and the quotas multiply. Two numbers because the costs
+# differ tenfold: a kept occurrence is memory and response, a walked candidate only CPU. Each is
+# about half a second on the only worker (FDR-006 §1). Kept stays under asyncpg's 32,767 binds.
+MAX_RESPONSE_OCCURRENCES = 20_000
+MAX_RESPONSE_CANDIDATES = 200_000
 MAX_OCCURRENCE_WINDOW = timedelta(days=366)
 MAX_OCCURRENCE_DURATION = timedelta(days=31)
 _RANGE_MESSAGE = "An event extends beyond the supported date range. Adjust its dates or timezone."
@@ -16,6 +21,26 @@ _BUDGET_MESSAGE = "An event produces too many occurrences. Shorten its duration 
 
 class CalendarExpansionError(ValueError):
     """An event cannot be expanded safely within the requested window."""
+
+
+class CalendarResponseTooLargeError(ValueError):
+    """The whole listing, not one event, is more than a request may cost."""
+
+
+class ExpansionBudget:
+    """Candidates one request may still walk, shared across every event it expands.
+
+    Counted where the walk happens rather than after it, since a series that ended before the
+    window walks its whole `count` to find that out and keeps nothing a later check could see.
+    """
+
+    def __init__(self, candidates: int) -> None:
+        self.remaining = candidates
+
+    def spend(self, walked: int) -> None:
+        self.remaining -= walked
+        if self.remaining < 0:
+            raise CalendarResponseTooLargeError
 
 
 @dataclass(slots=True)
@@ -39,17 +64,22 @@ def expand_event_occurrences(
     overrides_by_start: dict[datetime, CalendarEventOverride],
     window_start: datetime,
     window_end: datetime,
+    budget: ExpansionBudget | None = None,
 ) -> list[ExpandedOccurrence]:
-    """Expand a bounded series or raise CalendarExpansionError instead of exhausting the worker."""
+    """Expand a bounded series or raise CalendarExpansionError instead of exhausting the worker.
+
+    With a `budget`, also raises CalendarResponseTooLargeError once the request as a whole has
+    walked more than it may — and stops walking there, rather than finishing the series first.
+    """
     duration = event.ends_at - event.starts_at
+    # One past whichever bound is nearer, so the walk ends where the first refusal would.
+    walk_limit = MAX_EVENT_OCCURRENCES if budget is None else min(MAX_EVENT_OCCURRENCES, budget.remaining)
     try:
-        starts = (
-            [event.starts_at]
-            if not event.recurrence
-            else list(islice(_iter_recurrence_starts(event, window_start, window_end), MAX_EVENT_OCCURRENCES + 1))
-        )
+        starts = [event.starts_at] if not event.recurrence else list(islice(_iter_recurrence_starts(event, window_start, window_end), walk_limit + 1))
     except OverflowError as exc:
         raise CalendarExpansionError(_RANGE_MESSAGE) from exc
+    if budget is not None:
+        budget.spend(len(starts) + len(overrides_by_start))
     if len(starts) > MAX_EVENT_OCCURRENCES or len(overrides_by_start) > MAX_EVENT_OCCURRENCES:
         raise CalendarExpansionError(_BUDGET_MESSAGE)
 

@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-09-09
+**Last reviewed:** 2026-09-21
 
 ## Overview
 
@@ -21,6 +21,11 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
   candidates or overrides, and a stored event that trips that is left out of the listing and
   counted (`frontdashboard_calendar_expansion_skips_total`) rather than failing the shared
   calendar. Unrepresentable date or timezone arithmetic is refused the same way.
+- **Bounded responses.** One listing may keep 20,000 occurrences and walk 200,000 candidates to find
+  them; it also loads at most that many event rows and edited occurrences, and only the edits that
+  can land in the window. Past any of those it answers 422 asking for a shorter window or a single
+  dashboard, rather than returning a calendar with events missing from it, and counts the refusal
+  (`frontdashboard_calendar_listing_refusals_total`).
 - **Views.** Day, week, and month.
 - **Event editor.** An editor with an all-day toggle, a duration toolbar, timezones and weekly
   recurrence, presented as a bottom sheet on a phone and a centred panel on a wider screen. It is a
@@ -61,6 +66,35 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
 materialization; a year covers every realistic view.
 **Tradeoff:** Callers must always pass a window, and views spanning more than a year need multiple
 requests.
+
+**What bounds a whole response:** the bounds above are per event, and the quotas are per creator and
+per dashboard — they multiply, and nothing capped the product. Measured on one worker, one account
+at its 5,000-event quota, every series daily, asked for the full window: 1.8 million occurrences, a
+666 MB body, memory from 250 MiB to 4.2 GiB, and nothing else answered for 24 seconds, because
+expansion is synchronous work on the event loop. Capping what a listing *keeps* was not enough: the
+same 5,000 series given a `count` and an end years before the window keep nothing, yet each walks
+its whole count to find that out — 13 seconds for an empty answer. So two running totals are checked
+inside the walk itself, which stops where the first would be exceeded: 20,000 occurrences kept and
+200,000 candidates walked. They differ because the costs do — a kept occurrence is memory and
+response, about ten times a candidate that is walked and dropped — and each is about half a second
+of the worker at its limit. Both attacks now answer 422, in 0.12 s and 0.59 s, with memory flat; a
+household of fifteen daily series and 150 one-off events costs 13 ms for a month and 47 ms for a
+year, as before. It refuses rather than truncates: a calendar that silently omits events is worse
+than one that asks for a narrower window.
+
+Edited occurrences are loaded only when their original or their retimed slot can overlap the window
+— the original so that a cancelled or moved-away occurrence still leaves its slot empty. Loading
+every edit of every matched event, whatever the window, makes an event cost every request once a
+single occurrence is edited, and would turn a bound on them into a lever: one editor's 21 series of
+1,000 edits refusing every member's calendar in every window, with no narrower window to retreat to.
+The series' length enters that comparison as a count of seconds rather than the days-and-time
+interval a timestamp subtraction yields, because adding days happens in the database session's zone
+and lands an hour off across a clock change — enough to miss an edit and let a cancelled occurrence
+reappear. The kept bound stays under 32,767, the driver's limit on bind parameters, since the loaded
+event ids are bound one by one. One consequence is accepted: a stored event that alone exceeds the
+per-event budget is normally left out and counted, but met when fewer candidates remain than that
+budget, it refuses the listing instead — the safe direction, since the alternative is guessing which
+of the two limits it would have hit.
 
 Which events are *loaded* for a window is a separate, SQL-level question (#16). One-off events are
 bounded by their own times. Recurring ones are bounded by two facts already on the row — a series

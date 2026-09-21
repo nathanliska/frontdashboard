@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-09-20_
+_Last updated: 2026-09-21_
 
 ## What's built
 
@@ -414,9 +414,12 @@ _Last updated: 2026-09-20_
   frames validate against generated frame schemas — so a new backend event type or widget type is a
   compile error in the client code that must handle it.
 - Calendar recurrence expansion is bounded by what a write accepts: an occurrence of a repeating
-  event lasts at most 31 days, and `count` and `interval` are capped, so a listing's walk is a few
-  hundred candidates at most. A stored event that still exceeds the expander's budget is left out
-  of listings and counted rather than failing them.
+  event lasts at most 31 days, and `count` and `interval` are capped, so one event's walk is
+  bounded. A stored event that still exceeds the expander's budget is left out of listings and
+  counted rather than failing them. A whole listing is bounded too — 20,000 occurrences kept,
+  200,000 candidates walked, and as many event rows and edited occurrences loaded — and past that it
+  answers 422 asking for a shorter window rather than truncating, since the per-event bounds and the
+  quotas multiply. Only the edits that can land in the window are loaded with it.
 - CI: the six cross-stack source guards run in Repo checks even for a one-sided change. Four
   grouped jobs (each with a tight `timeout-minutes`, and docs-only changes skip the
   workflow entirely), because Actions bills each job rounded up to a full minute and ten small

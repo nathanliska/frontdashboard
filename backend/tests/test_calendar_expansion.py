@@ -17,7 +17,13 @@ import pytest
 from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.schemas.calendar import CalendarOccurrenceResponse
 from app.services import calendar as calendar_service
-from app.services.calendar import MAX_EVENT_OCCURRENCES, CalendarExpansionError, expand_event_occurrences
+from app.services.calendar import (
+    MAX_EVENT_OCCURRENCES,
+    CalendarExpansionError,
+    CalendarResponseTooLargeError,
+    ExpansionBudget,
+    expand_event_occurrences,
+)
 
 
 def _event(
@@ -504,3 +510,18 @@ def test_until_stops_work_even_when_a_long_duration_rewinds_the_window(frequency
         rule["by_weekday"] = [0]
     event = _event(starts_at=datetime(1, 1, 1, tzinfo=UTC), ends_at=datetime(9999, 1, 1, tzinfo=UTC), recurrence=rule)
     assert len(expand_event_occurrences(event, {}, datetime(2026, 9, 6, tzinfo=UTC), datetime(2026, 9, 7, tzinfo=UTC))) == 1
+
+
+def test_a_spent_budget_stops_the_walk_rather_than_finishing_the_series() -> None:
+    """A thousand candidates were available and eleven were walked: the refusal has to precede the work."""
+    event = _event(
+        starts_at=datetime(2020, 1, 1, 9, tzinfo=UTC),
+        ends_at=datetime(2020, 1, 1, 10, tzinfo=UTC),
+        recurrence={"frequency": "daily", "interval": 1, "count": 1000},
+    )
+    budget = ExpansionBudget(10)
+
+    with pytest.raises(CalendarResponseTooLargeError):
+        expand_event_occurrences(event, {}, datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 2, 1, tzinfo=UTC), budget)
+
+    assert budget.remaining == -1
