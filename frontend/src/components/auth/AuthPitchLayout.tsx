@@ -42,7 +42,7 @@ function BoardDrawing() {
   return (
     <div
       aria-hidden="true"
-      className="grid max-w-140 grid-cols-1 gap-2.5 rounded-xl border border-zinc-800 bg-zinc-950 p-3 sm:auto-rows-32 sm:grid-cols-3"
+      className="grid grid-cols-1 gap-2.5 rounded-xl border border-zinc-800 bg-zinc-950 p-3 sm:auto-rows-32 sm:grid-cols-3"
     >
       <Tile className="flex flex-col justify-center gap-2.5 sm:col-span-2">
         <div className="flex items-center justify-between">
@@ -106,25 +106,28 @@ function BoardDrawing() {
  */
 function AuthPitchPanel() {
   return (
-    <section className="flex flex-col justify-center gap-8 bg-zinc-900/40 px-6 py-10 lg:order-1 lg:min-h-screen lg:grow lg:px-10 lg:py-20 xl:px-20">
-      <div className="flex max-w-140 flex-col gap-4">
-        <h2 className="text-2xl font-semibold tracking-tight text-zinc-50 text-balance lg:text-[2.375rem]/[1.15]">
-          A shared home screen for your household.
-        </h2>
-        <p className="text-sm text-zinc-400 lg:text-base/relaxed">
-          Lists, a calendar and the things worth a glance, on one page that everyone in the house
-          can see — and that catches up on every screen as they change.
-        </p>
-      </div>
+    <section className="flex flex-col justify-center bg-zinc-900/40 px-6 py-10 lg:order-1 lg:min-h-screen lg:grow lg:px-10 lg:py-20 xl:px-20 xl:flex-1 xl:items-end">
+      {/* One block, so everything in it shares a left edge once the section aligns it to the seam. */}
+      <div className="flex w-full max-w-140 flex-col gap-8">
+        <div className="flex flex-col gap-4">
+          <h2 className="text-2xl font-semibold tracking-tight text-zinc-50 text-balance lg:text-[2.375rem]/[1.15]">
+            A shared home screen for your household.
+          </h2>
+          <p className="text-sm text-zinc-400 lg:text-base/relaxed">
+            Lists, a calendar and the things worth a glance, on one page that everyone in the house
+            can see — and that catches up on every screen as they change.
+          </p>
+        </div>
 
-      <BoardDrawing />
+        <BoardDrawing />
 
-      <div className="flex max-w-140 flex-col gap-2 text-[13px] text-zinc-400">
-        <p>
-          Lists, an agenda, a calendar and a clock, dragged into whatever arrangement suits the
-          room. Share a dashboard and its lists and events go with it.
-        </p>
-        <p>Open source. Sign up with any email address.</p>
+        <div className="flex flex-col gap-2 text-[13px] text-zinc-400">
+          <p>
+            Lists, an agenda, a calendar and a clock, dragged into whatever arrangement suits the
+            room. Share a dashboard and its lists and events go with it.
+          </p>
+          <p>Open source. Sign up with any email address.</p>
+        </div>
       </div>
     </section>
   )
@@ -139,8 +142,8 @@ function AuthPitchPanel() {
 export function AuthPitchLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 lg:flex-row lg:items-start">
-      <div className="flex w-full flex-col justify-center px-6 py-10 lg:order-2 lg:min-h-screen lg:w-120 lg:shrink-0 lg:px-16">
-        <div className="mx-auto w-full max-w-sm">{children}</div>
+      <div className="flex w-full flex-col justify-center px-6 py-10 lg:order-2 lg:min-h-screen lg:w-120 lg:shrink-0 lg:px-16 xl:flex-1 xl:px-20">
+        <div className="mx-auto w-full max-w-sm xl:mx-0">{children}</div>
       </div>
       <AuthPitchPanel />
     </div>
