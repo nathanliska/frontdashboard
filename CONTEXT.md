@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-09-19_
+_Last updated: 2026-09-20_
 
 ## What's built
 
@@ -55,6 +55,12 @@ _Last updated: 2026-09-19_
   rendered message to a gitignored `backend/.dev-mail/` outbox (how you get tokens locally) and logs
   only the file path — the links are bearer credentials, so they stay out of the log stream; any
   other environment logs that the mail was dropped. HTML templates exist for all three flows.
+- **The sign-in and register pages say what the app is.** Registration is open, so those pages are
+  the front door: both render one shared pitch panel beside the form — a headline, a sentence, and a
+  drawing of a dashboard built from markup rather than an image, since these are the eagerly loaded
+  public routes. The forms are unchanged. The panel follows the form in the DOM and is moved left
+  with CSS `order`, so it never precedes the fields for Tab or a screen reader; below `lg` it reads
+  underneath the form, which sits at the top of the page rather than centred in it.
 - Profile page: display name, password change, home-dashboard preference, and a paged active-session
   panel. Sessions are titled by browser and platform ("Chrome on Windows") and show sign-in/last-active
   times and the current-session marker; another session can be revoked without a follow-up GET.
