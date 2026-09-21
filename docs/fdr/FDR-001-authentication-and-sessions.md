@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-09-19
+**Last reviewed:** 2026-09-20
 
 ## Overview
 
@@ -170,12 +170,27 @@ accepted rather than locked against. One race is not theirs: the retention reape
 tokens and sessions before trashed dashboards, the reverse of this call's order, so a tick that
 meets this account's expired token and a trashed dashboard of theirs crossing 30 days in the same
 moment deadlocks with it. One side fails, and the next tick or a retry clears it.
+**What the tombstone guard buys:** the `users` row itself is not among those accepted races. A
+`BEFORE UPDATE` trigger returns `OLD` for any row whose `deleted_at` is already set, so a rename or
+a preference write that commits after the tombstone is discarded and the anonymisation stands. The
+guard is in the database because the writers are mostly ORM attribute assignments, which have no
+`WHERE` to carry a `deleted_at IS NULL`, and one added later would inherit nothing. It returns
+`OLD` rather than `NULL` so the flush still matches the one row it expects — `NULL` skips the row,
+and SQLAlchemy reads a 0-row flush as `StaleDataError`, turning a race that should be a no-op into
+a 500. The cost: any bulk `UPDATE` on `users` now skips tombstones without an error, so a backfill
+followed by `SET NOT NULL` would fail on them at boot. Such a migration disables the trigger for
+its own statements.
 **What is not erased:** `activity_events` snapshots the actor's name rather than joining to it, so
-the name is rewritten there. That is hygiene at rest rather than something the person is shown —
-the feed is self-scoped, and a deleted account can never sign in to read its own. The *payloads*
-keep what they wrote (a list item's text, an event's title) until the 90-day history sweep takes
-the rows. Notifications already delivered to other people quote the name in their body and are
-left alone, like a sent message; they age out on the same sweep. A redeemed invite keeps
+the name is rewritten there. That is hygiene at rest rather than something the person is shown — the
+feed is self-scoped, and a deleted account can never sign in to read its own. The *payloads* keep
+what they wrote (a list item's text, an event's title) until the 90-day history sweep takes the
+rows. Notifications already delivered to other people quote the name in their body and are left
+alone, like a sent message; they age out on the same sweep. One of the person's own can outlive the
+deletion: a share change or a trash notice staged for them while the deletion commits lands after
+its notification delete has run. Every read of that table is scoped to the signed-in account, which
+a tombstone can never be, and the history sweep deletes by age without asking whose the row is — so
+it is unreadable while it lasts and gone within the horizon. Closing the window would put a lock
+round trip on every notification to prevent a row nobody can see. A redeemed invite keeps
 `redeemed_by` pointing at the tombstone until the reaper prunes it after expiry. Say so before
 calling the account erased: it is detached and anonymised, not expunged.
 **Tradeoff:** A `users` tombstone is the one soft-deleted row nothing can clear — the exception to

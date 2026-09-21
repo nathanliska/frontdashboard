@@ -46,8 +46,9 @@ has no target and still has to be rebuilt from its commit.
 at startup, so if the bad deploy applied a migration, the database is now *ahead* of the code you
 just rolled back to.
 
-- If the migration was **additive** (new nullable column, new table), older code ignores it and the
-  rollback is safe. This is the common case.
+- If the migration was **additive** (new nullable column, new table, or a trigger discarding only
+  writes older code never relied on), older code ignores it and the rollback is safe. This is the
+  common case.
 - If it **rewrote existing rows** — rescaled a coordinate, renormalized a value — the schema still
   matches but the *data* no longer means what the old code reads it as, and it will reject or
   misdraw rows it wrote itself. Rolling the image back alone leaves that. Read the migration's

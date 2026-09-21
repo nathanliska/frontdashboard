@@ -26,7 +26,7 @@ from app.models.session import UserSession
 from app.models.share import PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
 from app.routers import auth as auth_router
-from app.services.accounts import delete_account, lock_account
+from app.services.accounts import DELETED_DISPLAY_NAME, delete_account, lock_account
 from tests.helpers import (
     MemberFactory,
     create_calendar_event,
@@ -382,3 +382,54 @@ async def test_the_transfer_waits_on_a_deletion_but_not_on_an_ordinary_write(
 
     resp = transfer.result()
     assert resp.status_code == (200 if holder == "insert" else 409), resp.text
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("display_name", "Renamed"),
+        ("email", "reclaimed@example.com"),
+        ("preferences", {"home_dashboard_id": "x"}),
+        ("password_hash", "usable-again"),
+    ],
+)
+async def test_a_write_to_a_tombstone_leaves_it_anonymous(db_session: AsyncSession, column: str, value: object) -> None:
+    """One column per run, as the real writers do: a flush naming all four would pass a narrower guard."""
+    user = User(
+        email=f"tombstone-{uuid.uuid4()}@example.com",
+        password_hash="x",
+        display_name="Before",
+        email_verified_at=datetime.now(UTC),
+        deleted_at=datetime.now(UTC),
+    )
+    db_session.add(user)
+    await db_session.flush()
+    before = getattr(user, column)
+
+    setattr(user, column, value)
+    await db_session.flush()
+    await db_session.refresh(user)
+
+    assert getattr(user, column) == before
+
+
+async def test_a_rename_racing_a_deletion_does_not_undo_the_anonymisation(
+    concurrent_sessions: tuple[AsyncSession, AsyncSession, uuid.UUID],
+) -> None:
+    """The person's own second tab renames while the deletion commits underneath it."""
+    first, second, user_id = concurrent_sessions
+    doomed = (await first.execute(select(User).where(User.id == user_id))).scalar_one()
+    # The second session read the account while it was still live, which is the whole race.
+    from_other_tab = (await second.execute(select(User).where(User.id == user_id))).scalar_one()
+
+    assert await lock_account(first, doomed) is True
+    await delete_account(first, doomed)
+    await first.commit()
+
+    from_other_tab.display_name = "Still Me"
+    await second.commit()
+
+    async with AsyncSession(second.bind) as reader:
+        after = (await reader.execute(select(User).where(User.id == user_id))).scalar_one()
+        assert after.display_name == DELETED_DISPLAY_NAME
+        assert after.deleted_at is not None
