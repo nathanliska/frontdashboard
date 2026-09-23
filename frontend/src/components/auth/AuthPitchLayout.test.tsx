@@ -49,6 +49,29 @@ describe('AuthPitchLayout', () => {
     expect(prefixOf(formColumn, 'order-2')).toBe(row)
   })
 
+  it('splits the width evenly for both columns at one breakpoint, and gathers them at the seam', () => {
+    const { container } = renderLayout()
+
+    const root = container.firstElementChild as Element
+    const formColumn = root.firstElementChild as Element
+    const pitch = container.querySelector('section') as Element
+
+    const split = prefixOf(pitch, 'flex-1')
+    expect(split).toBeDefined()
+    // One column taking half while the other keeps its fixed width leaves the seam off-centre, and
+    // on a wide screen the form drifts to the far edge with the pitch stranded at the other.
+    expect(prefixOf(formColumn, 'flex-1')).toBe(split)
+    expect(prefixOf(pitch, 'items-end')).toBe(split)
+    expect(prefixOf(formColumn.firstElementChild as Element, 'mx-0')).toBe(split)
+
+    // Padding sits outside a zero flex basis, so halves are only equal while both pad the same;
+    // apart, the seam itself slides off the centre of the screen.
+    const paddingAtSplit = (el: Element) =>
+      [...el.classList].filter((name) => name.startsWith(`${split}:px-`))
+    expect(paddingAtSplit(pitch)).toHaveLength(1)
+    expect(paddingAtSplit(formColumn)).toEqual(paddingAtSplit(pitch))
+  })
+
   it('leaves the page a single h1, which the form owns', () => {
     renderLayout(<h1>FrontDashboard</h1>)
 
