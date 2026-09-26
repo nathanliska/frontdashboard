@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-09-21
+**Last reviewed:** 2026-09-26
 
 ## Overview
 
@@ -46,6 +46,9 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
   "all-day" events starting at 09:00; they still appeared on the right days, but the agenda sorts by
   `starts_at` and so filed them among the timed events. Normalization is idempotent: re-saving an
   all-day event must not extend it, which is why the end steps back a microsecond before truncating.
+  Displayed, an all-day event spanning days names them ("Sep 23 - Sep 27", the last covered day,
+  not the exclusive end); one covering a single day reads "All day". Days are the viewer's, as the
+  grid places them; reading them on the event's own clock is TODO #67.
 - **Recurrence with overrides.** A recurring event expands into occurrences over a requested window
   (max 366 days); individual occurrences can be overridden or cancelled.
 - **Midnight correctness.** Day-dependent views re-derive "today" at local midnight (DST-safe) and on

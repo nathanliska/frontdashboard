@@ -80,36 +80,33 @@ export function formatDayNumber(date: Date): string {
   }).format(date)
 }
 
+// Built once: a formatter is costly to construct, and these run for every pill on every render.
+const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+const DAY_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+
 export function formatOccurrenceTime(start: string, end: string, allDay: boolean): string {
   if (allDay) return 'All day'
-
-  const formatter = new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-
-  return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`
+  return `${TIME_FORMAT.format(new Date(start))} - ${TIME_FORMAT.format(new Date(end))}`
 }
 
+/**
+ * An occurrence's time, or its dates when it runs past one day.
+ *
+ * Days are the viewer's, as they are where the grid places the occurrence — so the text never
+ * says one day while the event sits on two.
+ */
 export function formatOccurrenceSpan(start: string, end: string, allDay: boolean): string {
-  if (allDay) return 'All day'
-
-  const startDate = new Date(start)
-  const endDate = new Date(end)
-  const sameDay = dateKey(startDate) === dateKey(endDate)
-
-  if (sameDay) {
-    return formatOccurrenceTime(start, end, allDay)
+  if (!spansDays(start, end)) return formatOccurrenceTime(start, end, allDay)
+  if (allDay) {
+    return `${DAY_FORMAT.format(new Date(start))} - ${DAY_FORMAT.format(lastCoveredDay(end))}`
   }
-
-  const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-
-  return `${dateTimeFormatter.format(startDate)} - ${dateTimeFormatter.format(endDate)}`
+  return `${DATE_TIME_FORMAT.format(new Date(start))} - ${DATE_TIME_FORMAT.format(new Date(end))}`
 }
 
 type CalendarOccurrenceCellLabelVariant = 'full' | 'compact'
@@ -124,10 +121,7 @@ function formatCellTime(value: string, variant: CalendarOccurrenceCellLabelVaria
     return m === 0 ? `${h}${ampm}` : `${h}:${String(m).padStart(2, '0')}${ampm}`
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value))
+  return TIME_FORMAT.format(new Date(value))
 }
 
 export function formatCalendarOccurrenceCellLabel(
@@ -135,25 +129,32 @@ export function formatCalendarOccurrenceCellLabel(
   day: Date,
   variant: CalendarOccurrenceCellLabelVariant = 'full',
 ): string {
+  const prefix = calendarOccurrenceCellPrefix(occurrence, day, variant)
+  return prefix ? `${prefix} ${occurrence.title}` : occurrence.title
+}
+
+/** What a cell says before the title: the time, or where in a multi-day span this day falls. */
+export function calendarOccurrenceCellPrefix(
+  occurrence: CalendarOccurrence,
+  day: Date,
+  variant: CalendarOccurrenceCellLabelVariant = 'full',
+): string {
   if (occurrence.all_day) {
-    return variant === 'compact' ? occurrence.title : `All day ${occurrence.title}`
+    return variant === 'compact' ? '' : 'All day'
   }
 
   if (!isMultiDayOccurrence(occurrence)) {
-    return `${formatCellTime(occurrence.occurrence_start, variant)} ${occurrence.title}`
+    return formatCellTime(occurrence.occurrence_start, variant)
   }
 
   const dayId = dateKey(day)
-  const startId = dateKey(occurrence.occurrence_start)
-  const endId = lastCoveredDayKey(occurrence.occurrence_end)
-
-  if (dayId === startId) {
-    return `${variant === 'compact' ? 'Start' : 'Starts'} ${formatCellTime(occurrence.occurrence_start, variant)} ${occurrence.title}`
+  if (dayId === dateKey(occurrence.occurrence_start)) {
+    return `${variant === 'compact' ? 'Start' : 'Starts'} ${formatCellTime(occurrence.occurrence_start, variant)}`
   }
-  if (dayId === endId) {
-    return `${variant === 'compact' ? 'End' : 'Ends'} ${formatCellTime(occurrence.occurrence_end, variant)} ${occurrence.title}`
+  if (dayId === dateKey(lastCoveredDay(occurrence.occurrence_end))) {
+    return `${variant === 'compact' ? 'End' : 'Ends'} ${formatCellTime(occurrence.occurrence_end, variant)}`
   }
-  return `${variant === 'compact' ? 'Cont.' : 'Continues'} ${occurrence.title}`
+  return variant === 'compact' ? 'Cont.' : 'Continues'
 }
 
 export function formatCalendarOccurrenceCellTitle(
@@ -199,14 +200,21 @@ export function occursOnDate(occurrence: CalendarOccurrence, day: Date): boolean
   return start < dayEnd && end > dayStart
 }
 
-// The end is exclusive — a one-day all-day event ends at the next midnight, and a timed event
-// may end exactly on one. Day math against the end must use the last instant it covers.
-function lastCoveredDayKey(end: string): string {
-  return dateKey(new Date(Date.parse(end) - 1))
+/**
+ * The last instant an occurrence covers. Its end is exclusive — a one-day all-day event ends at the
+ * next midnight, and a timed event may end exactly on one — so day math must use this instead.
+ */
+export function lastCoveredDay(end: string): Date {
+  return new Date(Date.parse(end) - 1)
+}
+
+/** Whether the last instant covered falls on a later local day than the start. */
+export function spansDays(start: string, end: string): boolean {
+  return dateKey(start) !== dateKey(lastCoveredDay(end))
 }
 
 export function isMultiDayOccurrence(occurrence: CalendarOccurrence): boolean {
-  return dateKey(occurrence.occurrence_start) !== lastCoveredDayKey(occurrence.occurrence_end)
+  return spansDays(occurrence.occurrence_start, occurrence.occurrence_end)
 }
 
 export function occurrencesForDate(

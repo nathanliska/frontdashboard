@@ -1,5 +1,6 @@
 import type { CalendarEventParticipantResponse } from '../../api/generated/contract'
 import { participantColor, participantInitial } from '../../utils/participantPalette'
+import { cn } from '../../utils/shared/cn'
 
 const MAX_DOTS = 3
 
@@ -54,12 +55,14 @@ export function ParticipantDots({
  */
 export function ParticipantMicroDots({
   participants,
+  className,
 }: {
   participants: Pick<CalendarEventParticipantResponse, 'user_id'>[]
+  className?: string
 }) {
   if (participants.length === 0) return null
   return (
-    <span className="flex shrink-0 items-center gap-0.5">
+    <span className={cn('flex shrink-0 items-center gap-0.5', className)}>
       {participants.slice(0, MAX_DOTS).map((participant) => (
         <span
           key={participant.user_id}

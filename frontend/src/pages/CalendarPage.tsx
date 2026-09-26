@@ -346,7 +346,7 @@ export function CalendarPage() {
                     >
                       <div
                         className={cn(
-                          'flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-1 transition-colors',
+                          '@container flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-1 transition-colors',
                           'group-hover:border-zinc-700 group-hover:bg-zinc-900/80',
                           'group-focus-visible:border-zinc-400 group-focus-visible:ring-1 group-focus-visible:ring-zinc-400/40',
                           !inMonth && 'opacity-45',
@@ -354,15 +354,17 @@ export function CalendarPage() {
                           isSelected && 'border-sky-500/40 bg-sky-500/6',
                         )}
                       >
-                        <div className="mb-1 flex items-start justify-between gap-1">
-                          <CalendarDayNumber
-                            value={formatDayNumber(day)}
-                            isToday={isToday}
-                            isSelected={isSelected}
-                            dimmed={!inMonth}
-                          />
-                        </div>
                         <CalendarDayOccurrences
+                          heading={
+                            <CalendarDayNumber
+                              value={formatDayNumber(day)}
+                              isToday={isToday}
+                              isSelected={isSelected}
+                              dimmed={!inMonth}
+                              // FULL_DAY_NUMBER_MIN_WIDTH, queried against this cell's content box.
+                              className="@max-[40px]:min-w-3.5 @max-[40px]:px-0.5 @max-[40px]:py-0 @max-[40px]:text-[9px] @max-[40px]:leading-none"
+                            />
+                          }
                           occurrences={dayOccurrences}
                           day={day}
                           height={cellBody.height}

@@ -10,7 +10,11 @@ vi.mock('../../../resources/agendaData', () => ({
   useAgendaItems: () => ({ data: agenda.items, error: null, refetch: vi.fn() }),
 }))
 
-function event(id: string, title: string, startsAt: string): AgendaItem {
+function event(
+  id: string,
+  title: string,
+  startsAt: string,
+): Extract<AgendaItem, { type: 'event' }> {
   return {
     id,
     type: 'event',
@@ -63,5 +67,40 @@ describe('AgendaWidget', () => {
     expect(screen.getAllByText(/^Task /)).toHaveLength(12)
     expect(screen.queryByText('Upcoming')).not.toBeInTheDocument()
     expect(screen.queryByText(/^Later /)).not.toBeInTheDocument()
+  })
+
+  it('labels a multi-day event with its weekday, or Today for as long as it runs', () => {
+    // A fixed clock: the labels are relative to today, and a run across midnight must not flake.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 16, 12))
+    const midnight = (date: number) => new Date(2026, 8, date)
+    const trip = (id: string, from: number, to: number): AgendaItem => ({
+      ...event(id, `Trip ${id}`, midnight(from).toISOString()),
+      endsAt: midnight(to).toISOString(),
+      allDay: true,
+    })
+    const day = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+    const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'short' })
+    try {
+      // Running since yesterday; starting in two days; and one that ended at today's midnight,
+      // which the exclusive end keeps off today.
+      renderWith([trip('a', 15, 18), trip('b', 18, 21), trip('c', 13, 16)])
+
+      expect(
+        screen.getByText(`Today · ${day.format(midnight(15))} - ${day.format(midnight(17))}`),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          `${weekday.format(midnight(18))} · ${day.format(midnight(18))} - ${day.format(midnight(20))}`,
+        ),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          `${weekday.format(midnight(13))} · ${day.format(midnight(13))} - ${day.format(midnight(15))}`,
+        ),
+      ).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
