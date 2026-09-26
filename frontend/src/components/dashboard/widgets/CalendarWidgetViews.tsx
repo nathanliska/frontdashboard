@@ -18,8 +18,13 @@ import {
   isMultiDayOccurrence,
 } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
-import { CalendarDayNumber } from '../../calendar/CalendarDayNumber'
-import { CalendarDayOccurrences } from '../../calendar/CalendarDayOccurrences'
+import { CalendarDayNumber, DAY_NUMBER_HEIGHT } from '../../calendar/CalendarDayNumber'
+import {
+  CalendarDayOccurrences,
+  DAY_HEADING_GAP,
+  hiddenOccurrencesTitle,
+  MONTH_PILL_HEIGHT,
+} from '../../calendar/CalendarDayOccurrences'
 import { ParticipantDots } from '../../calendar/ParticipantDots'
 import { type CalendarWidgetView, ViewTabButtons } from './CalendarWidgetViewTabs'
 
@@ -118,18 +123,23 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
             >
-              <div className="flex items-center justify-between gap-1 mb-1 shrink-0">
-                <span className="text-[10px] uppercase text-zinc-500">
-                  {new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(day)}
-                </span>
-                <span className={cn('text-[11px]', isToday ? 'text-zinc-100' : 'text-zinc-400')}>
-                  {formatDayNumber(day)}
-                </span>
-              </div>
               <CalendarDayOccurrences
+                heading={
+                  <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
+                    <span className="text-[10px] uppercase text-zinc-500">
+                      {new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(day)}
+                    </span>
+                    <span
+                      className={cn('text-[11px]', isToday ? 'text-zinc-100' : 'text-zinc-400')}
+                    >
+                      {formatDayNumber(day)}
+                    </span>
+                  </div>
+                }
                 occurrences={dayOccurrences}
                 day={day}
                 height={cellBody.height}
+                width={cellBody.width}
                 density="week"
                 titleOnly={compact}
                 measureRef={index === 0 ? cellBodyRef : null}
@@ -142,12 +152,30 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
   )
 })
 
+/** Mirrors `gap-1` on the month's day grid, and `gap-0.5` when `tight`. */
+const MONTH_GRID_GAP = { roomy: 4, tight: 2 } as const
+/** What a month cell spends besides its date and pills: its border and `p-1`, then the heading gap. */
+const MONTH_CELL_CHROME = 2 + 8 + DAY_HEADING_GAP
+
+export type MonthCellLayout = 'full' | 'compact' | 'line'
+
+/**
+ * How a month cell `cellHeight` pixels tall lays out: the full date over pills, the compact date
+ * over pills, or — too short for any pill under a date — one line of date, first title and "+N".
+ */
+export function monthCellLayout(cellHeight: number): MonthCellLayout {
+  const room = cellHeight - MONTH_CELL_CHROME - MONTH_PILL_HEIGHT
+  if (room >= DAY_NUMBER_HEIGHT.full) return 'full'
+  if (room >= DAY_NUMBER_HEIGHT.compact) return 'compact'
+  return 'line'
+}
+
 export const MonthCalendarWidget = memo(function MonthCalendarWidget({
   dashboardId,
   days,
   occurrencesByDate,
   compact,
-  ultraCompact,
+  tight,
   monthDate,
   view,
   viewCompact,
@@ -157,7 +185,8 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
   days: Date[]
   occurrencesByDate: Map<string, CalendarOccurrence[]>
   compact: boolean
-  ultraCompact: boolean
+  /** Tighter spacing around the grid, decided by the widget's size rather than the grid's. */
+  tight: boolean
   monthDate: Date
   view: CalendarWidgetView
   viewCompact: boolean
@@ -167,13 +196,20 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
   // Measured because CSS cannot count rows, and equal fractional rows give every cell the same
   // height, so the body of the first is the height of every other.
   const [cellBodyRef, cellBody] = useContainerSize({ width: 0, height: 57 })
+  // The grid rather than a cell: its height is set by the widget and `tight`, never by what the
+  // cells hold, so the layout it picks cannot change the measurement that picked it.
+  const [gridRef, grid] = useContainerSize({ width: 0, height: 400 })
+  const rows = Math.ceil(days.length / 7)
+  const gap = MONTH_GRID_GAP[tight ? 'tight' : 'roomy']
+  const layout = monthCellLayout((grid.height - gap * (rows - 1)) / rows)
+  const oneLine = layout === 'line'
 
   return (
     <div className="h-full flex flex-col">
       <div
         className={cn(
           'shrink-0 flex flex-wrap items-center justify-between gap-2',
-          ultraCompact ? 'mb-1' : 'mb-2',
+          tight ? 'mb-1' : 'mb-2',
         )}
       >
         <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
@@ -188,7 +224,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
       <div
         className={cn(
           'grid grid-cols-7 text-[10px] text-zinc-500',
-          ultraCompact ? 'gap-0.5 mb-0.5' : 'gap-1 mb-1',
+          tight ? 'gap-0.5 mb-0.5' : 'gap-1 mb-1',
         )}
       >
         {weekdayLabels.map((label, index) => (
@@ -199,9 +235,12 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
       </div>
 
       <div
+        ref={gridRef}
         className={cn(
           'grid grid-cols-7 auto-rows-fr flex-1 min-h-0',
-          ultraCompact ? 'gap-0.5' : 'gap-1',
+          tight ? 'gap-0.5' : 'gap-1',
+          // Unmeasured, the layout is a guess; showing it flashes the wrong one for a frame.
+          grid.width === 0 && 'invisible',
         )}
       >
         {days.map((day, index) => {
@@ -216,43 +255,61 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
               aria-label={`${formatHeadingDate(day)}: ${formatEventCount(dayOccurrences.length)}. Open day`}
               className={cn(
                 'border border-zinc-800 bg-zinc-950/60 min-h-0 min-w-0 overflow-hidden flex focus-visible:outline-2 focus-visible:outline-sky-400',
-                // One line, so a row a laptop viewport leaves at ~19px still shows the whole cell.
-                ultraCompact
+                oneLine
                   ? 'rounded px-0.5 items-center justify-between gap-0.5'
                   : 'rounded-md p-1 flex-col',
                 !inMonth && 'opacity-45',
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
             >
-              <div className={cn('flex shrink-0', !ultraCompact && 'mb-1')}>
-                <CalendarDayNumber
-                  value={formatDayNumber(day)}
-                  isToday={isToday}
-                  dimmed={!inMonth}
-                  compact={ultraCompact}
-                />
-              </div>
-              {ultraCompact ? (
-                <div className="flex items-center gap-0.5 min-w-0">
-                  {dayOccurrences.slice(0, 2).map((occurrence) => (
+              {oneLine && (
+                <div className="flex shrink-0">
+                  <CalendarDayNumber
+                    value={formatDayNumber(day)}
+                    isToday={isToday}
+                    dimmed={!inMonth}
+                    compact
+                  />
+                </div>
+              )}
+              {oneLine ? (
+                <div className="flex flex-1 items-center gap-1 min-w-0">
+                  {dayOccurrences[0] && (
                     <span
-                      key={`${occurrence.event_id}:${occurrence.original_start}`}
-                      title={formatCalendarOccurrenceCellTitle(occurrence, day)}
+                      title={formatCalendarOccurrenceCellTitle(dayOccurrences[0], day)}
                       className={cn(
-                        'h-1.5 w-1.5 rounded-full',
-                        occurrence.recurring ? 'bg-emerald-300' : 'bg-sky-300',
+                        'min-w-0 flex-1 truncate rounded px-1 text-[9px] leading-3',
+                        dayOccurrences[0].recurring
+                          ? 'bg-emerald-500/12 text-emerald-300'
+                          : 'bg-sky-500/12 text-sky-300',
                       )}
-                    />
-                  ))}
-                  {dayOccurrences.length > 2 && (
-                    <span className="text-[8px] text-zinc-500">+{dayOccurrences.length - 2}</span>
+                    >
+                      {dayOccurrences[0].title}
+                    </span>
+                  )}
+                  {dayOccurrences.length > 1 && (
+                    <span
+                      className="shrink-0 text-[8px] text-zinc-500"
+                      title={hiddenOccurrencesTitle(dayOccurrences.slice(1), day)}
+                    >
+                      +{dayOccurrences.length - 1}
+                    </span>
                   )}
                 </div>
               ) : (
                 <CalendarDayOccurrences
+                  heading={
+                    <CalendarDayNumber
+                      value={formatDayNumber(day)}
+                      isToday={isToday}
+                      dimmed={!inMonth}
+                      compact={layout === 'compact'}
+                    />
+                  }
                   occurrences={dayOccurrences}
                   day={day}
                   height={cellBody.height}
+                  width={cellBody.width}
                   density="month"
                   measureRef={index === 0 ? cellBodyRef : null}
                 />
