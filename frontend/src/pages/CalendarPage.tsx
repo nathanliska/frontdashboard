@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { CalendarOccurrence } from '../api/calendar'
 import type { CalendarEventParticipantResponse } from '../api/generated/contract'
-import { CalendarDayNumber } from '../components/calendar/CalendarDayNumber'
+import {
+  CalendarDayNumber,
+  FULL_DAY_NUMBER_MIN_WIDTH,
+} from '../components/calendar/CalendarDayNumber'
 import { CalendarDayOccurrences } from '../components/calendar/CalendarDayOccurrences'
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialog'
@@ -354,18 +357,22 @@ export function CalendarPage() {
                           isSelected && 'border-sky-500/40 bg-sky-500/6',
                         )}
                       >
-                        <div className="mb-1 flex items-start justify-between gap-1">
-                          <CalendarDayNumber
-                            value={formatDayNumber(day)}
-                            isToday={isToday}
-                            isSelected={isSelected}
-                            dimmed={!inMonth}
-                          />
-                        </div>
                         <CalendarDayOccurrences
+                          heading={
+                            <CalendarDayNumber
+                              value={formatDayNumber(day)}
+                              isToday={isToday}
+                              isSelected={isSelected}
+                              dimmed={!inMonth}
+                              compact={
+                                cellBody.width > 0 && cellBody.width < FULL_DAY_NUMBER_MIN_WIDTH
+                              }
+                            />
+                          }
                           occurrences={dayOccurrences}
                           day={day}
                           height={cellBody.height}
+                          width={cellBody.width}
                           density="month"
                           measureRef={index === 0 ? cellBodyRef : null}
                         />

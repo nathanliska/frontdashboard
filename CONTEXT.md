@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-09-21_
+_Last updated: 2026-09-25_
 
 ## What's built
 
@@ -114,8 +114,11 @@ _Last updated: 2026-09-21_
   value-producers resolve `T | null`, void ones resolve `boolean`, and the store owns the error
   toast. Dialogs close, inputs clear, and navigation happen only on a truthy result, so a failed
   create/rename/widget-add/share-add keeps the user's input instead of discarding it.
-- Calendar widget day cells link to the full calendar at that local date and dashboard, including
-  overflow and compact-dot views. Every week stays in view at any widget size; the grid never scrolls.
+- Calendar day cells (widget and page) fill every pill row they have room for and put "+N" on the
+  date's line; narrow cells show titles without times, and a month widget cell too short for a
+  pill under even the small date folds into one line of date, first title and "+N". Widget cells
+  link to the full calendar at that local date and dashboard. Every week stays in view; the grid
+  never scrolls.
 - Widget types: **list** (bind existing or auto-create), **clock**, **calendar**, **agenda**
   (today/overdue/upcoming). Add-widget wizard picks type → resource where applicable.
 
@@ -184,9 +187,9 @@ _Last updated: 2026-09-21_
 - **Participants**: events can name the members they are about — toggle-chips in the editor
   (fed by `GET /dashboards/{id}/members`, cached per dashboard and refreshed by the
   `dashboard.share_*` events), colored initial-dots on cards and agenda rows, bare
-  micro-dots on month pills. Colors are hashed from the user id, zero configuration. A label only:
-  no notification, no access change; a member who leaves the dashboard stays named, greyed
-  "(former)" in the editor, keepable but not re-addable (FDR-006 §6).
+  micro-dots on month pills wide enough to keep them. Colors are hashed from the user id, zero
+  configuration. A label only: no notification, no access change; a member who leaves the
+  dashboard stays named, greyed "(former)" in the editor, keepable but not re-addable (FDR-006 §6).
 - **Day-dependent views refresh at local midnight.** A shared `useLocalDay()` hook re-renders at the
   next local midnight (DST-safe) and on tab wake (visibility/focus); the calendar widget and page
   re-derive "today" from it, and the agenda widget background-refetches on a day rollover — so an
