@@ -1,13 +1,16 @@
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
 from prometheus_client import REGISTRY
+from sqlalchemy import event as sa_event
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.calendar import CalendarEvent
+from app.models.calendar import CalendarEvent, CalendarEventOverride
 from app.routers import calendar as calendar_router
 from app.services.sessions import start_session
 from tests.helpers import (
@@ -594,3 +597,348 @@ async def test_a_listing_window_is_capped_at_the_size_the_write_check_covers(aut
     refused = await auth_client.get("/api/calendar/events", params={**base, "window_end": "2027-01-02T00:00:01+00:00"})
     assert refused.status_code == 422
     assert "366 days" in refused.json()["detail"]
+
+
+_WEEK = {"window_start": "2026-04-10T00:00:00+00:00", "window_end": "2026-04-17T00:00:00+00:00"}
+
+
+async def test_a_listing_refuses_more_occurrences_than_one_response_may_carry(auth_client: AsyncClient, monkeypatch) -> None:
+    """The cap itself fits and one more does not, and the refusal is an answer rather than a truncated calendar."""
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_OCCURRENCES", 6)
+    dashboard = await create_dashboard(auth_client)
+    daily = {"frequency": "daily", "interval": 1, "count": 3}
+    await create_calendar_event(auth_client, dashboard["id"], title="First", recurrence=daily)
+    await create_calendar_event(auth_client, dashboard["id"], title="Second", recurrence=daily)
+
+    at_the_cap = await auth_client.get("/api/calendar/events", params=_WEEK)
+    assert at_the_cap.status_code == 200, at_the_cap.text
+    assert len(at_the_cap.json()) == 6
+
+    await create_calendar_event(auth_client, dashboard["id"], title="One more")
+    before = REGISTRY.get_sample_value("frontdashboard_calendar_listing_refusals_total") or 0.0
+    refused = await auth_client.get("/api/calendar/events", params=_WEEK)
+    assert refused.status_code == 422
+    assert "shorter" in refused.json()["detail"]
+    # The only outward sign that someone's calendar stopped loading, so it is part of the refusal.
+    assert REGISTRY.get_sample_value("frontdashboard_calendar_listing_refusals_total") == before + 1
+
+
+async def test_a_listing_past_the_cap_stops_expanding_instead_of_finishing_first(auth_client: AsyncClient, monkeypatch) -> None:
+    """The refusal has to come before the work it refuses: the cost is the expansion, not the reply."""
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_OCCURRENCES", 4)
+    dashboard = await create_dashboard(auth_client)
+    daily = {"frequency": "daily", "interval": 1, "count": 3}
+    for index in range(4):
+        await create_calendar_event(auth_client, dashboard["id"], title=f"Series {index}", recurrence=daily)
+
+    expanded: list[uuid.UUID] = []
+    real = calendar_router.expand_event_occurrences
+
+    def counting(event, *args):
+        expanded.append(event.id)
+        return real(event, *args)
+
+    monkeypatch.setattr(calendar_router, "expand_event_occurrences", counting)
+    refused = await auth_client.get("/api/calendar/events", params=_WEEK)
+
+    assert refused.status_code == 422
+    # Three per series against a cap of four: the second series crosses it, so two never run.
+    assert len(expanded) == 2
+
+
+@contextmanager
+def _statements(test_database):
+    """Every statement the engine runs, so a test can see a bound in the query rather than infer it from the answer."""
+    seen: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest) -> None:
+        seen.append(statement)
+
+    engine = test_database.engine.sync_engine
+    sa_event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield seen
+    finally:
+        sa_event.remove(engine, "before_cursor_execute", record)
+
+
+async def test_a_listing_bounds_the_rows_it_loads_in_the_query_itself(auth_client: AsyncClient, monkeypatch, test_database) -> None:
+    """The refusal alone would still load every row first; the LIMIT is what keeps them out of memory."""
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_OCCURRENCES", 2)
+    dashboard = await create_dashboard(auth_client)
+    daily = {"frequency": "daily", "interval": 1, "count": 2}
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence=daily)
+    edited = await auth_client.patch(
+        f"/api/calendar/events/{event['id']}/occurrences",
+        json={"occurrence_start": "2026-04-10T14:00:00+00:00", "title": "Moved"},
+    )
+    assert edited.status_code == 200, edited.text
+
+    with _statements(test_database) as seen:
+        listed = await auth_client.get("/api/calendar/events", params=_WEEK)
+
+    assert listed.status_code == 200, listed.text
+    events_query = next(s for s in seen if "FROM calendar_events" in s and "calendar_events.title" in s)
+    edits_query = next(s for s in seen if "FROM calendar_event_overrides" in s and "calendar_event_overrides.title" in s)
+    assert "LIMIT" in events_query
+    assert "LIMIT" in edits_query
+
+
+async def test_a_listing_refuses_more_rows_than_the_cap_before_expanding_any(auth_client: AsyncClient, monkeypatch) -> None:
+    """Exactly the cap is served; one row more is refused without expanding any of them."""
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_OCCURRENCES", 2)
+    dashboard = await create_dashboard(auth_client)
+    for index in range(2):
+        await create_calendar_event(auth_client, dashboard["id"], title=f"One-off {index}")
+    assert (await auth_client.get("/api/calendar/events", params=_WEEK)).status_code == 200
+
+    await create_calendar_event(auth_client, dashboard["id"], title="One-off 2")
+
+    def never(*args):
+        raise AssertionError("expanded an event the row bound should have refused")
+
+    monkeypatch.setattr(calendar_router, "expand_event_occurrences", never)
+    refused = await auth_client.get("/api/calendar/events", params=_WEEK)
+
+    assert refused.status_code == 422
+
+
+async def _cancel(client: AsyncClient, event_id: str, day: int) -> None:
+    edited = await client.patch(
+        f"/api/calendar/events/{event_id}/occurrences",
+        json={"occurrence_start": f"2026-04-{day:02d}T14:00:00+00:00", "cancelled": True},
+    )
+    assert edited.status_code == 200, edited.text
+
+
+async def test_a_listing_refuses_more_edited_occurrences_than_the_cap(auth_client: AsyncClient, monkeypatch) -> None:
+    """Cancelled edits keep no occurrence, so only this bound can see them: two fit, a third does not."""
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_OCCURRENCES", 2)
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence={"frequency": "daily", "interval": 1, "count": 3})
+    await _cancel(auth_client, event["id"], 10)
+    await _cancel(auth_client, event["id"], 11)
+    assert (await auth_client.get("/api/calendar/events", params=_WEEK)).status_code == 200
+
+    await _cancel(auth_client, event["id"], 12)
+    assert (await auth_client.get("/api/calendar/events", params=_WEEK)).status_code == 422
+
+
+async def test_edits_outside_the_window_are_not_loaded_with_it(auth_client: AsyncClient, monkeypatch) -> None:
+    """One member's edits elsewhere in a series must not be able to refuse everyone's view of this week."""
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_OCCURRENCES", 2)
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence={"frequency": "daily", "interval": 1, "count": 30})
+    for day in (20, 21, 22, 23):
+        await _cancel(auth_client, event["id"], day)
+
+    # Four edits against a cap of two, all after this window closes on the 12th.
+    early = {"window_start": "2026-04-10T00:00:00+00:00", "window_end": "2026-04-12T00:00:00+00:00"}
+    listed = await auth_client.get("/api/calendar/events", params=early)
+
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()) == 2
+
+
+async def test_an_occurrence_moved_out_of_the_window_still_leaves_its_slot_empty(auth_client: AsyncClient) -> None:
+    """The edit's new time is outside the window, but its original slot is inside: it must still load to suppress it."""
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence={"frequency": "daily", "interval": 1, "count": 3})
+    moved = await auth_client.patch(
+        f"/api/calendar/events/{event['id']}/occurrences",
+        json={"occurrence_start": "2026-04-11T14:00:00+00:00", "starts_at": "2026-05-20T14:00:00+00:00", "ends_at": "2026-05-20T15:00:00+00:00"},
+    )
+    assert moved.status_code == 200, moved.text
+
+    listed = await auth_client.get("/api/calendar/events", params=_WEEK)
+
+    assert listed.status_code == 200, listed.text
+    assert [o["occurrence_start"][:10] for o in listed.json()] == ["2026-04-10", "2026-04-12"]
+
+
+async def test_an_occurrence_moved_into_the_window_is_listed_there(auth_client: AsyncClient) -> None:
+    """The mirror case: the original slot is outside the window and only the retimed one is in it."""
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence={"frequency": "daily", "interval": 1, "count": 3})
+    moved = await auth_client.patch(
+        f"/api/calendar/events/{event['id']}/occurrences",
+        json={"occurrence_start": "2026-04-11T14:00:00+00:00", "starts_at": "2026-05-20T14:00:00+00:00", "ends_at": "2026-05-20T15:00:00+00:00"},
+    )
+    assert moved.status_code == 200, moved.text
+
+    may = {"window_start": "2026-05-19T00:00:00+00:00", "window_end": "2026-05-22T00:00:00+00:00"}
+    listed = await auth_client.get("/api/calendar/events", params=may)
+
+    assert listed.status_code == 200, listed.text
+    assert [o["occurrence_start"][:10] for o in listed.json()] == ["2026-05-20"]
+
+
+async def test_a_listing_refuses_a_walk_longer_than_one_request_may_cost(auth_client: AsyncClient, monkeypatch) -> None:
+    """Series that ended before the window keep nothing, so only the walk itself can be counted against them."""
+    dashboard = await create_dashboard(auth_client)
+    finished = {"frequency": "daily", "interval": 1, "count": 3}
+    for index in range(2):
+        await create_calendar_event(
+            auth_client,
+            dashboard["id"],
+            title=f"Finished {index}",
+            starts_at="2026-03-01T14:00:00+00:00",
+            ends_at="2026-03-01T15:00:00+00:00",
+            recurrence=finished,
+        )
+
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_CANDIDATES", 6)
+    within = await auth_client.get("/api/calendar/events", params=_WEEK)
+    assert within.status_code == 200, within.text
+    assert within.json() == []
+
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_CANDIDATES", 5)
+    refused = await auth_client.get("/api/calendar/events", params=_WEEK)
+    assert refused.status_code == 422
+
+
+async def test_an_event_whose_only_edits_are_elsewhere_is_not_loaded_for_this_window(auth_client: AsyncClient, monkeypatch) -> None:
+    """Unwindowed, one edited occurrence would load its ended series for every window there is."""
+    dashboard = await create_dashboard(auth_client)
+    ended = {"frequency": "daily", "interval": 1, "until": "2026-04-12T23:59:59+00:00"}
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Ended", recurrence=ended)
+    await _cancel(auth_client, event["id"], 11)
+
+    expanded: list[uuid.UUID] = []
+    real = calendar_router.expand_event_occurrences
+
+    def counting(event, *args):
+        expanded.append(event.id)
+        return real(event, *args)
+
+    monkeypatch.setattr(calendar_router, "expand_event_occurrences", counting)
+    june = {"window_start": "2026-06-01T00:00:00+00:00", "window_end": "2026-06-08T00:00:00+00:00"}
+    listed = await auth_client.get("/api/calendar/events", params=june)
+
+    assert listed.status_code == 200, listed.text
+    assert expanded == []
+
+
+async def test_an_occurrence_moved_away_leaves_its_old_slot_empty_even_part_way_through_it(auth_client: AsyncClient) -> None:
+    """The window opens after the old slot began, so that slot only counts with its length added.
+
+    Moved rather than cancelled on purpose: an edit left in place is found by where it now is, and
+    only one that went elsewhere depends on its original slot being matched by its whole span.
+    """
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Workshop",
+        starts_at="2026-04-10T14:00:00+00:00",
+        ends_at="2026-04-10T18:00:00+00:00",
+        recurrence={"frequency": "daily", "interval": 1, "count": 3},
+    )
+    moved = await auth_client.patch(
+        f"/api/calendar/events/{event['id']}/occurrences",
+        json={"occurrence_start": "2026-04-11T14:00:00+00:00", "starts_at": "2026-05-20T14:00:00+00:00", "ends_at": "2026-05-20T18:00:00+00:00"},
+    )
+    assert moved.status_code == 200, moved.text
+
+    mid_session = {"window_start": "2026-04-11T15:00:00+00:00", "window_end": "2026-04-11T16:00:00+00:00"}
+    listed = await auth_client.get("/api/calendar/events", params=mid_session)
+
+    assert listed.status_code == 200, listed.text
+    assert listed.json() == []
+
+
+async def test_a_cancellation_survives_a_clock_change_between_its_start_and_the_window(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+    """A three-day occurrence across a DST change, in a session whose zone observes it: the edit must still load."""
+    await db_session.execute(text("SET TIME ZONE 'America/New_York'"))
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Retreat",
+        starts_at="2026-03-07T12:00:00+00:00",
+        ends_at="2026-03-10T12:00:00+00:00",
+        recurrence={"frequency": "daily", "interval": 30, "count": 2},
+    )
+    cancelled = await auth_client.patch(
+        f"/api/calendar/events/{event['id']}/occurrences",
+        json={"occurrence_start": "2026-03-07T12:00:00+00:00", "cancelled": True},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+
+    last_half_hour = {"window_start": "2026-03-10T11:30:00+00:00", "window_end": "2026-03-10T11:45:00+00:00"}
+    listed = await auth_client.get("/api/calendar/events", params=last_half_hour)
+
+    assert listed.json() == []
+
+
+@pytest.mark.parametrize(
+    ("retime", "window", "expected_start"),
+    [
+        # Only a start: the end is that start plus the series' hour, and only the tail reaches the window.
+        ({"starts_at": datetime(2026, 5, 20, 13, 30, tzinfo=UTC)}, ("2026-05-20T14:00:00+00:00", "2026-05-20T15:00:00+00:00"), "2026-05-20T13:30"),
+        # Only an end: the start stays where it was, and the stretched end is what reaches the window.
+        ({"ends_at": datetime(2026, 4, 13, 10, tzinfo=UTC)}, ("2026-04-13T09:00:00+00:00", "2026-04-13T09:30:00+00:00"), "2026-04-11T14:00"),
+    ],
+)
+async def test_a_half_retimed_edit_is_loaded_by_the_slot_it_actually_occupies(
+    auth_client: AsyncClient, db_session: AsyncSession, retime: dict, window: tuple[str, str], expected_start: str
+) -> None:
+    """The API writes both ends or neither, but older rows hold one; the query has to fill the other as the expander does."""
+    dashboard = await create_dashboard(auth_client)
+    created = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence={"frequency": "daily", "interval": 1, "count": 3})
+    event = (await db_session.execute(select(CalendarEvent).where(CalendarEvent.id == uuid.UUID(created["id"])))).scalar_one()
+    db_session.add(
+        CalendarEventOverride(
+            calendar_event_id=event.id,
+            created_by=event.created_by,
+            updated_by=event.created_by,
+            occurrence_start=datetime(2026, 4, 11, 14, tzinfo=UTC),
+            **retime,
+        )
+    )
+    await db_session.commit()
+
+    listed = await auth_client.get("/api/calendar/events", params={"window_start": window[0], "window_end": window[1]})
+
+    assert listed.status_code == 200, listed.text
+    assert [o["occurrence_start"][:16] for o in listed.json()] == [expected_start]
+
+
+async def test_only_the_edits_of_the_events_being_listed_count_against_the_cap(
+    auth_client: AsyncClient, accounts: MemberFactory, monkeypatch
+) -> None:
+    """Two of mine fit a cap of two; a stranger's edits in the same week, or each of mine counted per event, would not."""
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_OCCURRENCES", 2)
+    daily = {"frequency": "daily", "interval": 1, "count": 1}
+    dashboard = await create_dashboard(auth_client)
+    for title in ("Mine", "Also mine"):
+        event = await create_calendar_event(auth_client, dashboard["id"], title=title, recurrence=daily)
+        await _cancel(auth_client, event["id"], 10)
+
+    stranger = await accounts("calendar-stranger@example.com")
+    theirs = await create_dashboard(stranger)
+    for title in ("Theirs", "Also theirs"):
+        event = await create_calendar_event(stranger, theirs["id"], title=title, recurrence=daily)
+        await _cancel(stranger, event["id"], 10)
+
+    listed = await auth_client.get("/api/calendar/events", params=_WEEK)
+
+    assert listed.status_code == 200, listed.text
+
+
+async def test_edits_are_walked_too_and_count_against_the_same_budget(auth_client: AsyncClient, monkeypatch) -> None:
+    """Three candidates and two edits are five: an edit outside the generated starts is built like any other."""
+    dashboard = await create_dashboard(auth_client)
+    event = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence={"frequency": "daily", "interval": 1, "count": 3})
+    for day in (10, 11):
+        edited = await auth_client.patch(
+            f"/api/calendar/events/{event['id']}/occurrences",
+            json={"occurrence_start": f"2026-04-{day:02d}T14:00:00+00:00", "title": "Renamed"},
+        )
+        assert edited.status_code == 200, edited.text
+
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_CANDIDATES", 5)
+    assert (await auth_client.get("/api/calendar/events", params=_WEEK)).status_code == 200
+
+    monkeypatch.setattr(calendar_router, "MAX_RESPONSE_CANDIDATES", 4)
+    assert (await auth_client.get("/api/calendar/events", params=_WEEK)).status_code == 422

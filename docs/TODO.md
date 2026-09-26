@@ -26,7 +26,7 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 | Phase | Theme | Open findings |
 |------:|-------|---------------|
 | 5 | Infra / CI / ops | #33◐, #35◐, #20◐, #66 |
-| — | Backlog (unscheduled) | #16◐, #39, #64, #65◐, #21/#45 |
+| — | Backlog (unscheduled) | #16◐, #39, #64, #21/#45 |
 
 ◐ = partially done; the entry states the remaining scope.
 
@@ -80,13 +80,6 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   frozen loop. The fix is dropping slowapi for `limits.aio`, which also costs the `@limiter.limit`
   decorator and the coverage test that enforces it — so it wants a trigger: the store restarting often
   enough to notice, or a second replica. *(Medium, no trigger yet)*
-- **#65◐ — Occurrence expansion is bounded per event and per dashboard, not per request.**
-  Each event expansion has a bounded candidate/override budget, and `quota_events_per_dashboard`
-  bounds how many events one
-  dashboard can hold ([ADR-020](adr/ADR-020-resource-quotas.md)). Remaining: the query still has no
-  `LIMIT`, so a request spanning many accessible dashboards multiplies that ceiling by their number.
-  Worth measuring before building: `frontdashboard_http_request_seconds` on `/api/calendar/events`
-  is where it would first show. *(Small, no trigger yet)*
 - **#16◐ — Make calendar work proportional to the requested window.** The router no longer loads
   every event on every accessible dashboard. Remaining, and only worth it if a calendar is ever
   actually slow: series with a `count` limit and no `until` still load unbounded, since finding their
@@ -138,9 +131,11 @@ Capabilities deliberately not built. Each states the condition that would make i
   server-derived `can_*` booleans on dashboard summaries are the seams it lands in.
 - **SBOM + release signing** — when there are external contributors, redistribution, or a compliance
   ask.
-- **Dependency/SAST/secret/image scanning in CI** — when the app stores anything beyond calendars,
-  lists and dashboards, or when contributors outnumber one. Dependabot + `osv-scanner` cover the
-  realistic case now.
+- **Scanning the built images in CI** — when the app stores anything beyond calendars, lists and
+  dashboards, or when contributors outnumber one. The rest of that family already runs: static
+  analysis on every PR and secret scanning with push protection (both the host's own setup, so
+  neither is in `ci.yml`), `zizmor` and `osv-scanner` in the workflow, Dependabot, and a pre-commit
+  secret check.
 - **Browser/a11y regression tests (Playwright + axe)** — the primitives exist and each is unit-tested
   for its accessible wiring; what is missing is *cross-component* coverage in a real browser — focus
   order across a page, keyboard traversal, contrast. Worth it when a regression slips through the
