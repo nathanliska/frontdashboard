@@ -42,13 +42,13 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
-    "@vitest/ui": "^4.1.11",
+    "@vitest/ui": "^5.0.3",
     "jsdom": "^30.1.1",
     "knip": "^6.38.0",
     "tailwindcss": "^4.2.2",
     "typed-openapi": "4.1.0",
     "typescript": "~7.0.2",
     "vite": "^8.3.1",
-    "vitest": "^4.1.5"
+    "vitest": "^5.0.3"
   }
 }
