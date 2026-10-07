@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { FULL_DAY_NUMBER_MIN_WIDTH } from '../components/calendar/CalendarDayNumber'
 import { useDashboardStore } from '../stores/dashboard'
 import { CalendarPage } from './CalendarPage'
 
@@ -16,6 +17,10 @@ vi.mock('../resources/calendarData', async () => ({
 function Location() {
   return <output data-testid="location">{useLocation().search}</output>
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 beforeEach(() => {
   query.mockClear()
@@ -51,4 +56,18 @@ it('keeps the requested date and waits for dashboard selection before fetching',
   expect(query.mock.calls.every((call) => (call as unknown[])[2] !== 'first')).toBe(true)
   expect(screen.getByRole('button', { name: /February 29.*Show day/ })).toBeInTheDocument()
   expect(screen.getByTestId('location')).toHaveTextContent('date=2028-02-29')
+})
+
+it('shrinks the date badge in CSS, against its own cell, where "+N" would not fit beside it', () => {
+  render(
+    <MemoryRouter initialEntries={['/calendar?dashboard_id=wanted&date=2028-02-29']}>
+      <CalendarPage />
+    </MemoryRouter>,
+  )
+  const cell = screen.getByRole('button', { name: /February 29.*Show day/ }).firstElementChild
+  // jsdom has no layout, so this pins the mechanism: the cell is the container the badge asks.
+  expect(cell).toHaveClass('@container')
+  // The literal in the page's classes must be the constant, which nothing else can check.
+  const narrow = `@max-[${FULL_DAY_NUMBER_MIN_WIDTH}px]`
+  expect(cell?.querySelector('span')).toHaveClass(`${narrow}:text-[9px]`, `${narrow}:px-0.5`)
 })

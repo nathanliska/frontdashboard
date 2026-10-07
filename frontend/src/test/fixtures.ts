@@ -1,3 +1,4 @@
+import type { CalendarOccurrence } from '../api/calendar'
 import type { Dashboard, DashboardSummary } from '../api/dashboards'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
@@ -125,4 +126,23 @@ export function deferred<T>() {
     reject = rej
   })
   return { promise, resolve, reject }
+}
+
+export function makeOccurrence(overrides: Partial<CalendarOccurrence> = {}): CalendarOccurrence {
+  return {
+    event_id: 'event-1',
+    occurrence_start: '2026-04-10T09:00:00.000Z',
+    occurrence_end: '2026-04-10T10:00:00.000Z',
+    original_start: '2026-04-10T09:00:00.000Z',
+    title: 'Event',
+    description: null,
+    location: null,
+    timezone: 'UTC',
+    all_day: false,
+    created_by: 'user-1',
+    recurring: false,
+    is_exception: false,
+    participants: [],
+    ...overrides,
+  }
 }

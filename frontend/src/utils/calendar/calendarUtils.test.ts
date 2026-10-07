@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { makeOccurrence } from '../../test/fixtures'
 import {
+  calendarOccurrenceCellPrefix,
   calendarWindow,
   dateKey,
   formatCalendarOccurrenceCellLabel,
   formatCalendarOccurrenceCellTitle,
+  formatOccurrenceSpan,
   isMultiDayOccurrence,
   monthGridDays,
   monthWeeksInView,
@@ -177,9 +180,34 @@ describe('calendar utils', () => {
     expect(
       formatCalendarOccurrenceCellLabel(occurrence, new Date(2026, 3, 10, 12), 'compact'),
     ).toBe('2PM Dentist')
+    expect(calendarOccurrenceCellPrefix(occurrence, new Date(2026, 3, 10, 12), 'compact')).toBe(
+      '2PM',
+    )
     expect(formatCalendarOccurrenceCellTitle(occurrence, new Date(2026, 3, 10, 12))).toBe(
       'Dentist: 2:00 PM - 3:00 PM',
     )
+  })
+
+  it('names the days an all-day event spans, ending on the last day it covers', () => {
+    const start = new Date(2026, 8, 23).toISOString()
+    expect(formatOccurrenceSpan(start, new Date(2026, 8, 28).toISOString(), true)).toBe(
+      'Sep 23 - Sep 27',
+    )
+    expect(formatOccurrenceSpan(start, new Date(2026, 8, 24).toISOString(), true)).toBe('All day')
+  })
+
+  it('keeps a timed span ending at midnight on the day it covers', () => {
+    const start = new Date(2026, 8, 23, 22).toISOString()
+    expect(formatOccurrenceSpan(start, new Date(2026, 8, 24).toISOString(), false)).toBe(
+      '10:00 PM - 12:00 AM',
+    )
+  })
+
+  it('drops "All day" from a compact label, where the title alone has to fit', () => {
+    const occurrence = makeOccurrence({ all_day: true, title: 'Trip' })
+    const day = new Date(2026, 3, 10, 12)
+    expect(formatCalendarOccurrenceCellLabel(occurrence, day)).toBe('All day Trip')
+    expect(formatCalendarOccurrenceCellLabel(occurrence, day, 'compact')).toBe('Trip')
   })
 
   it('formats shared calendar cell labels for multi-day events', () => {

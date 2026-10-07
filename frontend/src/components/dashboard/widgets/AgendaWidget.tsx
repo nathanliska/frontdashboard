@@ -1,7 +1,12 @@
 import { AlertCircle, CalendarDays, CheckCircle2, Clock3, Repeat2 } from 'lucide-react'
 import type { AgendaItem } from '../../../resources/agendaData'
 import { useAgendaItems } from '../../../resources/agendaData'
-import { dateKey, formatOccurrenceSpan } from '../../../utils/calendar/calendarUtils'
+import {
+  dateKey,
+  formatOccurrenceSpan,
+  lastCoveredDay,
+  spansDays,
+} from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
 import { ParticipantDots } from '../../calendar/ParticipantDots'
 import { WidgetErrorState } from '../WidgetErrorState'
@@ -116,6 +121,13 @@ function AgendaRow({ item }: { item: AgendaItem }) {
   )
 }
 
+const WEEKDAY_FORMAT = new Intl.DateTimeFormat(undefined, { weekday: 'short' })
+const DAY_LABEL_FORMAT = new Intl.DateTimeFormat(undefined, {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+})
+
 function formatAgendaMeta(item: AgendaItem): string {
   if (item.type === 'reminder') {
     return item.status === 'overdue' ? `Overdue · ${item.listName}` : `Due today · ${item.listName}`
@@ -123,14 +135,14 @@ function formatAgendaMeta(item: AgendaItem): string {
 
   const todayKey = dateKey(new Date())
   const startsKey = dateKey(item.startsAt)
+  const span = formatOccurrenceSpan(item.startsAt, item.endsAt, item.allDay)
+  // A span across days names its own dates, so the label is the weekday alone — or "Today", for
+  // as long as today is one of them.
+  if (spansDays(item.startsAt, item.endsAt)) {
+    const onToday = startsKey <= todayKey && todayKey <= dateKey(lastCoveredDay(item.endsAt))
+    return `${onToday ? 'Today' : WEEKDAY_FORMAT.format(new Date(item.startsAt))} · ${span}`
+  }
   const dayLabel =
-    startsKey === todayKey
-      ? 'Today'
-      : new Intl.DateTimeFormat(undefined, {
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric',
-        }).format(new Date(item.startsAt))
-
-  return `${dayLabel} · ${formatOccurrenceSpan(item.startsAt, item.endsAt, item.allDay)}`
+    startsKey === todayKey ? 'Today' : DAY_LABEL_FORMAT.format(new Date(item.startsAt))
+  return `${dayLabel} · ${span}`
 }

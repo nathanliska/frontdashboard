@@ -28,8 +28,8 @@ export function CalendarWidget({
   dashboardId: string
   config: CalendarWidgetConfig
 }) {
-  // Measured rather than queried in CSS: these feed how many occurrences a cell renders and which
-  // weekday labels it uses, neither of which a container query can decide.
+  // Measured rather than queried in CSS: these pick label sets, which a container query cannot,
+  // and the month's `tight` spacing, whose gap the month's own layout arithmetic has to know.
   const [containerRef, { width: containerWidth, height: containerHeight }] = useContainerSize({
     width: 300,
     height: 320,
@@ -42,8 +42,6 @@ export function CalendarWidget({
   const view: CalendarWidgetView =
     requestedView === 'day' || requestedView === 'week' ? requestedView : 'month'
   const today = useLocalToday()
-  // Below either size a month cell cannot hold one row of pills, so the dots say what "+N" would.
-  const ultraCompactMonth = view === 'month' && (containerWidth < 280 || containerHeight < 320)
   const widgetWindow = useMemo(() => getWidgetWindow(view, today), [today, view])
   const occurrencesQuery = useCalendarOccurrences(
     widgetWindow.windowStart.toISOString(),
@@ -115,7 +113,6 @@ export function CalendarWidget({
             dashboardId={dashboardId}
             days={weekDays}
             occurrencesByDate={visibleOccurrencesByDate}
-            compact={containerWidth < 320 || containerHeight < 260}
           />
         </div>
       </div>
@@ -130,7 +127,9 @@ export function CalendarWidget({
           days={monthDays}
           occurrencesByDate={visibleOccurrencesByDate}
           compact={containerWidth < 340 || containerHeight < 280}
-          ultraCompact={ultraCompactMonth}
+          // Short enough that a laptop leaves the month's rows at ~15px: every pixel of spacing
+          // around the grid is one a folded day's line needs.
+          tight={containerHeight < 320}
           monthDate={today}
           view={view}
           viewCompact={containerWidth < 260}

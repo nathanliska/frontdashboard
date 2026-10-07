@@ -42,6 +42,12 @@ body {
   }
 }
 
+/* Text cut at its box's edge and faded over the last few pixels. For a narrow calendar pill, where
+   an ellipsis would cost one of the three or four letters that fit. */
+@utility fade-end {
+  mask-image: linear-gradient(to left, transparent, black 5px);
+}
+
 /* Tailwind's `@container` is inline-size, which cannot answer a height query — and the clock is
    the one widget squashed short often enough to need one. */
 .clock-face {
