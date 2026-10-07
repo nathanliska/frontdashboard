@@ -15,7 +15,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "preview": "vite preview",
-    "generate:contract": "typed-openapi ../backend/openapi.json -r zod --schemas-only --no-runtime-types -o ./src/api/generated/contract.ts"
+    "generate:contract": "typed-openapi ../backend/openapi.json -r zod --schemas-only --no-runtime-types --openapi-additional-properties-default -o ./src/api/generated/contract.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -37,6 +37,9 @@ One deliberate seam remains, local and documented at its definition:
 - The exporter widens single-value `const` to a one-member `enum`, because the generator emits
   `z.literal` for `enum` but degrades `const` to `z.string()` — without it the widget union
   doesn't narrow.
+- The generator runs with `--openapi-additional-properties-default`, so an object the schema leaves
+  open stays open. From typed-openapi 4.1 the default closes it, and a field a newer backend adds
+  would then fail validation in a tab opened before the deploy.
 
 Seams are debt, not fixtures. The client also re-opened the `extra="allow"` SSE payload until the
 generator learned to express it; that compensation is gone. Re-check on every generator upgrade.
