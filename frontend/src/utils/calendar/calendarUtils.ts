@@ -90,7 +90,7 @@ const DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
 })
 const DAY_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
 
-export function formatOccurrenceTime(start: string, end: string, allDay: boolean): string {
+function formatOccurrenceTime(start: string, end: string, allDay: boolean): string {
   if (allDay) return 'All day'
   return `${TIME_FORMAT.format(new Date(start))} - ${TIME_FORMAT.format(new Date(end))}`
 }
