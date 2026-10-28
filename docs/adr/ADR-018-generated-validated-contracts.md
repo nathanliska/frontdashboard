@@ -40,6 +40,10 @@ One deliberate seam remains, local and documented at its definition:
 - The generator runs with `--openapi-additional-properties-default`, so an object the schema leaves
   open stays open. From typed-openapi 4.1 the default closes it, and a field a newer backend adds
   would then fail validation in a tab opened before the deploy.
+- `frontend/package.json` overrides `tinypool` to 2.1.2, the release with its two
+  prototype-pollution fixes, but only under `oxfmt@0.59.0`: typed-openapi 4.1.0 pins that oxfmt,
+  which pins `tinypool` 2.1.0 exactly, so no ordinary bump reaches them. Keyed to that version, it
+  stops applying on its own once typed-openapi ships oxfmt 0.67 or later; delete it then.
 
 Seams are debt, not fixtures. The client also re-opened the `extra="allow"` SSE payload until the
 generator learned to express it; that compensation is gone. Re-check on every generator upgrade.
