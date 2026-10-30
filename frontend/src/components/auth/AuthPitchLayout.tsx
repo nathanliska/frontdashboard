@@ -126,7 +126,7 @@ function AuthPitchPanel() {
             Lists, an agenda, a calendar and a clock, dragged into whatever arrangement suits the
             room. Share a dashboard and its lists and events go with it.
           </p>
-          <p>Open source. Sign up with any email address.</p>
+          <p>Open source. Sign up with an email address.</p>
         </div>
       </div>
     </section>

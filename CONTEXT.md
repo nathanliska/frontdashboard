@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-09-26_
+_Last updated: 2026-10-30_
 
 ## What's built
 
@@ -37,7 +37,9 @@ _Last updated: 2026-09-26_
   A write that commits *after* the tombstone — a rename from the person's own second tab — is
   discarded by a `BEFORE UPDATE` trigger, so the anonymisation stands whichever writer raced it. A new password is screened against the breach-derived common-password list
   (`services/passwords.py`) at registration, reset and change — length alone let `password123`
-  through. Existing passwords are not re-screened.
+  through. Existing passwords are not re-screened. An address at a throwaway-inbox service is
+  refused at registration and email change (`services/email_domains.py`, the maintained
+  `disposable-email-domains` list); privacy relays still register, and existing accounts keep theirs.
 - **A link that changes who you are says so first.** The reset page checks its token before
   offering a form (`POST /auth/password-reset/check`, which reports validity only and never
   consumes), so a dead, spent or unknown link says so instead of failing after a password is

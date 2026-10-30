@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-09-20
+**Last reviewed:** 2026-10-30
 
 ## Overview
 
@@ -23,6 +23,10 @@ multi-user account model with immediate, per-device session control — not just
   422 naming the reason. The answer depends on the password alone, so it stays uniform across known
   and unknown addresses. Existing passwords are never re-screened — nobody is locked out by the
   policy arriving, and the check only binds the next time one is set.
+- **An address must be a permanent inbox.** Registration and an email change refuse a domain on
+  the maintained disposable-email list, or a subdomain of one, with a 422 naming the reason
+  (decision 9). Privacy relays are not on it and still register. The answer
+  depends on the domain alone, and existing accounts keep their addresses.
 - **Sessions are per-login and revocable.** Each login is its own session. Logging out ends that
   session immediately. Changing your password ends every *other* session but keeps the one you're
   using; a password reset ends sessions accordingly.
@@ -234,6 +238,22 @@ cannot join a cycle: a reset used to spend its token and then wait, which agains
 sweeping that token was a deadlock. Within the lock the confirm path still voids reset tokens before
 spending its own, because the retention sweep, which takes no account lock, walks the tables in that
 order.
+
+### 9. Throwaway inboxes are refused from a maintained list, as friction (decided 2026-10-30)
+
+Registration is open, and quotas and rate limits are per account, so an address that costs nothing
+makes each of them multiply. Refusing the known throwaway services raises that cost; it does not
+close it — a domain of one's own, or a service not yet listed, still gets through, and the
+per-account limits stay the controls ([ADR-020](../adr/ADR-020-resource-quotas.md)).
+**The list is a dependency, not a vendored file** like the password list: that list is a fixed
+ranked cut, while throwaway services appear constantly, and the monthly Dependabot bump keeps this
+one current.
+**Privacy relays stay allowed.** They are permanent inboxes that forward, and the upstream list
+excludes them on that basis; the tests pin the common ones so an update that adds one is noticed.
+**Both doors are checked.** Registration alone would let an account switch to a throwaway address
+afterwards. **Subdomains match their parent,** since these services answer at any subdomain.
+**Not checked:** MX records or a paid verdict service — a network call on registration's path for
+little more than the list gives.
 
 ## Access
 
