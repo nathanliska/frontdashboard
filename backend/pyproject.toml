@@ -26,6 +26,7 @@ dependencies = [
     # so outbound TLS now trusts a bundled CA set rather than the base image's.
     "httpx>=0.27.0",
     "redis>=6.0.0",
+    "disposable-email-domains>=0.0.287",
 ]
 
 [dependency-groups]

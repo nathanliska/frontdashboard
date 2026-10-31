@@ -26,6 +26,19 @@ describe('requestVoid', () => {
     expect(ApiError).toBeDefined()
   })
 
+  it('falls back to the provided message when the detail is a validation list', async () => {
+    apiFetch.mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: vi.fn().mockResolvedValue({ detail: [{ msg: 'value is not a valid email address' }] }),
+    })
+    await expect(requestVoid('/x', { method: 'POST' }, 'Failed')).rejects.toMatchObject({
+      status: 422,
+      message: 'Failed',
+      detail: undefined,
+    })
+  })
+
   it('falls back to the provided message when there is no detail', async () => {
     apiFetch.mockResolvedValue({
       ok: false,

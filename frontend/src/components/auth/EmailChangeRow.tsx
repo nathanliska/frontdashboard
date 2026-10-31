@@ -36,9 +36,11 @@ export function EmailChangeRow({ email }: { email: string }) {
       toggle.current?.focus()
     } catch (error) {
       const status = error instanceof ApiError ? error.status : null
-      // A 403's detail is a sentence (the password, or CSRF); a 422's is a list, so it is reworded.
+      // A 403's detail is a sentence (the password, or CSRF). A 422's is a list for a malformed
+      // address, reworded, or a sentence for a refused one (a disposable domain), shown as sent.
       if (status === 403) setErrors({ password: (error as ApiError).message })
-      else if (status === 422) setErrors({ email: 'Enter a valid email address.' })
+      else if (status === 422)
+        setErrors({ email: (error as ApiError).detail ?? 'Enter a valid email address.' })
       else if (status === 429) setErrors({ form: 'Too many attempts. Try again in a minute.' })
       else if (status === null)
         setErrors({ form: 'Could not send the link. Check your connection and try again.' })

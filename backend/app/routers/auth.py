@@ -59,6 +59,7 @@ from app.services.email import (
     send_verification_email,
 )
 from app.services.email_change import confirm_email_change, void_email_changes
+from app.services.email_domains import assert_email_not_disposable
 from app.services.password_reset import consume_password_reset_token, reset_token_is_live
 from app.services.passwords import assert_password_not_common
 from app.services.sessions import (
@@ -246,8 +247,9 @@ async def register(
     Answers identically whether or not the address already has an account (ADR-011). The owner
     still learns of the attempt — by email, which only they can read.
     """
-    # Refused before hashing: the answer depends only on the password, so it leaks nothing about
-    # the address and the equal-cost reasoning below is untouched.
+    # Refused before hashing: each answer depends on the domain or the password alone, so neither
+    # leaks whether the address has an account, and the equal-cost reasoning below is untouched.
+    assert_email_not_disposable(body.email)
     assert_password_not_common(body.password)
     # Hash before the existence check so both branches pay the same dominant cost. Skipping the
     # verify on the duplicate path would reopen through timing exactly what the response closes.
@@ -625,6 +627,7 @@ async def request_email_change(
     inbox, so skipping the warning or the token there would tell them the address has an account
     (ADR-011).
     """
+    assert_email_not_disposable(body.new_email)
     # Before the password is read, so a reset in flight finishes first and this checks its result.
     await _lock_own_account(db, current_user)
     if not await verify_password(body.password, current_user.password_hash):

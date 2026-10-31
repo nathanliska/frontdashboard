@@ -66,6 +66,17 @@ describe('asking to change the account email', () => {
     expect(document.body).not.toHaveTextContent('[object Object]')
   })
 
+  it('shows a refused address in the words the server sent', async () => {
+    const refusal = "Disposable email addresses can't be used. Please use a permanent address."
+    apiRequestEmailChange.mockRejectedValue(new ApiError(refusal, 422, refusal))
+
+    submit('new@mailinator.com', 'current-passphrase-1')
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/new email/i)).toHaveAccessibleDescription(/disposable/i),
+    )
+  })
+
   it('drops the pending notice once the address shown is the one asked for', async () => {
     apiRequestEmailChange.mockResolvedValue(undefined)
     const { rerender } = render(<EmailChangeRow email="me@example.com" />)

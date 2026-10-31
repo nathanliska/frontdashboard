@@ -3,17 +3,22 @@ import { apiFetch } from './client'
 
 export class ApiError extends Error {
   status: number
+  /** The server's own sentence, when it sent one rather than a validation list or nothing. */
+  detail?: string
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, detail?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.detail = detail
   }
 }
 
 export async function readError(res: Response, fallback: string): Promise<ApiError> {
-  const data = (await res.json().catch(() => ({}))) as { detail?: string }
-  return new ApiError(data.detail ?? fallback, res.status)
+  const data = (await res.json().catch(() => ({}))) as { detail?: unknown }
+  // A request-validation 422 carries a list here; as a message it would read "[object Object]".
+  const detail = typeof data.detail === 'string' ? data.detail : undefined
+  return new ApiError(detail ?? fallback, res.status, detail)
 }
 
 export async function requestVoid(
