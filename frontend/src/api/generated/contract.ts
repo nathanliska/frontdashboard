@@ -1,3 +1,4 @@
+import '../../zodConfig'
 
   import { z } from "zod";
 
