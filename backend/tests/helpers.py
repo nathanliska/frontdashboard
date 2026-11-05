@@ -1,8 +1,10 @@
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from httpx import AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
@@ -10,6 +12,18 @@ from app.models.dashboard import Dashboard
 from app.models.user import User
 
 CSRF = "test-csrf-token"
+
+
+async def someone_waits_on_a_lock(observer: AsyncSession) -> bool:
+    """Poll for a backend blocked on a lock; a fixed sleep can pass before the waiter ever ran."""
+    for _ in range(50):
+        # The activity view is snapshotted per transaction, and the observer is inside one.
+        await observer.execute(text("SELECT pg_stat_clear_snapshot()"))
+        query = text("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()")
+        if await observer.scalar(query):
+            return True
+        await asyncio.sleep(0.1)
+    return False
 
 
 def set_csrf(client: AsyncClient) -> None:

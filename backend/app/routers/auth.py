@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -137,8 +137,20 @@ async def _issue_token(
     **fields: str,
 ) -> str:
     """Mint a fresh single-use token for `user`, superseding any unused one, and return its link."""
+    await db.execute(update(model).where(model.user_id == user.id, model.used_at.is_(None)).values(used_at=datetime.now(UTC)))
+    return await _mint_token(model, user, db, expires_in_hours=expires_in_hours, path=path, **fields)
+
+
+async def _mint_token(
+    model: type[EmailVerificationToken] | type[PasswordResetToken] | type[EmailChangeToken],
+    user: User,
+    db: AsyncSession,
+    *,
+    expires_in_hours: int,
+    path: str,
+    **fields: str,
+) -> str:
     now = datetime.now(UTC)
-    await db.execute(update(model).where(model.user_id == user.id, model.used_at.is_(None)).values(used_at=now))
     raw_token, token_hash = create_opaque_token()
     db.add(model(user_id=user.id, token_hash=token_hash, expires_at=now + timedelta(hours=expires_in_hours), **fields))
     await db.flush()
@@ -146,7 +158,23 @@ async def _issue_token(
 
 
 async def _issue_email_verification(user: User, db: AsyncSession) -> str:
-    return await _issue_token(EmailVerificationToken, user, db, expires_in_hours=settings.email_verification_expire_hours, path="verify-email")
+    # Earlier links stay live: every one goes to the same inbox, so voiding them protects nothing and
+    # strands whoever opens the first email (FDR-001 §10). Verifying consumes them all.
+    return await _mint_token(EmailVerificationToken, user, db, expires_in_hours=settings.email_verification_expire_hours, path="verify-email")
+
+
+# The page counts the same minute down (VerifyEmailPage's RESEND_COOLDOWN_SECONDS). A resend inside it
+# sends nothing: the link already on its way still works, so another adds only noise to the inbox.
+_RESEND_COOLDOWN = timedelta(seconds=60)
+
+
+async def _verification_sent_recently(user: User, db: AsyncSession) -> bool:
+    # The database's clock on both sides, since `created_at` is stamped server-side.
+    recent = select(EmailVerificationToken.id).where(
+        EmailVerificationToken.user_id == user.id,
+        EmailVerificationToken.created_at > func.now() - _RESEND_COOLDOWN,
+    )
+    return (await db.execute(recent.limit(1))).first() is not None
 
 
 async def _issue_password_reset(user: User, db: AsyncSession) -> str:
@@ -298,35 +326,35 @@ async def verify_email(
     """Verify an email token and start an authenticated session."""
     now = datetime.now(UTC)
     result = await db.execute(
-        select(EmailVerificationToken)
-        .where(
+        select(EmailVerificationToken).where(
             EmailVerificationToken.token_hash == hash_token(body.token),
             EmailVerificationToken.expires_at > now,
         )
-        .with_for_update()
     )
     token = result.scalar_one_or_none()
     if not token:
         raise auth_failure("email_verify", "invalid_token", status_code=status.HTTP_400_BAD_REQUEST, detail=_VERIFY_DETAIL)
 
-    user_result = await db.execute(select(User).where(User.id == token.user_id, User.deleted_at.is_(None)))
-    user = user_result.scalar_one_or_none()
+    # Serialises verifications of one account: several links can be live, and two opened together
+    # must not both mint a session. The account lock, not the token row's, so deletion can't deadlock it.
+    user = await lock_live_user(db, token.user_id)
     if not user:
         raise auth_failure("email_verify", "unknown_user", status_code=status.HTTP_400_BAD_REQUEST, detail=_VERIFY_DETAIL)
 
+    if user.email_verified_at is not None:
+        # Any of its links, opened after one already verified it — never mint a new session.
+        raise auth_failure(
+            "email_verify",
+            "already_verified",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already verified. Please sign in.",
+        )
     if token.used_at is not None:
-        if user.email_verified_at == token.used_at:
-            # Replay of the link that already verified this user — never mint a new session.
-            raise auth_failure(
-                "email_verify",
-                "already_verified",
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already verified. Please sign in.",
-            )
-        # Token was superseded (e.g. a newer link was requested) without verifying it.
-        raise auth_failure("email_verify", "superseded_token", status_code=status.HTTP_400_BAD_REQUEST, detail=_VERIFY_DETAIL)
+        raise auth_failure("email_verify", "invalid_token", status_code=status.HTTP_400_BAD_REQUEST, detail=_VERIFY_DETAIL)
 
-    token.used_at = now
+    await db.execute(
+        update(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id, EmailVerificationToken.used_at.is_(None)).values(used_at=now)
+    )
     user.email_verified_at = now
     await _create_session(user, response, db, device_name=device_label(request.headers))
     await db.commit()
@@ -345,7 +373,9 @@ async def resend_verification(
     """Issue a fresh verification email for an unverified account."""
     result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
     user = result.scalar_one_or_none()
-    if user and user.email_verified_at is None:
+    # The cooldown is read under the account lock, or two resends sent together both find no recent
+    # link and each mails one.
+    if user and (user := await lock_live_user(db, user.id)) and user.email_verified_at is None and not await _verification_sent_recently(user, db):
         verification_url = await _issue_email_verification(user, db)
         await db.commit()
         background_tasks.add_task(send_verification_email, user.email, verification_url)

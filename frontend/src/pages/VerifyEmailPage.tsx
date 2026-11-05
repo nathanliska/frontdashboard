@@ -4,6 +4,12 @@ import { ApiError, apiResendVerification } from '../api/auth'
 import { ROUTES } from '../routes'
 import { useAuthStore } from '../stores/auth'
 
+/**
+ * The backend's resend cooldown (`_RESEND_COOLDOWN` in routers/auth.py). The server enforces it;
+ * this only keeps the control from offering a send the server would skip.
+ */
+export const RESEND_COOLDOWN_SECONDS = 60
+
 export function getVerificationErrorMessage(err: unknown) {
   if (err instanceof ApiError && err.status === 409) {
     return 'Your email is already verified — please sign in below.'
@@ -29,6 +35,14 @@ export function VerifyEmailPage() {
   )
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [alreadyVerified, setAlreadyVerified] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = setTimeout(() => setCooldown((s) => s - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [cooldown])
 
   // Verifying signs you in as the link's account, so a signed-in visitor confirms first rather
   // than having their identity swapped silently.
@@ -50,6 +64,7 @@ export function VerifyEmailPage() {
       .catch((err) => {
         if (cancelled) return
         setStatus('idle')
+        setAlreadyVerified(err instanceof ApiError && err.status === 409)
         setError(getVerificationErrorMessage(err))
       })
 
@@ -65,9 +80,14 @@ export function VerifyEmailPage() {
     setStatus('resending')
     try {
       await apiResendVerification(email)
-      setMessage('Verification email sent.')
+      // Worded for every case the server answers alike: no account, already verified, or a send
+      // skipped inside the cooldown — whose earlier link is still on its way (ADR-011).
+      setMessage('If that address needs verifying, a link is on its way. Check spam too.')
+      setCooldown(RESEND_COOLDOWN_SECONDS)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resend verification email')
+      if (err instanceof ApiError && err.status === 429)
+        setError('Too many requests. Try again in a minute.')
+      else setError(err instanceof Error ? err.message : 'Failed to resend verification email')
     } finally {
       setStatus('idle')
     }
@@ -109,54 +129,78 @@ export function VerifyEmailPage() {
           an account gets this same screen, and says "we sent a verification link" only when one was.
           Naming the email here would put the account-existence oracle back (ADR-011).
         */}
-        <p className="mb-8 text-center text-sm text-zinc-500">
-          {status === 'verifying' ? (
-            'Checking your verification link...'
-          ) : initialEmail ? (
-            <>
-              We sent an email to <span className="text-zinc-300">{initialEmail}</span>. Follow the
-              instructions in it before signing in.
-            </>
-          ) : (
-            'Check your inbox and follow the instructions in the email we sent.'
-          )}
-        </p>
+        {!alreadyVerified && (
+          <p className="mb-8 text-center text-sm text-zinc-500">
+            {status === 'verifying' ? (
+              'Checking your verification link...'
+            ) : initialEmail ? (
+              <>
+                We sent an email to <span className="text-zinc-300">{initialEmail}</span>. Follow
+                the instructions in it before signing in.
+              </>
+            ) : (
+              'Check your inbox and follow the instructions in the email we sent.'
+            )}
+          </p>
+        )}
 
-        <form onSubmit={handleResend} className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm text-zinc-400" htmlFor="email">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
-            />
-          </div>
+        {error && <p className="mb-4 text-center text-sm text-red-400">{error}</p>}
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          {message && <p className="text-sm text-emerald-400">{message}</p>}
-
-          <button
-            type="submit"
-            disabled={status === 'resending' || status === 'verifying'}
-            className="w-full rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
+        {alreadyVerified ? (
+          <Link
+            to={ROUTES.login}
+            className="block w-full rounded-md bg-zinc-100 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
           >
-            {status === 'resending' ? 'Sending...' : 'Resend verification email'}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-zinc-500">
-          Already verified?{' '}
-          <Link to={ROUTES.login} className="text-zinc-300 hover:text-zinc-100">
             Sign in
           </Link>
-        </p>
+        ) : (
+          <>
+            <form onSubmit={handleResend} className="space-y-3 text-center">
+              {/* The address is already known after signing up; asking again would only invite a typo. */}
+              {!initialEmail && (
+                <div className="text-left">
+                  <label className="mb-1.5 block text-sm text-zinc-400" htmlFor="email">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {message && <p className="text-sm text-emerald-400">{message}</p>}
+
+              <p className="text-sm text-zinc-500">
+                {!error && "Didn't get it? "}
+                <button
+                  type="submit"
+                  disabled={status === 'resending' || status === 'verifying' || cooldown > 0}
+                  className="text-zinc-300 underline-offset-4 transition-colors hover:text-zinc-100 hover:underline disabled:text-zinc-500 disabled:no-underline"
+                >
+                  {status === 'resending'
+                    ? 'Sending…'
+                    : cooldown > 0
+                      ? `Send another in ${cooldown}s`
+                      : 'Send another'}
+                </button>
+              </p>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-zinc-500">
+              Already verified?{' '}
+              <Link to={ROUTES.login} className="text-zinc-300 hover:text-zinc-100">
+                Sign in
+              </Link>
+            </p>
+          </>
+        )}
       </div>
     </div>
   )

@@ -1,10 +1,12 @@
+import asyncio
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException, Response
 from httpx import ASGITransport, AsyncClient
 from prometheus_client import REGISTRY
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +19,8 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.session import UserSession
 from app.models.user import User
 from app.routers import auth as auth_router
-from tests.helpers import MemberFactory, create_dashboard
+from app.services.accounts import _ACCOUNT_LOCK_NAMESPACE
+from tests.helpers import MemberFactory, create_dashboard, someone_waits_on_a_lock
 
 _REGISTER_URL = "/api/auth/register"
 _LOGIN_URL = "/api/auth/login"
@@ -244,19 +247,98 @@ async def test_verify_email_rejects_consumed_token_replay(db_client: AsyncClient
     assert "csrf_token" not in replay.cookies
 
 
-async def test_verify_email_rejects_invalidated_token_after_resend(db_client: AsyncClient) -> None:
+async def _age_verification_tokens(db_session: AsyncSession, email: str) -> None:
+    """Move an account's verification links past the resend cooldown."""
+    user_id = select(User.id).where(User.email == email).scalar_subquery()
+    await db_session.execute(
+        update(EmailVerificationToken).where(EmailVerificationToken.user_id == user_id).values(created_at=func.now() - timedelta(minutes=2))
+    )
+    await db_session.commit()
+
+
+async def test_an_earlier_link_still_verifies_after_a_resend(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    """Every link goes to the same inbox, so a resend must not strand whoever opens the first email."""
     await db_client.post(
         _REGISTER_URL,
-        json={"email": "invalidated@example.com", "password": "my-test-password-1", "display_name": "Invalidated"},
+        json={"email": "earlier@example.com", "password": "my-test-password-1", "display_name": "Earlier"},
     )
-    first_token = app.state.email_verification_tokens["invalidated@example.com"]
-
-    resend = await db_client.post(_RESEND_VERIFICATION_URL, json={"email": "invalidated@example.com"})
-    assert resend.status_code == 204
+    first_token = app.state.email_verification_tokens["earlier@example.com"]
+    await _age_verification_tokens(db_session, "earlier@example.com")
+    await db_client.post(_RESEND_VERIFICATION_URL, json={"email": "earlier@example.com"})
+    second_token = app.state.email_verification_tokens["earlier@example.com"]
+    assert second_token != first_token
 
     resp = await db_client.post(_VERIFY_EMAIL_URL, json={"token": first_token})
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == "Invalid or expired verification link"
+    assert resp.status_code == 200
+
+
+async def test_verifying_spends_every_other_link(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    """A second live link must not mint a second session once the account is verified."""
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "spent@example.com", "password": "my-test-password-1", "display_name": "Spent"},
+    )
+    first_token = app.state.email_verification_tokens["spent@example.com"]
+    await _age_verification_tokens(db_session, "spent@example.com")
+    await db_client.post(_RESEND_VERIFICATION_URL, json={"email": "spent@example.com"})
+    second_token = app.state.email_verification_tokens["spent@example.com"]
+
+    assert (await db_client.post(_VERIFY_EMAIL_URL, json={"token": second_token})).status_code == 200
+    db_client.cookies.clear()
+    other = await db_client.post(_VERIFY_EMAIL_URL, json={"token": first_token})
+    assert other.status_code == 409
+    assert "session" not in other.cookies
+
+    unused = await db_session.execute(select(func.count()).select_from(EmailVerificationToken).where(EmailVerificationToken.used_at.is_(None)))
+    assert unused.scalar_one() == 0
+
+
+async def test_a_resend_inside_the_cooldown_sends_nothing(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    """The link already on its way still works, so another would only add to the inbox."""
+    await db_client.post(
+        _REGISTER_URL,
+        json={"email": "cooldown@example.com", "password": "my-test-password-1", "display_name": "Cooldown"},
+    )
+    first_token = app.state.email_verification_tokens["cooldown@example.com"]
+    # Most of the minute gone, so a shortened cooldown lets this one through.
+    await db_session.execute(update(EmailVerificationToken).values(created_at=func.now() - timedelta(seconds=50)))
+
+    resend = await db_client.post(_RESEND_VERIFICATION_URL, json={"email": "cooldown@example.com"})
+    assert resend.status_code == 204
+    assert app.state.email_verification_tokens["cooldown@example.com"] == first_token
+    tokens = await db_session.execute(select(func.count()).select_from(EmailVerificationToken))
+    assert tokens.scalar_one() == 1
+
+
+@pytest.mark.parametrize("route", ["verify", "resend"])
+async def test_verify_and_resend_wait_on_the_account_lock(
+    concurrent_sessions: tuple[AsyncSession, AsyncSession, uuid.UUID],
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    route: str,
+) -> None:
+    """Unserialised, two links opened together each mint a session, and two resends each mail a link."""
+    # Requested first so it tears down last; the lock is keyed on the id, so the row need not be visible.
+    holding, _, _ = concurrent_sessions
+    email = "locked@example.com"
+    await db_client.post(_REGISTER_URL, json={"email": email, "password": "my-test-password-1", "display_name": "Locked"})
+    token = app.state.email_verification_tokens[email]
+    await _age_verification_tokens(db_session, email)
+    user_id = (await db_session.execute(select(User.id).where(User.email == email))).scalar_one()
+    calls = {
+        "verify": lambda: db_client.post(_VERIFY_EMAIL_URL, json={"token": token}),
+        "resend": lambda: db_client.post(_RESEND_VERIFICATION_URL, json={"email": email}),
+    }
+
+    await holding.execute(select(func.pg_advisory_xact_lock(_ACCOUNT_LOCK_NAMESPACE, func.hashtext(str(user_id)))))
+    calling = asyncio.create_task(calls[route]())
+    try:
+        assert await someone_waits_on_a_lock(holding)
+        assert not calling.done()
+    finally:
+        await holding.rollback()
+        await asyncio.wait({calling})
+    assert calling.result().status_code == {"verify": 200, "resend": 204}[route]
 
 
 async def test_verify_email_rejects_expired_token(db_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -276,12 +358,13 @@ async def test_verify_email_rejects_expired_token(db_client: AsyncClient, db_ses
     assert resp.json()["detail"] == "Invalid or expired verification link"
 
 
-async def test_resend_verification_issues_new_token(db_client: AsyncClient) -> None:
+async def test_resend_verification_issues_new_token(db_client: AsyncClient, db_session: AsyncSession) -> None:
     await db_client.post(
         _REGISTER_URL,
         json={"email": "resend@example.com", "password": "my-test-password-1", "display_name": "Resend"},
     )
     first_token = app.state.email_verification_tokens["resend@example.com"]
+    await _age_verification_tokens(db_session, "resend@example.com")
 
     resp = await db_client.post(_RESEND_VERIFICATION_URL, json={"email": "resend@example.com"})
     assert resp.status_code == 204

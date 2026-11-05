@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-10-30
+**Last reviewed:** 2026-11-04
 
 ## Overview
 
@@ -13,6 +13,9 @@ multi-user account model with immediate, per-device session control — not just
 
 - **Registration → email verification → login.** A new user registers, receives a verification
   email, and must verify before they can log in. Registration also creates a default "My Dashboard".
+  Asking for another link leaves the earlier ones working, and none is sent within a minute of the
+  last; verifying through any link spends them all, and a later one answers "already verified" with
+  a way to sign in (decision 10).
 - **Email identity is case-insensitive.** Addresses are normalized (trim + lowercase) at the API
   boundary, so casing can't create duplicate accounts or block login. Display names are trimmed,
   non-empty, and ≤100 characters.
@@ -254,6 +257,21 @@ excludes them on that basis; the tests pin the common ones so an update that add
 afterwards. **Subdomains match their parent,** since these services answer at any subdomain.
 **Not checked:** MX records or a paid verdict service — a network call on registration's path for
 little more than the list gives.
+
+### 10. A resent verification link adds to the earlier ones rather than voiding them (decided 2026-11-04)
+
+Each resend used to supersede the link before it, so pressing "send another" while the first email
+was on its way stranded whoever then opened that first email on a 400. Voiding protects nothing
+here: every link goes to the same inbox, which an unverified account cannot change, so whoever
+holds one can read them all. **Verifying spends every live link at once,** under the account lock,
+so two opened together still mint one session and the rest answer 409. **A resend within a minute
+of the last link sends nothing** and answers the same 204 — the link already on its way works —
+and the page counts that minute down on its control. The check takes the same lock, so resends
+sent together from many IPs still mail one link a minute. Reset and email-change links still supersede:
+there a newer request can mean the older one went somewhere it shouldn't.
+**Still verified on open, not behind a button.** A mail scanner that runs the page spends the link
+on the account's behalf, which costs the owner nothing but a sign-in — unlike a reset or an email
+change, where spending the link is the act itself.
 
 ## Access
 

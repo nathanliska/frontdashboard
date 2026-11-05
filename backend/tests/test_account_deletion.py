@@ -36,6 +36,7 @@ from tests.helpers import (
     current_user,
     mint_invite,
     share_dashboard,
+    someone_waits_on_a_lock,
 )
 
 _EMAIL = "testuser@example.com"
@@ -228,18 +229,6 @@ async def test_each_left_frame_is_addressed_to_its_own_dashboard_and_keeps_the_n
     assert json.loads(addressed["Quiet"].message["data"])["actor_display_name"] == "Test User"
 
 
-async def _someone_waits_on_a_lock(observer: AsyncSession) -> bool:
-    """Poll for a backend blocked on a lock; a fixed sleep can pass before the waiter ever ran."""
-    for _ in range(50):
-        # The activity view is snapshotted per transaction, and the observer is inside one.
-        await observer.execute(text("SELECT pg_stat_clear_snapshot()"))
-        query = text("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()")
-        if await observer.scalar(query):
-            return True
-        await asyncio.sleep(0.1)
-    return False
-
-
 async def test_the_lock_makes_a_second_submit_wait_and_then_find_nothing_to_do(
     concurrent_sessions: tuple[AsyncSession, AsyncSession, uuid.UUID],
 ) -> None:
@@ -251,7 +240,7 @@ async def test_the_lock_makes_a_second_submit_wait_and_then_find_nothing_to_do(
     assert await lock_account(first, winner) is True
     waiting = asyncio.create_task(lock_account(second, loser))
     try:
-        assert await _someone_waits_on_a_lock(first)
+        assert await someone_waits_on_a_lock(first)
         await delete_account(first, winner)
         await first.commit()
         assert await waiting is False
@@ -277,7 +266,7 @@ async def test_a_redemption_racing_the_purge_waits_and_then_finds_the_link_dead(
         owner = (await first.execute(select(User).where(User.id == user_id))).scalar_one()
         assert await lock_account(first, owner) is True
         redeeming = asyncio.create_task(auth_client.post(f"/api/invites/{code}/accept"))
-        assert await _someone_waits_on_a_lock(first)
+        assert await someone_waits_on_a_lock(first)
 
         await delete_account(first, owner)
         await first.commit()
@@ -309,7 +298,7 @@ async def test_a_password_reset_racing_a_deletion_waits_and_then_finds_its_link_
     assert await lock_account(holding, owner)
     reset = asyncio.create_task(auth_client.post("/api/auth/password-reset/confirm", json={"token": token, "new_password": "otter-lantern-quilt-42"}))
     try:
-        assert await _someone_waits_on_a_lock(holding)
+        assert await someone_waits_on_a_lock(holding)
         await delete_account(holding, owner)
         await holding.commit()
     finally:
@@ -372,7 +361,7 @@ async def test_the_transfer_waits_on_a_deletion_but_not_on_an_ordinary_write(
             await asyncio.wait({transfer}, timeout=5)
             assert transfer.done()
         else:
-            assert await _someone_waits_on_a_lock(holding)
+            assert await someone_waits_on_a_lock(holding)
             assert not transfer.done()
             await delete_account(holding, member)
             await holding.commit()

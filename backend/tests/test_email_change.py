@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import create_opaque_token
@@ -19,7 +19,7 @@ from app.routers import auth as auth_router
 from app.services.accounts import _ACCOUNT_LOCK_NAMESPACE
 from app.services.email_change import confirm_email_change, void_email_changes
 from app.services.password_reset import consume_password_reset_token
-from tests.helpers import MemberFactory, current_user
+from tests.helpers import MemberFactory, current_user, set_csrf, someone_waits_on_a_lock
 
 _OLD = "testuser@example.com"
 _NEW = "renamed@example.com"
@@ -27,6 +27,18 @@ _PASSWORD = "testpassword123"
 # Phrases the common-password screen lets through; named so a scanner does not read them as keys.
 _SECOND = "otter-lantern-quilt-42"
 _THIRD = "heron-velvet-anchor-17"
+
+
+@pytest.fixture
+async def auth_client(db_client: AsyncClient, db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
+    """Sign in without the verify route, whose account lock would outlive it in this suite's savepoint."""
+    resp = await db_client.post("/api/auth/register", json={"email": _OLD, "password": _PASSWORD, "display_name": "Test User"})
+    assert resp.status_code == 201, resp.text
+    await db_session.execute(update(User).where(User.email == _OLD).values(email_verified_at=func.now()))
+    resp = await db_client.post("/api/auth/login", json={"email": _OLD, "password": _PASSWORD})
+    assert resp.status_code == 200, resp.text
+    set_csrf(db_client)
+    yield db_client
 
 
 @pytest.fixture
@@ -151,15 +163,6 @@ async def _pending(db: AsyncSession, user_id: uuid.UUID, new_email: str) -> str:
     return raw
 
 
-async def _someone_waits_on_a_lock(observer: AsyncSession) -> bool:
-    for _ in range(50):
-        await observer.execute(text("SELECT pg_stat_clear_snapshot()"))
-        if await observer.scalar(text("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()")):
-            return True
-        await asyncio.sleep(0.1)
-    return False
-
-
 async def test_two_confirms_of_one_link_switch_the_address_once(concurrent_sessions: tuple[AsyncSession, AsyncSession, uuid.UUID]) -> None:
     first, second, user_id = concurrent_sessions
     token = await _pending(first, user_id, f"once-{user_id}@example.com")
@@ -167,7 +170,7 @@ async def test_two_confirms_of_one_link_switch_the_address_once(concurrent_sessi
     assert await confirm_email_change(token, first) is True
     loser = asyncio.create_task(confirm_email_change(token, second))
     try:
-        assert await _someone_waits_on_a_lock(first)
+        assert await someone_waits_on_a_lock(first)
         await first.commit()
         assert await loser is False
     finally:
@@ -187,7 +190,7 @@ async def test_a_confirm_and_a_reset_take_their_tokens_in_one_order(concurrent_s
     assert await consume_password_reset_token(raw_reset, first) == user_id
     confirming = asyncio.create_task(confirm_email_change(change, second))
     try:
-        assert await _someone_waits_on_a_lock(first)
+        assert await someone_waits_on_a_lock(first)
         await void_email_changes(user_id, first)
         await first.commit()
         assert await confirming is False
@@ -211,7 +214,7 @@ async def test_a_reset_requested_while_the_address_is_changing_waits_and_mails_n
     assert await confirm_email_change(token, first) is True
     asking = asyncio.create_task(stranger.post("/api/auth/password-reset/request", json={"email": old}))
     try:
-        assert await _someone_waits_on_a_lock(first)
+        assert await someone_waits_on_a_lock(first)
         await first.commit()
     finally:
         await first.rollback()
@@ -253,7 +256,7 @@ async def test_every_path_that_moves_or_cancels_a_change_waits_on_the_account_lo
     await holding.execute(select(func.pg_advisory_xact_lock(_ACCOUNT_LOCK_NAMESPACE, func.hashtext(me["id"]))))
     calling = asyncio.create_task(calls[route]())
     try:
-        assert await _someone_waits_on_a_lock(holding)
+        assert await someone_waits_on_a_lock(holding)
         assert not calling.done()
     finally:
         await holding.rollback()
