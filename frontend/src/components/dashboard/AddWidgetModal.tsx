@@ -44,7 +44,7 @@ export function AddWidgetModal({
       title={title}
       onClose={onClose}
       onEscape={handleEscape}
-      contentClassName="max-w-sm"
+      maxWidth="max-w-sm"
       headerAccessory={
         step !== 'pick-type' ? (
           <button

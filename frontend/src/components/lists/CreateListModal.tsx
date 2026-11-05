@@ -33,7 +33,7 @@ export function CreateListModal({
   }
 
   return (
-    <Dialog title="Create list" onClose={onClose} contentClassName="max-w-sm">
+    <Dialog title="Create list" onClose={onClose} maxWidth="max-w-sm">
       <form onSubmit={(event) => void handleSubmit(event)}>
         <div className="space-y-4 p-5">
           <div className="space-y-1.5">

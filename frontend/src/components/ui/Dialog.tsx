@@ -9,9 +9,12 @@ import { cn } from '../../utils/shared/cn'
  * caller's `left-0` and this file's `left-1/2` would both apply and stylesheet order would decide.
  */
 const PLACEMENT = {
-  center: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl',
+  // Each placement owns its width for the same reason: a centred panel keeps a phone-width gutter,
+  // a sheet spans the screen edge to edge.
+  center:
+    'left-1/2 top-1/2 w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl sm:w-full',
   sheet:
-    'inset-x-0 bottom-0 rounded-t-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl',
+    'inset-x-0 bottom-0 w-full rounded-t-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl',
 } as const
 
 /** The one modal shell, on Radix Dialog.
@@ -29,6 +32,7 @@ export function Dialog({
   onEscape,
   children,
   contentClassName,
+  maxWidth = 'max-w-2xl',
   headerAccessory,
   hideHeader = false,
   placement = 'center',
@@ -38,6 +42,8 @@ export function Dialog({
   onEscape?: () => void
   children: ReactNode
   contentClassName?: string
+  /** Replaces the default rather than joining it: two `max-w-*` would be left to stylesheet order. */
+  maxWidth?: string
   headerAccessory?: ReactNode
   hideHeader?: boolean
   placement?: keyof typeof PLACEMENT
@@ -62,7 +68,8 @@ export function Dialog({
               : undefined
           }
           className={cn(
-            'fixed z-50 w-full max-w-2xl',
+            'fixed z-50',
+            maxWidth,
             PLACEMENT[placement],
             'max-h-[85vh] overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl',
             'px-0 focus:outline-none',

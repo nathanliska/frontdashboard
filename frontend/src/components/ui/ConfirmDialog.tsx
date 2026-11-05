@@ -16,7 +16,7 @@ export function ConfirmDialog() {
   if (!open) return null
 
   return (
-    <Dialog title={message} onClose={_cancel} hideHeader contentClassName="max-w-xs">
+    <Dialog title={message} onClose={_cancel} hideHeader maxWidth="max-w-xs">
       <div className="space-y-4 p-6">
         <p className="text-sm text-zinc-200">{message}</p>
         <div className="flex gap-2">

@@ -308,36 +308,36 @@ export const CalendarEditor = memo(function CalendarEditor({
 
         {/* Timing section */}
         <div className="grid gap-2">
-          {/* All-day toggle + date picker (all-day mode) */}
-          <div className="flex items-center gap-2">
-            <AllDayToggle allDay={allDay} onAllDayChange={handleAllDayChange} />
-            {allDay && (
-              <>
-                <input
-                  type="date"
-                  value={startsAt.slice(0, 10)}
-                  onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
-                  aria-label="Start date"
-                  className={cn(INPUT_CLASS, 'min-w-0 flex-1')}
-                  required
-                />
-                <span className="select-none text-zinc-600">–</span>
-                <input
-                  type="date"
-                  value={allDayEndDate}
-                  min={startsAt.slice(0, 10)}
-                  onChange={(event) => {
-                    if (isDateValue(event.target.value)) {
-                      setEndsAt(exclusiveAllDayEnd(event.target.value))
-                    }
-                  }}
-                  aria-label="End date"
-                  className={cn(INPUT_CLASS, 'min-w-0 flex-1')}
-                  required
-                />
-              </>
-            )}
-          </div>
+          <AllDayToggle allDay={allDay} onAllDayChange={handleAllDayChange} />
+
+          {/* Start + end date — laid out like the timed pair below: a date field will not shrink
+              under ~140px, so two beside the toggle overflow a phone. */}
+          {allDay && (
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+              <input
+                type="date"
+                value={startsAt.slice(0, 10)}
+                onChange={(event) => handleStartsAtChange(`${event.target.value}T00:00`)}
+                aria-label="Start date"
+                className={FIELD_CLASS}
+                required
+              />
+              <span className="hidden select-none text-zinc-600 sm:block">–</span>
+              <input
+                type="date"
+                value={allDayEndDate}
+                min={startsAt.slice(0, 10)}
+                onChange={(event) => {
+                  if (isDateValue(event.target.value)) {
+                    setEndsAt(exclusiveAllDayEnd(event.target.value))
+                  }
+                }}
+                aria-label="End date"
+                className={FIELD_CLASS}
+                required
+              />
+            </div>
+          )}
 
           {/* Start + end datetime — stacked on mobile, side-by-side on sm+ */}
           {!allDay && (
@@ -347,7 +347,7 @@ export const CalendarEditor = memo(function CalendarEditor({
                 value={startsAt}
                 onChange={(event) => handleStartsAtChange(event.target.value)}
                 aria-label="Start time"
-                className={cn(INPUT_CLASS, 'min-w-0 max-w-full w-full appearance-none')}
+                className={FIELD_CLASS}
                 required
               />
               <span className="hidden select-none text-zinc-600 sm:block">–</span>
@@ -358,8 +358,7 @@ export const CalendarEditor = memo(function CalendarEditor({
                 aria-invalid={Boolean(scheduleError)}
                 aria-label="End time"
                 className={cn(
-                  INPUT_CLASS,
-                  'min-w-0 max-w-full w-full appearance-none',
+                  FIELD_CLASS,
                   scheduleError && 'border-rose-500/40 focus:border-rose-400',
                 )}
                 required
@@ -553,3 +552,6 @@ function AllDayToggle({
 
 const INPUT_CLASS =
   'h-9 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none'
+// A date or datetime field: takes its grid cell's width and no more, whatever the browser's own
+// control would prefer.
+const FIELD_CLASS = cn(INPUT_CLASS, 'min-w-0 max-w-full w-full appearance-none')
