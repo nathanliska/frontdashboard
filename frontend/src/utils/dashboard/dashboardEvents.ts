@@ -87,8 +87,7 @@ export function applyLocalDashboardSummaryUpdate(
   let didChange = false
   const nextSummaries = summaries.map((summary) => {
     if (summary.id !== dashboardId) return summary
-    const nextVersion =
-      event.entity_version > summary.version ? event.entity_version : summary.version
+    const nextVersion = Math.max(event.entity_version, summary.version)
     if (summary.version === nextVersion && summary.updated_at === event.created_at) {
       return summary
     }
