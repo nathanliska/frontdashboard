@@ -20,11 +20,19 @@ export function getVerificationErrorMessage(err: unknown) {
   return err instanceof Error ? err.message : 'Email verification failed'
 }
 
+function settleSwitch(
+  authStatus: string,
+  token: string | null,
+  signedInAs: string | null | undefined,
+): 'pending' | 'ask' | 'go' {
+  if (authStatus === 'loading') return 'pending'
+  return token && signedInAs ? 'ask' : 'go'
+}
+
 export function VerifyEmailPage() {
   const verifyEmail = useAuthStore((s) => s.verifyEmail)
   const authStatus = useAuthStore((s) => s.status)
   const signedInAs = useAuthStore((s) => (s.status === 'authenticated' ? s.user?.email : null))
-  const [confirmedSwitch, setConfirmedSwitch] = useState(false)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
@@ -44,12 +52,17 @@ export function VerifyEmailPage() {
     return () => clearTimeout(timer)
   }, [cooldown])
 
-  // Verifying signs you in as the link's account, so a signed-in visitor confirms first rather
-  // than having their identity swapped silently.
-  const needsSwitchConfirmation = Boolean(token) && Boolean(signedInAs) && !confirmedSwitch
+  // Verifying signs you in as the link's account, so a signed-in visitor confirms first rather than
+  // having their identity swapped silently. Settled once, before the link runs: the account the
+  // verify itself signs in is not one to ask about.
+  const [switchStep, setSwitchStep] = useState(() => settleSwitch(authStatus, token, signedInAs))
 
   useEffect(() => {
-    if (!token || authStatus === 'loading' || needsSwitchConfirmation) return
+    if (switchStep === 'pending') setSwitchStep(settleSwitch(authStatus, token, signedInAs))
+  }, [authStatus, signedInAs, switchStep, token])
+
+  useEffect(() => {
+    if (!token || switchStep !== 'go') return
 
     let cancelled = false
     setStatus('verifying')
@@ -71,7 +84,7 @@ export function VerifyEmailPage() {
     return () => {
       cancelled = true
     }
-  }, [authStatus, navigate, needsSwitchConfirmation, token, verifyEmail])
+  }, [navigate, switchStep, token, verifyEmail])
 
   async function handleResend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -93,7 +106,7 @@ export function VerifyEmailPage() {
     }
   }
 
-  if (needsSwitchConfirmation) {
+  if (switchStep === 'ask') {
     return (
       <div className="flex h-screen items-center justify-center bg-zinc-950">
         <div className="w-full max-w-sm px-6 text-center">
@@ -104,7 +117,7 @@ export function VerifyEmailPage() {
           </p>
           <button
             type="button"
-            onClick={() => setConfirmedSwitch(true)}
+            onClick={() => setSwitchStep('go')}
             className="w-full rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-white"
           >
             Continue

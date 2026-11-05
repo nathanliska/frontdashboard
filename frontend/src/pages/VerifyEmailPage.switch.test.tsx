@@ -36,6 +36,16 @@ describe('VerifyEmailPage account switching', () => {
     await waitFor(() => expect(verifyEmail).toHaveBeenCalledWith('abc'))
   })
 
+  it('goes home once the link signs a signed-out visitor in', async () => {
+    // The verify signs you in, which must not read as a different account to ask about.
+    verifyEmail.mockImplementation(async () => signIn({ email: 'new@example.com' }))
+
+    renderAt('?token=abc')
+
+    expect(await screen.findByText('Home')).toBeVisible()
+    expect(verifyEmail).toHaveBeenCalledTimes(1)
+  })
+
   it('asks before swapping the session of a signed-in visitor', async () => {
     // Verifying signs you in as the link's account, so doing it silently changes who someone is.
     signIn({ email: 'me@example.com' })
