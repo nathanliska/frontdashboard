@@ -23,7 +23,8 @@ export function CalendarEditorDialog({
       onClose={onClose}
       hideHeader
       placement="sheet"
-      contentClassName="flex flex-col sm:max-w-4xl"
+      contentClassName="flex flex-col"
+      maxWidth="sm:max-w-4xl"
     >
       <div className="flex shrink-0 justify-center pb-1 pt-3 sm:hidden">
         <div className="h-1 w-12 rounded-full bg-zinc-600" />
