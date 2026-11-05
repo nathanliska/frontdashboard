@@ -23,12 +23,14 @@ export function CalendarEditorDialog({
       onClose={onClose}
       hideHeader
       placement="sheet"
-      contentClassName="sm:max-w-4xl"
+      contentClassName="flex flex-col sm:max-w-4xl"
     >
-      <div className="flex justify-center pb-1 pt-3 sm:hidden">
+      <div className="flex shrink-0 justify-center pb-1 pt-3 sm:hidden">
         <div className="h-1 w-12 rounded-full bg-zinc-600" />
       </div>
-      <div className="max-h-[85vh] overflow-y-auto">{children}</div>
+      {/* The panel caps its own height; the scroll area takes what is left under the handle. A cap of
+          its own would push its last rows, Create among them, under the panel's edge. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </Dialog>
   )
 }

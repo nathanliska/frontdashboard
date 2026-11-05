@@ -26,7 +26,7 @@ export function OccurrenceCard({
           </div>
           <div className="mt-2 flex flex-col gap-1.5 text-sm text-zinc-400">
             <div className="flex items-center gap-2">
-              <Clock3 size={14} className="text-zinc-600" />
+              <Clock3 size={14} className="shrink-0 text-zinc-600" />
               <span>
                 {formatOccurrenceSpan(
                   occurrence.occurrence_start,
@@ -37,13 +37,13 @@ export function OccurrenceCard({
             </div>
             {occurrence.location && (
               <div className="flex items-center gap-2">
-                <MapPin size={14} className="text-zinc-600" />
+                <MapPin size={14} className="shrink-0 text-zinc-600" />
                 <span>{occurrence.location}</span>
               </div>
             )}
             {occurrence.recurring && (
               <div className="flex items-center gap-2">
-                <Repeat2 size={14} className="text-zinc-600" />
+                <Repeat2 size={14} className="shrink-0 text-zinc-600" />
                 <span>Series event</span>
               </div>
             )}

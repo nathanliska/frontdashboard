@@ -382,8 +382,9 @@ export function CalendarPage() {
 
         <section className="min-h-0 max-h-[60dvh] rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden flex flex-col sm:max-h-[520px] xl:max-h-none">
           <div className="border-b border-zinc-800 px-3 sm:px-4 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
+            {/* Wraps so the buttons drop under the date on a narrow panel instead of squeezing it. */}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-semibold text-zinc-100">
                     {showTrash ? 'Trash' : formatHeadingDate(selectedDate)}
