@@ -112,8 +112,8 @@ AUTH_FAILURES = Counter(
     ["operation", "reason"],
 )
 
-# The pairs that can actually occur, not the cross product: 8 operations by 11 reasons is 88
-# series of which 69 are unreachable, and a panel of permanent zeroes reads like coverage.
+# The pairs that can actually occur, not the cross product: 8 operations by 10 reasons is 80
+# series of which 62 are unreachable, and a panel of permanent zeroes reads like coverage.
 # `test_auth_failure_coverage.py` fails the build when the code raises a pair missing here.
 AUTH_FAILURE_PAIRS = frozenset(
     {
@@ -125,7 +125,6 @@ AUTH_FAILURE_PAIRS = frozenset(
         ("email_change", "invalid_token"),
         ("email_verify", "already_verified"),
         ("email_verify", "invalid_token"),
-        ("email_verify", "superseded_token"),
         ("email_verify", "unknown_user"),
         ("login", "bad_password"),
         ("login", "unknown_user"),

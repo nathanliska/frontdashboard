@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-10-30_
+_Last updated: 2026-11-04_
 
 ## What's built
 
@@ -44,7 +44,9 @@ _Last updated: 2026-10-30_
   offering a form (`POST /auth/password-reset/check`, which reports validity only and never
   consumes), so a dead, spent or unknown link says so instead of failing after a password is
   typed twice; a signed-in visitor is warned the link may not be theirs, without naming its owner.
-  A verification link opened while signed in asks before switching accounts.
+  A verification link opened while signed in asks before switching accounts. Sending another
+  verification link keeps the earlier ones working (none within a minute of the last), and
+  verifying through any of them spends the rest (FDR-001 §10).
 - **No endpoint reveals whether an account exists.** Login, registration, password reset and
   resend-verification all answer identically for known and unknown addresses, and registration pays
   an Argon2 hash either way so timing doesn't leak what the response won't. Signing up with an
