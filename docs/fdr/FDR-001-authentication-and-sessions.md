@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-11-04
+**Last reviewed:** 2026-11-05
 
 ## Overview
 
@@ -272,6 +272,28 @@ there a newer request can mean the older one went somewhere it shouldn't.
 **Still verified on open, not behind a button.** A mail scanner that runs the page spends the link
 on the account's behalf, which costs the owner nothing but a sign-in — unlike a reset or an email
 change, where spending the link is the act itself.
+
+### 11. A reset or resend request is answered before any account-dependent work runs (decided 2026-11-05)
+
+Both routes answer the same 204 for every address, but the work behind it used to differ: an
+account meant a lock, a token insert and a commit, and no account meant one select. That gap, a
+few milliseconds, is readable from outside in a handful of samples — published remote timing
+attacks resolve tens of microseconds, and two requests multiplexed into one HTTP/2 packet far
+less — and the per-IP limit only slows the reading. So **the route does nothing that depends on
+the address**: it validates,
+hands the address to `services/auth_email.py`, and returns. The lookup, the lock, the cooldown, the
+write and the send all run after the response, in a unit of work with its own session, the shape
+the retention reaper already has. Nothing it does can reach the status, the body, or the timing.
+
+**Why not pad the response to a floor.** The floor must exceed the slow path's tail, which is a
+disk sync on whatever volume the host provides, and every early return added later silently
+reopens the gap. **Why not an outbox.** It only closes the gap if every request writes a row,
+which stores addresses that never registered and needs a drainer, a sweep and an account-deletion
+decision for durability the product does not need: a lost email here is retried by asking again,
+and the token is lost with it, so there is no dead link. A failure after the answer is logged and
+counted (`auth_deferred_failures`); the guard is a test that the routes run no SQL at all, since a
+wall-clock assertion would be flaky and prove nothing. Registration has the same shape behind its
+Argon2 cost and is not covered by this decision.
 
 ## Access
 

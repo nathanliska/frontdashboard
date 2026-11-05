@@ -84,3 +84,7 @@ media/
 
 # Machine-specific Claude Code settings (browser path for chrome-devtools MCP, etc.)
 .claude/settings.local.json
+
+# Research scratch (deep-research skill output)
+research_notes/
+reports/

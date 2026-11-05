@@ -1,9 +1,9 @@
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,14 +17,13 @@ from app.auth.dependencies import (
 from app.auth.device import device_label
 from app.auth.failures import auth_failure
 from app.auth.hashing import _DUMMY_HASH, hash_password, verify_password
-from app.auth.tokens import create_opaque_token, hash_token
+from app.auth.tokens import hash_token
 from app.config import Environment, settings
 from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
 from app.models.dashboard import Dashboard
 from app.models.email_change_token import EmailChangeToken
 from app.models.email_verification_token import EmailVerificationToken
-from app.models.password_reset_token import PasswordResetToken
 from app.models.session import UserSession
 from app.models.share import PrincipalType, ResourceShare, ResourceType
 from app.models.user import User
@@ -51,11 +50,11 @@ from app.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.services.accounts import delete_account, lock_account, lock_live_user, shared_dashboards_owned_by
+from app.services.auth_email import issue_email_verification, issue_password_reset_link, issue_token, resend_verification_link
 from app.services.email import (
     send_email_change_confirmation,
     send_email_change_notice,
     send_existing_account_email,
-    send_password_reset_email,
     send_verification_email,
 )
 from app.services.email_change import confirm_email_change, void_email_changes
@@ -125,60 +124,6 @@ def _clear_auth_cookies(response: Response) -> None:
     # without Secure fails the prefix rules, so the browser rejects the deletion.
     response.delete_cookie(settings.session_cookie_name, secure=_SECURE)
     response.delete_cookie(settings.csrf_cookie_name, secure=_SECURE)
-
-
-async def _issue_token(
-    model: type[EmailVerificationToken] | type[PasswordResetToken] | type[EmailChangeToken],
-    user: User,
-    db: AsyncSession,
-    *,
-    expires_in_hours: int,
-    path: str,
-    **fields: str,
-) -> str:
-    """Mint a fresh single-use token for `user`, superseding any unused one, and return its link."""
-    await db.execute(update(model).where(model.user_id == user.id, model.used_at.is_(None)).values(used_at=datetime.now(UTC)))
-    return await _mint_token(model, user, db, expires_in_hours=expires_in_hours, path=path, **fields)
-
-
-async def _mint_token(
-    model: type[EmailVerificationToken] | type[PasswordResetToken] | type[EmailChangeToken],
-    user: User,
-    db: AsyncSession,
-    *,
-    expires_in_hours: int,
-    path: str,
-    **fields: str,
-) -> str:
-    now = datetime.now(UTC)
-    raw_token, token_hash = create_opaque_token()
-    db.add(model(user_id=user.id, token_hash=token_hash, expires_at=now + timedelta(hours=expires_in_hours), **fields))
-    await db.flush()
-    return f"{settings.frontend_base_url.rstrip('/')}/{path}?token={raw_token}"
-
-
-async def _issue_email_verification(user: User, db: AsyncSession) -> str:
-    # Earlier links stay live: every one goes to the same inbox, so voiding them protects nothing and
-    # strands whoever opens the first email (FDR-001 §10). Verifying consumes them all.
-    return await _mint_token(EmailVerificationToken, user, db, expires_in_hours=settings.email_verification_expire_hours, path="verify-email")
-
-
-# The page counts the same minute down (VerifyEmailPage's RESEND_COOLDOWN_SECONDS). A resend inside it
-# sends nothing: the link already on its way still works, so another adds only noise to the inbox.
-_RESEND_COOLDOWN = timedelta(seconds=60)
-
-
-async def _verification_sent_recently(user: User, db: AsyncSession) -> bool:
-    # The database's clock on both sides, since `created_at` is stamped server-side.
-    recent = select(EmailVerificationToken.id).where(
-        EmailVerificationToken.user_id == user.id,
-        EmailVerificationToken.created_at > func.now() - _RESEND_COOLDOWN,
-    )
-    return (await db.execute(recent.limit(1))).first() is not None
-
-
-async def _issue_password_reset(user: User, db: AsyncSession) -> str:
-    return await _issue_token(PasswordResetToken, user, db, expires_in_hours=settings.password_reset_expire_hours, path="reset-password")
 
 
 async def _create_session(user: User, response: Response, db: AsyncSession, *, device_name: str | None) -> None:
@@ -309,7 +254,7 @@ async def register(
         "home_dashboard_id": str(dashboard_id),
         "favorite_dashboard_ids": [],
     }
-    verification_url = await _issue_email_verification(user, db)
+    verification_url = await issue_email_verification(user, db)
     await db.commit()
     background_tasks.add_task(send_verification_email, user.email, verification_url)
     return RegistrationResponse(email=user.email)
@@ -368,17 +313,13 @@ async def resend_verification(
     request: Request,
     body: ResendVerificationRequest,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Issue a fresh verification email for an unverified account."""
-    result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
-    user = result.scalar_one_or_none()
-    # The cooldown is read under the account lock, or two resends sent together both find no recent
-    # link and each mails one.
-    if user and (user := await lock_live_user(db, user.id)) and user.email_verified_at is None and not await _verification_sent_recently(user, db):
-        verification_url = await _issue_email_verification(user, db)
-        await db.commit()
-        background_tasks.add_task(send_verification_email, user.email, verification_url)
+    """Queue a fresh verification email for an unverified account.
+
+    Nothing here touches the database: the whole unit runs after the answer, so the response's
+    timing cannot say whether the address has an account (FDR-001 §11).
+    """
+    background_tasks.add_task(resend_verification_link, body.email)
 
 
 @router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
@@ -387,17 +328,13 @@ async def request_password_reset(
     request: Request,
     body: PasswordResetRequest,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Issue a password reset email when the account exists."""
-    result = await db.execute(select(User).where(User.email == body.email, User.deleted_at.is_(None)))
-    user = result.scalar_one_or_none()
-    # Re-read under the account lock: a change of address confirming right now voids the reset
-    # links of the old one, and a link issued to it a moment later would escape that.
-    if user and (user := await lock_live_user(db, user.id)) and user.email == body.email:
-        reset_url = await _issue_password_reset(user, db)
-        await db.commit()
-        background_tasks.add_task(send_password_reset_email, user.email, reset_url)
+    """Queue a password reset email for the account the address names, if any.
+
+    Nothing here touches the database: the whole unit runs after the answer, so the response's
+    timing cannot say whether the address has an account (FDR-001 §11).
+    """
+    background_tasks.add_task(issue_password_reset_link, body.email)
 
 
 @router.post("/password-reset/check", response_model=PasswordResetTokenStatus)
@@ -663,7 +600,7 @@ async def request_email_change(
     if not await verify_password(body.password, current_user.password_hash):
         raise auth_failure("email_change", "bad_password", status_code=status.HTTP_403_FORBIDDEN, detail="Password is incorrect")
     taken = (await db.execute(select(User.id).where(User.email == body.new_email))).scalar_one_or_none() is not None
-    confirm_url = await _issue_token(
+    confirm_url = await issue_token(
         EmailChangeToken, current_user, db, expires_in_hours=settings.email_change_expire_hours, path="confirm-email-change", new_email=body.new_email
     )
     await db.commit()

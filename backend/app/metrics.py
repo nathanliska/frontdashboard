@@ -98,6 +98,18 @@ for _operation in get_args(EmailOperation):
     for _outcome in get_args(EmailOutcome):
         EMAIL_SENDS.labels(operation=_operation, outcome=_outcome)
 
+# The resend and reset routes answer before their work runs (FDR-001 §11), so this is the only
+# place a failure of that work shows up.
+DeferredAuthOperation = Literal["verification_resend", "password_reset"]
+
+AUTH_DEFERRED_FAILURES = Counter(
+    f"{_PREFIX}auth_deferred_failures",
+    "Account-email work that failed after its request was already answered.",
+    ["operation"],
+)
+for _operation in get_args(DeferredAuthOperation):
+    AUTH_DEFERRED_FAILURES.labels(operation=_operation)
+
 REAPER_LAST_SUCCESS = Gauge(
     f"{_PREFIX}reaper_last_success_unixtime",
     "Unix time of the last completed retention sweep; staleness means the sweep died.",

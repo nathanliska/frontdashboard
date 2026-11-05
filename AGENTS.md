@@ -216,7 +216,9 @@ nothing (`empty_parameter_set_mark = "fail_at_collect"`), router sources are enu
 - **Anything reaching Valkey degrades; it never fails the request**, and says so with a metric.
 - A new **labelled** metric names its children at import, or `increase()` reports 0 through the
   first event it counts. Only a genuinely unbounded label (route) is exempt.
-- `log_event(...)` and `stage_notification(...)` only `db.add` — the route owns the single commit.
+- `log_event(...)` and `stage_notification(...)` only `db.add` — the unit of work owns the single
+  commit. Usually that is the route; a route may instead hand a whole unit to a background task
+  that opens its own session, as the retention reaper and `services/auth_email.py` do.
 - Layout and widget writes need the dashboard row lock and a `dashboard.version` bump;
   `PUT /layout` compares client against server version and 409s on mismatch.
 - Adding a table with a `dashboard_id` or `users` foreign key means adding it to the matching

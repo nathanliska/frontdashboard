@@ -2,6 +2,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,7 @@ from app.limiter import limiter
 from app.main import app
 from app.models.user import User
 from app.routers import auth as auth_router
+from app.services import auth_email
 from tests.helpers import MemberFactory, register_user
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -181,7 +183,8 @@ async def reset_test_state(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
         app.state.existing_account_emails.append(email)
 
     monkeypatch.setattr("app.routers.auth.send_verification_email", _capture_verification_email)
-    monkeypatch.setattr("app.routers.auth.send_password_reset_email", _capture_password_reset_email)
+    monkeypatch.setattr("app.services.auth_email.send_verification_email", _capture_verification_email)
+    monkeypatch.setattr("app.services.auth_email.send_password_reset_email", _capture_password_reset_email)
     monkeypatch.setattr("app.routers.auth.send_existing_account_email", _capture_existing_account_email)
 
     async def _capture_email_change_confirmation(new_email: str, confirm_url: str) -> None:
@@ -252,11 +255,18 @@ async def concurrent_sessions(test_database: _TestDatabase) -> AsyncGenerator[tu
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
+async def client(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncClient]:
     async def _override_get_db() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
+    # The deferred auth units open their own session; here that has to be the savepoint one too, or
+    # they would write where no test can see.
+    @asynccontextmanager
+    async def _deferred_session() -> AsyncGenerator[AsyncSession]:
+        yield db_session
+
     app.dependency_overrides[get_db] = _override_get_db
+    monkeypatch.setattr(auth_email, "async_session_factory", _deferred_session)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             yield c

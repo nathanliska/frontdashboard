@@ -121,6 +121,20 @@ groups:
           __dashboardUid__: frontdashboard-internals
           __panelId__: "8"
 
+      # The resend and reset routes answer before their work runs, so a failure there is a 204 the
+      # person trusts and an email that never leaves; this counter is the only place it shows.
+      - alert: DeferredAuthWorkFailing
+        expr: sum(increase(frontdashboard_auth_deferred_failures_total[1h])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          __grafana_alert_rule_uid__: deferredauthworkfailing
+        annotations:
+          summary: '{{ $value | printf "%.0f" }} reset or resend request(s) failed after answering in the last hour'
+          description: Password reset and resend-verification emails are silently not going out.
+          __dashboardUid__: frontdashboard-internals
+          __panelId__: "8"
+
   - name: frontdashboard-saturation
     interval: 1m
     rules:
