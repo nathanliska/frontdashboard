@@ -1,7 +1,7 @@
 # FDR-008: Real-Time Delivery (SSE)
 
 **Status:** Active
-**Last reviewed:** 2026-08-16
+**Last reviewed:** 2026-11-05
 
 ## Overview
 
@@ -104,6 +104,11 @@ revocation is guaranteed within 30s regardless of process topology. See ADR-003.
 authorization half.
 **Tradeoff:** Up to a 30s window before a revoked session's stream closes if the immediate drop
 doesn't apply (e.g. a different worker).
+
+**A disconnect mid-check logs `Exception terminating connection`.** sse-starlette cancels the
+stream through an anyio scope, which re-cancels every await until it exits, so the close of the
+connection the cancel interrupted fails too. SQLAlchemy discards that connection; below 2.0.55 it
+handed it to the next request instead, which is why the backend pins the later line.
 
 ### 5. A reconnect proves it missed nothing rather than assuming it did
 

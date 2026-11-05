@@ -7,6 +7,8 @@ from app.config import settings
 engine = create_async_engine(
     settings.database_url,
     echo=False,
+    # Also the net under a connection a cancelled request left half-closed: the ping replaces it
+    # before a request gets it (FDR-008 §4).
     pool_pre_ping=True,
     # Bounded so a burst can't open connections without limit — Postgres pays several MiB each, and
     # every replica gets its own pool, so N x (size + overflow) must fit under the server's
