@@ -4,7 +4,7 @@
 > behavior* into the right section below; don't append dated entries. Remove what no longer
 > exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-11-04_
+_Last updated: 2026-11-05_
 
 ## What's built
 
@@ -48,8 +48,9 @@ _Last updated: 2026-11-04_
   verification link keeps the earlier ones working (none within a minute of the last), and
   verifying through any of them spends the rest (FDR-001 §10).
 - **No endpoint reveals whether an account exists.** Login, registration, password reset and
-  resend-verification all answer identically for known and unknown addresses, and registration pays
-  an Argon2 hash either way so timing doesn't leak what the response won't. Signing up with an
+  resend-verification all answer identically for known and unknown addresses. Registration pays
+  an Argon2 hash either way, and password reset and resend-verification answer before doing any
+  account-dependent work (FDR-001 §11), so timing doesn't leak what the response won't. Signing up with an
   address that already has an account creates nothing and emails the owner instead. See ADR-011.
 - **Password hashing is Argon2, run off the event loop**: `hash_password`/`verify_password` execute
   in a worker thread via `anyio.to_thread.run_sync` under a shared, bounded capacity limiter
