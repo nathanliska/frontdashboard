@@ -33,6 +33,9 @@ const STACK_BELOW = 960
 // A stack's row unit rather than a share of the screen, since its height is the scroll, not the
 // viewport. Sized so a default widget clears 250px — a split-screen window stacks, not just a phone.
 const STACK_ROW_HEIGHT = 36
+// A desktop height means nothing in one column: carried over, a calendar sized to fill a monitor
+// stacks to several phone screens. Capped under one, since every widget scrolls inside itself.
+const STACK_MAX_ROWS = 12
 
 function sameOccupants(a: Layout, b: Layout): boolean {
   if (a.length !== b.length) return false
@@ -271,13 +274,15 @@ function stackedLayout(layout: LayoutItem[]): LayoutItem[] {
 
   let nextY = 0
   return sorted.map((item) => {
+    const h = Math.min(Math.max(1, item.h), STACK_MAX_ROWS)
     const normalized = {
       ...item,
       x: 0,
       y: nextY,
       w: 1,
+      h,
     }
-    nextY += Math.max(1, item.h)
+    nextY += h
     return normalized
   })
 }
