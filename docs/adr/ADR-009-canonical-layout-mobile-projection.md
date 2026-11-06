@@ -4,7 +4,8 @@
 bounds; amended 2026-08-21 — the write path enforces the invariant, and a refusal makes room
 sideways before it reverts; amended 2026-08-21 — the projection triggers on a width rather than a
 device class, and this ADR was retitled to match. The filename keeps its original slug;
-amended 2026-09-06 — useful widget minimums with legacy floors.)
+amended 2026-09-06 — useful widget minimums with legacy floors; amended 2026-11-06 — the stack
+caps a widget's rows under one phone screen.)
 
 ## Context
 
@@ -21,6 +22,10 @@ The **persisted layout is canonical**; the **stacked view is a read-only derived
 - Below `STACK_BELOW` the grid renders a **computed one-column stack** derived from the persisted
   layout. That threshold is the width at which a default four-column widget falls under 150px, not
   a device class — a split-screen window stacks for the same reason a phone does.
+- **A stacked widget is capped at `STACK_MAX_ROWS`**, under one phone screen. A desktop height
+  means nothing in one column: carried over, a calendar sized to fill a monitor stacked to several
+  screens with its month grid stretched to match. Every widget scrolls inside itself, so the cap
+  hides nothing.
 - **Layout events are ignored while stacked** (and on read-only dashboards), so the projection can
   never be written back and overwrite the multi-column arrangement.
 - Editing the stack would require its own per-breakpoint persisted layout — **deliberately not

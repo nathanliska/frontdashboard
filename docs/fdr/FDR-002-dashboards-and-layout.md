@@ -1,7 +1,7 @@
 # FDR-002: Dashboards & Layout Editor
 
 **Status:** Active
-**Last reviewed:** 2026-09-06
+**Last reviewed:** 2026-11-06
 
 ## Overview
 
@@ -25,6 +25,7 @@ sharing is [FDR-004](FDR-004-sharing-and-access.md).
   conflicting save re-reads and replays once; a second conflict offers a reload.
 - **A narrow board is read-only stacking.** Below the width where a default widget stops being
   readable, the grid renders as a computed single-column stack; it never writes a layout back.
+  Each stacked widget is capped under one phone screen and scrolls inside itself (ADR-009).
 - **Minimum sizes.** Clock/list/agenda widgets have a 4×4-cell minimum; calendar has an 8×8-cell
   minimum. Add and resize enforce these floors. Existing smaller layouts stay editable, with each
   dimension unable to shrink below its saved value until enlarged to the type minimum. An add

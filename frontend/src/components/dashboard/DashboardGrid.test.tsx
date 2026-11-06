@@ -644,11 +644,13 @@ describe('DashboardGrid', () => {
       <DashboardGrid
         dashboard={{
           ...makeDashboard(),
-          widgets: TWO_WIDGETS,
-          // Stacked, these are 28 rows — ordinary on a phone, and past the desktop bound.
+          widgets: [...TWO_WIDGETS, makeClockWidget('widget-3')],
+          // Stacked, these are 30 rows — ordinary on a phone, past the desktop bound, and each
+          // one under the stack's own per-widget cap.
           layout: [
-            { i: 'widget-1', x: 0, y: 0, w: 12, h: 14 },
-            { i: 'widget-2', x: 12, y: 0, w: 12, h: 14 },
+            { i: 'widget-1', x: 0, y: 0, w: 8, h: 10 },
+            { i: 'widget-2', x: 8, y: 0, w: 8, h: 10 },
+            { i: 'widget-3', x: 16, y: 0, w: 8, h: 10 },
           ],
         }}
         canEdit={false}
@@ -660,19 +662,20 @@ describe('DashboardGrid', () => {
     // hands back the last desktop arrangement, which then renders those desktop columns against a
     // full-width single column — measured at 8968px of widgets inside a 366px phone.
     expect(gridSpy.lastMaxRows).toBeNull()
-    expect(gridSpy.lastLayout.map((item) => item.w)).toEqual([1, 1])
-    expect(gridSpy.lastLayout.map((item) => item.y)).toEqual([0, 14])
+    expect(gridSpy.lastLayout.map((item) => item.w)).toEqual([1, 1, 1])
+    expect(gridSpy.lastLayout.map((item) => item.y)).toEqual([0, 10, 20])
 
     // And the compactor it is handed must settle that stack rather than refuse it.
     const compact = gridSpy.compact as (l: LayoutItem[], c: number) => LayoutItem[]
     const settled = compact(
       [
-        { i: 'widget-1', x: 0, y: 0, w: 1, h: 14 },
-        { i: 'widget-2', x: 0, y: 14, w: 1, h: 14 },
+        { i: 'widget-1', x: 0, y: 0, w: 1, h: 10 },
+        { i: 'widget-2', x: 0, y: 10, w: 1, h: 10 },
+        { i: 'widget-3', x: 0, y: 20, w: 1, h: 10 },
       ],
       1,
     )
-    expect(settled.map((item) => item.y)).toEqual([0, 14])
+    expect(settled.map((item) => item.y)).toEqual([0, 10, 20])
   })
 
   it('leaves the stack on its own row height, where a column is the whole width', () => {
@@ -713,6 +716,33 @@ describe('DashboardGrid', () => {
     const rowHeight = gridSpy.lastRowHeight as number
     const margin = gridSpy.lastMarginY as number
     expect(rowHeight * 6 + margin * 5).toBeGreaterThanOrEqual(250)
+  })
+
+  it('caps a stacked widget under a phone screen, whatever height it had on the desktop', () => {
+    render(
+      <DashboardGrid
+        dashboard={{
+          ...makeDashboard(),
+          widgets: TWO_WIDGETS,
+          layout: [
+            { i: 'widget-1', x: 0, y: 0, w: 4, h: 60 },
+            { i: 'widget-2', x: 4, y: 0, w: 4, h: 3 },
+          ],
+        }}
+        canEdit={false}
+      />,
+    )
+    setWidth(400)
+
+    // A month calendar sized to fill a monitor is sixty rows; carried into one column it stacked
+    // to several screens with its grid stretched to match. The short widget keeps its height:
+    // the cap is a ceiling, not a flattening.
+    const byId = new Map(gridSpy.lastLayout.map((item) => [item.i, item]))
+    const rowHeight = gridSpy.lastRowHeight as number
+    const margin = gridSpy.lastMarginY as number
+    const tall = byId.get('widget-1')?.h as number
+    expect(rowHeight * tall + margin * (tall - 1)).toBeLessThanOrEqual(600)
+    expect(byId.get('widget-2')?.h).toBe(3)
   })
 
   it('still accepts desktop layout edits, so the guard does not over-block', () => {

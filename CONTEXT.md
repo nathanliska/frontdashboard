@@ -109,9 +109,9 @@ _Last updated: 2026-11-05_
   since a coordinate is meaningless without its basis.
 - **The persisted layout is canonical; the stacked view is a derived projection.** Below 960px of
   board — the width at which a default four-column widget falls under 150px, so a split screen
-  stacks for the same reason a phone does — the grid renders a computed one-column stack, and layout
-  events are ignored there (and on read-only dashboards), so the projection can never overwrite the
-  desktop arrangement. Editing one would need its own per-breakpoint persisted layout — not built.
+  stacks for the same reason a phone does — the grid renders a computed one-column stack, each widget
+  capped under one phone screen, and layout events are ignored there (and on read-only dashboards),
+  so the projection can never overwrite the desktop arrangement. Editing one would need its own per-breakpoint persisted layout — not built.
 - **Layout saves are serialized and coalesced**: one PUT in flight at a time plus one latest-pending
   layout, each send re-reading the version the previous save returned. Rapid drag/resize therefore
   can't conflict with itself or install an older layout; a 409 means a *real* other-editor conflict.
