@@ -14,7 +14,7 @@ export function OccurrenceCard({
   onDelete: () => void
 }) {
   return (
-    <article className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+    <article className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 sm:p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
