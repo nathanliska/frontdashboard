@@ -226,6 +226,14 @@ export function createScopedQuery<Scope, Data>({
     }
   }
 
+  // For data the client holds in full without fetching, such as a row it just created. Unlike a
+  // patch this is authoritative, so it clears `stale`.
+  function seed(scope: Scope, data: Data): void {
+    const entry = ensureEntry(scope)
+    entry.stale = false
+    setState(entry, { data, loading: false, error: null })
+  }
+
   function reset(): void {
     entries.clear()
   }
@@ -284,6 +292,7 @@ export function createScopedQuery<Scope, Data>({
     getState,
     invalidateWhere,
     reset,
+    seed,
     updateWhere,
     useQuery,
   }

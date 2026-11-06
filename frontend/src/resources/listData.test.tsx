@@ -12,6 +12,7 @@ import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import {
   __resetListDataForTests,
   addListItem,
+  createList,
   handleListResourceEvent,
   updateListItem,
   updateListName,
@@ -106,6 +107,22 @@ describe('listData', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('opens a list this client just created without reading it back', async () => {
+    apiCreateList.mockResolvedValueOnce(makeListSummary({ name: 'Errands' }))
+
+    const list = await createList('Errands', 'todo', 'dash-1')
+    function NewListProbe() {
+      const detail = useListDetail(list.id)
+      return (
+        <div>{detail.data ? `${detail.data.name}:${detail.data.items.length}` : 'loading'}</div>
+      )
+    }
+    render(<NewListProbe />)
+
+    expect(screen.getByText('Errands:0')).toBeInTheDocument()
+    expect(apiGetList).not.toHaveBeenCalled()
   })
 
   it('keeps selected list detail visible during a background SSE refresh', async () => {

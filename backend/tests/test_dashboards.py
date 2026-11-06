@@ -341,12 +341,44 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
     }
 
     delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}/widgets/{widget['id']}")
-    assert delete_resp.status_code == 204
+    assert delete_resp.status_code == 200
 
+    # The client applies the delete's answer instead of reading the board back, so it must be the
+    # board GET answers.
     detail_resp = await auth_client.get(f"/api/dashboards/{dashboard['id']}")
     assert detail_resp.status_code == 200
     assert detail_resp.json()["widgets"] == []
     assert detail_resp.json()["layout"] == []
+    assert delete_resp.json() == detail_resp.json()
+
+
+async def test_create_answers_with_the_whole_dashboard(auth_client: AsyncClient) -> None:
+    # Both the listing row and the editor's board come from this, so it must match each read.
+    created = await create_dashboard(auth_client, name="Fresh")
+    board = (await auth_client.get(f"/api/dashboards/{created['id']}")).json()
+    listed = next(d for d in (await auth_client.get("/api/dashboards")).json() if d["id"] == created["id"])
+
+    assert {key: created[key] for key in board} == board
+    assert {key: created[key] for key in listed} == listed
+
+
+async def test_widget_add_returns_the_list_it_created(auth_client: AsyncClient) -> None:
+    dashboard = await create_dashboard(auth_client, name="Widgets")
+
+    # The client fills its list caches from this instead of reading the new list back, so it must
+    # be exactly the row GET answers.
+    created = (await add_widget(auth_client, dashboard["id"], "list", {"name": "Errands"}))["created_list"]
+    detail = (await auth_client.get(f"/api/lists/{created['id']}")).json()
+    assert detail.pop("items") == []
+    assert created == detail
+
+    bound = await create_list(auth_client, dashboard["id"], name="Groceries")
+    resp = await auth_client.post(
+        f"/api/dashboards/{dashboard['id']}/widgets",
+        json={"widget_type": "list", "resource_id": bound["id"], "config": {}},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["created_list"] is None
 
 
 async def test_widget_created_list_appends_last_after_reorder(auth_client: AsyncClient) -> None:
@@ -608,7 +640,7 @@ async def test_dashboard_mutations_emit_activity_events(
     delete_widget_resp = await auth_client.delete(
         f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}",
     )
-    assert delete_widget_resp.status_code == 204
+    assert delete_widget_resp.status_code == 200
 
     delete_dashboard_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}")
     assert delete_dashboard_resp.status_code == 204

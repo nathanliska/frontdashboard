@@ -7,6 +7,7 @@ import {
   CalendarWidgetResponse,
   type ClockWidgetCreate,
   ClockWidgetResponse,
+  DashboardCreatedResponse,
   DashboardMemberResponse,
   DashboardResponse,
   DashboardSummary,
@@ -16,6 +17,7 @@ import {
   ListWidgetResponse,
   ShareResponse,
   TrashedDashboardSummary,
+  WidgetAddedResponse,
 } from './generated/contract'
 import { parseJson, readError } from './http'
 
@@ -73,6 +75,18 @@ const DashboardSchema = DashboardResponse.extend({
 
 export type Dashboard = z.infer<typeof DashboardSchema>
 
+const DashboardCreatedSchema = DashboardCreatedResponse.extend({
+  widgets: z.array(DashboardWidgetSchema),
+})
+
+export type DashboardCreated = z.infer<typeof DashboardCreatedSchema>
+
+const WidgetAddedSchema = WidgetAddedResponse.extend({
+  widgets: z.array(DashboardWidgetSchema),
+})
+
+export type WidgetAdded = z.infer<typeof WidgetAddedSchema>
+
 export type UpdateLayoutResult =
   | { conflict: false; dashboard: Dashboard }
   | { conflict: true; detail?: string }
@@ -105,13 +119,13 @@ export async function apiGetDashboard(id: string): Promise<Dashboard> {
   return parseDashboard(res)
 }
 
-export async function apiCreateDashboard(data: { name: string }): Promise<DashboardSummary> {
+export async function apiCreateDashboard(data: { name: string }): Promise<DashboardCreated> {
   const res = await apiFetch('/api/dashboards', {
     method: 'POST',
     body: JSON.stringify(data),
   })
   if (!res.ok) throw await readError(res, 'Failed to create dashboard')
-  return parseJson(res, DashboardSummary)
+  return parseJson(res, DashboardCreatedSchema)
 }
 
 export async function apiUpdateDashboardMeta(
@@ -180,13 +194,16 @@ export async function apiUpdateLayout(
   return { conflict: false, dashboard: await parseDashboard(res) }
 }
 
-export async function apiAddWidget(dashboardId: string, widget: WidgetCreate): Promise<Dashboard> {
+export async function apiAddWidget(
+  dashboardId: string,
+  widget: WidgetCreate,
+): Promise<WidgetAdded> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/widgets`, {
     method: 'POST',
     body: JSON.stringify(widget),
   })
   if (!res.ok) throw await readError(res, 'Failed to add widget')
-  return parseDashboard(res)
+  return parseJson(res, WidgetAddedSchema)
 }
 
 export async function apiUpdateWidget(
@@ -202,11 +219,12 @@ export async function apiUpdateWidget(
   return parseJson(res, DashboardWidgetSchema)
 }
 
-export async function apiRemoveWidget(dashboardId: string, widgetId: string): Promise<void> {
+export async function apiRemoveWidget(dashboardId: string, widgetId: string): Promise<Dashboard> {
   const res = await apiFetch(`/api/dashboards/${dashboardId}/widgets/${widgetId}`, {
     method: 'DELETE',
   })
   if (!res.ok) throw await readError(res, 'Failed to remove widget')
+  return parseDashboard(res)
 }
 
 export async function apiGetDashboardShares(dashboardId: string): Promise<ResourceShare[]> {
