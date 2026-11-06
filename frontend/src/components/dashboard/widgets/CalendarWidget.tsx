@@ -19,6 +19,9 @@ import { type CalendarWidgetView, WidgetViewTabs } from './CalendarWidgetViewTab
 
 const EMPTY_OCCURRENCES: CalendarOccurrence[] = []
 
+/** Below this, a month's gaps and cell padding take a share of each day a phone can't spare. */
+const MONTH_TIGHT_WIDTH = 460
+
 export function CalendarWidget({
   widgetId,
   dashboardId,
@@ -127,9 +130,9 @@ export function CalendarWidget({
           days={monthDays}
           occurrencesByDate={visibleOccurrencesByDate}
           compact={containerWidth < 340 || containerHeight < 280}
-          // Short enough that a laptop leaves the month's rows at ~15px: every pixel of spacing
-          // around the grid is one a folded day's line needs.
-          tight={containerHeight < 320}
+          // Short, a laptop leaves the rows ~15px and a folded day's line needs every pixel; narrow,
+          // a phone's seven columns leave each day under 40px for its titles.
+          tight={containerHeight < 320 || containerWidth < MONTH_TIGHT_WIDTH}
           monthDate={today}
           view={view}
           viewCompact={containerWidth < 260}

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeOccurrence } from '../../../test/fixtures'
 import { stubResizeObserver } from '../../../test/resizeObserver'
 import { dateKey } from '../../../utils/calendar/calendarUtils'
-import { MonthCalendarWidget, monthCellLayout, WeekCalendarWidget } from './CalendarWidgetViews'
+import { MonthCalendarWidget, monthCellIsOneLine, WeekCalendarWidget } from './CalendarWidgetViews'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -82,41 +82,10 @@ it('folds a day too short for a pill into one line naming its first event', () =
   expect(screen.getByText('+2').title.split('\n')).toHaveLength(2)
 })
 
-it('keeps pills under the date while a cell has room for one, shrinking the date first', () => {
-  // Border, padding and the gap under the date (14px), a 16px pill, then the date itself.
-  expect(monthCellLayout(49)).toBe('full')
-  expect(monthCellLayout(48)).toBe('compact')
-  expect(monthCellLayout(39)).toBe('compact')
-  expect(monthCellLayout(38)).toBe('line')
-})
-
-it('shrinks the date badge in a cell with room for a pill only under the smaller one', () => {
-  const day = new Date(2028, 1, 29)
-  const month = () => (
-    <MemoryRouter>
-      <MonthCalendarWidget
-        dashboardId="board"
-        days={[day]}
-        occurrencesByDate={new Map()}
-        compact={false}
-        tight={false}
-        monthDate={day}
-        view="month"
-        viewCompact={false}
-        onViewChange={() => {}}
-      />
-    </MemoryRouter>
-  )
-  const badge = () => screen.getByText('29')
-
-  stubResizeObserver({ width: 700, height: 49 })
-  const { unmount } = render(month())
-  expect(badge()).not.toHaveClass('text-[9px]')
-  unmount()
-
-  stubResizeObserver({ width: 700, height: 48 })
-  render(month())
-  expect(badge()).toHaveClass('text-[9px]')
+it('keeps pills under the date while a cell has room for one', () => {
+  // Border, padding and the gap under the date (14px), a 16px pill, then the 9px date.
+  expect(monthCellIsOneLine(39)).toBe(false)
+  expect(monthCellIsOneLine(38)).toBe(true)
 })
 
 it('counts the tight grid gap when judging whether two weeks of cells can hold a pill', () => {
@@ -186,35 +155,15 @@ describe('the measured month grid', () => {
     expect(grid()).not.toHaveClass('invisible')
   })
 
-  it('derives the pill rows from the grid: 67px cells hold two under the full date, 66px one', () => {
-    stubResizeObserver({ width: 700, height: 67 })
+  it('derives the pill rows from the grid: 57px cells hold two under the date, 56px one', () => {
+    stubResizeObserver({ width: 700, height: 57 })
     const { unmount } = render(month())
     expect(screen.getAllByText(/Event \d/)).toHaveLength(2)
     unmount()
 
-    stubResizeObserver({ width: 700, height: 66 })
+    stubResizeObserver({ width: 700, height: 56 })
     render(month())
     expect(screen.getAllByText(/Event \d/)).toHaveLength(1)
-  })
-
-  it('shrinks the date where the cell is too narrow for "+N" beside the full one', () => {
-    // Seven columns across six 4px gaps, less a 10px frame: 374px leaves 40px bodies, 373px less.
-    stubResizeObserver({ width: 374, height: 120 })
-    const { unmount } = render(month())
-    expect(screen.getByText('29')).not.toHaveClass('text-[9px]')
-    unmount()
-
-    stubResizeObserver({ width: 373, height: 120 })
-    render(month())
-    expect(screen.getByText('29')).toHaveClass('text-[9px]')
-  })
-
-  it('gives the rows the height the small date frees, however the date came to be small', () => {
-    // A 113px cell narrow enough for the small date: 90px of body holds five rows, where the full
-    // date's 80px would hold four.
-    stubResizeObserver({ width: 373, height: 113 })
-    render(month(6))
-    expect(screen.getAllByText(/Event \d/)).toHaveLength(5)
   })
 })
 

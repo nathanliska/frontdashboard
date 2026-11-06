@@ -14,15 +14,18 @@ afterEach(() => {
 })
 
 it.each([
-  [319, true],
-  [320, false],
-])('tightens the month spacing in a widget %ipx tall: %s', (height, tight) => {
-  stubResizeObserver({ width: 600, height })
+  [600, 319, true],
+  [600, 320, false],
+  [459, 600, true],
+  [460, 600, false],
+])('tightens the month spacing in a widget %ipx wide and %ipx tall: %s', (width, height, tight) => {
+  stubResizeObserver({ width, height })
   render(
     <MemoryRouter>
       <CalendarWidget widgetId="widget" dashboardId="board" config={{ view: 'month' }} />
     </MemoryRouter>,
   )
-  const grid = screen.getAllByRole('link', { name: /Open day/ })[0].parentElement
-  expect(grid?.classList.contains('gap-0.5')).toBe(tight)
+  const day = screen.getAllByRole('link', { name: /Open day/ })[0]
+  expect(day.parentElement?.classList.contains('gap-0.5')).toBe(tight)
+  expect(day.classList.contains('px-0.5')).toBe(tight)
 })

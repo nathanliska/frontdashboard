@@ -16,11 +16,7 @@ import {
   formatOccurrenceSpan,
 } from '../../../utils/calendar/calendarUtils'
 import { cn } from '../../../utils/shared/cn'
-import {
-  CalendarDayNumber,
-  DAY_NUMBER_HEIGHT,
-  FULL_DAY_NUMBER_MIN_WIDTH,
-} from '../../calendar/CalendarDayNumber'
+import { CalendarDayNumber, DAY_NUMBER_HEIGHT } from '../../calendar/CalendarDayNumber'
 import {
   CalendarDayOccurrences,
   DAY_HEADING_GAP,
@@ -158,22 +154,17 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
 
 /** Mirrors `gap-1` on the month's day grid, and `gap-0.5` when `tight`. */
 const MONTH_GRID_GAP = { roomy: 4, tight: 2 } as const
-/** A month cell's border and `p-1`, on each axis. */
+/** A month cell's border and `py-1`, top and bottom. */
 const MONTH_CELL_FRAME = 2 + 8
 /** What a month cell spends besides its date and pills: its frame, then the heading gap. */
 const MONTH_CELL_CHROME = MONTH_CELL_FRAME + DAY_HEADING_GAP
 
-export type MonthCellLayout = 'full' | 'compact' | 'line'
-
 /**
- * How a month cell `cellHeight` pixels tall lays out: the full date over pills, the compact date
- * over pills, or — too short for any pill under a date — one line of date, first title and "+N".
+ * Whether a month cell `cellHeight` pixels tall is too short for a pill under its date, and so
+ * lays out as one line of date, first title and "+N".
  */
-export function monthCellLayout(cellHeight: number): MonthCellLayout {
-  const room = cellHeight - MONTH_CELL_CHROME - MONTH_PILL_HEIGHT
-  if (room >= DAY_NUMBER_HEIGHT.full) return 'full'
-  if (room >= DAY_NUMBER_HEIGHT.compact) return 'compact'
-  return 'line'
+export function monthCellIsOneLine(cellHeight: number): boolean {
+  return cellHeight - MONTH_CELL_CHROME - MONTH_PILL_HEIGHT < DAY_NUMBER_HEIGHT
 }
 
 export const MonthCalendarWidget = memo(function MonthCalendarWidget({
@@ -206,13 +197,8 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
   const rows = Math.ceil(days.length / 7)
   const gap = MONTH_GRID_GAP[tight ? 'tight' : 'roomy']
   const cellHeight = (grid.height - gap * (rows - 1)) / rows
-  const layout = monthCellLayout(cellHeight)
-  const oneLine = layout === 'line'
-  // Zero until measured, but the grid is invisible until then, so no layout chosen from it shows.
-  const bodyWidth = Math.max(0, (grid.width - gap * 6) / 7 - MONTH_CELL_FRAME)
-  const compactDate = layout === 'compact' || bodyWidth < FULL_DAY_NUMBER_MIN_WIDTH
-  const bodyHeight =
-    cellHeight - MONTH_CELL_CHROME - DAY_NUMBER_HEIGHT[compactDate ? 'compact' : 'full']
+  const oneLine = monthCellIsOneLine(cellHeight)
+  const bodyHeight = cellHeight - MONTH_CELL_CHROME - DAY_NUMBER_HEIGHT
 
   return (
     <div className="h-full flex flex-col">
@@ -255,12 +241,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
           const inMonth = day.getMonth() === monthDate.getMonth()
           const isToday = dateKey(day) === dateKey(new Date())
           const dayNumber = (
-            <CalendarDayNumber
-              value={formatDayNumber(day)}
-              isToday={isToday}
-              dimmed={!inMonth}
-              compact={oneLine || compactDate}
-            />
+            <CalendarDayNumber value={formatDayNumber(day)} isToday={isToday} dimmed={!inMonth} />
           )
 
           return (
@@ -272,7 +253,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
                 'border border-zinc-800 bg-zinc-950/60 min-h-0 min-w-0 overflow-hidden flex focus-visible:outline-2 focus-visible:outline-sky-400',
                 oneLine
                   ? 'rounded px-0.5 items-center justify-between gap-0.5'
-                  : 'rounded-md p-1 flex-col',
+                  : cn('rounded-md py-1 flex-col', tight ? 'px-0.5' : 'px-1'),
                 !inMonth && 'opacity-45',
                 isToday && 'border-zinc-600 bg-zinc-900',
               )}
