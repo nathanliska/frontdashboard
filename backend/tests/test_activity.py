@@ -141,7 +141,7 @@ async def test_dashboard_layout_and_widget_activity_survives_a_reload(auth_clien
     assert layout_resp.status_code == 200
 
     delete_resp = await auth_client.delete(f"/api/dashboards/{dashboard['id']}/widgets/{widget_id}")
-    assert delete_resp.status_code == 204
+    assert delete_resp.status_code == 200
 
     feed = (await auth_client.get("/api/activity")).json()
     updates = [event for event in feed if event["event_type"] == "dashboard.updated"]

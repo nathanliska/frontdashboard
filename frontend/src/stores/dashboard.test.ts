@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Dashboard, DashboardSummary, TrashedDashboard } from '../api/dashboards'
 import { ApiError } from '../api/http'
 import { RESYNC_SIGNAL } from '../hooks/useSSE'
-import { makeDashboard, makeDashboardSummary, makeSseEvent } from '../test/fixtures'
+import {
+  makeDashboard,
+  makeDashboardSummary,
+  makeListSummary,
+  makeSseEvent,
+} from '../test/fixtures'
 import { signIn } from '../test/signIn'
 import { CLIENT_INSTANCE_ID } from '../utils/shared/clientInstance'
 import { useAuthStore } from './auth'
@@ -44,6 +49,9 @@ const {
 }))
 
 const toastError = vi.hoisted(() => vi.fn())
+const applyCreatedList = vi.hoisted(() => vi.fn())
+
+vi.mock('../resources/listData', () => ({ applyCreatedList }))
 
 vi.mock('../api/auth', () => ({
   apiChangePassword: vi.fn(),
@@ -575,6 +583,45 @@ describe('useDashboardStore', () => {
     )
   })
 
+  it('opens a dashboard this client just created without reading it back', async () => {
+    useConnectionStore.setState({ status: 'connected' })
+    const summary = makeDashboardSummary({ id: 'dash-new', name: 'X' })
+    // A layout the client could not have built itself, so only the response can be its source.
+    const board = makeDashboard({
+      id: 'dash-new',
+      name: 'X',
+      layout: [{ i: 'w1', x: 0, y: 0, w: 4, h: 4 }],
+    })
+    apiCreateDashboard.mockResolvedValue({
+      ...summary,
+      layout: board.layout,
+      widgets: board.widgets,
+    })
+    useDashboardStore.setState({ summaries: [] })
+
+    await useDashboardStore.getState().createDashboard({ name: 'X' })
+    await useDashboardStore.getState().loadDashboard('dash-new')
+
+    expect(apiGetDashboard).not.toHaveBeenCalled()
+    expect(useDashboardStore.getState().dashboard).toMatchObject({
+      id: 'dash-new',
+      layout: board.layout,
+      widgets: board.widgets,
+    })
+    expect(useDashboardStore.getState().summaries).toEqual([summary])
+  })
+
+  it('removeWidget applies the board the server answers with', async () => {
+    useDashboardStore.setState({ dashboard: makeDashboard({ version: 3 }) })
+    // A version the client could not have guessed from its own copy.
+    const answered = makeDashboard({ version: 9, widgets: [], layout: [] })
+    apiRemoveWidget.mockResolvedValueOnce(answered)
+
+    await expect(useDashboardStore.getState().removeWidget('w1')).resolves.toBe(true)
+
+    expect(useDashboardStore.getState().dashboard).toEqual(answered)
+  })
+
   it('renameDashboard resolves false on failure and true on success', async () => {
     useDashboardStore.setState({ summaries: [makeDashboardSummary()], dashboard: makeDashboard() })
 
@@ -596,13 +643,14 @@ describe('useDashboardStore', () => {
     expect(toastError).toHaveBeenCalledWith('Failed to transfer ownership.')
 
     apiTransferDashboardOwnership.mockResolvedValueOnce(
-      makeDashboardSummary({ user_id: 'user-2', can_manage_shares: false }),
+      makeDashboardSummary({ user_id: 'user-2', can_edit: true, can_manage_shares: false }),
     )
     await expect(useDashboardStore.getState().transferDashboard('dash-1', 'user-2')).resolves.toBe(
       true,
     )
     expect(useDashboardStore.getState().dashboard).toMatchObject({
       user_id: 'user-2',
+      can_edit: true,
       can_manage_shares: false,
     })
     expect(useDashboardStore.getState().summaries[0]).toMatchObject({ user_id: 'user-2' })
@@ -620,6 +668,20 @@ describe('useDashboardStore', () => {
     await expect(useDashboardStore.getState().addWidget({ widget_type: 'clock' })).resolves.toBe(
       true,
     )
+  })
+
+  it('addWidget hands a list it created to the list caches, off the held dashboard', async () => {
+    useDashboardStore.setState({ dashboard: makeDashboard() })
+    const createdList = makeListSummary({ id: 'list-new' })
+    apiAddWidget.mockResolvedValueOnce({
+      ...makeDashboard({ version: 2 }),
+      created_list: createdList,
+    })
+
+    await useDashboardStore.getState().addWidget({ widget_type: 'list', config: { name: 'New' } })
+
+    expect(applyCreatedList).toHaveBeenCalledWith(createdList)
+    expect(useDashboardStore.getState().dashboard).not.toHaveProperty('created_list')
   })
 
   it('does not start a concurrent drain when a superseded save resolves after a session reset', async () => {

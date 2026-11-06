@@ -152,17 +152,22 @@ export async function createList(
     list_type: listType,
     dashboard_id: dashboardId,
   })
+  applyCreatedList(list)
+  return list
+}
 
+/** Puts a list this client just created into both caches, so opening it fetches nothing. */
+export function applyCreatedList(list: ListSummary): void {
   listSummariesQuery.updateWhere(
-    (scope) => scope.dashboardId === dashboardId,
+    (scope) => scope.dashboardId === list.dashboard_id,
     (state) => ({
       data: state.data ? [...state.data, list] : [list],
       loading: state.loading,
       error: state.error,
     }),
   )
-
-  return list
+  // A new list has no items, so the create response is its whole detail.
+  listDetailQuery.seed({ listId: list.id }, { ...list, items: [] })
 }
 
 export async function updateListName(id: string, name: string): Promise<void> {
@@ -500,11 +505,7 @@ export function __resetListDataForTests(): void {
 }
 
 export function __seedListDetailForTests(listId: string, detail: ListDetail): void {
-  listDetailQuery.getState({ listId })
-  listDetailQuery.updateWhere(
-    (scope) => scope.listId === listId,
-    () => ({ data: detail, loading: false, error: null }),
-  )
+  listDetailQuery.seed({ listId }, detail)
 }
 
 export function __seedListSummariesForTests(dashboardId: string, summaries: ListSummary[]): void {

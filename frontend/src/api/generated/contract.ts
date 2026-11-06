@@ -78,9 +78,6 @@ export const ConnectedSseEvent = z.object({ last_event_id: z.number().int().null
 export type DashboardCreate = z.infer<typeof DashboardCreate>;
 export const DashboardCreate = z.strictObject({ name: z.string().min(1).max(100) });
 
-export type DashboardMemberResponse = z.infer<typeof DashboardMemberResponse>;
-export const DashboardMemberResponse = z.object({ display_name: z.string(), user_id: z.uuid() }).catchall(z.unknown());
-
 export type LayoutItem = z.infer<typeof LayoutItem>;
 export const LayoutItem = z.object({ h: z.number().int(), i: z.string(), w: z.number().int(), x: z.number().int(), y: z.number().int() }).catchall(z.unknown());
 
@@ -89,6 +86,12 @@ export const ListWidgetConfig = z.object({ list_name: z.string().nullable(), lis
 
 export type ListWidgetResponse = z.infer<typeof ListWidgetResponse>;
 export const ListWidgetResponse = z.object({ config: ListWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("list"), widget_version: z.number().int() }).catchall(z.unknown());
+
+export type DashboardCreatedResponse = z.infer<typeof DashboardCreatedResponse>;
+export const DashboardCreatedResponse = z.object({ access_description: z.string().nullable().optional(), can_edit: z.boolean(), can_manage_shares: z.boolean(), created_at: z.iso.datetime(), id: z.uuid(), is_favorite: z.boolean(), is_shared: z.boolean().default(false), layout: z.array(LayoutItem), name: z.string(), updated_at: z.iso.datetime(), user_id: z.uuid(), version: z.number().int(), widgets: z.array(z.discriminatedUnion("widget_type", [AgendaWidgetResponse.extend({ widget_type: z.literal("agenda") }), CalendarWidgetResponse.extend({ widget_type: z.literal("calendar") }), ClockWidgetResponse.extend({ widget_type: z.literal("clock") }), ListWidgetResponse.extend({ widget_type: z.literal("list") })])) }).catchall(z.unknown());
+
+export type DashboardMemberResponse = z.infer<typeof DashboardMemberResponse>;
+export const DashboardMemberResponse = z.object({ display_name: z.string(), user_id: z.uuid() }).catchall(z.unknown());
 
 export type DashboardResponse = z.infer<typeof DashboardResponse>;
 export const DashboardResponse = z.object({ can_edit: z.boolean(), can_manage_shares: z.boolean(), id: z.uuid(), is_favorite: z.boolean(), is_shared: z.boolean(), layout: z.array(LayoutItem), name: z.string(), user_id: z.uuid(), version: z.number().int(), widgets: z.array(z.discriminatedUnion("widget_type", [AgendaWidgetResponse.extend({ widget_type: z.literal("agenda") }), CalendarWidgetResponse.extend({ widget_type: z.literal("calendar") }), ClockWidgetResponse.extend({ widget_type: z.literal("clock") }), ListWidgetResponse.extend({ widget_type: z.literal("list") })])) }).catchall(z.unknown());
@@ -281,6 +284,9 @@ export const UserResponse = z.object({ display_name: z.string(), email: z.string
 
 export type VerifyEmailRequest = z.infer<typeof VerifyEmailRequest>;
 export const VerifyEmailRequest = z.object({ token: z.string().min(1) }).catchall(z.unknown());
+
+export type WidgetAddedResponse = z.infer<typeof WidgetAddedResponse>;
+export const WidgetAddedResponse = z.object({ can_edit: z.boolean(), can_manage_shares: z.boolean(), created_list: ListResponse.nullable().optional(), id: z.uuid(), is_favorite: z.boolean(), is_shared: z.boolean(), layout: z.array(LayoutItem), name: z.string(), user_id: z.uuid(), version: z.number().int(), widgets: z.array(z.discriminatedUnion("widget_type", [AgendaWidgetResponse.extend({ widget_type: z.literal("agenda") }), CalendarWidgetResponse.extend({ widget_type: z.literal("calendar") }), ClockWidgetResponse.extend({ widget_type: z.literal("clock") }), ListWidgetResponse.extend({ widget_type: z.literal("list") })])) }).catchall(z.unknown());
 
 export type WidgetConfigUpdate = z.infer<typeof WidgetConfigUpdate>;
 export const WidgetConfigUpdate = z.object({ config: z.record(z.string(), z.unknown()) }).catchall(z.unknown());

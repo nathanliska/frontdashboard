@@ -33,6 +33,7 @@ import {
 } from '../api/dashboards'
 import { ApiError } from '../api/http'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
+import { applyCreatedList } from '../resources/listData'
 import {
   affectsTrash,
   applyLocalDashboardSummaryUpdate,
@@ -235,8 +236,15 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
     async createDashboard(data) {
       const guard = sessionGuard()
       try {
-        const summary = await apiCreateDashboard(data)
-        guard.set((s) => ({ summaries: [summary, ...s.summaries] }))
+        const created = await apiCreateDashboard(data)
+        // The answer is both the listing row and the whole board, so opening it fetches nothing.
+        const { layout: _layout, widgets: _widgets, ...summary } = created
+        guard.set((s) => ({
+          summaries: [summary, ...s.summaries],
+          dashboard: created,
+          conflict: false,
+          loadError: false,
+        }))
         return summary
       } catch {
         toast.error('Failed to create dashboard.')
@@ -391,7 +399,12 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
           summaries: sortDashboardSummaries(s.summaries.map((d) => (d.id === id ? updated : d))),
           dashboard:
             s.dashboard?.id === id
-              ? { ...s.dashboard, user_id: updated.user_id, can_manage_shares: false }
+              ? {
+                  ...s.dashboard,
+                  user_id: updated.user_id,
+                  can_edit: updated.can_edit,
+                  can_manage_shares: updated.can_manage_shares,
+                }
               : s.dashboard,
         }))
         return true
@@ -602,8 +615,9 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       const { dashboard } = get()
       if (!dashboard) return false
       try {
-        const updated = await apiAddWidget(dashboard.id, widget)
+        const { created_list: createdList, ...updated } = await apiAddWidget(dashboard.id, widget)
         guard.set({ dashboard: updated })
+        if (createdList && guard.isCurrent()) applyCreatedList(createdList)
         return true
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to add widget.')
@@ -616,19 +630,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => {
       const { dashboard } = get()
       if (!dashboard) return false
       try {
-        await apiRemoveWidget(dashboard.id, widgetId)
-        // Optimistic: remove from local state without a full refetch
-        guard.set((s) => {
-          if (!s.dashboard) return s
-          return {
-            dashboard: {
-              ...s.dashboard,
-              widgets: s.dashboard.widgets.filter((w: DashboardWidget) => w.id !== widgetId),
-              layout: s.dashboard.layout.filter((l: LayoutItem) => l.i !== widgetId),
-              version: s.dashboard.version + 1,
-            },
-          }
-        })
+        const updated = await apiRemoveWidget(dashboard.id, widgetId)
+        guard.set({ dashboard: updated })
         return true
       } catch {
         toast.error('Failed to remove widget.')

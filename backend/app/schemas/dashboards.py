@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, field_validator
 
 from app.schemas.common import PatchModel
+from app.schemas.lists import ListResponse
 
 DASHBOARD_NAME_MAX_LENGTH = 100
 DashboardName = Annotated[
@@ -160,6 +161,19 @@ class DashboardResponse(BaseModel):
     widgets: list[WidgetResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DashboardCreatedResponse(DashboardSummary):
+    # The listing's summary and the editor's whole board in one, so the client holds both from the
+    # create instead of reading the new dashboard back.
+    layout: list[LayoutItem]
+    widgets: list[WidgetResponse]
+
+
+class WidgetAddedResponse(DashboardResponse):
+    # The list a widget add created alongside it, so the client holds the row instead of reading
+    # it back. Absent when the widget bound an existing list or carries none.
+    created_list: ListResponse | None = None
 
 
 class LayoutGesture(BaseModel):

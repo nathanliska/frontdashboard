@@ -25,18 +25,21 @@ from app.schemas.dashboards import (
     MIN_WIDGET_WIDTH,
     WIDGET_CONFIG_MODELS,
     DashboardCreate,
+    DashboardCreatedResponse,
     DashboardResponse,
     DashboardSummary,
     DashboardUpdate,
     LayoutUpdate,
     ListWidgetCreate,
     TrashedDashboardSummary,
+    WidgetAddedResponse,
     WidgetConfigUpdate,
     WidgetCreate,
     WidgetResponse,
     WidgetResponseAdapter,
     minimum_widget_size,
 )
+from app.schemas.lists import ListResponse
 from app.schemas.shares import DashboardMemberResponse, OwnerTransfer, ShareCreate, ShareResponse, ShareUpdate
 from app.services import permissions
 from app.services.accounts import lock_live_user
@@ -438,7 +441,7 @@ async def list_dashboards(
     return await _list_accessible_dashboard_summaries(current_user, db)
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=DashboardSummary)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=DashboardCreatedResponse)
 @limiter.limit(WRITE_LIMIT)
 async def create_dashboard(
     request: Request,
@@ -447,7 +450,7 @@ async def create_dashboard(
     current_user: User = Depends(get_current_user),
     client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
-) -> DashboardSummary:
+) -> DashboardCreatedResponse:
     """Create a dashboard, owned by the caller."""
     await assert_under_quota(
         db,
@@ -474,13 +477,14 @@ async def create_dashboard(
         fanouts=[dashboard_fanout(event_message, dashboard, [])],
     )
     await db.refresh(dashboard)
-    return _to_summary(
+    summary = _to_summary(
         dashboard,
         "Owned by you",
         False,
         can_edit=True,
         can_manage_shares=True,
     )
+    return DashboardCreatedResponse(**dict(summary), layout=dashboard.layout or [], widgets=[])
 
 
 @router.patch("/{dashboard_id}", response_model=DashboardSummary)
@@ -774,7 +778,7 @@ async def update_layout(
     )
 
 
-@router.post("/{dashboard_id}/widgets", status_code=status.HTTP_201_CREATED, response_model=DashboardResponse)
+@router.post("/{dashboard_id}/widgets", status_code=status.HTTP_201_CREATED, response_model=WidgetAddedResponse)
 @limiter.limit(WRITE_LIMIT)
 async def add_widget(
     request: Request,
@@ -784,7 +788,7 @@ async def add_widget(
     current_user: User = Depends(get_current_user),
     client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
-) -> DashboardResponse:
+) -> WidgetAddedResponse:
     """Add a widget to a dashboard, creating bound resources when needed."""
     # Lock the dashboard row so concurrent widget/layout mutations can't lose version/layout updates.
     dashboard, shares, role = await load_dashboard_access(
@@ -808,6 +812,7 @@ async def add_widget(
     widget_config = body.config.model_dump(exclude_unset=True)
     resource_type: str | None = None
     resource_id: uuid.UUID | None = None
+    created_list: List | None = None
 
     # A schema fact: only ListWidgetCreate carries resource fields, and they are a 422 on any
     # other variant (extra="forbid").
@@ -942,7 +947,7 @@ async def add_widget(
     await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
     await db.refresh(dashboard)
     widgets = await _load_widgets(dashboard.id, db)
-    return _to_response(
+    response = _to_response(
         dashboard,
         widgets,
         is_shared_dashboard,
@@ -950,6 +955,21 @@ async def add_widget(
         can_manage_shares=permissions.can_manage_shares(role),
         is_favorite=dashboard.id in set(favorite_dashboard_ids_from_preferences(current_user.preferences)),
     )
+    list_response = None
+    if created_list is not None:
+        await db.refresh(created_list)
+        list_response = ListResponse(
+            id=created_list.id,
+            dashboard_id=created_list.dashboard_id,
+            name=created_list.name,
+            list_type=created_list.list_type,
+            sort_order=created_list.sort_order,
+            created_by=created_list.created_by,
+            created_at=created_list.created_at,
+            updated_at=created_list.updated_at,
+            item_count=0,
+        )
+    return WidgetAddedResponse(**dict(response), created_list=list_response)
 
 
 @router.patch("/{dashboard_id}/widgets/{widget_id}", response_model=WidgetResponse)
@@ -1015,7 +1035,7 @@ async def update_widget(
     return WidgetResponseAdapter.validate_python(widget)
 
 
-@router.delete("/{dashboard_id}/widgets/{widget_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{dashboard_id}/widgets/{widget_id}", response_model=DashboardResponse)
 @limiter.limit(WRITE_LIMIT)
 async def delete_widget(
     request: Request,
@@ -1025,7 +1045,7 @@ async def delete_widget(
     current_user: User = Depends(get_current_user),
     client_id: ClientIdHeader = None,
     db: AsyncSession = Depends(get_db),
-) -> None:
+) -> DashboardResponse:
     """Delete a widget and remove its layout entry from the dashboard."""
     # Lock the dashboard row so concurrent widget/layout mutations can't lose version/layout updates.
     dashboard, shares, role = await load_dashboard_access(
@@ -1063,6 +1083,16 @@ async def delete_widget(
         client_id=client_id,
     )
     await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
+    await db.refresh(dashboard)
+    widgets = await _load_widgets(dashboard.id, db)
+    return _to_response(
+        dashboard,
+        widgets,
+        bool(shares),
+        can_edit=permissions.can_edit(role),
+        can_manage_shares=permissions.can_manage_shares(role),
+        is_favorite=dashboard.id in set(favorite_dashboard_ids_from_preferences(current_user.preferences)),
+    )
 
 
 @router.get("/{dashboard_id}/members", response_model=list[DashboardMemberResponse])
