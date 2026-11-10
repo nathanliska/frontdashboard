@@ -8,6 +8,7 @@ import { CalendarDayOccurrences } from '../components/calendar/CalendarDayOccurr
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialog'
 import { CalendarTrashPanel } from '../components/calendar/CalendarTrashPanel'
+import { dayCellTone } from '../components/calendar/dayCellTone'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
 import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { DashboardSelect } from '../components/ui/DashboardSelect'
@@ -277,7 +278,8 @@ export function CalendarPage() {
               <h2 className="text-sm font-semibold text-zinc-100">
                 {formatMonthLabel(monthCursor)}
               </h2>
-              <p className="text-xs text-zinc-500">
+              {/* A phone shows the dashboard picker right above; the line would only repeat it. */}
+              <p className={cn('text-xs text-zinc-500', activeDashboard && 'hidden sm:block')}>
                 {activeDashboard
                   ? `Events on ${activeDashboard.name}`
                   : 'Choose a dashboard to load events'}
@@ -346,12 +348,11 @@ export function CalendarPage() {
                     >
                       <div
                         className={cn(
-                          'flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-0.5 sm:p-1 transition-colors',
+                          'flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border p-0.5 sm:p-1 transition-colors',
                           'group-hover:border-zinc-700 group-hover:bg-zinc-900/80',
                           'group-focus-visible:border-zinc-400 group-focus-visible:ring-1 group-focus-visible:ring-zinc-400/40',
                           !inMonth && 'opacity-45',
-                          isToday && 'border-zinc-600 bg-zinc-900',
-                          isSelected && 'border-sky-500/40 bg-sky-500/6',
+                          dayCellTone({ isToday, isSelected }),
                         )}
                       >
                         <CalendarDayOccurrences

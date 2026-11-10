@@ -26,6 +26,7 @@ import {
   occurrenceDot,
   occurrenceTint,
 } from '../../calendar/CalendarDayOccurrences'
+import { dayCellTone } from '../../calendar/dayCellTone'
 import { ParticipantDots } from '../../calendar/ParticipantDots'
 import { type CalendarWidgetView, WidgetViewTabs } from './CalendarWidgetViewTabs'
 
@@ -122,8 +123,8 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
               to={`${ROUTES.calendar}?${new URLSearchParams({ dashboard_id: dashboardId, date: dateKey(day) })}`}
               aria-label={`${formatHeadingDate(day)}: ${formatEventCount(dayOccurrences.length)}. Open day`}
               className={cn(
-                '@container rounded-lg border border-zinc-800 bg-zinc-950/60 p-1.5 min-h-0 min-w-0 overflow-hidden flex flex-col focus-visible:outline-2 focus-visible:outline-sky-400',
-                isToday && 'border-zinc-600 bg-zinc-900',
+                '@container rounded-lg border p-1.5 min-h-0 min-w-0 overflow-hidden flex flex-col focus-visible:outline-2 focus-visible:outline-sky-400',
+                dayCellTone({ isToday }),
               )}
             >
               <CalendarDayOccurrences
@@ -229,7 +230,7 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
 
       <div
         className={cn(
-          'grid grid-cols-7 mb-0.5 text-[10px] text-zinc-500',
+          'grid grid-cols-7 mb-0.5 text-[10px] uppercase tracking-[0.18em] text-zinc-500',
           tight ? 'gap-0.5' : 'gap-1',
         )}
       >
@@ -263,12 +264,12 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
               to={`${ROUTES.calendar}?${new URLSearchParams({ dashboard_id: dashboardId, date: dateKey(day) })}`}
               aria-label={`${formatHeadingDate(day)}: ${formatEventCount(dayOccurrences.length)}. Open day`}
               className={cn(
-                'border border-zinc-800 bg-zinc-950/60 min-h-0 min-w-0 overflow-hidden flex focus-visible:outline-2 focus-visible:outline-sky-400',
+                'border min-h-0 min-w-0 overflow-hidden flex focus-visible:outline-2 focus-visible:outline-sky-400',
                 oneLine
                   ? 'rounded px-0.5 items-center justify-between gap-0.5'
                   : cn('rounded-md py-1 flex-col', tight ? 'px-0.5' : 'px-1'),
                 !inMonth && 'opacity-45',
-                isToday && 'border-zinc-600 bg-zinc-900',
+                dayCellTone({ isToday }),
               )}
             >
               {oneLine ? (
