@@ -22,11 +22,12 @@ import {
   DAY_HEADING_GAP,
   hiddenOccurrencesTitle,
   MONTH_PILL_HEIGHT,
+  OCCURRENCE_ROW_GAP,
   occurrenceDot,
   occurrenceTint,
 } from '../../calendar/CalendarDayOccurrences'
 import { ParticipantDots } from '../../calendar/ParticipantDots'
-import { type CalendarWidgetView, ViewTabButtons } from './CalendarWidgetViewTabs'
+import { type CalendarWidgetView, WidgetViewTabs } from './CalendarWidgetViewTabs'
 
 const WEEKDAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
 const WEEKDAY_SHORT = new Intl.DateTimeFormat(undefined, { weekday: 'short' })
@@ -42,7 +43,6 @@ export const DayCalendarWidget = memo(function DayCalendarWidget({
   return (
     <div className="h-full flex flex-col gap-3">
       <div className="shrink-0">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Today</p>
         <p className="text-sm font-medium text-zinc-100">
           {new Intl.DateTimeFormat(undefined, {
             weekday: 'long',
@@ -83,26 +83,35 @@ export const DayCalendarWidget = memo(function DayCalendarWidget({
   )
 })
 
+/** Room for four pills and their gaps: a listed day past that shows "+N" rather than a wall. */
+const LIST_DAY_HEIGHT = 4 * (MONTH_PILL_HEIGHT + OCCURRENCE_ROW_GAP)
+
 export const WeekCalendarWidget = memo(function WeekCalendarWidget({
   dashboardId,
   days,
   occurrencesByDate,
+  list = false,
 }: {
   dashboardId: string
   days: Date[]
   occurrencesByDate: Map<string, CalendarOccurrence[]>
+  /** One full-width row per day, for a widget too narrow for seven readable columns. */
+  list?: boolean
 }) {
   // Measured because CSS cannot count rows, and one cell answers for all seven: they share a grid
-  // row, so the body of the first is the height of every other.
+  // track, so the body of the first is the height of every other.
   const [cellBodyRef, cellBody] = useContainerSize({ width: 0, height: 200 })
 
   return (
-    <div className="h-full flex flex-col gap-2">
-      <div className="shrink-0">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">This week</p>
-      </div>
-
-      <div className="grid grid-cols-7 gap-1 flex-1 min-h-0">
+    <div className="h-full flex flex-col">
+      {/* Listed, each day is as tall as its events, so an empty one is just its heading. Rows are
+          `max-content`: an auto row may shrink to its `min-h-0` day, squeezing a busy week. */}
+      <div
+        className={cn(
+          'grid gap-1 flex-1 min-h-0',
+          list ? 'auto-rows-max content-start overflow-y-auto' : 'grid-cols-7',
+        )}
+      >
         {days.map((day, index) => {
           const dayOccurrences = occurrencesByDate.get(dateKey(day)) ?? []
           const isToday = dateKey(day) === dateKey(new Date())
@@ -119,30 +128,36 @@ export const WeekCalendarWidget = memo(function WeekCalendarWidget({
             >
               <CalendarDayOccurrences
                 heading={
-                  <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
-                    {/* Three letters, a date and a "+N" need ~52px; one letter needs ~40px; below
-                        that the date alone carries the day, and the link's label names it. */}
-                    <span className="min-w-0 truncate text-[10px] uppercase text-zinc-500">
-                      <span className="@max-[52px]:hidden">{WEEKDAY_SHORT.format(day)}</span>
-                      <span className="hidden @min-[40px]:@max-[52px]:inline">
-                        {WEEKDAY_NARROW.format(day)}
+                  list ? (
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="w-7 text-[10px] uppercase leading-none text-zinc-500">
+                        {WEEKDAY_SHORT.format(day)}
                       </span>
-                    </span>
-                    <span
-                      className={cn(
-                        'shrink-0 text-[11px]',
-                        isToday ? 'text-zinc-100' : 'text-zinc-400',
-                      )}
-                    >
-                      {formatDayNumber(day)}
-                    </span>
-                  </div>
+                      <CalendarDayNumber value={formatDayNumber(day)} isToday={isToday} />
+                    </div>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
+                      {/* Three letters, a date and a "+N" need ~52px; one letter needs ~40px; below
+                          that the date alone carries the day, and the link's label names it. */}
+                      <span className="min-w-0 truncate text-[10px] uppercase text-zinc-500">
+                        <span className="@max-[52px]:hidden">{WEEKDAY_SHORT.format(day)}</span>
+                        <span className="hidden @min-[40px]:@max-[52px]:inline">
+                          {WEEKDAY_NARROW.format(day)}
+                        </span>
+                      </span>
+                      <CalendarDayNumber
+                        value={formatDayNumber(day)}
+                        isToday={isToday}
+                        className="shrink-0"
+                      />
+                    </div>
+                  )
                 }
                 occurrences={dayOccurrences}
                 day={day}
-                height={cellBody.height}
-                density="week"
-                measureRef={index === 0 ? cellBodyRef : null}
+                height={list ? LIST_DAY_HEIGHT : cellBody.height}
+                density={list ? 'month' : 'week'}
+                measureRef={!list && index === 0 ? cellBodyRef : null}
               />
             </Link>
           )
@@ -204,15 +219,13 @@ export const MonthCalendarWidget = memo(function MonthCalendarWidget({
     <div className="h-full flex flex-col">
       {/* Margins fixed, so `tight` moves only the gaps inside the grid and never the grid's own
           height — the measurement the layout is chosen from is never one spacing out of date. */}
-      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 mb-1">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-          {formatMonthLabel(monthDate)}
-        </p>
-        <div className="flex items-center gap-2">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">View</p>
-          <ViewTabButtons compact={viewCompact} value={view} onChange={onViewChange} />
-        </div>
-      </div>
+      <WidgetViewTabs
+        label={formatMonthLabel(monthDate)}
+        compact={viewCompact}
+        value={view}
+        onChange={onViewChange}
+        className="mb-1"
+      />
 
       <div
         className={cn(

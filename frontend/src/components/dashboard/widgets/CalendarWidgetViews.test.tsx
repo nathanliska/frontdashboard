@@ -82,6 +82,36 @@ it('folds a day too short for a pill into one line naming its first event', () =
   expect(screen.getByText('+2').title.split('\n')).toHaveLength(2)
 })
 
+it('sizes a listed day to its events, at most four with "+N" for the rest', () => {
+  const days = Array.from({ length: 7 }, (_, index) => new Date(2028, 1, 13 + index))
+  const events = [0, 1, 2, 3, 4, 5].map((index) =>
+    makeOccurrence({
+      event_id: `event-${index}`,
+      title: `Event ${index}`,
+      occurrence_start: new Date(2028, 1, 16, 9 + index).toISOString(),
+      occurrence_end: new Date(2028, 1, 16, 10 + index).toISOString(),
+    }),
+  )
+  // However tall the widget, a listed day neither stretches nor counts rows from its own height.
+  stubResizeObserver({ width: 300, height: 1000 })
+  render(
+    <MemoryRouter>
+      <WeekCalendarWidget
+        dashboardId="board"
+        days={days}
+        occurrencesByDate={new Map([[dateKey(days[3]), events]])}
+        list
+      />
+    </MemoryRouter>,
+  )
+  // jsdom has no layout: this pins the rows to their content, which the live check confirms scrolls.
+  expect(screen.getAllByRole('link', { name: /Open day/ })[0].parentElement).toHaveClass(
+    'auto-rows-max',
+  )
+  expect(screen.getAllByText(/Event \d/)).toHaveLength(4)
+  expect(screen.getByText('+2')).toBeInTheDocument()
+})
+
 it('keeps pills under the date while a cell has room for one', () => {
   // Border, padding and the gap under the date (14px), a 16px pill, then the 9px date.
   expect(monthCellIsOneLine(39)).toBe(false)

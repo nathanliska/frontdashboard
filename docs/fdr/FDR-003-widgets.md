@@ -28,7 +28,8 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
   from the measured grid: the date has one small size that fits every cell, and only a cell too
   short for a pill under it folds into one line — date, first title, "+N" — with a dot standing in for the title where even that
   will not fit beside the count. Every week of the month stays in view at any widget size; the
-  grid never scrolls.
+  grid never scrolls. The week view keeps seven columns down to 460px of widget width; below that
+  it lists one row per day, as tall as its events up to four and a "+N", and the list scrolls.
 - **Agenda widget.** Shows today / overdue / upcoming items; background-refetches on a day rollover.
   Its reminders come from `GET /lists/details` — one dashboard-scoped batch of every list with its
   items — rather than composing summaries plus one detail request per list client-side (#17, closed

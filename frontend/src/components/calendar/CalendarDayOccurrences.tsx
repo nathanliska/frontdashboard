@@ -9,7 +9,7 @@ import { cn } from '../../utils/shared/cn'
 import { ParticipantMicroDots } from './ParticipantDots'
 
 /** Mirrors `space-y-0.5` on the stack below. */
-const ROW_GAP = 2
+export const OCCURRENCE_ROW_GAP = 2
 
 /**
  * Row pitch of a pill, beside the padding that produces it — change one and the other is in view.
@@ -48,7 +48,10 @@ export function fitOccurrenceRows(
   rowHeight: number,
   total: number,
 ): { visible: number; hidden: number } {
-  const rows = Math.max(1, Math.floor((height + ROW_GAP) / (rowHeight + ROW_GAP)))
+  const rows = Math.max(
+    1,
+    Math.floor((height + OCCURRENCE_ROW_GAP) / (rowHeight + OCCURRENCE_ROW_GAP)),
+  )
   const visible = Math.min(total, rows)
   return { visible, hidden: total - visible }
 }
