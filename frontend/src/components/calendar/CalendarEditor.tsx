@@ -76,10 +76,12 @@ export const CalendarEditor = memo(function CalendarEditor({
   const [submitting, setSubmitting] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
 
-  // Radix would otherwise land on Cancel, the first tabbable in the panel.
+  // Radix would otherwise land on Cancel, the first tabbable in the panel. Not for a touch screen
+  // opening an existing event: the caret raises the keyboard over a sheet opened to read or nudge.
   useEffect(() => {
+    if (mode === 'edit' && window.matchMedia?.('(pointer: coarse)').matches) return
     titleRef.current?.focus()
-  }, [])
+  }, [mode])
 
   const dashboardLabel = activeDashboardName ?? 'the selected dashboard'
   const isRepeating = recurrenceMode !== 'none'

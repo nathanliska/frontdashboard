@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CalendarEditorDraft } from '../../utils/calendar/calendarEditorDraftUtils'
 import { CalendarEditor } from './CalendarEditor'
 
@@ -21,11 +21,11 @@ function makeDraft(overrides: Partial<CalendarEditorDraft> = {}): CalendarEditor
   }
 }
 
-function renderEditor(draft: CalendarEditorDraft = makeDraft()) {
+function renderEditor(draft: CalendarEditorDraft = makeDraft(), mode: 'create' | 'edit' = 'edit') {
   const onSubmit = vi.fn().mockResolvedValue(undefined)
   render(
     <CalendarEditor
-      mode="edit"
+      mode={mode}
       initialDraft={draft}
       onClose={vi.fn()}
       onSubmit={onSubmit}
@@ -42,10 +42,29 @@ function renderEditor(draft: CalendarEditorDraft = makeDraft()) {
 }
 
 describe('opening the editor', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+  const touchScreen = (coarse: boolean) =>
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: coarse && query === '(pointer: coarse)',
+    }))
+
   it('puts the caret in the title rather than on Cancel', () => {
     renderEditor()
 
     expect(document.activeElement).toBe(screen.getByLabelText('Event title'))
+  })
+
+  it.each([
+    ['edit', true, false],
+    ['edit', false, true],
+    ['create', true, true],
+  ] as const)('%s on a touch screen (%s) focuses the title: %s', (mode, coarse, focused) => {
+    touchScreen(coarse)
+    renderEditor(makeDraft(), mode)
+
+    expect(document.activeElement === screen.getByLabelText('Event title')).toBe(focused)
   })
 })
 
