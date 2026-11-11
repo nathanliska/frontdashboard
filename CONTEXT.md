@@ -121,9 +121,10 @@ _Last updated: 2026-11-05_
   create/rename/widget-add/share-add keeps the user's input instead of discarding it.
 - Calendar day cells (widget and page) fill every pill row they have room for and put "+N" on the
   date's line; narrow cells show titles without times, cut with a fade rather than "…", and a
-  month widget cell too short for a pill under even the small date folds into one line of date,
+  month widget cell too short for a pill under its date folds into one line of date,
   first title and "+N". Widget cells link to the full calendar at that local date and dashboard.
-  Every week stays in view; the grid never scrolls. A multi-day all-day event reads as its date
+  Every week of the month stays in view; that grid never scrolls. Below 460px wide the week view
+  lists one row per day, up to four events and "+N", and the list scrolls. A multi-day all-day event reads as its date
   range ("Sep 23 - Sep 27"), not "All day".
 - Widget types: **list** (bind existing or auto-create), **clock**, **calendar**, **agenda**
   (today/overdue/upcoming). Add-widget wizard picks type → resource where applicable.

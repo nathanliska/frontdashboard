@@ -1,4 +1,4 @@
-import { Clock3, MapPin, Pencil, Repeat2, Trash2 } from 'lucide-react'
+import { Clock3, MapPin, Pencil, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { CalendarOccurrence } from '../../api/calendar'
 import { formatOccurrenceSpan, isMultiDayOccurrence } from '../../utils/calendar/calendarUtils'
@@ -14,7 +14,7 @@ export function OccurrenceCard({
   onDelete: () => void
 }) {
   return (
-    <article className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+    <article className="group rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 sm:px-4 sm:py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -24,37 +24,30 @@ export function OccurrenceCard({
             {isMultiDayOccurrence(occurrence) && <EventBadge>Multi-day</EventBadge>}
             <ParticipantDots participants={occurrence.participants} />
           </div>
-          <div className="mt-2 flex flex-col gap-1.5 text-sm text-zinc-400">
-            <div className="flex items-center gap-2">
-              <Clock3 size={14} className="shrink-0 text-zinc-600" />
-              <span>
-                {formatOccurrenceSpan(
-                  occurrence.occurrence_start,
-                  occurrence.occurrence_end,
-                  occurrence.all_day,
-                )}
-              </span>
-            </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-400">
+            <span className="flex items-center gap-1.5">
+              <Clock3 size={12} className="shrink-0 text-zinc-600" />
+              {formatOccurrenceSpan(
+                occurrence.occurrence_start,
+                occurrence.occurrence_end,
+                occurrence.all_day,
+              )}
+            </span>
             {occurrence.location && (
-              <div className="flex items-center gap-2">
-                <MapPin size={14} className="shrink-0 text-zinc-600" />
-                <span>{occurrence.location}</span>
-              </div>
-            )}
-            {occurrence.recurring && (
-              <div className="flex items-center gap-2">
-                <Repeat2 size={14} className="shrink-0 text-zinc-600" />
-                <span>Series event</span>
-              </div>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <MapPin size={12} className="shrink-0 text-zinc-600" />
+                {occurrence.location}
+              </span>
             )}
           </div>
           {occurrence.description && (
-            <p className="mt-3 text-sm text-zinc-500 whitespace-pre-wrap">
+            <p className="mt-1.5 text-sm text-zinc-500 whitespace-pre-wrap">
               {occurrence.description}
             </p>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        {/* Revealed on hover where there is one; a touch screen has none, so keeps them shown. */}
+        <div className="flex items-center gap-1 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
           <button
             type="button"
             onClick={onEdit}

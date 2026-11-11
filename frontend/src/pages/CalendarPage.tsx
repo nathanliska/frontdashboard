@@ -8,6 +8,7 @@ import { CalendarDayOccurrences } from '../components/calendar/CalendarDayOccurr
 import { CalendarEditor } from '../components/calendar/CalendarEditor'
 import { CalendarEditorDialog } from '../components/calendar/CalendarEditorDialog'
 import { CalendarTrashPanel } from '../components/calendar/CalendarTrashPanel'
+import { dayCellTone } from '../components/calendar/dayCellTone'
 import { OccurrenceCard } from '../components/calendar/OccurrenceCard'
 import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { DashboardSelect } from '../components/ui/DashboardSelect'
@@ -277,7 +278,8 @@ export function CalendarPage() {
               <h2 className="text-sm font-semibold text-zinc-100">
                 {formatMonthLabel(monthCursor)}
               </h2>
-              <p className="text-xs text-zinc-500">
+              {/* A phone shows the dashboard picker right above; the line would only repeat it. */}
+              <p className={cn('text-xs text-zinc-500', activeDashboard && 'hidden sm:block')}>
                 {activeDashboard
                   ? `Events on ${activeDashboard.name}`
                   : 'Choose a dashboard to load events'}
@@ -298,8 +300,8 @@ export function CalendarPage() {
           </div>
 
           <div className="grid grid-cols-7 border-b border-zinc-800">
-            <div className="col-span-7 px-2 sm:px-3 pt-2 sm:pt-3">
-              <div className="grid grid-cols-7 gap-1">
+            <div className="col-span-7 px-1 sm:px-3 pt-1 sm:pt-3">
+              <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
                 {CALENDAR_WEEKDAY_LABELS.map((label) => (
                   <div
                     key={label}
@@ -329,8 +331,8 @@ export function CalendarPage() {
               </button>
             </div>
           ) : (
-            <div className="flex-1 min-h-0 px-2 pb-2 sm:px-3 sm:pb-3">
-              <div className="grid h-full grid-cols-7 auto-rows-fr gap-1">
+            <div className="flex-1 min-h-0 p-1 sm:p-3">
+              <div className="grid h-full grid-cols-7 auto-rows-fr gap-0.5 sm:gap-1">
                 {monthDays.map((day, index) => {
                   const dayOccurrences = occurrencesForDate(occurrences, day)
                   const inMonth = day.getMonth() === monthCursor.getMonth()
@@ -346,12 +348,11 @@ export function CalendarPage() {
                     >
                       <div
                         className={cn(
-                          '@container flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/60 p-1 transition-colors',
+                          'flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border p-0.5 sm:p-1 transition-colors',
                           'group-hover:border-zinc-700 group-hover:bg-zinc-900/80',
                           'group-focus-visible:border-zinc-400 group-focus-visible:ring-1 group-focus-visible:ring-zinc-400/40',
                           !inMonth && 'opacity-45',
-                          isToday && 'border-zinc-600 bg-zinc-900',
-                          isSelected && 'border-sky-500/40 bg-sky-500/6',
+                          dayCellTone({ isToday, isSelected }),
                         )}
                       >
                         <CalendarDayOccurrences
@@ -361,8 +362,6 @@ export function CalendarPage() {
                               isToday={isToday}
                               isSelected={isSelected}
                               dimmed={!inMonth}
-                              // FULL_DAY_NUMBER_MIN_WIDTH, queried against this cell's content box.
-                              className="@max-[40px]:min-w-3.5 @max-[40px]:px-0.5 @max-[40px]:py-0 @max-[40px]:text-[9px] @max-[40px]:leading-none"
                             />
                           }
                           occurrences={dayOccurrences}
@@ -380,7 +379,7 @@ export function CalendarPage() {
           )}
         </section>
 
-        <section className="min-h-0 max-h-[60dvh] rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden flex flex-col sm:max-h-[520px] xl:max-h-none">
+        <section className="min-h-0 rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden flex flex-col sm:max-h-[520px] xl:max-h-none">
           <div className="border-b border-zinc-800 px-3 sm:px-4 py-4">
             {/* Wraps so the buttons drop under the date on a narrow panel instead of squeezing it. */}
             <div className="flex flex-wrap items-start justify-between gap-3">

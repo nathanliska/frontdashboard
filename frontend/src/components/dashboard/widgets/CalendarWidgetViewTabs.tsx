@@ -3,24 +3,23 @@ import { capitalize, cn } from '../../../utils/shared/cn'
 
 export type CalendarWidgetView = 'day' | 'week' | 'month'
 
+/** The view's label and the tabs on one row, the same in every view. */
 export const WidgetViewTabs = memo(function WidgetViewTabs({
+  label,
   compact,
-  showLabel = true,
   value,
   onChange,
+  className,
 }: {
+  label: string
   compact: boolean
-  showLabel?: boolean
   value: CalendarWidgetView
   onChange: (value: CalendarWidgetView) => void | Promise<void>
+  className?: string
 }) {
   return (
-    <div className="shrink-0 flex items-center justify-between gap-2">
-      {showLabel ? (
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">View</p>
-      ) : (
-        <div />
-      )}
+    <div className={cn('shrink-0 flex flex-wrap items-center justify-between gap-2', className)}>
+      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{label}</p>
       <ViewTabButtons compact={compact} value={value} onChange={onChange} />
     </div>
   )

@@ -4,10 +4,11 @@ import type { DashboardWidget, WidgetType } from '../../api/dashboards'
 import { capitalize, cn } from '../../utils/shared/cn'
 import { WidgetRenderer } from './WidgetRenderer'
 
-// The two types whose label comes from config are handled below; the rest are static. Keyed by
+// The type whose label comes from config is handled below; the rest are static. Keyed by
 // the generated widget union, so a new widget type is a type error here until it gets a label.
-const WIDGET_LABELS: Record<Exclude<WidgetType, 'list' | 'calendar'>, string> = {
+const WIDGET_LABELS: Record<Exclude<WidgetType, 'list'>, string> = {
   agenda: 'Agenda',
+  calendar: 'Calendar',
   clock: 'Clock',
 }
 
@@ -17,9 +18,6 @@ function widgetLabel(widget: DashboardWidget): string {
     const label = widget.config.list_name || 'List'
     const type = widget.config.list_type
     return type ? `${label} · ${capitalize(type)}` : label
-  }
-  if (widget.widget_type === 'calendar') {
-    return `Calendar · ${capitalize(widget.config.view || 'month')}`
   }
   return WIDGET_LABELS[widget.widget_type]
 }

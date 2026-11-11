@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-09-26
+**Last reviewed:** 2026-11-09
 
 ## Overview
 
@@ -30,7 +30,9 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
 - **Event editor.** An editor with an all-day toggle, a duration toolbar, timezones and weekly
   recurrence, presented as a bottom sheet on a phone and a centred panel on a wider screen. It is a
   real dialog: Escape closes it, Tab stays within it, the page behind neither scrolls nor reaches
-  assistive technology, and focus opens in the title field rather than on Cancel.
+  assistive technology, and focus opens in the title field rather than on Cancel. An existing event
+  on a touch screen is the exception: there it is likely opened to read, and a focused title would
+  raise the keyboard over half the sheet.
 - **Duration is the end time, said another way.** The toolbar shows the gap between start and end in
   minutes, hours or days; typing a duration or stepping it moves the end time, and moving the start
   carries the duration with it. Switching the *unit* only changes how that gap reads — 90 minutes

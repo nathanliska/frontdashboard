@@ -13,11 +13,18 @@ import {
   occurrencesForDate,
   startOfWeek,
 } from '../../../utils/calendar/calendarUtils'
+import { cn } from '../../../utils/shared/cn'
 import { WidgetErrorState } from '../WidgetErrorState'
 import { DayCalendarWidget, MonthCalendarWidget, WeekCalendarWidget } from './CalendarWidgetViews'
 import { type CalendarWidgetView, WidgetViewTabs } from './CalendarWidgetViewTabs'
 
 const EMPTY_OCCURRENCES: CalendarOccurrence[] = []
+
+/** Below this, a month's gaps and cell padding take a share of each day a phone can't spare. */
+const MONTH_TIGHT_WIDTH = 460
+
+/** Below this, seven week columns are too narrow to name a weekday or an event, so days stack. */
+const WEEK_LIST_WIDTH = 460
 
 export function CalendarWidget({
   widgetId,
@@ -30,10 +37,11 @@ export function CalendarWidget({
 }) {
   // Measured rather than queried in CSS: these pick label sets, which a container query cannot,
   // and the month's `tight` spacing, whose gap the month's own layout arithmetic has to know.
-  const [containerRef, { width: containerWidth, height: containerHeight }] = useContainerSize({
-    width: 300,
-    height: 320,
-  })
+  // Zero until measured, so the week can wait rather than paint a frame of the wrong layout; the
+  // other views paint the usual size meanwhile.
+  const [containerRef, measured] = useContainerSize({ width: 0, height: 0 })
+  const containerWidth = measured.width || 300
+  const containerHeight = measured.height || 320
   const updateWidget = useDashboardStore((s) => s.updateWidget)
 
   // `view` is a plain string in the contract, not a Literal union: it is read back from
@@ -92,8 +100,13 @@ export function CalendarWidget({
 
   if (view === 'day') {
     return (
-      <div ref={containerRef} className="h-full flex flex-col gap-3">
-        <WidgetViewTabs compact={containerWidth < 260} value={view} onChange={handleViewChange} />
+      <div ref={containerRef} className="h-full flex flex-col gap-2">
+        <WidgetViewTabs
+          label="Today"
+          compact={containerWidth < 260}
+          value={view}
+          onChange={handleViewChange}
+        />
         <div className="flex-1 min-h-0">
           <DayCalendarWidget
             occurrences={visibleOccurrencesByDate.get(dateKey(today)) ?? []}
@@ -106,13 +119,19 @@ export function CalendarWidget({
 
   if (view === 'week') {
     return (
-      <div ref={containerRef} className="h-full flex flex-col gap-3">
-        <WidgetViewTabs compact={containerWidth < 260} value={view} onChange={handleViewChange} />
-        <div className="flex-1 min-h-0">
+      <div ref={containerRef} className="h-full flex flex-col gap-2">
+        <WidgetViewTabs
+          label="This week"
+          compact={containerWidth < 260}
+          value={view}
+          onChange={handleViewChange}
+        />
+        <div className={cn('flex-1 min-h-0', measured.width === 0 && 'invisible')}>
           <WeekCalendarWidget
             dashboardId={dashboardId}
             days={weekDays}
             occurrencesByDate={visibleOccurrencesByDate}
+            list={containerWidth < WEEK_LIST_WIDTH}
           />
         </div>
       </div>
@@ -127,9 +146,9 @@ export function CalendarWidget({
           days={monthDays}
           occurrencesByDate={visibleOccurrencesByDate}
           compact={containerWidth < 340 || containerHeight < 280}
-          // Short enough that a laptop leaves the month's rows at ~15px: every pixel of spacing
-          // around the grid is one a folded day's line needs.
-          tight={containerHeight < 320}
+          // Short, a laptop leaves the rows ~15px and a folded day's line needs every pixel; narrow,
+          // a phone's seven columns leave each day under 40px for its titles.
+          tight={containerHeight < 320 || containerWidth < MONTH_TIGHT_WIDTH}
           monthDate={today}
           view={view}
           viewCompact={containerWidth < 260}
