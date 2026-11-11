@@ -21,13 +21,11 @@ export function CalendarDayNumber({
       className={cn(
         'inline-flex items-center justify-center rounded-full font-medium transition-colors',
         'min-w-3.5 px-0.5 py-0 text-[9px] leading-none',
+        // No ring when selected: the cell's border shows that, and a ring would crowd its corner.
         isToday
-          ? cn(
-              'bg-zinc-100 text-zinc-950',
-              isSelected && 'ring-1 ring-sky-400/40 ring-offset-1 ring-offset-zinc-950',
-            )
+          ? 'bg-zinc-100 text-zinc-950'
           : isSelected
-            ? 'bg-sky-500/12 text-sky-200 ring-1 ring-sky-400/25'
+            ? 'bg-sky-500/12 text-sky-200'
             : dimmed
               ? 'text-zinc-600'
               : 'text-zinc-400',
