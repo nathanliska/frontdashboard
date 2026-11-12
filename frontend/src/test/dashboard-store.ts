@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
-import { type DashboardState, useDashboardStore } from '../stores/dashboard'
+import { useAuthStore } from '../stores/auth'
+import { type DashboardState, resetDashboardData, useDashboardStore } from '../stores/dashboard'
+import { signIn } from './signIn'
 
 /**
  * Resets the dashboard store to an inert, fully-stubbed state.
@@ -33,5 +35,35 @@ export function stubDashboardStore(overrides: Partial<DashboardState> = {}): voi
     handleContentEvent: vi.fn(),
     resolveConflict: vi.fn(),
     ...overrides,
+  })
+}
+
+/** The dashboard store's own tests start here: real actions, a signed-in user, no held data. */
+export function beginDashboardStoreTest(): void {
+  vi.clearAllMocks()
+  // Clear module-level load/layout-drain state so an in-flight drain from a prior test can't leak.
+  resetDashboardData()
+  signIn({
+    email: 'test@example.com',
+    display_name: 'Test User',
+    preferences: { home_dashboard_id: 'dash-1', favorite_dashboard_ids: [] },
+  })
+  useAuthStore.setState({
+    init: vi.fn(),
+    login: vi.fn(),
+    register: vi.fn(),
+    logout: vi.fn(),
+    updatePreferences: vi.fn(),
+    updateProfile: vi.fn(),
+    changePassword: vi.fn(),
+  })
+  useDashboardStore.setState({
+    summaries: [],
+    summariesLoaded: false,
+    summariesLoading: false,
+    dashboard: null,
+    loading: false,
+    loadError: false,
+    conflict: false,
   })
 }

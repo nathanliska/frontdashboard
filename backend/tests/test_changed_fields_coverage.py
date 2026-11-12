@@ -9,7 +9,7 @@ producer emits. This is the other direction: a producer inventing a value no con
 
 Ordering is deliberately *not* asserted. Rows already in the activity log carry `["widgets",
 "layout"]` unsorted and are immutable, so sortedness could never be an invariant — order
-independence is the real one, and it is pinned on the consumer side in `dashboard.test.ts`.
+independence is the real one, and it is pinned on the consumer side in `stores/dashboard/events.test.ts`.
 """
 
 import ast
