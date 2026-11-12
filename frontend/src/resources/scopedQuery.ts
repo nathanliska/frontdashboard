@@ -131,6 +131,10 @@ export function createScopedQuery<Scope, Data>({
     return ensureEntry(scope).state
   }
 
+  function isStale(scope: Scope): boolean {
+    return ensureEntry(scope).stale
+  }
+
   async function fetch(scope: Scope, options: ScopedQueryFetchOptions = {}): Promise<Data> {
     const entry = ensureEntry(scope)
     // A fetch is the honest signal that a scope is in use — reads happen on every render and
@@ -291,6 +295,7 @@ export function createScopedQuery<Scope, Data>({
     fetchIfStale,
     getState,
     invalidateWhere,
+    isStale,
     reset,
     seed,
     updateWhere,

@@ -20,6 +20,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../api/lists', () => ({
+  retireListDetailRequests: vi.fn(),
   ...apiMocks,
 }))
 

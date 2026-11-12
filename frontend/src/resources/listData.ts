@@ -6,6 +6,7 @@ import {
   apiDeleteItem,
   apiDeleteList,
   apiGetList,
+  apiGetListDetails,
   apiGetLists,
   apiReorderItems,
   apiReorderLists,
@@ -16,14 +17,17 @@ import {
   type ListItem,
   type ListSummary,
   type ListType,
+  retireListDetailRequests,
 } from '../api/lists'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { useAuthStore } from '../stores/auth'
+import { currentSessionGeneration } from '../stores/sessionGeneration'
 import { toast } from '../stores/toast'
 import { isOwnFrame } from '../utils/shared/clientInstance'
 import {
   applyAgendaItemUpdate,
   invalidateAgendaReminders,
+  listHandlerUpdatesAgenda,
   removeAgendaItems,
   removeAgendaItemsForList,
   renameAgendaListEntries,
@@ -33,23 +37,65 @@ import { createScopedQuery } from './scopedQuery'
 
 type ListSummariesScope = {
   dashboardId: string
+  // Load through the dashboard's batch, so picking a list afterwards has its items already.
+  withItems?: boolean
 }
 
 type ListDetailScope = {
   listId: string
+  // The dashboard showing this list, when there is one: its batch can answer the first load.
+  dashboardId?: string
 }
 
 const listSummariesQuery = createScopedQuery<ListSummariesScope, ListSummary[]>({
   getKey: (scope) => scope.dashboardId,
-  fetcher: (scope) => apiGetLists(scope.dashboardId),
+  fetcher: async (scope) => {
+    if (!scope.withItems) return apiGetLists(scope.dashboardId)
+    return (await loadDashboardLists(scope.dashboardId)).map(toSummary)
+  },
   fallbackErrorMessage: 'Failed to load lists.',
 })
 
 const listDetailQuery = createScopedQuery<ListDetailScope, ListDetail>({
   getKey: (scope) => scope.listId,
-  fetcher: (scope) => apiGetList(scope.listId),
+  fetcher: async (scope) => {
+    // Only a first load rides the batch: a refetch wants this one list, not every list.
+    if (!scope.dashboardId || hasListDetail(scope.listId)) return apiGetList(scope.listId)
+    const lists = await loadDashboardLists(scope.dashboardId)
+    return lists.find((list) => list.id === scope.listId) ?? apiGetList(scope.listId)
+  },
   fallbackErrorMessage: 'Failed to load list.',
 })
+
+function hasListDetail(listId: string): boolean {
+  return listDetailQuery.getState({ listId }).data !== null
+}
+
+function toSummary({ items: _items, ...summary }: ListDetail): ListSummary {
+  return summary
+}
+
+// Counts list events, so a batch can tell that one arrived while it was in flight.
+let listEventEpoch = 0
+
+/**
+ * Every list on a dashboard, seeding both caches on the way — but never over an entry that has
+ * data, which may already carry patches newer than this response.
+ */
+async function loadDashboardLists(dashboardId: string): Promise<ListDetail[]> {
+  const generation = currentSessionGeneration()
+  const epoch = listEventEpoch
+  const lists = await apiGetListDetails(dashboardId)
+  // Seeding marks an entry fresh, which a response from before a sign-out or a list event is not.
+  if (generation !== currentSessionGeneration() || epoch !== listEventEpoch) return lists
+  for (const list of lists) {
+    if (!hasListDetail(list.id)) listDetailQuery.seed({ listId: list.id }, list)
+  }
+  if (listSummariesQuery.getState({ dashboardId }).data === null) {
+    listSummariesQuery.seed({ dashboardId }, lists.map(toSummary))
+  }
+  return lists
+}
 
 function orderByIds<T extends { id: string }>(rows: T[], orderedIds: string[]): T[] | null {
   if (orderedIds.length !== rows.length) return null // divergence
@@ -129,16 +175,22 @@ function removeListFromCaches(listId: string): void {
   )
 }
 
-export function useListSummaries(dashboardId: string | null) {
+export function useListSummaries(
+  dashboardId: string | null,
+  { withItems = false }: { withItems?: boolean } = {},
+) {
   const scope = useMemo<ListSummariesScope | null>(
-    () => (dashboardId ? { dashboardId } : null),
-    [dashboardId],
+    () => (dashboardId ? { dashboardId, withItems } : null),
+    [dashboardId, withItems],
   )
   return listSummariesQuery.useQuery(scope)
 }
 
-export function useListDetail(listId: string | null) {
-  const scope = useMemo<ListDetailScope | null>(() => (listId ? { listId } : null), [listId])
+export function useListDetail(listId: string | null, dashboardId?: string) {
+  const scope = useMemo<ListDetailScope | null>(
+    () => (listId ? { listId, dashboardId } : null),
+    [listId, dashboardId],
+  )
   return listDetailQuery.useQuery(scope)
 }
 
@@ -378,13 +430,17 @@ export function handleListResourceEvent(
   // comparison now, so the default exists only so a lone caller (tests) still behaves.
   { isOwnEcho }: { isOwnEcho?: boolean } = {},
 ): void {
+  if (event.event_type !== 'resync' && !event.event_type.startsWith('list.')) return
+
+  // A batch opened before this event predates it: it may not seed, and nobody new may join it.
+  listEventEpoch += 1
+  retireListDetailRequests()
+
   if (event.event_type === 'resync') {
     listSummariesQuery.invalidateWhere(() => true)
     listDetailQuery.invalidateWhere(() => true)
     return
   }
-
-  if (!event.event_type.startsWith('list.')) return
 
   const dashboardId = getEventDashboardId(event)
   const affectedListId = getAffectedListId(event)
@@ -397,11 +453,15 @@ export function handleListResourceEvent(
     const itemId = event.entity_id
     // Only patch when the event carries the new values; otherwise fall through to
     // invalidate-and-refetch so an older/unknown payload still converges.
-    if (affectedListId && values) {
+    if (affectedListId && listHandlerUpdatesAgenda(event) && values) {
       // No data yet (never loaded, in flight, or errored) means nothing to patch: count that as
       // divergence up front, or patchListDetailById's null guard no-ops and the event is neither
       // applied nor recorded, so the eventual GET resolves with pre-event data forever.
-      let diverged = listDetailQuery.getState({ listId: affectedListId }).data === null
+      // A stale entry counts too: its list name or item may be out of date, and the agenda is
+      // rebuilt from them below.
+      let diverged =
+        listDetailQuery.getState({ listId: affectedListId }).data === null ||
+        listDetailQuery.isStale({ listId: affectedListId })
       if (!diverged) {
         patchListDetailById(affectedListId, (detail) => {
           if (!detail.items.some((item) => item.id === itemId)) {
@@ -418,6 +478,13 @@ export function handleListResourceEvent(
       }
       if (diverged) {
         listDetailQuery.invalidateWhere((scope) => scope.listId === affectedListId)
+        // Nothing here to rebuild the reminder from, so the agenda has to read it.
+        invalidateAgendaReminders(dashboardId)
+      } else {
+        const patched = listDetailQuery
+          .getState({ listId: affectedListId })
+          .data?.items.find((item) => item.id === itemId)
+        if (patched) patchAgendaFromListDetail(affectedListId, patched)
       }
       // Early return skips the generic tail's shouldReloadSummaries check below. That's
       // only safe because shouldReloadSummaries is false for these two event types — if a
@@ -476,6 +543,25 @@ export function handleListResourceEvent(
   if (event.event_type === 'list.deleted' && affectedListId) {
     removeListFromCaches(affectedListId)
     return
+  }
+
+  if (event.event_type === 'list.item.deleted' && affectedListId) {
+    const itemId = event.entity_id
+    // A reminder is keyed by its item, so the agenda needs no list data to drop one.
+    removeAgendaItems([itemId])
+    const held = listDetailQuery.getState({ listId: affectedListId }).data
+    if (held?.items.some((item) => item.id === itemId)) {
+      patchListDetailById(affectedListId, (detail) => ({
+        ...detail,
+        items: detail.items.filter((item) => item.id !== itemId),
+        item_count: Math.max(0, detail.item_count - 1),
+      }))
+      patchListSummaryById(affectedListId, (list) => ({
+        ...list,
+        item_count: Math.max(0, list.item_count - 1),
+      }))
+      return
+    }
   }
 
   const isItemEvent = event.entity_type === 'list_item'

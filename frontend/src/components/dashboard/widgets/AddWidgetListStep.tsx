@@ -18,7 +18,7 @@ export function AddWidgetListStep({
 }) {
   // Reads the SSE-maintained list cache instead of fetching: if any list widget is on the
   // dashboard the data is already loaded, so opening the picker costs zero requests.
-  const { data: lists, loading: loadingLists } = useListSummaries(dashboardId)
+  const { data: lists, loading: loadingLists } = useListSummaries(dashboardId, { withItems: true })
   const existingListIdKey = existingListIds.join(':')
 
   const availableLists = useMemo(() => {

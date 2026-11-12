@@ -14,16 +14,18 @@ import { WidgetErrorState } from '../WidgetErrorState'
 
 export function ListWidget({
   listId,
+  dashboardId,
   widgetId,
   config,
 }: {
   listId: string
+  dashboardId?: string
   widgetId: string
   config: ListWidgetConfig
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const updateWidget = useDashboardStore((s) => s.updateWidget)
-  const { data: detail, error, refetch } = useListDetail(listId)
+  const { data: detail, error, refetch } = useListDetail(listId, dashboardId)
 
   const pileOn = usePileEnabled(listId)
   // A transient peek, deliberately not the page's persisted expand state: the tile's whole
