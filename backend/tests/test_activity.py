@@ -74,6 +74,8 @@ async def test_creating_a_list_and_an_item_logs_each(auth_client: AsyncClient, d
     assert str(event.entity_id) == item["id"]
     assert event.payload["text"] == "Eggs"
     assert event.payload["list_name"] == "My List"
+    # The whole row rides the event, so a client holding the list appends it without a read.
+    assert event.payload["item"] == item
     assert "origin_client_id" not in event.payload
 
 

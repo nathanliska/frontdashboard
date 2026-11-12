@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { ListItemResponse } from '../api/generated/contract'
 import { ApiError } from '../api/http'
 import {
   apiCreateItem,
@@ -491,6 +492,33 @@ export function handleListResourceEvent(
       // future summary-visible field is added to the patchable set, revisit this.
       return
     }
+  }
+
+  if (
+    event.event_type === 'list.item.created' &&
+    affectedListId &&
+    listHandlerUpdatesAgenda(event)
+  ) {
+    const parsed = ListItemResponse.safeParse(event.payload.item)
+    const held = listDetailQuery.getState({ listId: affectedListId }).data
+    const usable =
+      parsed.success &&
+      held !== null &&
+      !listDetailQuery.isStale({ listId: affectedListId }) &&
+      !held.items.some((item) => item.id === parsed.data.id)
+    if (usable) {
+      const item = parsed.data
+      patchListDetailById(affectedListId, (detail) => ({
+        ...detail,
+        items: [...detail.items, item],
+        item_count: detail.item_count + 1,
+      }))
+      patchListSummaryById(affectedListId, (list) => ({ ...list, item_count: list.item_count + 1 }))
+      patchAgendaFromListDetail(affectedListId, item)
+      return
+    }
+    // Not appended, so the generic tail below reloads the list and the agenda reads it too.
+    invalidateAgendaReminders(dashboardId)
   }
 
   if (event.event_type === 'list.item.reordered') {

@@ -560,6 +560,52 @@ describe("a dashboard's lists load once", () => {
     expect(retireListDetailRequests).toHaveBeenCalled()
   })
 
+  it("appends someone else's new item to a held list and the agenda without a read", async () => {
+    const uuid = (n: number) => `00000000-0000-4000-8000-00000000000${n}`
+    const added = makeListItem({
+      id: uuid(1),
+      list_id: uuid(2),
+      created_by: uuid(3),
+      text: 'Call plumber',
+    })
+    apiListOccurrences.mockResolvedValue([])
+    apiGetListDetails.mockResolvedValue([makeListDetail()])
+    __seedListDetailForTests('list-1', makeListDetail({ item_count: 1 }))
+    render(<CountProbe listId="list-1" />)
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+
+    const event: SseEvent = { ...makeListItemCheckedEvent(), event_type: 'list.item.created' }
+    event.entity_id = added.id
+    act(() => {
+      event.payload = { ...event.payload, item: added }
+      handleListResourceEvent(event, { isOwnEcho: false })
+      handleAgendaResourceEvent(event, { isOwnEcho: false })
+    })
+
+    await screen.findByText('count:2 items:2')
+    await screen.findByText('Call plumber')
+    expect(apiGetList).not.toHaveBeenCalled()
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the agenda again when a new item belongs to a list this tab does not hold', async () => {
+    apiListOccurrences.mockResolvedValue([])
+    apiGetListDetails.mockResolvedValue([makeListDetail()])
+    __resetListDataForTests()
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+
+    act(() => {
+      const event: SseEvent = { ...makeListItemCheckedEvent(), event_type: 'list.item.created' }
+      event.payload = { ...event.payload, item: makeListItem() }
+      handleListResourceEvent(event, { isOwnEcho: false })
+      handleAgendaResourceEvent(event, { isOwnEcho: false })
+    })
+
+    await waitFor(() => expect(apiGetListDetails).toHaveBeenCalledTimes(2))
+  })
+
   it("takes someone else's deleted item out of a held list and its count", async () => {
     __seedListDetailForTests('list-1', makeListDetail({ item_count: 1 }))
     render(<CountProbe listId="list-1" />)
