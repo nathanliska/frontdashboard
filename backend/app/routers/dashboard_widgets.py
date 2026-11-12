@@ -93,7 +93,7 @@ async def add_widget(
             db,
             dashboard=dashboard,
             current_user=current_user,
-            resource_id=body.resource_id,
+            resource_id=body.list_id or body.resource_id,
             widget_config=widget_config,
         )
 
@@ -103,6 +103,7 @@ async def add_widget(
         config=widget_config,
         resource_type=resource_type,
         resource_id=resource_id,
+        list_id=resource_id,
     )
     db.add(widget)
     try:
