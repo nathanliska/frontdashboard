@@ -8,7 +8,7 @@ import {
 } from './changedFields'
 
 // Every combination a backend producer actually emits, with the answers the store must give.
-// Sourced from the seven `changed_fields` sites in dashboards.py and invites.py.
+// Sourced from the seven `changed_fields` sites in the dashboard routers and invites.py.
 const EMITTED = [
   { fields: ['layout'], appliedLocally: true, movesRow: true, primary: 'layout' },
   { fields: ['widgets'], appliedLocally: true, movesRow: false, primary: 'widgets' },

@@ -29,7 +29,7 @@ class DashboardWidget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_dashboard_widgets_dashboard_id", "dashboard_id"),
         # "which dashboards show this list?" — the reverse lookup share cleanup and delete paths run.
         Index("ix_dashboard_widgets_resource", "resource_type", "resource_id", "dashboard_id"),
-        # One widget per resource per dashboard. The router still checks first to return a friendly
+        # One widget per resource per dashboard. The add path still checks first to return a friendly
         # 409, but the read-before-insert races itself under concurrent adds; this is the guarantee.
         Index(
             "uq_dashboard_widgets_resource_binding",

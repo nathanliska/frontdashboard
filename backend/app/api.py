@@ -4,6 +4,8 @@ from fastapi import APIRouter
 
 from app.routers.auth import router as auth_router
 from app.routers.calendar import router as calendar_router
+from app.routers.dashboard_shares import router as dashboard_shares_router
+from app.routers.dashboard_widgets import router as dashboard_widgets_router
 from app.routers.dashboards import router as dashboards_router
 from app.routers.health import router as health_router
 from app.routers.invites import router as invites_router
@@ -19,6 +21,8 @@ api_router = APIRouter(prefix=API_PREFIX)
 api_router.include_router(auth_router)
 api_router.include_router(calendar_router)
 api_router.include_router(dashboards_router)
+api_router.include_router(dashboard_widgets_router)
+api_router.include_router(dashboard_shares_router)
 api_router.include_router(health_router)
 api_router.include_router(invites_router)
 api_router.include_router(lists_router)
