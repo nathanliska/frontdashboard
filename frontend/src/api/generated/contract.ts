@@ -28,7 +28,7 @@ export type AgendaWidgetCreate = z.infer<typeof AgendaWidgetCreate>;
 export const AgendaWidgetCreate = z.strictObject({ config: AgendaWidgetConfig.optional(), widget_type: z.literal("agenda") });
 
 export type AgendaWidgetResponse = z.infer<typeof AgendaWidgetResponse>;
-export const AgendaWidgetResponse = z.object({ config: AgendaWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("agenda"), widget_version: z.number().int() }).catchall(z.unknown());
+export const AgendaWidgetResponse = z.object({ config: AgendaWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), list_id: z.uuid().nullable().optional(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("agenda"), widget_version: z.number().int() }).catchall(z.unknown());
 
 export type RecurrenceRule = z.infer<typeof RecurrenceRule>;
 export const RecurrenceRule = z.object({ by_weekday: z.array(z.number().int()).nullable().optional(), count: z.number().int().min(1).max(1000).nullable().optional(), frequency: z.enum(["daily", "weekly", "monthly", "yearly"]), interval: z.number().int().min(1).max(366).default(1), until: z.iso.datetime().nullable().optional() }).catchall(z.unknown());
@@ -61,7 +61,7 @@ export type CalendarWidgetCreate = z.infer<typeof CalendarWidgetCreate>;
 export const CalendarWidgetCreate = z.strictObject({ config: CalendarWidgetConfig.optional(), widget_type: z.literal("calendar") });
 
 export type CalendarWidgetResponse = z.infer<typeof CalendarWidgetResponse>;
-export const CalendarWidgetResponse = z.object({ config: CalendarWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("calendar"), widget_version: z.number().int() }).catchall(z.unknown());
+export const CalendarWidgetResponse = z.object({ config: CalendarWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), list_id: z.uuid().nullable().optional(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("calendar"), widget_version: z.number().int() }).catchall(z.unknown());
 
 export type ClockWidgetConfig = z.infer<typeof ClockWidgetConfig>;
 export const ClockWidgetConfig = z.object({ timezone: z.string().nullable() }).partial().catchall(z.unknown());
@@ -70,7 +70,7 @@ export type ClockWidgetCreate = z.infer<typeof ClockWidgetCreate>;
 export const ClockWidgetCreate = z.strictObject({ config: ClockWidgetConfig.optional(), widget_type: z.literal("clock") });
 
 export type ClockWidgetResponse = z.infer<typeof ClockWidgetResponse>;
-export const ClockWidgetResponse = z.object({ config: ClockWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("clock"), widget_version: z.number().int() }).catchall(z.unknown());
+export const ClockWidgetResponse = z.object({ config: ClockWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), list_id: z.uuid().nullable().optional(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("clock"), widget_version: z.number().int() }).catchall(z.unknown());
 
 export type ConnectedSseEvent = z.infer<typeof ConnectedSseEvent>;
 export const ConnectedSseEvent = z.object({ last_event_id: z.number().int().nullable() }).partial().catchall(z.unknown());
@@ -85,7 +85,7 @@ export type ListWidgetConfig = z.infer<typeof ListWidgetConfig>;
 export const ListWidgetConfig = z.object({ list_name: z.string().nullable(), list_type: z.string().nullable() }).partial().catchall(z.unknown());
 
 export type ListWidgetResponse = z.infer<typeof ListWidgetResponse>;
-export const ListWidgetResponse = z.object({ config: ListWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("list"), widget_version: z.number().int() }).catchall(z.unknown());
+export const ListWidgetResponse = z.object({ config: ListWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), list_id: z.uuid().nullable().optional(), resource_id: z.uuid().nullable(), resource_type: z.string().nullable(), updated_at: z.iso.datetime(), widget_type: z.literal("list"), widget_version: z.number().int() }).catchall(z.unknown());
 
 export type DashboardCreatedResponse = z.infer<typeof DashboardCreatedResponse>;
 export const DashboardCreatedResponse = z.object({ access_description: z.string().nullable().optional(), can_edit: z.boolean(), can_manage_shares: z.boolean(), created_at: z.iso.datetime(), id: z.uuid(), is_favorite: z.boolean(), is_shared: z.boolean().default(false), layout: z.array(LayoutItem), name: z.string(), updated_at: z.iso.datetime(), user_id: z.uuid(), version: z.number().int(), widgets: z.array(z.discriminatedUnion("widget_type", [AgendaWidgetResponse.extend({ widget_type: z.literal("agenda") }), CalendarWidgetResponse.extend({ widget_type: z.literal("calendar") }), ClockWidgetResponse.extend({ widget_type: z.literal("clock") }), ListWidgetResponse.extend({ widget_type: z.literal("list") })])) }).catchall(z.unknown());
@@ -184,7 +184,7 @@ export type ListWidgetCreateConfig = z.infer<typeof ListWidgetCreateConfig>;
 export const ListWidgetCreateConfig = z.object({ list_name: z.string().nullable(), list_type: z.string().nullable(), name: z.string().nullable() }).partial().catchall(z.unknown());
 
 export type ListWidgetCreate = z.infer<typeof ListWidgetCreate>;
-export const ListWidgetCreate = z.strictObject({ config: ListWidgetCreateConfig.optional(), resource_id: z.uuid().nullable().optional(), resource_type: z.literal("list").nullable().optional(), widget_type: z.literal("list") });
+export const ListWidgetCreate = z.strictObject({ config: ListWidgetCreateConfig.optional(), list_id: z.uuid().nullable().optional(), resource_id: z.uuid().nullable().optional(), resource_type: z.literal("list").nullable().optional(), widget_type: z.literal("list") });
 
 export type LoginRequest = z.infer<typeof LoginRequest>;
 export const LoginRequest = z.object({ email: z.email(), password: z.string() }).catchall(z.unknown());

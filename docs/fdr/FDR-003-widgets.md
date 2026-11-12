@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-11-09
+**Last reviewed:** 2026-11-12
 
 ## Overview
 
@@ -54,6 +54,11 @@ the resource fetch/SSE wiring.
 **Why:** Removes a two-step "make the list first, then add the widget" dance for the common case of a
 fresh list.
 **Tradeoff:** Two code paths (bind vs. create) in the add flow.
+**Binding:** The widget row names its list in `list_id`, a foreign key to `lists`, so the database
+refuses a widget whose list does not exist. It writes the generic `resource_type`/`resource_id`
+pair alongside, which is what the client reads, and a create request may name the list by either.
+A second bound type would get its own key column rather than share a generic pair that cannot
+carry a foreign key.
 
 ### 3. Day-dependent widgets refresh at local midnight
 

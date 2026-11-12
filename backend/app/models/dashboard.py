@@ -27,6 +27,7 @@ class DashboardWidget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "dashboard_widgets"
     __table_args__ = (
         Index("ix_dashboard_widgets_dashboard_id", "dashboard_id"),
+        Index("ix_dashboard_widgets_list_id", "list_id"),
         # "which dashboards show this list?" — the reverse lookup share cleanup and delete paths run.
         Index("ix_dashboard_widgets_resource", "resource_type", "resource_id", "dashboard_id"),
         # One widget per resource per dashboard. The add path still checks first to return a friendly
@@ -52,3 +53,10 @@ class DashboardWidget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # The list a list widget shows, written alongside the pair above. Cascades as a backstop only:
+    # trashing a list unbinds its widgets first, so their layout entries go with them.
+    list_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("lists.id", name="fk_dashboard_widgets_list_id", ondelete="CASCADE"),
+        nullable=True,
+    )

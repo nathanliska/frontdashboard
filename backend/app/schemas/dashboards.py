@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, field_validator, model_validator
 
 from app.schemas.common import PatchModel
 from app.schemas.lists import ListResponse
@@ -57,6 +57,7 @@ class _WidgetResponseBase(BaseModel):
     widget_version: int
     resource_type: str | None
     resource_id: uuid.UUID | None
+    list_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -280,6 +281,13 @@ class ListWidgetCreate(_WidgetCreateBase):
     config: ListWidgetCreateConfig = Field(default_factory=ListWidgetCreateConfig)
     resource_type: Literal["list"] | None = None
     resource_id: uuid.UUID | None = None
+    list_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _one_list(self) -> Self:
+        if self.list_id and self.resource_id and self.list_id != self.resource_id:
+            raise ValueError("list_id and resource_id name different lists")
+        return self
 
 
 # Mirrors the response union: `widget_type` discriminates, and each variant carries its own typed

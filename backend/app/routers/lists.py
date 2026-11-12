@@ -49,6 +49,7 @@ async def _get_list_access(
     db: AsyncSession,
     *,
     lock_for_update: bool = False,
+    lock_dashboard: bool = False,
 ) -> tuple[List, Dashboard, list[ResourceShare], EffectiveRole]:
     list_query = select(List).where(List.id == list_id, List.deleted_at.is_(None))
     if lock_for_update:
@@ -59,7 +60,7 @@ async def _get_list_access(
     if lst is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="List not found")
 
-    dashboard, shares, role = await load_dashboard_access(lst.dashboard_id, user, db)
+    dashboard, shares, role = await load_dashboard_access(lst.dashboard_id, user, db, lock_for_update=lock_dashboard)
     return lst, dashboard, shares, role
 
 
@@ -452,7 +453,9 @@ async def delete_list(
     Recoverable via POST /{list_id}/restore until the reaper purges it past
     `trash_retention_days` — the same contract dashboards have (ADR-007).
     """
-    lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db)
+    # The dashboard lock serializes this with add_widget, which holds it while binding; without it
+    # an add can commit a widget on this list after the unbind below has already looked.
+    lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db, lock_dashboard=True)
     permissions.assert_can_edit(role)
     await remove_resource_widgets(ResourceType.list.value, lst.id, db)
 
