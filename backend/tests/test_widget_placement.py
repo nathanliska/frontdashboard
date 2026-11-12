@@ -7,8 +7,8 @@ inventing one past the last row would put a widget where nobody can reach it (AD
 
 import pytest
 
-from app.routers.dashboards import _first_free_slot, _fit_widget
 from app.schemas.dashboards import GRID_COLUMNS, GRID_ROWS
+from app.services.dashboard_widgets import first_free_slot, fit_widget
 
 
 def _item(x: int, y: int, w: int, h: int, name: str = "w") -> dict[str, int | str]:
@@ -16,19 +16,19 @@ def _item(x: int, y: int, w: int, h: int, name: str = "w") -> dict[str, int | st
 
 
 def test_first_widget_takes_the_origin() -> None:
-    assert _first_free_slot([], 8, 8) == (0, 0)
+    assert first_free_slot([], 8, 8) == (0, 0)
 
 
 def test_second_widget_lands_beside_the_first_rather_than_below_it() -> None:
     # The whole point of the change: a board fills sideways while there is room, so a dashboard of
     # many widgets is a grid rather than one tall column.
-    assert _first_free_slot([_item(0, 0, 8, 8)], 8, 8) == (8, 0)
+    assert first_free_slot([_item(0, 0, 8, 8)], 8, 8) == (8, 0)
 
 
 def test_a_row_wraps_once_the_grid_runs_out_of_columns() -> None:
     full_row = [_item(x, 0, 8, 8, f"w{x}") for x in range(0, GRID_COLUMNS, 8)]
 
-    assert _first_free_slot(full_row, 8, 8) == (0, 8)
+    assert first_free_slot(full_row, 8, 8) == (0, 8)
 
 
 def test_a_gap_left_by_a_removed_widget_is_reused() -> None:
@@ -36,7 +36,7 @@ def test_a_gap_left_by_a_removed_widget_is_reused() -> None:
     # found — otherwise the scan is just "below everything" wearing a costume.
     around_a_hole = [_item(0, 0, 8, 8, "a"), _item(16, 0, 8, 8, "c"), _item(0, 8, 24, 4, "d")]
 
-    assert _first_free_slot(around_a_hole, 8, 8) == (8, 0)
+    assert first_free_slot(around_a_hole, 8, 8) == (8, 0)
 
 
 def test_a_widget_too_wide_for_the_gap_skips_it() -> None:
@@ -44,7 +44,7 @@ def test_a_widget_too_wide_for_the_gap_skips_it() -> None:
     # nothing downstream re-checks the server's own placement.
     around_a_hole = [_item(0, 0, 8, 8, "a"), _item(16, 0, 8, 8, "c")]
 
-    assert _first_free_slot(around_a_hole, 16, 8) == (0, 8)
+    assert first_free_slot(around_a_hole, 16, 8) == (0, 8)
 
 
 def test_the_last_row_is_usable() -> None:
@@ -52,7 +52,7 @@ def test_the_last_row_is_usable() -> None:
     # differ on is the only one this rule ever excludes wrongly.
     filled_above = [_item(0, 0, GRID_COLUMNS, GRID_ROWS - 1)]
 
-    assert _first_free_slot(filled_above, GRID_COLUMNS, 1) == (0, GRID_ROWS - 1)
+    assert first_free_slot(filled_above, GRID_COLUMNS, 1) == (0, GRID_ROWS - 1)
 
 
 @pytest.mark.parametrize("w", range(1, GRID_COLUMNS + 1))
@@ -61,7 +61,7 @@ def test_placement_never_runs_past_an_edge(w: int) -> None:
     # poison the row for every later PUT /layout the client attempts.
     packed = [_item(0, 0, GRID_COLUMNS, 4)]
 
-    slot = _first_free_slot(packed, w, 4)
+    slot = first_free_slot(packed, w, 4)
 
     assert slot is not None
     x, y = slot
@@ -74,17 +74,17 @@ def test_a_full_board_reports_no_room_rather_than_inventing_one() -> None:
     # place the widget where no gesture could ever reach it — worse than refusing the add.
     packed = [_item(x, y, 8, 8, f"w{x}-{y}") for y in range(0, GRID_ROWS, 8) for x in range(0, GRID_COLUMNS, 8)]
 
-    assert _first_free_slot(packed, 8, 8) is None
+    assert first_free_slot(packed, 8, 8) is None
 
 
 def test_a_widget_taller_than_the_grid_never_fits() -> None:
-    assert _first_free_slot([], 1, GRID_ROWS + 1) is None
+    assert first_free_slot([], 1, GRID_ROWS + 1) is None
 
 
 def test_items_missing_coordinates_are_treated_as_occupying_space() -> None:
     # Reads are deliberately unvalidated, so a historical row can be missing a key. Defaulting it
     # out of the way would place a new widget on top of one that is really there.
-    assert _first_free_slot([{"i": "legacy"}], 1, 1) == (1, 0)
+    assert first_free_slot([{"i": "legacy"}], 1, 1) == (1, 0)
 
 
 # ── Fitting a widget the gap is too small for ────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ def test_items_missing_coordinates_are_treated_as_occupying_space() -> None:
 
 def test_a_gap_that_fits_the_default_leaves_it_alone() -> None:
     # The common path, and the one that must not pay for the rest: an untouched default size back.
-    assert _fit_widget([], 8, 9) == (0, 0, 8, 9)
+    assert fit_widget([], 8, 9) == (0, 0, 8, 9)
 
 
 @pytest.mark.parametrize(("gap_w", "gap_h"), [(7, 8), (8, 8), (7, 9), (4, 5), (4, 4)])
@@ -104,7 +104,7 @@ def test_a_gap_smaller_than_the_default_shrinks_the_widget_instead_of_refusing(g
         _item(GRID_COLUMNS - gap_w, gap_h, gap_w, GRID_ROWS - gap_h, "below"),
     ]
 
-    placement = _fit_widget(layout, 8, 9)
+    placement = fit_widget(layout, 8, 9)
 
     assert placement is not None
     x, y, w, h = placement
@@ -115,13 +115,13 @@ def test_a_gap_smaller_than_the_default_shrinks_the_widget_instead_of_refusing(g
 
 def test_a_board_with_only_an_unusable_sliver_is_refused() -> None:
     packed = [_item(0, 0, GRID_COLUMNS, GRID_ROWS, "everything")]
-    assert _fit_widget(packed, 8, 9) is None
+    assert fit_widget(packed, 8, 9) is None
 
     one_cell_short = [
         _item(0, 0, GRID_COLUMNS - 1, GRID_ROWS, "most"),
         _item(GRID_COLUMNS - 1, 1, 1, GRID_ROWS - 1, "rest"),
     ]
-    assert _fit_widget(one_cell_short, 8, 9) is None
+    assert fit_widget(one_cell_short, 8, 9) is None
 
 
 @pytest.mark.parametrize(("gap_w", "gap_h", "fits"), [(8, 8, True), (7, 8, False), (8, 7, False)])
@@ -130,4 +130,4 @@ def test_calendar_placement_honors_both_minimum_edges(gap_w: int, gap_h: int, fi
         _item(0, 0, GRID_COLUMNS - gap_w, GRID_ROWS, "left"),
         _item(GRID_COLUMNS - gap_w, gap_h, gap_w, GRID_ROWS - gap_h, "below"),
     ]
-    assert (_fit_widget(layout, 12, 8, minimum=(8, 8)) is not None) is fits
+    assert (fit_widget(layout, 12, 8, minimum=(8, 8)) is not None) is fits

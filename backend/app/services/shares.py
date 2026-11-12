@@ -13,8 +13,10 @@ from sqlalchemy import false, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.activity import EventType
 from app.models.dashboard import Dashboard
-from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType
+from app.models.notification import Notification
+from app.models.share import EffectiveRole, PrincipalType, ResourceShare, ResourceType, as_share_role
 from app.models.user import User
 from app.schemas.shares import (
     DashboardMemberResponse,
@@ -24,6 +26,7 @@ from app.schemas.shares import (
     ShareResponse,
 )
 from app.services import permissions
+from app.services.notifications import stage_notification
 from app.sse.choreography import Fanout
 
 
@@ -240,3 +243,70 @@ async def resolve_share_responses(
             )
         )
     return result
+
+
+def stage_dashboard_share_notification(
+    db: AsyncSession,
+    *,
+    dashboard: Dashboard,
+    share: ResourceShare,
+    current_user: User,
+    action: str,
+) -> tuple[uuid.UUID, Notification] | None:
+    if share.principal_type != PrincipalType.user or share.principal_id == current_user.id:
+        return None
+
+    if action == "updated":
+        event_type = EventType.dashboard_share_updated
+        title = "Dashboard access updated"
+        body = f'{current_user.display_name} changed your access to "{dashboard.name}" to {as_share_role(share.role).value}.'
+    else:
+        event_type = EventType.dashboard_share_removed
+        title = "Dashboard access removed"
+        body = f'{current_user.display_name} removed your access to "{dashboard.name}".'
+    notification = stage_notification(
+        db,
+        user_id=share.principal_id,
+        type=event_type.value,
+        title=title,
+        body=body,
+        reference_type="dashboard",
+        reference_id=dashboard.id,
+    )
+    return share.principal_id, notification
+
+
+def collect_dashboard_access_notifications(
+    db: AsyncSession,
+    *,
+    dashboard: Dashboard,
+    shares: list[ResourceShare],
+    current_user: User,
+    event_type: EventType,
+    title: str,
+    body: str,
+) -> list[tuple[uuid.UUID, Notification]]:
+    """Stage one notification per shared user for a change to whether the dashboard exists at all.
+
+    The SSE frame reaches only whoever is connected; the stored row is what everyone else sees on
+    their next visit, which is the whole point when the dashboard has just stopped being reachable.
+    """
+    notifications: list[tuple[uuid.UUID, Notification]] = []
+    for share in shares:
+        if share.principal_type != PrincipalType.user or share.principal_id == current_user.id:
+            continue
+        notifications.append(
+            (
+                share.principal_id,
+                stage_notification(
+                    db,
+                    user_id=share.principal_id,
+                    type=event_type.value,
+                    title=title,
+                    body=body,
+                    reference_type="dashboard",
+                    reference_id=dashboard.id,
+                ),
+            )
+        )
+    return notifications
