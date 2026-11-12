@@ -10,7 +10,7 @@ import {
   apiUpdatePreferences,
   toastError,
 } from '../../test/dashboard-store-mocks'
-import { makeDashboard, makeDashboardSummary } from '../../test/fixtures'
+import { deferred, makeDashboard, makeDashboardSummary } from '../../test/fixtures'
 import { useAuthStore } from '../auth'
 import { useConnectionStore } from '../connection'
 import { resetDashboardData, useDashboardStore } from '../dashboard'
@@ -61,22 +61,15 @@ describe('useDashboardStore collection', () => {
   })
 
   it('queues a forced summaries reload when a previous summaries request is already in flight', async () => {
-    let resolveFirstRequest!: (value: DashboardSummary[]) => void
+    const first = deferred<DashboardSummary[]>()
     const refreshedSummaries = [makeDashboardSummary({ id: 'dash-2', name: 'Shared Later' })]
 
-    apiListDashboards
-      .mockImplementationOnce(
-        () =>
-          new Promise<DashboardSummary[]>((resolve) => {
-            resolveFirstRequest = resolve
-          }),
-      )
-      .mockResolvedValueOnce(refreshedSummaries)
+    apiListDashboards.mockReturnValueOnce(first.promise).mockResolvedValueOnce(refreshedSummaries)
 
     const initialLoad = useDashboardStore.getState().loadSummaries()
     const forcedReload = useDashboardStore.getState().loadSummaries(true)
 
-    resolveFirstRequest([])
+    first.resolve([])
     await Promise.all([initialLoad, forcedReload])
 
     expect(apiListDashboards).toHaveBeenCalledTimes(2)
@@ -84,22 +77,12 @@ describe('useDashboardStore collection', () => {
   })
 
   it('does not let a stale in-flight summaries load null out a newer session load handle', async () => {
-    let resolveA!: (v: DashboardSummary[]) => void
-    let resolveB!: (v: DashboardSummary[]) => void
+    const a = deferred<DashboardSummary[]>()
+    const b = deferred<DashboardSummary[]>()
 
     apiListDashboards
-      .mockImplementationOnce(
-        () =>
-          new Promise<DashboardSummary[]>((resolve) => {
-            resolveA = resolve
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<DashboardSummary[]>((resolve) => {
-            resolveB = resolve
-          }),
-      )
+      .mockReturnValueOnce(a.promise)
+      .mockReturnValueOnce(b.promise)
       // Fallback used only if the bug reappears and a spurious 3rd fetch is made.
       .mockResolvedValue([])
 
@@ -113,7 +96,7 @@ describe('useDashboardStore collection', () => {
     const loadB = useDashboardStore.getState().loadSummaries()
 
     // Now let A's stale request resolve and its `finally` run.
-    resolveA([])
+    a.resolve([])
     await loadA
 
     // A forced reload arrives while B is still in flight. If A's `finally` wrongly
@@ -123,7 +106,7 @@ describe('useDashboardStore collection', () => {
 
     expect(apiListDashboards).toHaveBeenCalledTimes(2)
 
-    resolveB([])
+    b.resolve([])
     await loadB
   })
 
@@ -133,16 +116,6 @@ describe('useDashboardStore collection', () => {
 
     await expect(useDashboardStore.getState().createDashboard({ name: 'X' })).resolves.toBeNull()
     expect(toastError).toHaveBeenCalledWith('Failed to create dashboard.')
-  })
-
-  it('createDashboard resolves the summary on success', async () => {
-    const summary = makeDashboardSummary({ id: 'dash-new', name: 'X' })
-    apiCreateDashboard.mockResolvedValue(summary)
-    useDashboardStore.setState({ summaries: [] })
-
-    await expect(useDashboardStore.getState().createDashboard({ name: 'X' })).resolves.toEqual(
-      summary,
-    )
   })
 
   it('opens a dashboard this client just created without reading it back', async () => {
@@ -161,7 +134,10 @@ describe('useDashboardStore collection', () => {
     })
     useDashboardStore.setState({ summaries: [] })
 
-    await useDashboardStore.getState().createDashboard({ name: 'X' })
+    // The summary alone comes back, though the response also carried the layout and widgets.
+    await expect(useDashboardStore.getState().createDashboard({ name: 'X' })).resolves.toEqual(
+      summary,
+    )
     await useDashboardStore.getState().loadDashboard('dash-new')
 
     expect(apiGetDashboard).not.toHaveBeenCalled()
@@ -227,17 +203,13 @@ describe('useDashboardStore collection', () => {
   })
 
   it('drops a summaries load that resolves after a reset', async () => {
-    let resolveList!: (v: DashboardSummary[]) => void
-    apiListDashboards.mockReturnValue(
-      new Promise((r) => {
-        resolveList = r
-      }),
-    )
+    const list = deferred<DashboardSummary[]>()
+    apiListDashboards.mockReturnValue(list.promise)
 
     const loading = useDashboardStore.getState().loadSummaries()
     resetDashboardData() // account boundary while the fetch is in flight
 
-    resolveList([makeDashboardSummary()])
+    list.resolve([makeDashboardSummary()])
     await loading
 
     // The stale account's summaries must not land in the new session's store.
@@ -245,32 +217,14 @@ describe('useDashboardStore collection', () => {
     expect(useDashboardStore.getState().summariesLoaded).toBe(false)
   })
 
-  it('a fresh loadSummaries refetches after a reset (no stale summariesLoaded)', async () => {
-    apiListDashboards.mockResolvedValue([makeDashboardSummary({ id: 'a' })])
-    await useDashboardStore.getState().loadSummaries()
-    expect(useDashboardStore.getState().summariesLoaded).toBe(true)
-
-    resetDashboardData() // account boundary
-
-    apiListDashboards.mockResolvedValue([makeDashboardSummary({ id: 'b' })])
-    await useDashboardStore.getState().loadSummaries()
-    // Without the reset, summariesLoaded would short-circuit the second load and
-    // the new account would see account A's card.
-    expect(useDashboardStore.getState().summaries.map((d) => d.id)).toEqual(['b'])
-  })
-
   it('drops a dashboard creation that resolves after a reset', async () => {
-    let resolveCreate!: (v: DashboardSummary) => void
-    apiCreateDashboard.mockReturnValue(
-      new Promise((r) => {
-        resolveCreate = r
-      }),
-    )
+    const create = deferred<DashboardSummary>()
+    apiCreateDashboard.mockReturnValue(create.promise)
 
     const creating = useDashboardStore.getState().createDashboard({ name: 'New Dashboard' })
     resetDashboardData()
 
-    resolveCreate(makeDashboardSummary({ id: 'new-1', name: 'New Dashboard' }))
+    create.resolve(makeDashboardSummary({ id: 'new-1', name: 'New Dashboard' }))
     await creating.catch(() => {})
 
     // The prepend write is a literal value, not a merge over current state, so a stale

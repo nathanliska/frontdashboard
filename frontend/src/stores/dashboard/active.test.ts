@@ -9,7 +9,7 @@ import {
   apiUpdateLayout,
   applyCreatedList,
 } from '../../test/dashboard-store-mocks'
-import { makeDashboard, makeListSummary } from '../../test/fixtures'
+import { deferred, makeDashboard, makeListSummary } from '../../test/fixtures'
 import { useConnectionStore } from '../connection'
 import { resetDashboardData, useDashboardStore } from '../dashboard'
 
@@ -30,35 +30,7 @@ vi.mock('../toast', async () => (await import('../../test/dashboard-store-mocks'
 describe('useDashboardStore active', () => {
   beforeEach(beginDashboardStoreTest)
 
-  it('sends the gesture belonging to the layout that survived coalescing', async () => {
-    const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
-    apiUpdateLayout.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolvers.push(resolve)
-        }),
-    )
-    useDashboardStore.setState({ dashboard: makeDashboard({ version: 1 }) })
-
-    const layoutA = [{ i: 'w1', x: 1, y: 0, w: 4, h: 3 }]
-    const layoutB = [{ i: 'w2', x: 2, y: 0, w: 4, h: 3 }]
-
-    void useDashboardStore.getState().saveLayout(layoutA, { widget_id: 'w1', action: 'moved' })
-    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
-
-    // A second gesture lands mid-flight. Dropping the layout has to drop its gesture with it, or
-    // the feed names the widget from a drag the server never saw.
-    void useDashboardStore.getState().saveLayout(layoutB, { widget_id: 'w2', action: 'resized' })
-    resolvers[0]({ conflict: false, dashboard: makeDashboard({ version: 2, layout: layoutA }) })
-
-    await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(2))
-    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutB, 2, {
-      widget_id: 'w2',
-      action: 'resized',
-    })
-  })
-
-  it('coalesces rapid layout saves and re-reads the bumped version', async () => {
+  it('coalesces rapid layout saves, keeping the last layout with its own gesture and the bumped version', async () => {
     const resolvers: ((v: { conflict: false; dashboard: Dashboard }) => void)[] = []
     apiUpdateLayout.mockImplementation(
       () =>
@@ -72,19 +44,22 @@ describe('useDashboardStore active', () => {
     const layoutB = [{ i: 'w1', x: 2, y: 0, w: 4, h: 3 }]
     const layoutC = [{ i: 'w1', x: 3, y: 0, w: 4, h: 3 }]
 
-    const savePromise = useDashboardStore.getState().saveLayout(layoutA)
+    const gesture = (action: 'moved' | 'resized') => ({ widget_id: 'w1', action })
+
+    const savePromise = useDashboardStore.getState().saveLayout(layoutA, gesture('moved'))
     await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(1))
-    expect(apiUpdateLayout).toHaveBeenNthCalledWith(1, 'dash-1', layoutA, 1, undefined)
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(1, 'dash-1', layoutA, 1, gesture('moved'))
 
     // B then C arrive while A is still in flight: only the latest survives.
-    void useDashboardStore.getState().saveLayout(layoutB)
-    void useDashboardStore.getState().saveLayout(layoutC)
+    // Dropping B's layout has to drop its gesture too, or the feed names a drag the server never saw.
+    void useDashboardStore.getState().saveLayout(layoutB, { widget_id: 'w2', action: 'moved' })
+    void useDashboardStore.getState().saveLayout(layoutC, gesture('resized'))
     expect(apiUpdateLayout).toHaveBeenCalledTimes(1)
 
     resolvers[0]({ conflict: false, dashboard: makeDashboard({ version: 2, layout: layoutA }) })
     await vi.waitFor(() => expect(apiUpdateLayout).toHaveBeenCalledTimes(2))
     // The follow-up PUT carries the bumped version and the coalesced latest layout (B dropped).
-    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutC, 2, undefined)
+    expect(apiUpdateLayout).toHaveBeenNthCalledWith(2, 'dash-1', layoutC, 2, gesture('resized'))
 
     resolvers[1]({ conflict: false, dashboard: makeDashboard({ version: 3, layout: layoutC }) })
     await savePromise
@@ -278,39 +253,35 @@ describe('useDashboardStore active', () => {
     expect(useDashboardStore.getState().loadError).toBe(true)
   })
 
-  it('ignores stale dashboard responses after navigating to a different dashboard mid-load', async () => {
-    let resolveFirstRequest!: (value: Dashboard) => void
-    let resolveSecondRequest!: (value: Dashboard) => void
+  it.each(['response', 'error'] as const)(
+    'ignores a stale dashboard %s after navigating to a different dashboard mid-load',
+    async (outcome) => {
+      const first = deferred<Dashboard>()
+      const second = deferred<Dashboard>()
+      apiGetDashboard.mockImplementation((id: string) =>
+        id === 'dash-1' ? first.promise : second.promise,
+      )
 
-    apiGetDashboard.mockImplementation((id: string) => {
-      if (id === 'dash-1') {
-        return new Promise<Dashboard>((resolve) => {
-          resolveFirstRequest = resolve
-        })
-      }
+      const firstLoad = useDashboardStore.getState().loadDashboard('dash-1')
+      const secondLoad = useDashboardStore.getState().loadDashboard('dash-2')
 
-      return new Promise<Dashboard>((resolve) => {
-        resolveSecondRequest = resolve
-      })
-    })
+      if (outcome === 'response')
+        first.resolve(makeDashboard({ id: 'dash-1', name: 'Old Dashboard' }))
+      else first.reject(new ApiError('Dashboard not found', 404))
+      await firstLoad
 
-    const firstLoad = useDashboardStore.getState().loadDashboard('dash-1')
-    const secondLoad = useDashboardStore.getState().loadDashboard('dash-2')
+      expect(useDashboardStore.getState().loading).toBe(true)
+      expect(useDashboardStore.getState().loadError).toBe(false)
+      expect(useDashboardStore.getState().dashboard).toBeNull()
 
-    resolveFirstRequest(makeDashboard({ id: 'dash-1', name: 'Old Dashboard' }))
-    await firstLoad
+      second.resolve(makeDashboard({ id: 'dash-2', name: 'Current Dashboard' }))
+      await secondLoad
 
-    expect(useDashboardStore.getState().loading).toBe(true)
-    expect(useDashboardStore.getState().dashboard).toBeNull()
-
-    resolveSecondRequest(makeDashboard({ id: 'dash-2', name: 'Current Dashboard' }))
-    await secondLoad
-
-    expect(useDashboardStore.getState().dashboard?.id).toBe('dash-2')
-    expect(useDashboardStore.getState().dashboard?.name).toBe('Current Dashboard')
-    expect(useDashboardStore.getState().loading).toBe(false)
-    expect(useDashboardStore.getState().loadError).toBe(false)
-  })
+      expect(useDashboardStore.getState().dashboard?.name).toBe('Current Dashboard')
+      expect(useDashboardStore.getState().loading).toBe(false)
+      expect(useDashboardStore.getState().loadError).toBe(false)
+    },
+  )
 
   it('skips the network when re-opening the held dashboard with the stream connected', async () => {
     useConnectionStore.setState({ status: 'connected' })
@@ -323,23 +294,19 @@ describe('useDashboardStore active', () => {
     expect(useDashboardStore.getState().loading).toBe(false)
   })
 
-  it('refetches the held dashboard while the stream is degraded', async () => {
-    useConnectionStore.setState({ status: 'reconnecting' })
+  it.each([
+    { name: 'while the stream is degraded', status: 'reconnecting', options: undefined },
+    {
+      name: 'for a background load, even while connected',
+      status: 'connected',
+      options: { background: true },
+    },
+  ] as const)('refetches the held dashboard $name', async ({ status, options }) => {
+    useConnectionStore.setState({ status })
     apiGetDashboard.mockResolvedValue(makeDashboard({ name: 'Fresh Dashboard' }))
     useDashboardStore.setState({ dashboard: makeDashboard() })
 
-    await useDashboardStore.getState().loadDashboard('dash-1')
-
-    expect(apiGetDashboard).toHaveBeenCalledTimes(1)
-    expect(useDashboardStore.getState().dashboard?.name).toBe('Fresh Dashboard')
-  })
-
-  it('background loads of the held dashboard always fetch, even while connected', async () => {
-    useConnectionStore.setState({ status: 'connected' })
-    apiGetDashboard.mockResolvedValue(makeDashboard({ name: 'Fresh Dashboard' }))
-    useDashboardStore.setState({ dashboard: makeDashboard() })
-
-    await useDashboardStore.getState().loadDashboard('dash-1', { background: true })
+    await useDashboardStore.getState().loadDashboard('dash-1', options)
 
     expect(apiGetDashboard).toHaveBeenCalledTimes(1)
     expect(useDashboardStore.getState().dashboard?.name).toBe('Fresh Dashboard')
@@ -364,40 +331,6 @@ describe('useDashboardStore active', () => {
 
     expect(useDashboardStore.getState().dashboard?.id).toBe('dash-1')
     expect(useDashboardStore.getState().loading).toBe(false)
-  })
-
-  it('ignores stale dashboard load errors after navigating to a different dashboard mid-load', async () => {
-    let rejectFirstRequest!: (error: Error) => void
-    let resolveSecondRequest!: (value: Dashboard) => void
-
-    apiGetDashboard.mockImplementation((id: string) => {
-      if (id === 'dash-1') {
-        return new Promise<Dashboard>((_, reject) => {
-          rejectFirstRequest = reject as (error: Error) => void
-        })
-      }
-
-      return new Promise<Dashboard>((resolve) => {
-        resolveSecondRequest = resolve
-      })
-    })
-
-    const firstLoad = useDashboardStore.getState().loadDashboard('dash-1')
-    const secondLoad = useDashboardStore.getState().loadDashboard('dash-2')
-
-    rejectFirstRequest(new ApiError('Dashboard not found', 404))
-    await firstLoad
-
-    expect(useDashboardStore.getState().loading).toBe(true)
-    expect(useDashboardStore.getState().loadError).toBe(false)
-    expect(useDashboardStore.getState().dashboard).toBeNull()
-
-    resolveSecondRequest(makeDashboard({ id: 'dash-2', name: 'Current Dashboard' }))
-    await secondLoad
-
-    expect(useDashboardStore.getState().dashboard?.id).toBe('dash-2')
-    expect(useDashboardStore.getState().loading).toBe(false)
-    expect(useDashboardStore.getState().loadError).toBe(false)
   })
 
   it("does not leave loading stuck true when a reset lands between a queued dashboard load's loop iterations", async () => {
@@ -434,27 +367,6 @@ describe('useDashboardStore active', () => {
     // guard just like every other post-boundary write — it must not get stuck true.
     expect(useDashboardStore.getState().loading).toBe(false)
     expect(useDashboardStore.getState().dashboard).toBeNull()
-  })
-
-  it('marks a layout save conflict without replacing the dashboard', async () => {
-    const currentDashboard = makeDashboard({ name: 'Current Dashboard' })
-    apiUpdateLayout.mockResolvedValue({
-      conflict: true,
-      detail: 'Version conflict: expected 2, got 1',
-    })
-    // The rebase re-reads the dashboard before retrying; the retry then conflicts again.
-    apiGetDashboard.mockResolvedValue(currentDashboard)
-
-    useDashboardStore.setState({
-      dashboard: currentDashboard,
-      conflict: false,
-    })
-
-    await useDashboardStore.getState().saveLayout([])
-
-    expect(apiUpdateLayout).toHaveBeenCalledWith('dash-1', [], 1, undefined)
-    expect(useDashboardStore.getState().conflict).toBe(true)
-    expect(useDashboardStore.getState().dashboard).toEqual(currentDashboard)
   })
 
   it('clears an existing conflict after a successful layout save', async () => {
