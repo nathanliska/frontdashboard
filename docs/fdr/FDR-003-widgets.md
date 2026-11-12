@@ -55,8 +55,9 @@ the resource fetch/SSE wiring.
 fresh list.
 **Tradeoff:** Two code paths (bind vs. create) in the add flow.
 **Binding:** The widget row names its list in `list_id`, a foreign key to `lists`, so the database
-refuses a widget whose list does not exist. It writes the generic `resource_type`/`resource_id`
-pair alongside, which is what the client reads, and a create request may name the list by either.
+refuses a widget whose list does not exist. The client reads and sends `list_id`. The server still
+writes and accepts the generic `resource_type`/`resource_id` pair alongside it, for a tab loaded
+before the client moved over.
 A second bound type would get its own key column rather than share a generic pair that cannot
 carry a foreign key.
 

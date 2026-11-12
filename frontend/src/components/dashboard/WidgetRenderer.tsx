@@ -1,4 +1,5 @@
 import type { DashboardWidget } from '../../api/dashboards'
+import { boundListId } from '../../utils/dashboard/widgetBinding'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { AgendaWidget } from './widgets/AgendaWidget'
 import { CalendarWidget } from './widgets/CalendarWidget'
@@ -37,9 +38,11 @@ function WidgetBody({
   isSharedDashboard: boolean
 }) {
   switch (widget.widget_type) {
-    case 'list':
-      if (!widget.resource_id) return <BrokenWidget message="No list bound." />
-      return <ListWidget listId={widget.resource_id} widgetId={widget.id} config={widget.config} />
+    case 'list': {
+      const listId = boundListId(widget)
+      if (!listId) return <BrokenWidget message="No list bound." />
+      return <ListWidget listId={listId} widgetId={widget.id} config={widget.config} />
+    }
 
     case 'clock':
       return <ClockWidget config={widget.config} isSharedDashboard={isSharedDashboard} />

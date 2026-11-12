@@ -8,6 +8,7 @@ import { PAGE_HEADER_RESERVE } from '../components/layout/pageHeaderReserve'
 import { LoadingBlock } from '../components/ui/Spinner'
 import { ROUTES } from '../routes'
 import { useDashboardStore } from '../stores/dashboard'
+import { boundListId } from '../utils/dashboard/widgetBinding'
 import { cn } from '../utils/shared/cn'
 
 const APP_TITLE = 'FrontDashboard'
@@ -152,8 +153,8 @@ export function DashboardEditorPage() {
         <AddWidgetModal
           dashboardId={dashboard.id}
           existingListIds={dashboard.widgets
-            .filter((widget) => widget.resource_type === 'list' && widget.resource_id)
-            .map((widget) => widget.resource_id as string)}
+            .map(boundListId)
+            .filter((listId): listId is string => listId !== null)}
           isSharedDashboard={dashboard.is_shared}
           dashboardName={dashboard.name}
           onAdd={async (params) => {

@@ -1,6 +1,7 @@
 import { ExternalLink, X } from 'lucide-react'
 import { Link } from 'react-router'
 import type { DashboardWidget, WidgetType } from '../../api/dashboards'
+import { boundListId } from '../../utils/dashboard/widgetBinding'
 import { capitalize, cn } from '../../utils/shared/cn'
 import { WidgetRenderer } from './WidgetRenderer'
 
@@ -37,10 +38,8 @@ export function WidgetContainer({
   onRemove?: () => void
   children?: React.ReactNode
 }) {
-  const listUrl =
-    widget.widget_type === 'list' && widget.resource_id
-      ? `/lists/${widget.resource_id}?dashboard_id=${dashboardId}`
-      : null
+  const listId = boundListId(widget)
+  const listUrl = listId ? `/lists/${listId}?dashboard_id=${dashboardId}` : null
 
   return (
     <div className="relative flex flex-col h-full bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden group">
@@ -55,9 +54,7 @@ export function WidgetContainer({
           {widgetLabel(widget)}
         </span>
         <div className="flex items-center gap-2 shrink-0">
-          {(widget.widget_type === 'list' && widget.resource_id) ||
-          widget.widget_type === 'calendar' ||
-          widget.widget_type === 'agenda' ? (
+          {listId || widget.widget_type === 'calendar' || widget.widget_type === 'agenda' ? (
             <Link
               to={
                 widget.widget_type === 'calendar' || widget.widget_type === 'agenda'

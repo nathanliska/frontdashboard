@@ -34,7 +34,6 @@ export function AddWidgetListStep({
 
     await onAdd({
       widget_type: 'list',
-      resource_type: 'list',
       config: {
         name: name || 'Untitled List',
         list_type: listType,
@@ -68,8 +67,7 @@ export function AddWidgetListStep({
                 onClick={() =>
                   void onAdd({
                     widget_type: 'list',
-                    resource_type: 'list',
-                    resource_id: list.id,
+                    list_id: list.id,
                     config: {
                       list_name: list.name,
                       list_type: list.list_type,

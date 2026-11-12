@@ -9,6 +9,7 @@ import {
   isOwnDashboardEcho,
   patchWidgetConfig,
 } from '../../utils/dashboard/dashboardEvents'
+import { boundListId } from '../../utils/dashboard/widgetBinding'
 import { createDebouncedRefresh } from '../../utils/debounce'
 import type { DashboardGet, DashboardSet, DashboardState } from './state'
 
@@ -128,15 +129,11 @@ export function createEventsSlice(set: DashboardSet, get: DashboardGet): EventsS
 
         if (event.event_type === 'list.deleted') {
           const nextWidgets = state.dashboard.widgets.filter(
-            (widget) =>
-              !(widget.resource_type === 'list' && widget.resource_id === event.entity_id),
+            (widget) => boundListId(widget) !== event.entity_id,
           )
           const removedWidgetIds = new Set(
             state.dashboard.widgets
-              .filter(
-                (widget) =>
-                  widget.resource_type === 'list' && widget.resource_id === event.entity_id,
-              )
+              .filter((widget) => boundListId(widget) === event.entity_id)
               .map((widget) => widget.id),
           )
 
