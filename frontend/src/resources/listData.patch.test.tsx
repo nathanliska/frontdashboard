@@ -38,6 +38,7 @@ const {
 }))
 
 vi.mock('../api/lists', () => ({
+  retireListDetailRequests: vi.fn(),
   apiCreateItem,
   apiCreateList,
   apiDeleteItem,

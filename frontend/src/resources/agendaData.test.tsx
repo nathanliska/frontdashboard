@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CalendarOccurrence } from '../api/calendar'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
+import { retireListDetailRequests } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
+import { bumpSessionGeneration } from '../stores/sessionGeneration'
 import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
 import { handleAgendaResourceEvent, resetAgendaData, useAgendaItems } from './agendaData'
 import { handleCalendarResourceEvent } from './calendarData'
@@ -12,6 +14,8 @@ import {
   __seedListDetailForTests,
   handleListResourceEvent,
   updateListItem,
+  useListDetail,
+  useListSummaries,
 } from './listData'
 
 const { apiListOccurrences } = vi.hoisted(() => ({
@@ -45,6 +49,7 @@ vi.mock('../api/calendar', () => ({
 }))
 
 vi.mock('../api/lists', () => ({
+  retireListDetailRequests: vi.fn(),
   apiGetList,
   apiGetListDetails,
   apiGetLists,
@@ -274,9 +279,8 @@ describe('agendaData', () => {
     expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
   })
 
-  it('still refetches reminders when someone else checks an item', async () => {
-    // The suppression must be scoped to our *own* mutations. Another user's change carries no
-    // pending id of ours, so it is not derivable and the refetch stays.
+  it('still refetches reminders when a foreign check carries no values to patch from', async () => {
+    // An event with no `values` cannot be applied locally by either handler, so the read stays.
     apiListOccurrences.mockResolvedValue([makeOccurrence()])
     apiGetListDetails
       .mockResolvedValueOnce([makeListDetail()])
@@ -316,5 +320,257 @@ describe('agendaData', () => {
 
     expect(screen.getByText('Buy milk')).toBeInTheDocument()
     expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+  })
+
+  it("patches reminders from someone else's check instead of reloading every list", async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetListDetails.mockResolvedValueOnce([makeListDetail()])
+    __seedListDetailForTests('list-1', makeListDetail())
+
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+
+    act(() => {
+      const event = makeListItemCheckedEvent()
+      event.payload = { ...event.payload, values: { checked: true } }
+      handleListResourceEvent(event, { isOwnEcho: false })
+      handleAgendaResourceEvent(event, { isOwnEcho: false })
+    })
+
+    expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
+    // The count is the point: a reload renders the same agenda this patch does.
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the reminders again when the checked item belongs to a list this tab does not hold', async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetListDetails
+      .mockResolvedValueOnce([makeListDetail()])
+      .mockResolvedValueOnce([makeListDetail({ items: [makeListItem({ checked: true })] })])
+
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+
+    act(() => {
+      const event = makeListItemCheckedEvent()
+      event.payload = { ...event.payload, values: { checked: true } }
+      handleListResourceEvent(event, { isOwnEcho: false })
+      handleAgendaResourceEvent(event, { isOwnEcho: false })
+    })
+
+    await screen.findByText('Launch review')
+    expect(apiGetListDetails).toHaveBeenCalledTimes(2)
+  })
+
+  it("drops a reminder when someone else deletes its item, without holding the item's list", async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetListDetails.mockResolvedValueOnce([makeListDetail()])
+
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+
+    act(() => {
+      const event: SseEvent = { ...makeListItemCheckedEvent(), event_type: 'list.item.deleted' }
+      handleListResourceEvent(event, { isOwnEcho: false })
+      handleAgendaResourceEvent(event, { isOwnEcho: false })
+    })
+
+    expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the reminders again when a delete does not say which list it was in', async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetListDetails
+      .mockResolvedValueOnce([makeListDetail()])
+      .mockResolvedValueOnce([makeListDetail({ items: [] })])
+
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+
+    act(() => {
+      const event: SseEvent = { ...makeListItemCheckedEvent(), event_type: 'list.item.deleted' }
+      event.payload = { ...event.payload, list_id: undefined }
+      handleListResourceEvent(event, { isOwnEcho: false })
+      handleAgendaResourceEvent(event, { isOwnEcho: false })
+    })
+
+    await waitFor(() => expect(screen.queryByText('Buy milk')).not.toBeInTheDocument())
+    expect(apiGetListDetails).toHaveBeenCalledTimes(2)
+  })
+
+  it('reloads reminders whose first load was still in flight when an item was deleted', async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    let resolve: (lists: ListDetail[]) => void = () => {}
+    apiGetListDetails
+      .mockReturnValueOnce(new Promise<ListDetail[]>((r) => (resolve = r)))
+      .mockResolvedValueOnce([makeListDetail({ items: [] })])
+    const first = render(<AgendaProbe />)
+
+    act(() => {
+      const event: SseEvent = { ...makeListItemCheckedEvent(), event_type: 'list.item.deleted' }
+      handleListResourceEvent(event, { isOwnEcho: false })
+      handleAgendaResourceEvent(event, { isOwnEcho: false })
+    })
+    await act(async () => {
+      resolve([makeListDetail()])
+    })
+
+    // The response predates the delete, so the next look at the agenda must not trust it.
+    first.unmount()
+    render(<AgendaProbe />)
+    await waitFor(() => expect(apiGetListDetails).toHaveBeenCalledTimes(2))
+  })
+
+  it('reads the reminders again rather than rebuild one from a list it knows is out of date', async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetListDetails
+      .mockResolvedValueOnce([makeListDetail()])
+      .mockResolvedValueOnce([makeListDetail({ items: [makeListItem({ checked: true })] })])
+    __seedListDetailForTests('list-1', makeListDetail())
+
+    render(<AgendaProbe />)
+    await screen.findByText('Buy milk')
+
+    act(() => {
+      // Nothing is showing the list, so a resync only marks it stale.
+      handleListResourceEvent({ ...makeListItemCheckedEvent(), event_type: 'resync' })
+      const event = makeListItemCheckedEvent()
+      event.payload = { ...event.payload, values: { checked: true } }
+      handleListResourceEvent(event, { isOwnEcho: false })
+      handleAgendaResourceEvent(event, { isOwnEcho: false })
+    })
+
+    await screen.findByText('Launch review')
+    expect(apiGetListDetails).toHaveBeenCalledTimes(2)
+  })
+})
+
+function ListProbe({ listId }: { listId: string }) {
+  const { data } = useListDetail(listId, 'dash-1')
+  return <p>{`${listId}:${data ? data.name : 'pending'}`}</p>
+}
+
+function CountProbe({ listId }: { listId: string }) {
+  const { data } = useListDetail(listId)
+  return <p>{data ? `count:${data.item_count} items:${data.items.length}` : 'pending'}</p>
+}
+
+function PickerProbe() {
+  const { data } = useListSummaries('dash-1', { withItems: true })
+  return <p>{`picker:${data ? data.map((list) => list.name).join(',') : 'pending'}`}</p>
+}
+
+describe("a dashboard's lists load once", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetAgendaData()
+    __resetListDataForTests()
+    apiGetListDetails.mockResolvedValue([
+      makeListDetail({ id: 'list-1', name: 'Groceries' }),
+      makeListDetail({ id: 'list-2', name: 'Chores' }),
+    ])
+  })
+
+  it('answers a second list and the picker from the batch the first list loaded', async () => {
+    render(<ListProbe listId="list-1" />)
+    await screen.findByText('list-1:Groceries')
+
+    render(<ListProbe listId="list-2" />)
+    render(<PickerProbe />)
+    await screen.findByText('list-2:Chores')
+    await screen.findByText('picker:Groceries,Chores')
+
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+    expect(apiGetList).not.toHaveBeenCalled()
+    expect(apiGetLists).not.toHaveBeenCalled()
+  })
+
+  it('leaves a list bound from the picker with nothing to fetch', async () => {
+    render(<PickerProbe />)
+    await screen.findByText('picker:Groceries,Chores')
+
+    render(<ListProbe listId="list-2" />)
+    await screen.findByText('list-2:Chores')
+
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+    expect(apiGetList).not.toHaveBeenCalled()
+  })
+
+  it('refetches one held list on its own, not the whole dashboard', async () => {
+    apiGetList.mockResolvedValue(makeListDetail({ id: 'list-1', name: 'Renamed' }))
+    render(<ListProbe listId="list-1" />)
+    await screen.findByText('list-1:Groceries')
+
+    act(() => {
+      const event: SseEvent = {
+        ...makeListItemCheckedEvent(),
+        event_type: 'list.updated',
+        entity_type: 'list',
+        entity_id: 'list-1',
+      }
+      handleListResourceEvent(event, { isOwnEcho: false })
+    })
+
+    await screen.findByText('list-1:Renamed')
+    expect(apiGetList).toHaveBeenCalledTimes(1)
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a batch that outlives a sign-out from filling the next account', async () => {
+    let resolve: (lists: ListDetail[]) => void = () => {}
+    apiGetListDetails.mockReturnValueOnce(new Promise<ListDetail[]>((r) => (resolve = r)))
+    const first = render(<ListProbe listId="list-1" />)
+
+    first.unmount()
+    bumpSessionGeneration()
+    __resetListDataForTests()
+    await act(async () => {
+      resolve([makeListDetail({ id: 'list-1' }), makeListDetail({ id: 'list-2', name: 'Chores' })])
+    })
+
+    // Nothing was seeded, so the next account's first look at a list has to ask for it.
+    render(<ListProbe listId="list-2" />)
+    await screen.findByText('list-2:Chores')
+    expect(apiGetListDetails).toHaveBeenCalledTimes(2)
+  })
+
+  it('seeds nothing from a batch that a list event overtook', async () => {
+    let resolve: (lists: ListDetail[]) => void = () => {}
+    apiGetListDetails.mockReturnValueOnce(new Promise<ListDetail[]>((r) => (resolve = r)))
+    render(<ListProbe listId="list-1" />)
+
+    act(() => {
+      const event: SseEvent = {
+        ...makeListItemCheckedEvent(),
+        event_type: 'list.updated',
+        entity_type: 'list',
+        entity_id: 'list-2',
+      }
+      handleListResourceEvent(event, { isOwnEcho: false })
+    })
+    await act(async () => {
+      resolve([makeListDetail({ id: 'list-1' }), makeListDetail({ id: 'list-2', name: 'Stale' })])
+    })
+
+    // The batch predates the change to list-2, so list-2 has to be asked for again.
+    render(<ListProbe listId="list-2" />)
+    await screen.findByText('list-2:Chores')
+    expect(apiGetListDetails).toHaveBeenCalledTimes(2)
+    expect(retireListDetailRequests).toHaveBeenCalled()
+  })
+
+  it("takes someone else's deleted item out of a held list and its count", async () => {
+    __seedListDetailForTests('list-1', makeListDetail({ item_count: 1 }))
+    render(<CountProbe listId="list-1" />)
+    await screen.findByText('count:1 items:1')
+
+    act(() => {
+      const event: SseEvent = { ...makeListItemCheckedEvent(), event_type: 'list.item.deleted' }
+      handleListResourceEvent(event, { isOwnEcho: false })
+    })
+
+    await screen.findByText('count:0 items:0')
+    expect(apiGetList).not.toHaveBeenCalled()
   })
 })

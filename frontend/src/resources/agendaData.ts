@@ -162,8 +162,20 @@ export function renameAgendaListEntries(listId: string, listName: string): void 
  * Restoring a list returns a summary, not its items, so there is nothing to rebuild reminders
  * from. The sanctioned kind of refetch: the client provably lacks the data.
  */
-export function invalidateAgendaReminders(dashboardId: string): void {
-  agendaRemindersQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
+export function invalidateAgendaReminders(dashboardId: string | null): void {
+  agendaRemindersQuery.invalidateWhere((scope) => !dashboardId || scope.dashboardId === dashboardId)
+}
+
+/**
+ * Item events `handleListResourceEvent` applies from their payload, updating the agenda in the
+ * same step. Shared so the two handlers cannot disagree about who owns an event.
+ */
+export function listHandlerUpdatesAgenda(event: SseEvent): boolean {
+  if (!event.payload.list_id) return false
+  if (event.event_type === 'list.item.deleted') return true
+  const patchable =
+    event.event_type === 'list.item.checked' || event.event_type === 'list.item.updated'
+  return patchable && Boolean(event.payload.values)
 }
 
 /** Drop every agenda entry belonging to a list, for a list that was trashed or deleted. */
@@ -182,8 +194,8 @@ export function removeAgendaItemsForList(listId: string): void {
 
 async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
   const todayKey = dateKey(startOfDay(new Date()))
-  // One batch request rather than one per list, and it reads no client cache — which is what
-  // keeps handler order in useSSE from mattering.
+  // One batch request, shared in flight with the list widgets, and it reads no client cache —
+  // which is what keeps handler order in useSSE from mattering.
   const details = await apiGetListDetails(scope.dashboardId)
 
   return details.flatMap((detail) =>
@@ -280,9 +292,17 @@ export function handleAgendaResourceEvent(
   }
 
   // Calendar events reach the shared occurrence store through handleCalendarResourceEvent.
-  if (event.event_type.startsWith('list.')) {
-    invalidateMatching((predicate) => agendaRemindersQuery.invalidateWhere(predicate))
-  }
+  if (!event.event_type.startsWith('list.')) return
+  // The list handler patches loaded reminders itself. A load still in flight has nothing to
+  // patch, so it is marked stale: its response predates this event.
+  const patchedByListHandler = listHandlerUpdatesAgenda(event)
+  invalidateMatching((predicate) =>
+    agendaRemindersQuery.invalidateWhere(
+      (scope) =>
+        predicate(scope) &&
+        (!patchedByListHandler || agendaRemindersQuery.getState(scope).data === null),
+    ),
+  )
 }
 
 export function resetAgendaData(): void {

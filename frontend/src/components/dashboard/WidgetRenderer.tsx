@@ -41,7 +41,14 @@ function WidgetBody({
     case 'list': {
       const listId = boundListId(widget)
       if (!listId) return <BrokenWidget message="No list bound." />
-      return <ListWidget listId={listId} widgetId={widget.id} config={widget.config} />
+      return (
+        <ListWidget
+          listId={listId}
+          dashboardId={dashboardId}
+          widgetId={widget.id}
+          config={widget.config}
+        />
+      )
     }
 
     case 'clock':

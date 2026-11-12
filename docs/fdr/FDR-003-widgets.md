@@ -34,6 +34,14 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
   Its reminders come from `GET /lists/details` — one dashboard-scoped batch of every list with its
   items — rather than composing summaries plus one detail request per list client-side (#17, closed
   2026-07-26). The batch fetcher reads no client cache, so SSE handler order is not load-bearing.
+  Someone else's item check, edit or delete patches the reminders from the event; only a change
+  the event cannot describe, or one to a list this tab does not hold, reads the batch again.
+- **Lists load once per dashboard.** A list widget's first load, the agenda and the add-widget
+  list picker all share that one batch while it is in flight, and it fills the list caches without
+  overwriting an entry already loaded. So a dashboard opens on one list request however many list
+  widgets it has, and a list bound from a picker that loaded the batch needs no fetch. A batch that
+  a list event overtakes fills nothing and is not shared further, since it predates the change. A
+  refetch of one held list still asks for that list alone.
 - Widgets update live: a change to the underlying list or calendar patches the widget in place via
   SSE rather than requiring a manual refresh.
 
