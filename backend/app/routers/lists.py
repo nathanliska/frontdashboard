@@ -525,6 +525,9 @@ async def create_item(
     )
     db.add(item)
     await db.flush()
+    # Built before the commit so the event can carry the whole row: a client holding the list
+    # appends it instead of reading the list and the agenda again.
+    response = await _item_response(db, item)
     event_message = await build_event_message(
         db,
         event_type=EventType.list_item_created,
@@ -532,11 +535,16 @@ async def create_item(
         dashboard=dashboard,
         entity_type="list_item",
         entity_id=item.id,
-        payload={"text": item.text, "list_id": str(list_id), "list_name": lst.name},
+        payload={
+            "text": item.text,
+            "list_id": str(list_id),
+            "list_name": lst.name,
+            "item": response.model_dump(mode="json"),
+        },
         client_id=client_id,
     )
     await commit_and_broadcast(db, actor_id=current_user.id, fanouts=[dashboard_fanout(event_message, dashboard, shares)])
-    return await _item_response(db, item)
+    return response
 
 
 @router.patch("/{list_id}/items/{item_id}", response_model=ListItemResponse)

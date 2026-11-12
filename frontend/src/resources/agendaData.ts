@@ -173,6 +173,7 @@ export function invalidateAgendaReminders(dashboardId: string | null): void {
 export function listHandlerUpdatesAgenda(event: SseEvent): boolean {
   if (!event.payload.list_id) return false
   if (event.event_type === 'list.item.deleted') return true
+  if (event.event_type === 'list.item.created') return Boolean(event.payload.item)
   const patchable =
     event.event_type === 'list.item.checked' || event.event_type === 'list.item.updated'
   return patchable && Boolean(event.payload.values)

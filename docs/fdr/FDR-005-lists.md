@@ -48,8 +48,8 @@ master/detail UI and surfaced on dashboards via the list widget ([FDR-003](FDR-0
   **Undo**, which restores the same list rather than recreating one, so recovering a misclick does
   not require knowing the Trash view exists. There is no archive state and no
   archive-before-delete gate ([ADR-007](../adr/ADR-007-soft-delete-boundary.md)).
-- **Live updates.** Item checks/updates, deletes and reorders from another client patch in place
-  with no refetch.
+- **Live updates.** Item adds, checks/updates, deletes and reorders from another client patch in
+  place with no refetch.
 - **A list you can no longer open says so.** Opening a link to a list that has been trashed, or that
   the caller has lost access to, renders an explanation and a "Back to lists" button rather than
   silently redirecting to the index — a bounce with no message reads as the app ignoring the click.
@@ -78,8 +78,9 @@ that set; trashed lists carry no order.
 ### 3. Hot list events carry new state; cold events invalidate
 
 **Decision:** Reorder and item check/update SSE events carry the new state (id order, or changed
-field values) so clients patch in place. An item delete names its item, so a client holding the
-list removes it locally; a create carries only the text, so it invalidates and refetches.
+field values) so clients patch in place. An item delete names its item and a create
+carries the whole new row, so a client holding the list removes or appends it locally. A client
+that does not hold the list, or holds it stale, reads instead.
 **Why:** The frequent operations avoid a follow-up GET, while rarer operations keep the self-healing
 refetch. See ADR-006.
 **Tradeoff:** Hot-event payloads are part of the contract; a missing field silently forces the

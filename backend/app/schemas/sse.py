@@ -29,6 +29,7 @@ class ActivitySsePayload(BaseModel):
     item_ids: list[str] | None = None
     list_ids: list[str] | None = None
     values: dict[str, Any] | None = None
+    item: dict[str, Any] | None = None
     widget_id: str | None = None
     config: dict[str, Any] | None = None
 
