@@ -30,9 +30,6 @@ def _base_fields() -> dict:
     return {
         "id": uuid.uuid4(),
         "dashboard_id": uuid.uuid4(),
-        "widget_version": 1,
-        "resource_type": None,
-        "resource_id": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -126,11 +123,11 @@ def test_widget_create_rejects_unknown_type_at_the_schema() -> None:
         create_adapter.validate_python({"widget_type": "unknown"})
 
 
-def test_only_the_list_variant_can_carry_resource_fields() -> None:
-    """Only the list variant may carry resource fields — a schema fact, not a router check."""
+def test_only_the_list_variant_can_carry_a_list() -> None:
+    """Only the list variant may carry `list_id` — a schema fact, not a router check."""
     with pytest.raises(ValidationError):
-        create_adapter.validate_python({"widget_type": "clock", "resource_id": str(uuid.uuid4())})
-    bound = create_adapter.validate_python({"widget_type": "list", "resource_type": "list", "resource_id": str(uuid.uuid4())})
+        create_adapter.validate_python({"widget_type": "clock", "list_id": str(uuid.uuid4())})
+    bound = create_adapter.validate_python({"widget_type": "list", "list_id": str(uuid.uuid4())})
     assert isinstance(bound, ListWidgetCreate)
 
 

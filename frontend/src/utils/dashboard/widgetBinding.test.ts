@@ -7,10 +7,7 @@ function widget(overrides: Partial<DashboardWidget>): DashboardWidget {
     id: 'w-1',
     dashboard_id: 'dash-1',
     widget_type: 'list',
-    widget_version: 1,
     config: {},
-    resource_type: null,
-    resource_id: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -18,19 +15,12 @@ function widget(overrides: Partial<DashboardWidget>): DashboardWidget {
 }
 
 describe('boundListId', () => {
-  it('reads list_id, and prefers it over the generic pair', () => {
+  it('reads the list a widget shows', () => {
     expect(boundListId(widget({ list_id: 'l-1' }))).toBe('l-1')
-    expect(boundListId(widget({ list_id: 'l-1', resource_type: 'list', resource_id: 'l-2' }))).toBe(
-      'l-1',
-    )
-  })
-
-  it('falls back to the generic pair when a response carries no list_id', () => {
-    expect(boundListId(widget({ resource_type: 'list', resource_id: 'l-2' }))).toBe('l-2')
   })
 
   it('answers null for a widget that binds no list', () => {
     expect(boundListId(widget({ widget_type: 'clock' }))).toBeNull()
-    expect(boundListId(widget({ resource_type: 'calendar_event', resource_id: 'e-1' }))).toBeNull()
+    expect(boundListId(widget({ list_id: null }))).toBeNull()
   })
 })

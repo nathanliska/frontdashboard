@@ -8,22 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dashboard import Dashboard, DashboardWidget
 from app.models.list import List, ListType
-from app.models.share import ResourceType
 from app.models.user import User
 from app.schemas.dashboards import GRID_COLUMNS, GRID_ROWS, MIN_WIDGET_HEIGHT, MIN_WIDGET_WIDTH
 
 
-async def remove_resource_widgets(
-    resource_type: str,
-    resource_id: uuid.UUID,
-    db: AsyncSession,
-) -> dict[uuid.UUID, list[str]]:
-    result = await db.execute(
-        select(DashboardWidget).where(
-            DashboardWidget.resource_type == resource_type,
-            DashboardWidget.resource_id == resource_id,
-        )
-    )
+async def remove_list_widgets(list_id: uuid.UUID, db: AsyncSession) -> dict[uuid.UUID, list[str]]:
+    result = await db.execute(select(DashboardWidget).where(DashboardWidget.list_id == list_id))
     widgets = list(result.scalars().all())
     if not widgets:
         return {}
@@ -131,7 +121,7 @@ async def bind_list_widget(
     *,
     dashboard: Dashboard,
     current_user: User,
-    resource_id: uuid.UUID | None,
+    list_id: uuid.UUID | None,
     widget_config: dict[str, Any],
 ) -> tuple[uuid.UUID, List | None, dict[str, Any]]:
     """Resolve the list a new list widget binds, creating one when none is named.
@@ -141,7 +131,7 @@ async def bind_list_widget(
     a widget here.
     """
     created_list: List | None = None
-    if resource_id is None:
+    if list_id is None:
         list_name = str(widget_config.get("name") or "").strip() or "Untitled List"
         raw_list_type = str(widget_config.get("list_type") or "checklist")
         try:
@@ -171,7 +161,7 @@ async def bind_list_widget(
         )
         db.add(created_list)
         await db.flush()
-        resource_id = created_list.id
+        list_id = created_list.id
         widget_config = {
             **widget_config,
             "list_name": list_name,
@@ -181,7 +171,7 @@ async def bind_list_widget(
     else:
         list_result = await db.execute(
             select(List).where(
-                List.id == resource_id,
+                List.id == list_id,
                 List.dashboard_id == dashboard.id,
                 List.deleted_at.is_(None),
             )
@@ -198,8 +188,7 @@ async def bind_list_widget(
     existing_widget_result = await db.execute(
         select(DashboardWidget).where(
             DashboardWidget.dashboard_id == dashboard.id,
-            DashboardWidget.resource_type == ResourceType.list.value,
-            DashboardWidget.resource_id == resource_id,
+            DashboardWidget.list_id == list_id,
         )
     )
     if existing_widget_result.scalar_one_or_none() is not None:
@@ -207,4 +196,4 @@ async def bind_list_widget(
             status_code=status.HTTP_409_CONFLICT,
             detail="That item is already on this dashboard",
         )
-    return resource_id, created_list, widget_config
+    return list_id, created_list, widget_config

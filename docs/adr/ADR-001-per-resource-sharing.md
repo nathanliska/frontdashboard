@@ -44,8 +44,7 @@ alternatives — per-type share tables, or a set of typed nullable columns with 
 check — both buy a generality this app decided against; with one live type they are the same schema
 with more moving parts.
 
-The columns keep their names and the enum keeps its members (`DashboardWidget.resource_type` is
-still genuinely polymorphic over lists and events). Re-opening sharing to another resource type is
+The columns keep their names and the enum keeps its members. Re-opening sharing to another resource type is
 therefore a migration that drops one CHECK and one FK, not a redesign.
 
 ## Consequences

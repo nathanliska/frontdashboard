@@ -19,33 +19,16 @@ from app.models.share import EffectiveRole, PrincipalType, ResourceShare, Resour
 from tests.helpers import (
     create_calendar_event,
     create_dashboard,
+    create_list,
     current_user,
     make_db_dashboard,
     make_db_user,
 )
 
 
-async def test_widget_cannot_bind_half_a_resource(auth_client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_a_list_can_only_be_bound_once_per_dashboard(auth_client: AsyncClient, db_session: AsyncSession) -> None:
     dashboard = await create_dashboard(auth_client)
-
-    db_session.add(
-        DashboardWidget(
-            dashboard_id=uuid.UUID(dashboard["id"]),
-            widget_type="list",
-            config={},
-            resource_type="list",
-            resource_id=None,
-        )
-    )
-    # A widget binds a resource or it does not; the app cannot read half a binding.
-    # Matching the constraint name keeps this from passing on some unrelated integrity error.
-    with pytest.raises(IntegrityError, match="ck_dashboard_widgets_resource_pair"):
-        await db_session.flush()
-
-
-async def test_a_resource_can_only_be_bound_once_per_dashboard(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    dashboard = await create_dashboard(auth_client)
-    resource_id = uuid.uuid4()
+    lst = await create_list(auth_client, dashboard["id"], name="Groceries")
 
     for _ in range(2):
         db_session.add(
@@ -53,14 +36,13 @@ async def test_a_resource_can_only_be_bound_once_per_dashboard(auth_client: Asyn
                 dashboard_id=uuid.UUID(dashboard["id"]),
                 widget_type="list",
                 config={},
-                resource_type="list",
-                resource_id=resource_id,
+                list_id=uuid.UUID(lst["id"]),
             )
         )
 
     # The router checks first to return a friendly 409, but that read-before-insert races itself
     # under concurrent adds — this index is the actual guarantee.
-    with pytest.raises(IntegrityError, match="uq_dashboard_widgets_resource_binding"):
+    with pytest.raises(IntegrityError, match="uq_dashboard_widgets_list"):
         await db_session.flush()
 
 
@@ -73,8 +55,6 @@ async def test_unbound_widgets_are_exempt_from_the_uniqueness_rule(auth_client: 
                 dashboard_id=uuid.UUID(dashboard["id"]),
                 widget_type="clock",
                 config={},
-                resource_type=None,
-                resource_id=None,
             )
         )
 
