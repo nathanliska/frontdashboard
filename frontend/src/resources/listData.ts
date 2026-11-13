@@ -455,11 +455,9 @@ export function handleListResourceEvent(
     // Only patch when the event carries the new values; otherwise fall through to
     // invalidate-and-refetch so an older/unknown payload still converges.
     if (affectedListId && listHandlerUpdatesAgenda(event) && values) {
-      // No data yet (never loaded, in flight, or errored) means nothing to patch: count that as
-      // divergence up front, or patchListDetailById's null guard no-ops and the event is neither
-      // applied nor recorded, so the eventual GET resolves with pre-event data forever.
-      // A stale entry counts too: its list name or item may be out of date, and the agenda is
-      // rebuilt from them below.
+      // No data yet means nothing to patch, so count it as divergence up front: otherwise the event
+      // is neither applied nor recorded. A stale entry counts too, since the agenda is rebuilt from
+      // its list name and items below.
       let diverged =
         listDetailQuery.getState({ listId: affectedListId }).data === null ||
         listDetailQuery.isStale({ listId: affectedListId })

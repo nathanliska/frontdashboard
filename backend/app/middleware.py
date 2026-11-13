@@ -13,10 +13,9 @@ Message = dict[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
 
-# Prometheus reports its own scrape health as `up` and `scrape_duration_seconds`, so counting the
-# scrape here answers nothing and grows on a fixed interval until it dwarfs real traffic.
-# `/api/health/ready` is deliberately *not* here: Caddy proxies it publicly, so its volume is a
-# signal about the outside world rather than about the container.
+# Prometheus reports its own scrape health, so counting the scrape here answers nothing.
+# `/api/health/ready` is deliberately not here: it is proxied publicly, so its volume is a signal
+# about the outside world.
 _UNCOUNTED_ROUTES = frozenset({"/metrics"})
 
 

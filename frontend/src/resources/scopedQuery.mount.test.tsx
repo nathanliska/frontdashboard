@@ -35,10 +35,9 @@ describe('scopedQuery eviction with a mounted subscriber', () => {
       }
     })
 
-    // Asserted through getState rather than the rendered output: eviction does not notify
-    // listeners, so React would happily keep displaying a stale snapshot of an entry that had
-    // already been dropped — the component can't see the bug this is guarding against. getState
-    // rebuilds a missing entry as empty, so a null here means it was evicted.
+    // Asserted through getState, not the DOM: eviction does not notify listeners, so React would
+    // keep showing a dropped entry. getState rebuilds a missing entry as empty, so null means
+    // evicted.
     expect(query.getState({ id: 'pinned' }).data).toBe('data-pinned')
     expect(screen.getByTestId('value')).toHaveTextContent('data-pinned')
   })

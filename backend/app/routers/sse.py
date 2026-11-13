@@ -120,10 +120,8 @@ async def stream_events(
                 metrics.SSE_EXPIRIES.inc()
                 return
 
-            # Checked on BOTH branches below, before anything else. The 5s wait_for
-            # is an idle timeout, not a heartbeat: a busy client never times out, so
-            # a check hung off TimeoutError would never run for the clients that
-            # matter most.
+            # Checked on both branches below. The 5s wait_for is an idle timeout, not a heartbeat: a
+            # busy client never times out, so a check hung off TimeoutError would never run for it.
             if datetime.now(UTC) >= next_check:
                 if not await revalidate(client.session_id):
                     return

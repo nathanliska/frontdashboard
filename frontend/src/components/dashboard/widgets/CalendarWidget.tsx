@@ -35,10 +35,9 @@ export function CalendarWidget({
   dashboardId: string
   config: CalendarWidgetConfig
 }) {
-  // Measured rather than queried in CSS: these pick label sets, which a container query cannot,
-  // and the month's `tight` spacing, whose gap the month's own layout arithmetic has to know.
-  // Zero until measured, so the week can wait rather than paint a frame of the wrong layout; the
-  // other views paint the usual size meanwhile.
+  // Measured rather than queried in CSS: these pick label sets and the month's `tight` gap, which
+  // the layout arithmetic has to know. Zero until measured, so the week waits rather than paint a
+  // frame of the wrong layout.
   const [containerRef, measured] = useContainerSize({ width: 0, height: 0 })
   const containerWidth = measured.width || 300
   const containerHeight = measured.height || 320

@@ -306,10 +306,8 @@ describe('list.item.checked / list.item.updated patching', () => {
     unmount()
     render(<ItemsProbe listId="list-1" />)
 
-    // The divergence must have marked the entry stale, so a later remount (standing in
-    // for any future resync/remount) triggers a second GET that converges the client.
-    // Against the pre-fix code this stays at 1 forever — the event is neither applied
-    // nor recorded, so nothing ever marks the entry stale.
+    // The divergence must have marked the entry stale, so a later remount triggers a second GET
+    // that converges the client.
     await waitFor(() => expect(apiGetList).toHaveBeenCalledTimes(2))
   })
 })

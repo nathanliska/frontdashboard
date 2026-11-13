@@ -37,12 +37,9 @@ class CalendarEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     timezone: Mapped[str] = mapped_column(String(100), nullable=False)
     all_day: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    # none_as_null=True is load-bearing, not decoration. SQLAlchemy's JSON types default to
-    # none_as_null=False, which persists a Python None as the JSONB scalar 'null' rather than SQL
-    # NULL. Python reads it back as None either way, so the application never noticed — but in SQL
-    # `recurrence IS NOT NULL` then matched every one-off event, and the occurrence window query
-    # classified all of them as unbounded recurring series (finding surfaced by auditing prod:
-    # 33 of 41 live events held a JSONB null).
+    # none_as_null=True is load-bearing: the default stores None as the JSONB scalar 'null', which
+    # `recurrence IS NOT NULL` matches, so the window query would treat every one-off event as an
+    # unbounded series.
     recurrence: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -52,12 +49,9 @@ class CalendarEventOverride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("calendar_event_id", "occurrence_start", name="uq_calendar_event_override_occurrence"),
         Index("ix_calendar_event_overrides_event", "calendar_event_id"),
-        # Mirrors the parent event's time-range check. Both columns are nullable here because an
-        # override may retime an occurrence or leave its timing alone, so the constraint only binds
-        # when both are supplied.
-        # Occurrence *membership* — that occurrence_start is a real instance of the parent's
-        # recurrence rule — deliberately stays in the application: expressing it needs RRULE
-        # expansion, which is not something a CHECK can do.
+        # Mirrors the parent's time-range check; both columns are nullable because an override may
+        # leave timing alone. Occurrence membership stays in the application, since checking it
+        # needs RRULE expansion.
         CheckConstraint(
             "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
             name="ck_calendar_event_overrides_time_range",

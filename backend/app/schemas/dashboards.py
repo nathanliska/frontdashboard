@@ -298,10 +298,9 @@ WidgetCreate = Annotated[
     Field(discriminator="widget_type"),
 ]
 
-# What PATCH /widgets/{id} must validate a new config against, per widget type. The request body
-# can't discriminate itself (the widget's type lives on the row, not in the payload), so the
-# router looks the model up here. Without this, a stored `{"timezone": 123}` passes the write and
-# then fails response validation — turning every later read of the dashboard into a 500.
+# The config model per widget type. A PATCH body cannot discriminate itself — the type lives on the
+# row — and an unvalidated config would pass the write, then fail response validation on every later
+# read.
 WIDGET_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "clock": ClockWidgetConfig,
     "calendar": CalendarWidgetConfig,
