@@ -116,3 +116,27 @@ describe('cache eviction', () => {
     expect(q.getState({ id: 'slow' }).data).toBe('data-slow')
   })
 })
+
+describe('patchOrInvalidate', () => {
+  it('patches what is held, and records an event it cannot apply', async () => {
+    const query = createScopedQuery<{ id: string }, string>({
+      getKey: (s) => s.id,
+      fetcher: async () => 'v1',
+    })
+    const scope = { id: 'a' }
+
+    // Nothing held: the event is recorded as staleness rather than dropped.
+    expect(query.patchOrInvalidate(scope, () => 'patched')).toBe(false)
+    expect(query.isStale(scope)).toBe(true)
+
+    await query.fetch(scope)
+    expect(query.patchOrInvalidate(scope, (held) => `${held}+patch`)).toBe(true)
+    expect(query.getState(scope).data).toBe('v1+patch')
+    expect(query.isStale(scope)).toBe(false)
+
+    // The patch declines: what is held does not fit the event.
+    expect(query.patchOrInvalidate(scope, () => null)).toBe(false)
+    expect(query.getState(scope).data).toBe('v1+patch')
+    expect(query.isStale(scope)).toBe(true)
+  })
+})
