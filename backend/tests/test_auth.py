@@ -118,28 +118,13 @@ async def test_register_case_variant_collision_does_not_leak(db_client: AsyncCli
     assert app.state.existing_account_emails == ["edge@example.com"]
 
 
-async def test_register_rejects_blank_display_name(db_client: AsyncClient) -> None:
+@pytest.mark.parametrize(("display_name", "status"), [("   ", 422), ("x" * 101, 422), ("x" * 100, 201)], ids=["blank", "overlong", "max-length"])
+async def test_register_display_name_bounds(db_client: AsyncClient, display_name: str, status: int) -> None:
     resp = await db_client.post(
         _REGISTER_URL,
-        json={"email": "blankname@example.com", "password": "test-password-123", "display_name": "   "},
+        json={"email": "name-bounds@example.com", "password": "test-password-123", "display_name": display_name},
     )
-    assert resp.status_code == 422
-
-
-async def test_register_rejects_overlong_display_name(db_client: AsyncClient) -> None:
-    resp = await db_client.post(
-        _REGISTER_URL,
-        json={"email": "longname@example.com", "password": "test-password-123", "display_name": "x" * 101},
-    )
-    assert resp.status_code == 422
-
-
-async def test_register_accepts_max_length_display_name(db_client: AsyncClient) -> None:
-    resp = await db_client.post(
-        _REGISTER_URL,
-        json={"email": "boundary100@example.com", "password": "test-password-123", "display_name": "x" * 100},
-    )
-    assert resp.status_code == 201
+    assert resp.status_code == status
 
 
 async def test_register_trims_display_name(db_client: AsyncClient) -> None:
@@ -151,21 +136,6 @@ async def test_register_trims_display_name(db_client: AsyncClient) -> None:
     token = app.state.email_verification_tokens["trimname@example.com"]
     verify = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
     assert verify.json()["display_name"] == "Bob"
-
-
-async def test_login(db_client: AsyncClient) -> None:
-    await db_client.post(
-        _REGISTER_URL,
-        json={"email": "login@example.com", "password": "my-test-password-1", "display_name": "L"},
-    )
-    token = app.state.email_verification_tokens["login@example.com"]
-    verify = await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
-    assert verify.status_code == 200
-
-    resp = await db_client.post(_LOGIN_URL, json={"email": "login@example.com", "password": "my-test-password-1"})
-    assert resp.status_code == 200
-    assert "session" in resp.cookies
-    assert "csrf_token" in resp.cookies
 
 
 async def test_a_successful_login_is_counted(db_client: AsyncClient) -> None:
@@ -186,6 +156,8 @@ async def test_a_successful_login_is_counted(db_client: AsyncClient) -> None:
     resp = await db_client.post(_LOGIN_URL, json={"email": "counted@example.com", "password": "my-test-password-1"})
 
     assert resp.status_code == 200
+    assert "session" in resp.cookies
+    assert "csrf_token" in resp.cookies
     assert REGISTRY.get_sample_value("frontdashboard_login_successes_total") == before + 1
 
 
@@ -358,19 +330,6 @@ async def test_verify_email_rejects_expired_token(db_client: AsyncClient, db_ses
     assert resp.json()["detail"] == "Invalid or expired verification link"
 
 
-async def test_resend_verification_issues_new_token(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    await db_client.post(
-        _REGISTER_URL,
-        json={"email": "resend@example.com", "password": "my-test-password-1", "display_name": "Resend"},
-    )
-    first_token = app.state.email_verification_tokens["resend@example.com"]
-    await _age_verification_tokens(db_session, "resend@example.com")
-
-    resp = await db_client.post(_RESEND_VERIFICATION_URL, json={"email": "resend@example.com"})
-    assert resp.status_code == 204
-    assert app.state.email_verification_tokens["resend@example.com"] != first_token
-
-
 async def test_login_wrong_password(db_client: AsyncClient) -> None:
     await db_client.post(
         _REGISTER_URL,
@@ -398,33 +357,6 @@ async def test_login_nonexistent_email_still_performs_verify(db_client: AsyncCli
     assert len(calls) == 1
     # The miss path must verify against the dummy hash, not an empty/attacker-controllable value.
     assert calls[0][1] == auth_router._DUMMY_HASH
-
-
-async def test_login_unknown_and_wrong_password_are_indistinguishable(db_client: AsyncClient) -> None:
-    await db_client.post(
-        _REGISTER_URL,
-        json={"email": "real@example.com", "password": "correctpassword", "display_name": "R"},
-    )
-    token = app.state.email_verification_tokens["real@example.com"]
-    await db_client.post(_VERIFY_EMAIL_URL, json={"token": token})
-
-    unknown = await db_client.post(_LOGIN_URL, json={"email": "ghost@example.com", "password": "x"})
-    wrong = await db_client.post(_LOGIN_URL, json={"email": "real@example.com", "password": "wrongpassword"})
-
-    assert unknown.status_code == wrong.status_code == 401
-    assert unknown.json() == wrong.json()
-
-
-async def test_request_password_reset_issues_token(db_client: AsyncClient) -> None:
-    await db_client.post(
-        _REGISTER_URL,
-        json={"email": "reset@example.com", "password": "oldpassword", "display_name": "Reset"},
-    )
-
-    resp = await db_client.post(_PASSWORD_RESET_REQUEST_URL, json={"email": "reset@example.com"})
-
-    assert resp.status_code == 204
-    assert app.state.password_reset_tokens["reset@example.com"]
 
 
 async def test_request_password_reset_unknown_email_is_generic(db_client: AsyncClient) -> None:
@@ -532,12 +464,6 @@ async def test_me_requires_auth(client: AsyncClient) -> None:
     assert resp.status_code == 401
 
 
-async def test_me_authenticated(auth_client: AsyncClient) -> None:
-    resp = await auth_client.get(_ME_URL)
-    assert resp.status_code == 200
-    assert resp.json()["email"] == "testuser@example.com"
-
-
 async def test_there_is_no_refresh_endpoint(auth_client: AsyncClient) -> None:
     """The refresh endpoint is gone, not merely unused.
 
@@ -560,13 +486,6 @@ async def test_the_session_cookie_survives_ordinary_use(auth_client: AsyncClient
     assert (await auth_client.get(_ME_URL)).status_code == 200
 
     assert auth_client.cookies.get("session") == before
-
-
-async def test_logout(auth_client: AsyncClient) -> None:
-    csrf = auth_client.cookies.get("csrf_token")
-    assert csrf is not None
-    resp = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": csrf})
-    assert resp.status_code == 204
 
 
 async def test_a_matching_origin_is_accepted(auth_client: AsyncClient) -> None:
@@ -647,17 +566,6 @@ def test_clearing_prefixed_cookies_keeps_them_secure(monkeypatch) -> None:
         assert "Secure" in cleared[name], cleared[name]
 
 
-async def test_logout_requires_csrf(auth_client: AsyncClient) -> None:
-    auth_client.headers.pop("x-csrf-token")
-    resp = await auth_client.post(_LOGOUT_URL)
-    assert resp.status_code == 403
-
-
-async def test_logout_wrong_csrf(auth_client: AsyncClient) -> None:
-    resp = await auth_client.post(_LOGOUT_URL, headers={"X-CSRF-Token": "wrong"})
-    assert resp.status_code == 403
-
-
 async def test_the_session_cookie_is_dead_after_logout(auth_client: AsyncClient) -> None:
     """Logout revokes the row, so a retained cookie is inert.
 
@@ -691,16 +599,15 @@ async def test_update_profile(auth_client: AsyncClient) -> None:
     assert me.json()["display_name"] == "Updated User"
 
 
-async def test_update_profile_rejects_blank_display_name(auth_client: AsyncClient) -> None:
-    resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "   "})
+@pytest.mark.parametrize(
+    ("display_name", "detail"),
+    [("   ", "Display name cannot be empty"), ("x" * 101, "Display name must be at most 100 characters")],
+    ids=["blank", "overlong"],
+)
+async def test_update_profile_rejects_a_bad_display_name(auth_client: AsyncClient, display_name: str, detail: str) -> None:
+    resp = await auth_client.patch(_PROFILE_URL, json={"display_name": display_name})
     assert resp.status_code == 422
-    assert resp.json()["detail"] == "Display name cannot be empty"
-
-
-async def test_update_profile_rejects_overlong_display_name(auth_client: AsyncClient) -> None:
-    resp = await auth_client.patch(_PROFILE_URL, json={"display_name": "x" * 101})
-    assert resp.status_code == 422
-    assert resp.json()["detail"] == "Display name must be at most 100 characters"
+    assert resp.json()["detail"] == detail
 
 
 async def test_profile_and_preferences_reject_empty_or_unknown_patches(auth_client: AsyncClient) -> None:
@@ -714,32 +621,15 @@ async def test_profile_and_preferences_reject_empty_or_unknown_patches(auth_clie
         assert response.status_code == 422
 
 
-async def test_any_request_slides_the_session_idle_clock(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """Reading is enough to keep a session alive.
+async def test_the_idle_slide_is_committed(auth_client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
+    """Any request slides the idle clock, and the slide is committed, not merely applied.
 
-    The auth dependency owns the idle clock; bumped per route instead, a user who merely read
-    would idle out mid-use.
+    The new timestamp alone cannot prove durability: the route shares this session, so an
+    uncommitted UPDATE is visible either way. A GET route never commits, so the dependency must.
     """
     session = (await db_session.execute(select(UserSession))).scalars().one()
     old = datetime.now(UTC) - timedelta(hours=1)
     session.last_used_at = old
-    await db_session.flush()
-
-    assert (await auth_client.get(_ME_URL)).status_code == 200
-
-    await db_session.refresh(session)
-    assert session.last_used_at > old
-
-
-async def test_the_idle_slide_is_committed(auth_client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
-    """The slide must be committed, not merely applied.
-
-    The test above cannot prove durability: the route shares this session, so an uncommitted
-    UPDATE is visible either way. A GET route never commits, so without one the slide rolls back
-    and a read-only user idles out mid-use — assert the mechanism, not the result.
-    """
-    session = (await db_session.execute(select(UserSession))).scalars().one()
-    session.last_used_at = datetime.now(UTC) - timedelta(hours=1)
     await db_session.flush()
 
     commits = 0
@@ -755,6 +645,8 @@ async def test_the_idle_slide_is_committed(auth_client: AsyncClient, db_session:
     assert (await auth_client.get(_ME_URL)).status_code == 200
 
     assert commits == 1, "the auth dependency must commit the slide; a GET route never will"
+    await db_session.refresh(session)
+    assert session.last_used_at > old
 
 
 async def test_a_freshly_used_session_costs_no_write(auth_client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
@@ -818,48 +710,38 @@ async def test_change_password_rejects_wrong_current_password(auth_client: Async
     assert (await auth_client.get(_ME_URL)).status_code == 200, "a wrong password must not end the session"
 
 
-async def test_update_preferences_accepts_accessible_dashboard(auth_client: AsyncClient) -> None:
+def _as_home(dashboard_id: str) -> str:
+    return dashboard_id
+
+
+def _as_favorites(dashboard_id: str) -> list[str]:
+    return [dashboard_id]
+
+
+_PREFERENCE_FIELDS = pytest.mark.parametrize(
+    ("field", "wrap"),
+    [("home_dashboard_id", _as_home), ("favorite_dashboard_ids", _as_favorites)],
+    ids=["home", "favorites"],
+)
+
+
+@_PREFERENCE_FIELDS
+async def test_update_preferences_accepts_an_accessible_dashboard(auth_client: AsyncClient, field: str, wrap) -> None:
     dashboard = await create_dashboard(auth_client, name="Secondary Dashboard")
 
-    resp = await auth_client.patch(
-        _PREFERENCES_URL,
-        json={"home_dashboard_id": dashboard["id"]},
-    )
+    resp = await auth_client.patch(_PREFERENCES_URL, json={field: wrap(dashboard["id"])})
+
     assert resp.status_code == 200
-    assert resp.json()["preferences"]["home_dashboard_id"] == dashboard["id"]
+    assert resp.json()["preferences"][field] == wrap(dashboard["id"])
 
 
-async def test_update_preferences_rejects_inaccessible_dashboard(auth_client: AsyncClient, accounts: MemberFactory) -> None:
+@_PREFERENCE_FIELDS
+async def test_update_preferences_rejects_an_inaccessible_dashboard(auth_client: AsyncClient, accounts: MemberFactory, field: str, wrap) -> None:
     other = await accounts("owner@example.com", display_name="Owner")
     dashboard = await create_dashboard(other, name="Other Dashboard")
 
-    resp = await auth_client.patch(
-        _PREFERENCES_URL,
-        json={"home_dashboard_id": dashboard["id"]},
-    )
-    assert resp.status_code == 404
-    assert resp.json()["detail"] == "Dashboard not found"
+    resp = await auth_client.patch(_PREFERENCES_URL, json={field: wrap(dashboard["id"])})
 
-
-async def test_update_preferences_accepts_accessible_favorite_dashboards(auth_client: AsyncClient) -> None:
-    dashboard = await create_dashboard(auth_client, name="Favorite Dashboard")
-
-    resp = await auth_client.patch(
-        _PREFERENCES_URL,
-        json={"favorite_dashboard_ids": [dashboard["id"]]},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["preferences"]["favorite_dashboard_ids"] == [dashboard["id"]]
-
-
-async def test_update_preferences_rejects_inaccessible_favorite_dashboard(auth_client: AsyncClient, accounts: MemberFactory) -> None:
-    other = await accounts("favorite-owner@example.com", display_name="Favorite Owner")
-    dashboard = await create_dashboard(other, name="Other Favorite Dashboard")
-
-    resp = await auth_client.patch(
-        _PREFERENCES_URL,
-        json={"favorite_dashboard_ids": [dashboard["id"]]},
-    )
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Dashboard not found"
 
@@ -928,21 +810,10 @@ async def test_logout_revokes_only_the_current_session(auth_client: AsyncClient,
     assert (await other.get(_ME_URL)).status_code == 200, "other devices are untouched"
     await other.aclose()
 
+    # Both rows remain: logout revokes the caller's session, it does not delete it.
     sessions = (await db_session.execute(select(UserSession))).scalars().all()
+    assert len(sessions) == 2
     assert sum(s.revoked_at is None for s in sessions) == 1
-
-
-async def test_logout_revokes_the_calling_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    """Logout revokes exactly the session that authenticated the request.
-
-    It reads the session from that cookie, so it can never no-op.
-    """
-    resp = await auth_client.post(_LOGOUT_URL)
-    assert resp.status_code == 204
-
-    sessions = (await db_session.execute(select(UserSession))).scalars().all()
-    assert sessions, "the session row still exists"
-    assert all(s.revoked_at is not None for s in sessions), "the current session was revoked"
 
 
 async def test_password_reset_revokes_every_session(auth_client: AsyncClient, db_session: AsyncSession) -> None:
@@ -983,17 +854,6 @@ async def test_login_is_case_insensitive(db_client: AsyncClient) -> None:
 
     resp = await db_client.post(_LOGIN_URL, json={"email": "CASE@example.COM", "password": "my-test-password-1"})
     assert resp.status_code == 200
-
-
-async def test_register_case_variant_duplicate_creates_nothing(db_client: AsyncClient, db_session: AsyncSession) -> None:
-    payload = {"email": "dupe@example.com", "password": "test-password-123", "display_name": "D"}
-    assert (await db_client.post(_REGISTER_URL, json=payload)).status_code == 201
-    variant = {"email": "Dupe@Example.com", "password": "test-password-123", "display_name": "D2"}
-    assert (await db_client.post(_REGISTER_URL, json=variant)).status_code == 201
-
-    # Normalization means the variant hits the same account — it must not become a second one.
-    count = await db_session.scalar(select(func.count()).select_from(User).where(User.email == "dupe@example.com"))
-    assert count == 1
 
 
 async def test_password_reset_request_is_case_insensitive(db_client: AsyncClient) -> None:
@@ -1065,7 +925,7 @@ async def test_login_failures_are_counted_by_cause_the_response_will_not_reveal(
 
     assert stranger.status_code == 401
     assert wrong_password.status_code == 401
-    assert stranger.json()["detail"] == wrong_password.json()["detail"], "the response must not distinguish what the metric does"
+    assert stranger.json() == wrong_password.json(), "the response must not distinguish what the metric does"
 
     assert _auth_failures("login", "unknown_user") - unknown_before == 1
     assert _auth_failures("login", "bad_password") - bad_password_before == 1

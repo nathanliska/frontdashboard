@@ -237,9 +237,6 @@ describe('useDashboardStore events', () => {
   })
 
   it('skips the in-flight layout self-echo reload while saving layout', async () => {
-    const randomUuidSpy = vi
-      .spyOn(globalThis.crypto, 'randomUUID')
-      .mockReturnValue('11111111-1111-4111-8111-111111111111')
     let resolveLayoutUpdate!: (value: { conflict: false; dashboard: Dashboard }) => void
     const nextLayout = [{ i: 'widget-1', x: 1, y: 0, w: 4, h: 3 }]
 
@@ -277,13 +274,9 @@ describe('useDashboardStore events', () => {
       dashboard: makeDashboard({ version: 2, layout: nextLayout }),
     })
     await savePromise
-    randomUuidSpy.mockRestore()
   })
 
   it('skips the widget self-echo reload after updating widget config locally', async () => {
-    const randomUuidSpy = vi
-      .spyOn(globalThis.crypto, 'randomUUID')
-      .mockReturnValue('22222222-2222-4222-8222-222222222222')
     const updatedWidget = {
       id: 'widget-1',
       dashboard_id: 'dash-1',
@@ -325,13 +318,9 @@ describe('useDashboardStore events', () => {
 
     expect(apiGetDashboard).not.toHaveBeenCalled()
     expect(useDashboardStore.getState().dashboard?.widgets[0]?.config).toEqual({ view: 'week' })
-    randomUuidSpy.mockRestore()
   })
 
   it('skips summary and dashboard refetches for local rename echoes', async () => {
-    const randomUuidSpy = vi
-      .spyOn(globalThis.crypto, 'randomUUID')
-      .mockReturnValue('33333333-3333-4333-8333-333333333333')
     const renamedSummary = makeDashboardSummary({
       name: 'Renamed Dashboard',
       version: 2,
@@ -363,7 +352,6 @@ describe('useDashboardStore events', () => {
     expect(apiGetDashboard).not.toHaveBeenCalled()
     expect(useDashboardStore.getState().summaries[0]?.name).toBe('Renamed Dashboard')
     expect(useDashboardStore.getState().dashboard?.name).toBe('Renamed Dashboard')
-    randomUuidSpy.mockRestore()
   })
 
   it('surfaces access loss when a share change removes the active dashboard from view', async () => {

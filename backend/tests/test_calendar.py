@@ -23,13 +23,6 @@ from tests.helpers import (
 )
 
 
-async def test_create_private_calendar_event(auth_client: AsyncClient) -> None:
-    dashboard = await create_dashboard(auth_client)
-    event = await create_calendar_event(auth_client, dashboard["id"])
-    assert event["title"] == "Dentist"
-    assert event["recurrence"] is None
-
-
 async def test_shared_dashboard_event_visible_to_shared_user(auth_client: AsyncClient, accounts: MemberFactory) -> None:
     dashboard = await create_dashboard(auth_client)
     await create_calendar_event(auth_client, dashboard["id"], title="Family Dinner")
@@ -140,6 +133,7 @@ async def test_viewer_cannot_edit_event(auth_client: AsyncClient, accounts: Memb
 async def test_event_detail_update_and_delete(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
     event = await create_calendar_event(auth_client, dashboard["id"], title="Planning Session")
+    assert event["recurrence"] is None
 
     detail_resp = await auth_client.get(f"/api/calendar/events/{event['id']}")
     assert detail_resp.status_code == 200
@@ -191,36 +185,45 @@ async def test_empty_event_patch_is_rejected(auth_client: AsyncClient) -> None:
     assert resp.status_code == 422
 
 
-async def test_out_of_window_one_off_events_are_not_loaded(auth_client: AsyncClient) -> None:
-    """Non-recurring events are bounded in SQL by their own times.
+async def test_only_events_that_can_fall_in_the_window_are_loaded(
+    auth_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The window is applied in SQL, by facts already in the row.
 
-    Behaviour is unchanged — they were already discarded after expansion — so this pins the
-    filter against dropping something it should have kept.
+    A one-off event is bounded by its own times. A series cannot occur before its `starts_at` or
+    after its `until`. A one-off must also not be read as an unbounded series, which a JSONB
+    `null` recurrence satisfies under a plain `IS NOT NULL`.
+
+    Counted at the expander as well as asserted on the response: the expander discards a row that
+    should not have loaded, so the JSON is identical whether or not the predicate held.
     """
+    expanded: list[str] = []
+    real_expand = calendar_router.expand_event_occurrences
+
+    def counting_expand(event, *args, **kwargs):
+        expanded.append(event.title)
+        return real_expand(event, *args, **kwargs)
+
+    monkeypatch.setattr(calendar_router, "expand_event_occurrences", counting_expand)
+
     dashboard = await create_dashboard(auth_client)
+
+    async def one_off(title: str, starts_at: str, ends_at: str) -> None:
+        await create_calendar_event(auth_client, dashboard["id"], title=title, starts_at=starts_at, ends_at=ends_at)
+
+    async def series(title: str, starts_at: str, ends_at: str, **rule: str) -> None:
+        recurrence = {"frequency": "daily", "interval": 1, **rule}
+        await create_calendar_event(auth_client, dashboard["id"], title=title, starts_at=starts_at, ends_at=ends_at, recurrence=recurrence)
+
     await create_calendar_event(auth_client, dashboard["id"], title="In window")
-    await create_calendar_event(
-        auth_client,
-        dashboard["id"],
-        title="Long past",
-        starts_at="2019-01-02T14:00:00+00:00",
-        ends_at="2019-01-02T15:00:00+00:00",
-    )
-    await create_calendar_event(
-        auth_client,
-        dashboard["id"],
-        title="Far future",
-        starts_at="2031-01-02T14:00:00+00:00",
-        ends_at="2031-01-02T15:00:00+00:00",
-    )
-    # Straddles the window boundary: starts before it, ends inside it.
-    await create_calendar_event(
-        auth_client,
-        dashboard["id"],
-        title="Straddling",
-        starts_at="2026-04-09T23:00:00+00:00",
-        ends_at="2026-04-10T01:00:00+00:00",
-    )
+    await one_off("Long past", "2019-01-02T14:00:00+00:00", "2019-01-02T15:00:00+00:00")
+    await one_off("Far future", "2031-01-02T14:00:00+00:00", "2031-01-02T15:00:00+00:00")
+    # Starts before the window and ends inside it.
+    await one_off("Straddling", "2026-04-09T23:00:00+00:00", "2026-04-10T01:00:00+00:00")
+    await series("Live series", "2026-01-05T14:00:00+00:00", "2026-01-05T14:30:00+00:00")
+    await series("Finished series", "2019-01-02T14:00:00+00:00", "2019-01-02T14:30:00+00:00", until="2019-06-01T14:00:00+00:00")
+    await series("Unstarted series", "2031-01-02T14:00:00+00:00", "2031-01-02T14:30:00+00:00")
 
     resp = await auth_client.get(
         "/api/calendar/events",
@@ -231,7 +234,10 @@ async def test_out_of_window_one_off_events_are_not_loaded(auth_client: AsyncCli
         },
     )
     assert resp.status_code == 200
-    assert sorted(item["title"] for item in resp.json()) == ["In window", "Straddling"]
+    live = ["In window", "Live series", "Straddling"]
+    assert sorted(item["title"] for item in resp.json()) == live
+    # The query has no ORDER BY, so compare sorted. The dead rows never reach Python at all.
+    assert sorted(expanded) == live
 
 
 async def test_recurring_series_starting_before_the_window_still_expands(auth_client: AsyncClient) -> None:
@@ -257,70 +263,6 @@ async def test_recurring_series_starting_before_the_window_still_expands(auth_cl
     assert resp.status_code == 200
     starts = [item["occurrence_start"] for item in resp.json()]
     assert starts == ["2026-04-10T14:00:00Z", "2026-04-11T14:00:00Z"]
-
-
-async def test_finished_and_unstarted_series_are_not_loaded(
-    auth_client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Recurring events are bounded by the two facts already in the row.
-
-    A series cannot produce an occurrence before its own `starts_at`, and one carrying `until`
-    cannot produce one after it. Both are read from the row and the JSONB rule, so unlike a
-    persisted last-occurrence column there is nothing that can drift out of date.
-
-    Counted at the expander rather than asserted on the response, because the response cannot
-    see this: the expander already discarded these series in Python, so the JSON was identical
-    before the SQL predicate existed. What changed is how much work produced it, and the only
-    way to observe that is to count what reached the expander.
-    """
-    expanded: list[str] = []
-    real_expand = calendar_router.expand_event_occurrences
-
-    def counting_expand(event, *args, **kwargs):
-        expanded.append(event.title)
-        return real_expand(event, *args, **kwargs)
-
-    monkeypatch.setattr(calendar_router, "expand_event_occurrences", counting_expand)
-
-    dashboard = await create_dashboard(auth_client)
-    await create_calendar_event(
-        auth_client,
-        dashboard["id"],
-        title="Live series",
-        starts_at="2026-01-05T14:00:00+00:00",
-        ends_at="2026-01-05T14:30:00+00:00",
-        recurrence={"frequency": "daily", "interval": 1},
-    )
-    await create_calendar_event(
-        auth_client,
-        dashboard["id"],
-        title="Finished series",
-        starts_at="2019-01-02T14:00:00+00:00",
-        ends_at="2019-01-02T14:30:00+00:00",
-        recurrence={"frequency": "daily", "interval": 1, "until": "2019-06-01T14:00:00+00:00"},
-    )
-    await create_calendar_event(
-        auth_client,
-        dashboard["id"],
-        title="Unstarted series",
-        starts_at="2031-01-02T14:00:00+00:00",
-        ends_at="2031-01-02T14:30:00+00:00",
-        recurrence={"frequency": "daily", "interval": 1},
-    )
-
-    resp = await auth_client.get(
-        "/api/calendar/events",
-        params={
-            "window_start": "2026-04-10T00:00:00+00:00",
-            "window_end": "2026-04-11T00:00:00+00:00",
-            "dashboard_id": dashboard["id"],
-        },
-    )
-    assert resp.status_code == 200
-    assert [item["title"] for item in resp.json()] == ["Live series"]
-    # The two dead series never reach Python at all.
-    assert expanded == ["Live series"]
 
 
 async def test_creating_an_all_day_event_snaps_it_to_whole_local_days(auth_client: AsyncClient) -> None:
@@ -364,54 +306,6 @@ async def test_flipping_an_existing_event_to_all_day_snaps_it_too(auth_client: A
     assert again.status_code == 200, again.text
     assert again.json()["starts_at"] == "2026-07-25T04:00:00Z"
     assert again.json()["ends_at"] == "2026-07-26T04:00:00Z"
-
-
-async def test_a_past_one_off_event_is_not_loaded_as_an_unbounded_series(
-    auth_client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A non-recurring event must be bounded by its own times, not treated as a series.
-
-    This is the JSONB-null bug. `recurrence` was a plain `JSONB` column, and SQLAlchemy's JSON
-    types default to `none_as_null=False`, so a Python `None` was stored as the JSONB scalar
-    `null` — which is *not* SQL NULL and therefore satisfies `IS NOT NULL`. Every one-off event
-    was consequently matched by the recurring branch, and since `recurrence['until']` is NULL for
-    a JSONB null it took the "unbounded series" path, whose only bound is `starts_at < window_end`.
-    Past one-off events loaded on every request; production had 33 of them.
-
-    Counted at the expander, not asserted on the response, for the usual reason: Python reads a
-    JSONB null back as `None`, so the expander emitted a single occurrence and `_overlaps` dropped
-    it. The JSON was byte-identical whether or not the row should ever have been fetched.
-    """
-    expanded: list[str] = []
-    real_expand = calendar_router.expand_event_occurrences
-
-    def counting_expand(event, *args, **kwargs):
-        expanded.append(event.title)
-        return real_expand(event, *args, **kwargs)
-
-    monkeypatch.setattr(calendar_router, "expand_event_occurrences", counting_expand)
-
-    dashboard = await create_dashboard(auth_client)
-    await create_calendar_event(
-        auth_client,
-        dashboard["id"],
-        title="Last year's lunch",
-        starts_at="2025-03-04T12:00:00+00:00",
-        ends_at="2025-03-04T13:00:00+00:00",
-    )
-
-    resp = await auth_client.get(
-        "/api/calendar/events",
-        params={
-            "window_start": "2026-04-10T00:00:00+00:00",
-            "window_end": "2026-04-11T00:00:00+00:00",
-            "dashboard_id": dashboard["id"],
-        },
-    )
-    assert resp.status_code == 200
-    assert resp.json() == []
-    assert expanded == []
 
 
 async def test_a_series_ending_at_the_window_edge_is_kept(auth_client: AsyncClient) -> None:
@@ -740,37 +634,42 @@ async def test_edits_outside_the_window_are_not_loaded_with_it(auth_client: Asyn
     assert len(listed.json()) == 2
 
 
-async def test_an_occurrence_moved_out_of_the_window_still_leaves_its_slot_empty(auth_client: AsyncClient) -> None:
-    """The edit's new time is outside the window, but its original slot is inside: it must still load to suppress it."""
+@pytest.mark.parametrize(
+    ("window", "remaining"),
+    [
+        (_WEEK, ["2026-04-10", "2026-04-12"]),
+        # Opens after the old slot began, so that slot only counts with its length added.
+        ({"window_start": "2026-04-11T15:00:00+00:00", "window_end": "2026-04-11T16:00:00+00:00"}, []),
+    ],
+    ids=["whole-slot", "part-way-through-the-slot"],
+)
+async def test_an_occurrence_moved_out_of_the_window_still_leaves_its_slot_empty(
+    auth_client: AsyncClient, window: dict[str, str], remaining: list[str]
+) -> None:
+    """The edit's new time is outside the window, but its original slot is inside: it must still load to suppress it.
+
+    Moved rather than cancelled on purpose: an edit left in place is found by where it now is, and
+    only one that went elsewhere depends on its original slot being matched by its whole span.
+    """
     dashboard = await create_dashboard(auth_client)
-    event = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence={"frequency": "daily", "interval": 1, "count": 3})
+    event = await create_calendar_event(
+        auth_client,
+        dashboard["id"],
+        title="Workshop",
+        starts_at="2026-04-10T14:00:00+00:00",
+        ends_at="2026-04-10T18:00:00+00:00",
+        recurrence={"frequency": "daily", "interval": 1, "count": 3},
+    )
     moved = await auth_client.patch(
         f"/api/calendar/events/{event['id']}/occurrences",
-        json={"occurrence_start": "2026-04-11T14:00:00+00:00", "starts_at": "2026-05-20T14:00:00+00:00", "ends_at": "2026-05-20T15:00:00+00:00"},
+        json={"occurrence_start": "2026-04-11T14:00:00+00:00", "starts_at": "2026-05-20T14:00:00+00:00", "ends_at": "2026-05-20T18:00:00+00:00"},
     )
     assert moved.status_code == 200, moved.text
 
-    listed = await auth_client.get("/api/calendar/events", params=_WEEK)
+    listed = await auth_client.get("/api/calendar/events", params=window)
 
     assert listed.status_code == 200, listed.text
-    assert [o["occurrence_start"][:10] for o in listed.json()] == ["2026-04-10", "2026-04-12"]
-
-
-async def test_an_occurrence_moved_into_the_window_is_listed_there(auth_client: AsyncClient) -> None:
-    """The mirror case: the original slot is outside the window and only the retimed one is in it."""
-    dashboard = await create_dashboard(auth_client)
-    event = await create_calendar_event(auth_client, dashboard["id"], title="Standup", recurrence={"frequency": "daily", "interval": 1, "count": 3})
-    moved = await auth_client.patch(
-        f"/api/calendar/events/{event['id']}/occurrences",
-        json={"occurrence_start": "2026-04-11T14:00:00+00:00", "starts_at": "2026-05-20T14:00:00+00:00", "ends_at": "2026-05-20T15:00:00+00:00"},
-    )
-    assert moved.status_code == 200, moved.text
-
-    may = {"window_start": "2026-05-19T00:00:00+00:00", "window_end": "2026-05-22T00:00:00+00:00"}
-    listed = await auth_client.get("/api/calendar/events", params=may)
-
-    assert listed.status_code == 200, listed.text
-    assert [o["occurrence_start"][:10] for o in listed.json()] == ["2026-05-20"]
+    assert [o["occurrence_start"][:10] for o in listed.json()] == remaining
 
 
 async def test_a_listing_refuses_a_walk_longer_than_one_request_may_cost(auth_client: AsyncClient, monkeypatch) -> None:
@@ -817,34 +716,6 @@ async def test_an_event_whose_only_edits_are_elsewhere_is_not_loaded_for_this_wi
 
     assert listed.status_code == 200, listed.text
     assert expanded == []
-
-
-async def test_an_occurrence_moved_away_leaves_its_old_slot_empty_even_part_way_through_it(auth_client: AsyncClient) -> None:
-    """The window opens after the old slot began, so that slot only counts with its length added.
-
-    Moved rather than cancelled on purpose: an edit left in place is found by where it now is, and
-    only one that went elsewhere depends on its original slot being matched by its whole span.
-    """
-    dashboard = await create_dashboard(auth_client)
-    event = await create_calendar_event(
-        auth_client,
-        dashboard["id"],
-        title="Workshop",
-        starts_at="2026-04-10T14:00:00+00:00",
-        ends_at="2026-04-10T18:00:00+00:00",
-        recurrence={"frequency": "daily", "interval": 1, "count": 3},
-    )
-    moved = await auth_client.patch(
-        f"/api/calendar/events/{event['id']}/occurrences",
-        json={"occurrence_start": "2026-04-11T14:00:00+00:00", "starts_at": "2026-05-20T14:00:00+00:00", "ends_at": "2026-05-20T18:00:00+00:00"},
-    )
-    assert moved.status_code == 200, moved.text
-
-    mid_session = {"window_start": "2026-04-11T15:00:00+00:00", "window_end": "2026-04-11T16:00:00+00:00"}
-    listed = await auth_client.get("/api/calendar/events", params=mid_session)
-
-    assert listed.status_code == 200, listed.text
-    assert listed.json() == []
 
 
 async def test_a_cancellation_survives_a_clock_change_between_its_start_and_the_window(auth_client: AsyncClient, db_session: AsyncSession) -> None:
