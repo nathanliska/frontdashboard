@@ -44,7 +44,7 @@ effect on the next request.
   write per read.
 - Password **change** revokes every *other* session and keeps the current one; **reset** and
   **logout** revoke accordingly. Mutating routes stay CSRF-guarded by the double-submit cookie,
-  now alongside an `Origin` check ([ADR-002](ADR-002-jwt-httponly-cookies-csrf.md)).
+  now alongside an `Origin` check ([ADR-002](ADR-002-httponly-cookie-csrf.md)).
 - SSE streams re-validate their session every 30s and end when it is revoked; revocation also drops
   in-process streams immediately as a latency optimisation (see ADR-004 / ADR-015).
 - `device_name` holds a coarse "browser on platform" label ("Chrome on Windows"), derived at

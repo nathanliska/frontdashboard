@@ -159,7 +159,7 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 - **Auth**: one opaque session cookie (HttpOnly, `__Host-` prefixed in prod) resolved against a
   `sessions` row on every request, plus an `Origin` check and CSRF double-submit. No JWT, no
   refresh token, no `/auth/refresh`, no localStorage tokens
-  ([ADR-002](docs/adr/ADR-002-jwt-httponly-cookies-csrf.md),
+  ([ADR-002](docs/adr/ADR-002-httponly-cookie-csrf.md),
   [ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
 - **Real-time**: SSE, not WebSocket; one multiplexed connection per open tab, fanned out by user.
   Fan-out reaches other workers over a Valkey stream, and a lost frame is repaired by the reader's

@@ -1,6 +1,6 @@
 # ADR-006: REST for Initial Fetch, SSE for Incremental Patch
 
-**Date:** 2026-07-20 (amended 2026-08-09)
+**Date:** 2026-07-20 (amended 2026-08-09, 2026-11-12)
 
 ## Context
 
@@ -17,10 +17,13 @@ back over SSE and must not double-apply it.
 Every resource does an **initial REST fetch**; **SSE events then patch caches in place**.
 
 - **Hot events carry the new state.** List reorder and item check/update payloads carry the changed
-  fields (or the id order), so other clients patch in place with no follow-up GET. A refetch happens
-  only if the payload is absent (older events) or the patched result diverges from cache.
-- **Cold events invalidate-and-refetch.** Rarer events (create/delete) deliberately keep the
-  self-healing invalidate-and-refetch path — correctness is worth more than bytes on cold paths.
+  fields (or the id order), an item create carries the whole new row and an item delete names its
+  item, so other clients patch in place with no follow-up GET. A refetch happens only if the
+  payload is absent (older events), the client does not hold the list or holds it stale, or the
+  patched result diverges from cache.
+- **Cold events invalidate-and-refetch.** Rarer events, such as a list being created,
+  deliberately keep the self-healing invalidate-and-refetch path: correctness is worth more than
+  bytes on cold paths.
 - **Echo suppression.** Every mutation carries the tab's per-load id (`X-Client-Id`, stamped
   centrally in `apiFetch`); the SSE payload echoes it back as `origin_client_id` and a frame
   stamped with this tab's id is skipped. A pure comparison — no per-mutation bookkeeping.
@@ -33,8 +36,8 @@ Every resource does an **initial REST fetch**; **SSE events then patch caches in
 
 - **Minimal network on hot paths**: the common mutations (check an item, reorder) propagate as a
   single in-place patch, no round-trip.
-- **Self-healing on cold paths**: create/delete re-fetch, so a missed or malformed event
-  can't leave the UI permanently wrong for those operations.
+- **Self-healing on cold paths**: the events that still re-fetch cannot leave the UI permanently
+  wrong after a missed or malformed frame.
 - **A lost mutation response leaves the issuing tab stale**: its echo is suppressed regardless,
   so recovery waits for the retried action, the next foreign event, or a resync. Accepted — a
   per-mutation registry could not close the window either, and cost bookkeeping at every call site.
