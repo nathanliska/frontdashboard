@@ -158,10 +158,9 @@ for _op, _reason in AUTH_FAILURE_PAIRS:
 # costs no cardinality; `auth_failures{operation="login"}` is its numerator.
 LOGIN_SUCCESSES = Counter(f"{_PREFIX}login_successes", "Logins that issued a session.")
 
-# An Argon2 hash costs a near-constant floor, so the spread above it is queueing for the
-# concurrency limiter. A gauge alone would miss that — saturation is bursty and scrapes are not.
-# Boundaries straddle a measured 34ms verify on the deployment host: too coarse and every healthy
-# operation lands in one bucket, which is a histogram with no resolution at all.
+# The hash cost is a near-constant floor, so the spread above it is queueing for the limiter, which
+# a gauge sampled between bursts would miss. Boundaries straddle the measured ~34ms verify, so
+# healthy operations do not all land in one bucket.
 Argon2Operation = Literal["hash", "verify"]
 
 ARGON2_SECONDS = Histogram(

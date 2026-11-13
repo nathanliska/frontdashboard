@@ -247,10 +247,8 @@ describe('agendaData', () => {
   })
 
   it('patches reminders from our own item check instead of refetching them', async () => {
-    // The last PATCH-then-GET pair. Checking an item in a list widget applied the response to the
-    // list cache and then refetched the whole agenda anyway, because this handler saw the echo of
-    // our own mutation and had no way to recognise it — `handleListResourceEvent` had already
-    // consumed the pending id. Now the router decides once and both are told.
+    // Checking an item must not refetch the agenda: the router decides the echo once and tells both
+    // handlers, since the list handler has already consumed the pending id.
     apiListOccurrences.mockResolvedValue([makeOccurrence()])
     apiGetListDetails.mockResolvedValueOnce([makeListDetail()])
     __seedListDetailForTests('list-1', makeListDetail())
@@ -299,10 +297,8 @@ describe('agendaData', () => {
   })
 
   it('an item that gains a due date joins the agenda without a refetch', async () => {
-    // The other direction of `applyAgendaItemUpdate`. Until the due-date picker existed nothing in
-    // the UI could set a date, so entries could only ever *leave* the agenda this way — the docs in
-    // agendaData.ts said as much. Now an item can arrive, and it has to arrive from the mutation
-    // response rather than a refetch, or we are back to the PATCH-then-GET pair.
+    // An item gaining a due date has to arrive in the agenda from the mutation response, not a
+    // refetch.
     apiListOccurrences.mockResolvedValue([makeOccurrence()])
     const undated = makeListDetail({ items: [makeListItem({ due_date: null })] })
     apiGetListDetails.mockResolvedValueOnce([undated])

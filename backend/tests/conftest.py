@@ -33,10 +33,9 @@ from tests.helpers import MemberFactory, register_user
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
-# Dev, CI and production must run the same PostgreSQL major version. pg_dump refuses to read a
-# server newer than itself and a newer dump won't restore into an older server, so a mismatch stays
-# invisible until the night a restore matters. docker-compose.yml reads the same variable, and
-# test_config.py fails the build if the two defaults drift apart.
+# Dev, CI and production must run the same PostgreSQL major: pg_dump refuses a newer server and a
+# newer dump won't restore into an older one. docker-compose.yml reads the same variable, and
+# test_config.py fails the build if the two defaults drift.
 POSTGRES_IMAGE_DEFAULT = "postgres:17-alpine"
 POSTGRES_IMAGE = os.getenv("POSTGRES_IMAGE", POSTGRES_IMAGE_DEFAULT)
 

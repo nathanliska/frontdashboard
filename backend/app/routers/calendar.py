@@ -272,11 +272,9 @@ async def list_occurrences(
     window_start = window_start.astimezone(UTC)
     window_end = window_end.astimezone(UTC)
 
-    # Load only what could land in the window, so viewing next week doesn't cost the whole history.
-    # A series is bounded by `starts_at` and, when the rule carries `until`, `until + duration`.
-    # Series without `until` still load unbounded — finding a `count` end means expanding the rule.
-    # As seconds, not the days-and-time interval a timestamp subtraction yields: adding days is done in
-    # the session's zone, so across a DST change it lands an hour off and drops an edit it should load.
+    # Load only what could land in the window: a series is bounded by `starts_at` and, when the rule
+    # carries `until`, `until + duration`. Duration is in seconds, not a days-and-time interval,
+    # which lands an hour off across a DST change and drops an edit (FDR-006).
     series_duration = func.make_interval(0, 0, 0, 0, 0, 0, func.extract("epoch", CalendarEvent.ends_at - CalendarEvent.starts_at))
     series_until = cast(CalendarEvent.recurrence["until"].astext, DateTime(timezone=True))
     # `jsonb_typeof` rather than IS NOT NULL: JSONB can hold the scalar 'null', which passes an

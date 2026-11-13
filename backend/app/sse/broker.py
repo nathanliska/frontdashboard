@@ -197,10 +197,9 @@ async def run_subscriber(*, stop: asyncio.Event | None = None) -> None:
                 # redis-py types this as a scalar union; the wire shape is [(key, [(id, fields)])].
                 response: Any = await client.xread({stream_key(): last_id}, count=100, block=_BLOCK_MS)
                 if _reader_degraded:
-                    # On the way back, not on the way down: the reader may have missed frames while
-                    # it was away, and a client can only act on that once it is being served again.
-                    # Once per outage — resyncing on every failed retry would refetch everything on
-                    # every connected tab, every second, for as long as Redis stayed down.
+                    # On the way back, not on the way down: a client can only act on a resync once
+                    # it is served again. Once per outage, or every failed retry would refetch
+                    # everything on every tab.
                     _reader_degraded = False
                     logger.warning("SSE fan-out reader reconnected; resyncing local clients")
                     manager.deliver_to_all(resync_dict())

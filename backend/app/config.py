@@ -16,10 +16,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     environment: Environment
     log_level: str = "INFO"
-    # The two session timeouts OWASP asks for, both enforced server-side (ADR-003). Idle rides on
-    # `last_used_at` and slides; absolute is fixed at login and never extends, so an actively used
-    # session cannot live forever — which is what the old sliding-only model allowed. Idle matches
-    # the lifetime the retired refresh token had, so nobody is signed out sooner than before.
+    # Both session timeouts are enforced server-side: idle slides on `last_used_at`, absolute is
+    # fixed at login so an actively used session cannot live forever (ADR-003).
     session_idle_days: int = 7
     session_absolute_days: int = 30
     email_verification_expire_hours: int = 1
@@ -47,12 +45,8 @@ class Settings(BaseSettings):
     # tables that grow with usage rather than with the number of users, so without a horizon they
     # grow forever. 90 days is well past the point anyone scrolls back to.
     history_retention_days: int = 90
-    # How long an unverified signup is kept before the reaper purges it. Registration is open to
-    # the internet, so abandoned signups accumulate. Purging one destroys nothing a person could
-    # want: login 403s until the address is verified, so the account provably holds no content
-    # beyond the empty dashboard registration creates. It also *frees the email address*, which is
-    # otherwise reserved forever by the case-insensitive unique index — someone who mistyped their
-    # address can register properly instead of being locked out of their own email for good.
+    # How long an unverified signup is kept before the reaper purges it. Such an account holds no
+    # content, and otherwise reserves its email address forever (FDR-001).
     unverified_retention_days: int = 30
     # Connection pool bounds (finding #37). Postgres costs roughly 5-10 MiB per backend
     # connection, so an unbounded pool turns a request burst into database memory pressure.
@@ -71,12 +65,9 @@ class Settings(BaseSettings):
     health_ready_timeout_seconds: float = 3.0
     # Shared limit windows today, SSE fan-out next: a per-process limit multiplies by N replicas.
     redis_url: str = "redis://redis:6379/0"
-    # Per-creator ceilings on the tables that grow without a retention horizon (finding #61). Rate
-    # limits bound writes per minute; these bound the total, which is what turns a patient script
-    # into a bounded one. Sized from measured worst-case row cost (ADR-020) — the ceiling is
-    # ~115 MB per account, which is several times over what a heavy household reaches in years.
-    # Set well above any plausible human use, because a trashed row counts until it is purged and
-    # nothing reclaims it early: a cap a person could actually reach would strand them for 30 days.
+    # Per-creator ceilings on tables with no retention horizon: rate limits bound writes per minute,
+    # these bound the total. Set far above plausible use, because a trashed row counts until it is
+    # purged (ADR-020).
     quota_dashboards_per_user: int = 100
     quota_lists_per_user: int = 1_000
     quota_items_per_user: int = 25_000
@@ -119,11 +110,9 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
-    # `__Host-` forbids a Domain attribute and requires Secure + path=/, so a sibling subdomain
-    # cannot set a cookie of the same name that shadows ours — the fixation vector a plain name
-    # leaves open. Browsers reject the prefix without Secure, so development (plain HTTP) keeps
-    # the unprefixed name; nothing reads these by literal string except `getCsrfToken` on the
-    # client, which matches both.
+    # `__Host-` stops a sibling subdomain setting a cookie that shadows ours (ADR-002). Browsers
+    # reject the prefix without Secure, so plain-HTTP development keeps the unprefixed name; the
+    # client's `getCsrfToken` matches both.
     @property
     def session_cookie_name(self) -> str:
         return "__Host-session" if self.environment is Environment.production else "session"

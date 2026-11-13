@@ -31,10 +31,8 @@ describe('toast store', () => {
 
     useToastStore.getState().dismiss(id)
 
-    // The defect this pins: the auto-dismiss handle was never captured, so `dismiss` removed the
-    // toast from state but had no way to cancel its timer. The callback stayed queued for the full
-    // 4s holding the store in its closure — harmless in a browser, but a Vitest worker is reused
-    // across files, so every orphaned timer kept a whole module graph reachable.
+    // `dismiss` must cancel the auto-dismiss timer, not just remove the toast: a Vitest worker is
+    // reused across files, so an orphaned timer keeps a whole module graph reachable.
     expect(vi.getTimerCount()).toBe(0)
     expect(useToastStore.getState().toasts).toHaveLength(0)
   })

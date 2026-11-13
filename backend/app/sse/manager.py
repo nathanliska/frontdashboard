@@ -22,11 +22,8 @@ _QUEUE_MAX = 256
 # until that is dequeued, further frames are dropped — the refetch it orders covers their content.
 OVERFLOW_SENTINEL = object()
 
-# Pushed onto a client's queue when its session is revoked. Distinct from
-# OVERFLOW_SENTINEL: that means "you fell behind, resync", which is wrong here — a
-# revoked client that resynced would fire a burst of GETs that all 401 and end at
-# /login anyway. This ends the stream with no resync frame, so the client
-# reconnects, 401s, fails to refresh, and goes to /login directly.
+# Ends a revoked client's stream with no resync frame. OVERFLOW_SENTINEL would be wrong here: a
+# resync would fire a burst of GETs that all 401 on the way to /login anyway.
 REVOKED_SENTINEL = object()
 
 

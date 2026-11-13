@@ -487,10 +487,8 @@ describe('useDashboardStore events', () => {
       dashboard: null,
     })
 
-    // Not awaited yet: handleDashboardEvent runs synchronously up to `await
-    // summariesRefreshPromise`, which is the debounce promise from
-    // scheduleSummariesRefresh — so by the time this call returns, the pending
-    // debounce promise already exists in module state.
+    // Not awaited yet: handleDashboardEvent runs synchronously up to its await on the debounce
+    // promise, so that promise already exists in module state when this call returns.
     const handling = useDashboardStore.getState().handleDashboardEvent(
       makeSseEvent({
         event_type: 'dashboard.updated',
