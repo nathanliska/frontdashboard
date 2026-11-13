@@ -30,72 +30,15 @@ Launch **4 agents in parallel** (Agent tool, `subagent_type: general-purpose`), 
 Each reads actual source, cites `path:line`, rates Critical/High/Medium/Low/Info, gives a concrete
 attack scenario and a suggested fix, and notes the patterns this codebase gets right.
 
-### Agent 1: Authentication & Access Control
+Give each agent the path to its brief and tell it to read that file first. Do not read the
+briefs into this session.
 
-Session resolution and expiry, cookie flags and the `__Host-` prefix, CSRF double-submit and the
-`Origin` check, Argon2 parameters, invite and password-reset token lifecycles, share grants and
-role escalation, and IDOR anywhere a resource id arrives from the client.
-
-The traps: owner is a value `permissions.effective_role` returns for the creator, never the
-absence of a role, and a non-member is a 404 raised there — read it before judging any caller.
-Child resources must reach access through `load_dashboard_access` / `list_accessible_dashboard_ids`,
-which filter trashed dashboards; a direct query on a child table bypasses that.
-
-Key files: `backend/app/auth/`, `backend/app/services/permissions.py`,
-`backend/app/services/shares.py`, `backend/app/services/sessions.py`,
-`backend/app/services/invites.py`, `backend/app/services/password_reset.py`,
-`backend/app/routers/`
-
-### Agent 2: Input Validation, Enumeration & Abuse
-
-Account enumeration through response bodies, status codes or timing on register, login, reset,
-verification and invite; rate-limit coverage and whether the limit key can be
-spoofed through proxy headers; unbounded queries, pagination ceilings and other DoS vectors; mass
-assignment through request schemas; error messages that leak internals.
-
-Every non-GET route needs `_csrf: None = Depends(require_csrf)` **and** `@limiter.limit(WRITE_LIMIT)`
-with a `request: Request` parameter. A test catches the missing limit; nothing catches a route that
-takes the CSRF dependency but validates the wrong thing. Beware any audit looping over `app.routes`
-— slowapi's included-router nesting means it can pass having checked nothing.
-
-Key files: `backend/app/routers/auth.py`, `backend/app/routers/invites.py`,
-`backend/app/schemas/`, `backend/app/limiter.py`, `backend/app/middleware.py`,
-`backend/app/config.py`
-
-### Agent 3: Data Exposure & Lifecycle
-
-SSE fan-out audience — who receives an event after a share is revoked, a dashboard is trashed, or a
-user is deleted; the activity feed and notification staging; soft delete, the trash and the 30-day
-reaper; retention sweeps; credentials or tokens reaching logs; metric labels carrying user data or
-unbounded cardinality.
-
-The traps: events are addressed with `dashboard_audience_user_ids(...)` and committed through
-`commit_and_broadcast(...)` — a content event addressed to an
-audience from before a permission change leaks to whoever just lost access. A removal notice is
-the deliberate exception: its audience is taken before the delete, so the removed user's tabs
-receive it and drop the dashboard. A table with a `dashboard_id` or `users` foreign key that is missing from the
-matching sweep in `services/retention.py` either outlives the purge or rolls back the whole tick,
-because none of those FKs cascade.
-
-Key files: `backend/app/sse/`, `backend/app/services/activity.py`,
-`backend/app/services/notifications.py`, `backend/app/services/retention.py`,
-`backend/app/metrics.py`, `backend/app/models/`
-
-### Agent 4: Frontend & Serving
-
-The `apiFetch` network boundary and `parseJson` validation, what a `401` versus a `403` is allowed
-to do to session state, XSS through `dangerouslySetInnerHTML` or user-controlled URLs, open
-redirects on post-auth navigation, anything sensitive reaching `localStorage` or the client bundle,
-CSP and security headers, cache-control on the document versus hashed assets, and container
-hardening.
-
-The traps: only `401` means logged out — a `403`, `5xx`, timeout or network rejection that clears
-the session is a denial-of-service on the user. Retries are GET-only. Session state lives in one
-opaque cookie; a token in `localStorage` is a finding, not a style preference.
-
-Key files: `frontend/src/api/http.ts`, `frontend/src/api/client.ts`,
-`frontend/src/stores/auth.ts`, `frontend/src/hooks/useSSE.ts`, `Caddyfile.prod`,
-`frontend/Dockerfile.prod`, `backend/Dockerfile.prod`, `docker-compose.prod.yml`
+| Agent | Surface | Brief |
+|---|---|---|
+| Agent 1 | Authentication & Access Control | [briefs/1-auth-access.md](briefs/1-auth-access.md) |
+| Agent 2 | Input Validation, Enumeration & Abuse | [briefs/2-input-abuse.md](briefs/2-input-abuse.md) |
+| Agent 3 | Data Exposure & Lifecycle | [briefs/3-data-lifecycle.md](briefs/3-data-lifecycle.md) |
+| Agent 4 | Frontend & Serving | [briefs/4-frontend-serving.md](briefs/4-frontend-serving.md) |
 
 ## Phase 2: Compile
 
