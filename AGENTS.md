@@ -41,17 +41,12 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 ## Prime Directives
 
 - Prefer simple, clear changes over clever abstractions.
-- Follow the language's documentation standard. Python docstrings are [PEP 257](https://peps.python.org/pep-0257/):
-  a one-line summary that fits on its own line, a blank line before any elaboration, closing
-  quotes on their own line for multi-line strings. Enforced by Ruff's `D2`/`D4` rules. Exported
-  TypeScript uses [TSDoc](https://tsdoc.org/)-style `/** */` blocks.
-- Write a docstring when a symbol is part of the public API, is of nontrivial size, or has
-  non-obvious logic — the [Google style guide](https://google.github.io/styleguide/pyguide.html)
-  test. A name and signature that already describe the thing need no restatement.
-- Comments explain *why*, never *what*: "never describe the code", per the same guide. Assume the
-  reader knows the language. Don't restate the types — argument and return shapes are in the
-  signature — but do record invariants, lifecycle behavior, and what a call raises when a caller
-  must handle it.
+- Python docstrings are [PEP 257](https://peps.python.org/pep-0257/), enforced by Ruff's
+  `D2`/`D4` rules; exported TypeScript uses [TSDoc](https://tsdoc.org/)-style `/** */` blocks.
+  Write one when a symbol is public API, of nontrivial size, or non-obvious — not to restate a
+  name and signature.
+- Comments explain *why*, never *what*. Don't restate the types; do record invariants, lifecycle
+  behavior, and what a call raises when a caller must handle it.
 - **Hard cap: three lines per comment.** Being a genuine *why* is no exemption — length is its own
   rule. Longer means the rationale belongs in an ADR/FDR: write it there and link it.
 - Keep change history out of comments. No "this used to…", no finding or ticket numbers. Durable
@@ -64,12 +59,11 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 - Never log bearer credentials: verification and reset URLs, session or CSRF tokens, invite codes,
   or password material.
 - Name roles, not identities. Outward text — docs, code, comments, commit messages, PR bodies —
-  carries no personal names or emails, no hostnames, and no deployment-platform branding: "the prod
-  host", "the maintainer". The LICENSE line and the repository's own URLs are the deliberate
-  exceptions. A platform outlives its own name being scrubbed — its plugin names and share paths
-  identify it just as well. Another product cited as precedent goes the same way: the reason has to
-  stand without it. Grep a list of names you already suspect and you find only those; sweep by
-  discovery instead — mid-sentence capitals and external link domains surface the rest.
+  carries no personal names or emails, no hostnames, and no deployment-platform branding (its
+  plugin names and share paths included): "the prod host", "the maintainer". The LICENSE line and
+  the repository's own URLs are the deliberate exceptions. Another product cited as precedent
+  goes the same way: the reason has to stand without it. Sweep by discovery — mid-sentence
+  capitals and external link domains — not by grepping names you already suspect.
 
 ## Hard Rules
 
@@ -121,10 +115,9 @@ make seed        # seed development data
 make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 ```
 
-- `/live-verify` runs the real production images against a throwaway database and drives them in a
-  browser — the only check that sees a blank page, a stray refetch, or a serving/caching fault.
-  After a deploy, verify the live site from outside with the checks in
-  [docs/runbooks/deploy.md](docs/runbooks/deploy.md), read-only.
+- `/live-verify` runs the real production images in a browser — the only check that sees a blank
+  page, a stray refetch, or a serving/caching fault. After a deploy, verify the live site from
+  outside with [docs/runbooks/deploy.md](docs/runbooks/deploy.md), read-only.
 - Backend integration tests need PostgreSQL: either a Docker socket (Testcontainers) or
   `TEST_DATABASE_URL` pointing at a dedicated test database. `make test-unit` needs neither.
 - The CI audit fails only on an advisory the change itself introduces; one published against what
@@ -140,35 +133,28 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
 
 ## Architecture
 
-- `backend/` — Python 3.14+, FastAPI, SQLAlchemy 2.0 (async), Alembic migrations, PostgreSQL 17.
-- `frontend/` — React 19 + TypeScript, Vite, Tailwind CSS, Zustand stores, react-grid-layout v2.
-- Infra — Docker Compose (dev + prod variants), Caddy reverse proxy (prod), `uv` and `npm`.
-- **Valkey** — holds the rate-limit windows and the SSE fan-out stream. Nothing durable lives
-  there, and both consumers keep serving without it
-  ([ADR-013](docs/adr/ADR-013-rate-limit-cf-connecting-ip.md),
-  [ADR-004](docs/adr/ADR-004-sse-over-websocket.md)). `REDIS_URL`, `redis://` and redis-py keep
-  their names on purpose — they name the protocol. Don't "fix" that.
-- **Sharing model**: per-resource `ResourceShare` rows. Dashboards are shared directly with users
-  (viewer/editor, owner = creator); lists and calendar events **inherit** access from the
-  dashboard whose widget binds them, so their `/shares` endpoints are deliberate 409 stubs.
-- **Delete boundary**: recoverable where reconstruction is expensive. Dashboards and lists go to a
-  trash on DELETE, restorable for 30 days or purgeable on demand; a calendar event is tombstoned and
-  undoable from its deletion toast; list items and widgets are removed outright. Every tombstone has
-  an endpoint that clears it — one without is a bug
+- `backend/` — Python 3.14+, FastAPI, SQLAlchemy 2.0 (async), Alembic, PostgreSQL 17.
+  `frontend/` — React 19 + TypeScript, Vite, Tailwind CSS, Zustand, react-grid-layout v2.
+  Infra — Docker Compose (dev + prod), Caddy (prod), `uv` and `npm`.
+- **Valkey** holds the rate-limit windows and the SSE fan-out stream — nothing durable, and both
+  consumers keep serving without it. `REDIS_URL`, `redis://` and redis-py keep their names on
+  purpose: they name the protocol. Don't "fix" that.
+- **Sharing**: dashboards are shared with users (viewer/editor, owner = creator); lists and
+  calendar events **inherit** access from the dashboard whose widget binds them, so their
+  `/shares` endpoints are deliberate 409 stubs.
+- **Delete boundary**: dashboards, lists and calendar events are recoverable; list items and
+  widgets are removed outright. Every tombstone has an endpoint that clears it
   ([ADR-007](docs/adr/ADR-007-soft-delete-boundary.md)).
-- **Auth**: one opaque session cookie (HttpOnly, `__Host-` prefixed in prod) resolved against a
-  `sessions` row on every request, plus an `Origin` check and CSRF double-submit. No JWT, no
-  refresh token, no `/auth/refresh`, no localStorage tokens
+- **Auth**: one opaque session cookie resolved against a `sessions` row on every request, plus an
+  `Origin` check and CSRF double-submit. No JWT, no refresh token, no localStorage tokens
   ([ADR-002](docs/adr/ADR-002-httponly-cookie-csrf.md),
   [ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
-- **Real-time**: SSE, not WebSocket; one multiplexed connection per open tab, fanned out by user.
-  Fan-out reaches other workers over a Valkey stream, and a lost frame is repaired by the reader's
-  resync rather than retried.
-- **State**: Zustand stores shared between widgets and full pages. REST for the initial fetch, SSE
-  for incremental updates.
-- **API contract**: the backend's OpenAPI document is authoritative. The frontend's types are
-  generated from it (`make contracts`, committed, CI fails on drift) and every response body is
-  validated at the network boundary. Never hand-write a client DTO.
+- **Real-time**: SSE, one multiplexed connection per tab, fanned out by user; a lost frame is
+  repaired by the reader's resync rather than retried
+  ([ADR-004](docs/adr/ADR-004-sse-over-websocket.md)).
+- **API contract**: the backend's OpenAPI document is authoritative; the frontend's types are
+  generated from it (`make contracts`, committed, CI fails on drift). Never hand-write a client
+  DTO.
 
 ## Which Rules Fail the Build
 
@@ -206,9 +192,6 @@ nothing (`empty_parameter_set_mark = "fail_at_collect"`), router sources are enu
   Counts include trashed rows on purpose ([ADR-020](docs/adr/ADR-020-resource-quotas.md)).
 - Reject an authentication attempt with `raise auth_failure(...)`, never a bare `HTTPException`.
   Authorization refusals are a different thing and stay out.
-- One role vocabulary, two types: `EffectiveRole` is computed, `ShareRole` is the `Literal` subset
-  **derived** from it that a row stores, so `owner` is unrequestable. Don't add a second enum;
-  narrow a stored value through `as_share_role`.
 - Child resources reach access through `load_dashboard_access` / `list_accessible_dashboard_ids`,
   which filter trashed dashboards. Querying a child table directly breaks that invariant.
 - Commit and fan out through `commit_and_broadcast(...)`, never `manager.broadcast`. Build the
@@ -254,8 +237,6 @@ nothing (`empty_parameter_set_mark = "fail_at_collect"`), router sources are enu
 - A widget responding to its own size uses a CSS container query for spacing, type and visibility;
   only what CSS cannot decide (how many rows fit, a number react-grid-layout needs) earns a
   `useContainerSize`. The variant's ancestor must declare `@container`, which jsdom cannot see.
-- `useContainerSize` arms its observer from a **callback ref**, not an effect over a `useRef` —
-  every caller renders a spinner first, so an effect finds `null` once and never runs again.
 - A pixel constant standing in for a class belongs in the file that writes the class; apart, the
   two drift with nothing to catch it.
 - The sidebar has **two** states: a labelled rail, and off-canvas below `nav:`. `--breakpoint-nav`
@@ -291,24 +272,18 @@ nothing (`empty_parameter_set_mark = "fail_at_collect"`), router sources are enu
 
 ## Documentation Updates
 
-- A feature landing or being deliberately deferred → fold its *current behavior* into the right
-  CONTEXT.md section. It is a snapshot, not a changelog.
-- A cross-cutting architectural decision → add or amend an ADR and update `docs/adr/INDEX.md`
-  (`adr` skill). Supersede rather than delete when a decision is replaced. A decision local to one
-  feature belongs in that feature's FDR.
-- A feature's behavior or rationale changing → rewrite the affected FDR section in place, bump
-  **Last reviewed**, and cite any new ADR (`fdr` skill).
-- A project-specific term being coined or renamed → add or rewrite its `docs/GLOSSARY.md` entry in
-  the right section and cross-link the owning FDR/ADR (`glossary` skill).
-- A backlog finding shipping or being deferred → remove or update its `docs/TODO.md` item in the
-  same change. The execution detail lives in the commit; don't reproduce it in a doc.
+- A feature landing or being deferred → fold its *current behavior* into CONTEXT.md, in a line
+  or two with a link. It is a snapshot, not a changelog, and not where reasons live.
+- A cross-cutting decision → an ADR (`adr` skill); one local to a feature → its FDR, rewritten in
+  place with **Last reviewed** bumped (`fdr` skill). Supersede rather than delete.
+- A coined or renamed term → `docs/GLOSSARY.md` (`glossary` skill).
+- A backlog finding shipping or being deferred → update `docs/TODO.md` in the same change. The
+  execution detail lives in the commit; don't reproduce it in a doc.
 - A new repo-wide standing rule → this file, in a line or two. A gotcha belongs at the code it
   governs or in its FDR; this file is a loose guide, not a ledger.
 
 ## Git Hooks
 
-`make hooks`, once per clone, installs [pre-commit](https://pre-commit.com/) via `uv` for all
-stages: pre-commit (ruff, biome, deptry, gitleaks, whitespace), prepare-commit-msg (subject
-normalization), commit-msg (Conventional Commit enforcement — `feat`, `fix`, `docs`, `refactor`,
-`chore`, `test`, `ci`, `perf`, `style`, `build`, `revert`), and pre-push (refuses a push to
-`main`).
+`make hooks`, once per clone, installs [pre-commit](https://pre-commit.com/) for every stage:
+lint and secret scanning on commit, Conventional Commit enforcement on the message, and a
+pre-push that refuses a push to `main`.
