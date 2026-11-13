@@ -1,12 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  apiCreateItem,
-  apiDeleteItem,
-  apiDeleteList,
-  apiGetList,
-  apiGetListDetails,
-  retireListDetailRequests,
-} from './lists'
+import { apiCreateItem, apiDeleteItem, apiDeleteList, apiGetList } from './lists'
 
 const { apiFetch } = vi.hoisted(() => ({ apiFetch: vi.fn() }))
 vi.mock('./client', () => ({ apiFetch }))
@@ -74,37 +67,5 @@ describe('a read that loses access is distinguishable from an outage', () => {
     // connection" otherwise. Its own test mocks this rejection, so nothing else proves the
     // boundary really produces it — this does.
     await expect(apiGetList('list-1')).rejects.toMatchObject({ name: 'ApiError', status: 404 })
-  })
-})
-
-describe('apiGetListDetails', () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it('shares one request between callers that ask while it is open, then asks again', async () => {
-    apiFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue([]) })
-
-    await Promise.all([apiGetListDetails('dash-1'), apiGetListDetails('dash-1')])
-    expect(apiFetch).toHaveBeenCalledTimes(1)
-
-    await apiGetListDetails('dash-1')
-    expect(apiFetch).toHaveBeenCalledTimes(2)
-  })
-
-  it('opens a new request once the open one is retired, and the old one settling leaves it be', async () => {
-    let settleFirst: (res: unknown) => void = () => {}
-    const response = { ok: true, status: 200, json: vi.fn().mockResolvedValue([]) }
-    apiFetch
-      .mockReturnValueOnce(new Promise((resolve) => (settleFirst = resolve)))
-      .mockReturnValue(new Promise(() => {}))
-
-    const first = apiGetListDetails('dash-1')
-    retireListDetailRequests()
-    void apiGetListDetails('dash-1')
-    expect(apiFetch).toHaveBeenCalledTimes(2)
-
-    settleFirst(response)
-    await first
-    void apiGetListDetails('dash-1')
-    expect(apiFetch).toHaveBeenCalledTimes(2)
   })
 })

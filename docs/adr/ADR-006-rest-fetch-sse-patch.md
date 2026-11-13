@@ -46,7 +46,8 @@ Every resource does an **initial REST fetch**; **SSE events then patch caches in
   patch, which is partial, the read is issued again at once and the patched state stays on screen
   meanwhile. Overtaken by a seed, which is authoritative, the answer is dropped and nothing more
   is read. Invalidated mid-flight, the answer is applied and a mounted scope reads again, while
-  an unmounted one waits for its next mount. A failed read is never retried on its own. This is
+  an unmounted one waits for its next mount. A caller that joins a read already out, after an
+  invalidate, is owed one newer than it. A failed read is never retried on its own. This is
   the cache layer's job, not each event handler's.
 - **Payload shape is part of the contract**: hot events must carry enough to patch; changing a
   payload to omit a field silently forces the divergence-refetch fallback.
