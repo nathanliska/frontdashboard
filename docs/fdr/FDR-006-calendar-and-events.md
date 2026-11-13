@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-11-09
+**Last reviewed:** 2026-11-13
 
 ## Overview
 
@@ -60,7 +60,10 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
   invitation: no notification is sent and no access is granted or implied. Adding someone new
   requires current membership (422 otherwise); reads return participants with display names on
   events and on every expanded occurrence. A member who later loses dashboard access stays named
-  on the event, and later edits may keep them — only newcomers are membership-checked.
+  on the event, and later edits may keep them — only newcomers are membership-checked. They show
+  as toggle-chips in the editor, colored initial-dots on cards and agenda rows, and bare micro-dots
+  on month pills wide enough to keep them; a color is hashed from the user id, so there is nothing
+  to configure.
 
 ## Design Decisions
 

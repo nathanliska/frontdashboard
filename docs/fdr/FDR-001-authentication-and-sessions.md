@@ -1,7 +1,7 @@
 # FDR-001: Authentication & Sessions
 
 **Status:** Active
-**Last reviewed:** 2026-11-05
+**Last reviewed:** 2026-11-13
 
 ## Overview
 
@@ -72,6 +72,17 @@ multi-user account model with immediate, per-device session control — not just
   current password answers **403**, not 401 — a 401 is the client's only signal that a session is
   gone, so it signed people out of the form they were using. Both refusals, the wrong current
   password and a breached new one, attach to the field that caused them rather than raising a toast.
+- **The sign-in and register pages say what the app is.** Registration is open, so those pages are
+  the front door: both render one shared pitch panel beside the form — a headline, a sentence, and a
+  drawing of a dashboard built from markup rather than an image, since these are the eagerly loaded
+  public routes. The panel follows the form in the DOM and is moved left with CSS `order`, so it
+  never precedes the fields for Tab or a screen reader; below `lg` it reads underneath the form.
+- **Abandoned signups are purged after 30 days.** Registration is open to the internet, so
+  unverified accounts accumulate, and each reserves an email the unique index would otherwise hold
+  forever. Login refuses an unverified address, so such an account holds no content. Accounts that
+  *do* own content are excluded per user rather than vetoing the sweep: users who predate email
+  verification read as unverified despite being ordinary users, and recover by logging in — the 403
+  redirects to the resend page with their address prefilled.
 
 ## Design Decisions
 

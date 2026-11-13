@@ -127,7 +127,7 @@ the ADR, not merely observe the behavior:
   dashboard whose widget binds them. It is a deliberate stub, not a missing endpoint.
 - `role is None` is the **owner**, the most privileged case.
 - One opaque session cookie resolved per request; no JWT, no refresh token, no `/auth/refresh`, no
-  tokens in `localStorage` ([ADR-002](../../../docs/adr/ADR-002-jwt-httponly-cookies-csrf.md),
+  tokens in `localStorage` ([ADR-002](../../../docs/adr/ADR-002-httponly-cookie-csrf.md),
   [ADR-003](../../../docs/adr/ADR-003-first-class-sessions.md)).
 - Registration is open to anyone with a verifiable email. Enumeration and abuse findings still
   stand; "unauthenticated users can register" on its own does not.

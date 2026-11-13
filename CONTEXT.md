@@ -2,468 +2,229 @@
 
 > **This is a CURRENT-STATE doc, not a changelog.** When a feature lands, fold its *current
 > behavior* into the right section below; don't append dated entries. Remove what no longer
-> exists. Open remediation work lives in [docs/TODO.md](docs/TODO.md).
+> exists. It says *what* is built: the reasons live in the linked
+> [ADRs](docs/adr/INDEX.md) and [FDRs](docs/fdr/INDEX.md), and open remediation work in
+> [docs/TODO.md](docs/TODO.md).
 
-_Last updated: 2026-11-05_
+_Last updated: 2026-11-13_
 
 ## What's built
 
-**Auth & account**
-- Registration → email verification (required before login) → an opaque session cookie
-  (HttpOnly) guarded by an `Origin` check plus CSRF double-submit. One credential, no
-  access/refresh split.
-- **Email identity is case-insensitive**: addresses are normalized (trim + lowercase) at the API
-  boundary and a `lower(email)` functional unique index is the DB guarantee, so casing can't create
-  duplicate accounts or block login. Display names are bounded (trimmed, non-empty, ≤100 chars).
-- **Sessions are first-class, and are the entire credential**: one `sessions` row per login
-  holding the SHA-256 of the opaque token in the `session` cookie. Every request resolves that row,
-  so revocation is immediate. Two clocks bound it, both server-side: an **idle** window
-  (`last_used_at`, 7d) slid on each request by the auth dependency, and an **absolute** one
-  (`expires_at`, 30d) fixed at login. Password change revokes every *other* session and keeps
-  yours; reset and logout revoke accordingly.
-- The access/refresh split was removed 2026-07-28 ([ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
-  It bought nothing — the per-request session check already made revocation immediate, so a short
-  token expiry bounded nothing — while costing a mandatory `/auth/refresh` round trip whose
-  failure during a deploy signed users out, and reuse detection that read a *lost response* as
-  theft. Both were observed in production. The trade taken knowingly: no theft detection.
-- Password reset via email; authenticated password change, profile rename and **change of email**
-  (confirmed from the new inbox, announced to the old, cancelled by a password change —
-  [FDR-001 §8](docs/fdr/FDR-001-authentication-and-sessions.md)). Rate limits on all
-  auth endpoints. **An account can delete itself** (profile page, against the password): own
-  dashboards are purged, memberships and sessions go, their activity rows are renamed, the address
-  is free again, and the `users` row stays as a "Deleted user" tombstone so what they wrote on
-  shared dashboards keeps its author.
-  Refused while they own a dashboard others can see ([FDR-001 §7](docs/fdr/FDR-001-authentication-and-sessions.md)).
-  A write that commits *after* the tombstone — a rename from the person's own second tab — is
-  discarded by a `BEFORE UPDATE` trigger, so the anonymisation stands whichever writer raced it. A new password is screened against the breach-derived common-password list
-  (`services/passwords.py`) at registration, reset and change — length alone let `password123`
-  through. Existing passwords are not re-screened. An address at a throwaway-inbox service is
-  refused at registration and email change (`services/email_domains.py`, the maintained
-  `disposable-email-domains` list); privacy relays still register, and existing accounts keep theirs.
+**Auth & account** — [FDR-001](docs/fdr/FDR-001-authentication-and-sessions.md)
+- Registration → email verification (required before login) → one opaque session cookie
+  (HttpOnly), guarded by an `Origin` check plus CSRF double-submit
+  ([ADR-002](docs/adr/ADR-002-httponly-cookie-csrf.md)). No access/refresh split.
+- **Sessions are the entire credential**: one `sessions` row per login holding the SHA-256 of the
+  cookie's token, resolved on every request, so revocation is immediate. An idle window (7d, slid
+  per request) and an absolute one (30d from login) bound it. Password change revokes every
+  *other* session ([ADR-003](docs/adr/ADR-003-first-class-sessions.md)).
+- **Email identity is case-insensitive** (normalized at the API boundary, `lower(email)` unique
+  index). Display names are trimmed, non-empty, ≤100 chars.
+- Password reset by email; authenticated password change, profile rename and **change of email**,
+  confirmed from the new inbox and announced to the old (§8). Every auth endpoint is rate-limited.
+- **An account can delete itself**, against the password: own dashboards are purged, memberships
+  and sessions go, and the `users` row stays as a "Deleted user" tombstone so shared content keeps
+  its author. Refused while they own a dashboard others can see (§7).
+- New passwords are screened against a common-password list at registration, reset and change —
+  length alone let `password123` through. Throwaway-inbox addresses are refused at registration
+  and email change; privacy relays are not (§9).
 - **A link that changes who you are says so first.** The reset page checks its token before
-  offering a form (`POST /auth/password-reset/check`, which reports validity only and never
-  consumes), so a dead, spent or unknown link says so instead of failing after a password is
-  typed twice; a signed-in visitor is warned the link may not be theirs, without naming its owner.
-  A verification link opened while signed in asks before switching accounts. Sending another
-  verification link keeps the earlier ones working (none within a minute of the last), and
-  verifying through any of them spends the rest (FDR-001 §10).
-- **No endpoint reveals whether an account exists.** Login, registration, password reset and
-  resend-verification all answer identically for known and unknown addresses. Registration pays
-  an Argon2 hash either way, and password reset and resend-verification answer before doing any
-  account-dependent work (FDR-001 §11), so timing doesn't leak what the response won't. Signing up with an
-  address that already has an account creates nothing and emails the owner instead. See ADR-011.
-- **Password hashing is Argon2, run off the event loop**: `hash_password`/`verify_password` execute
-  in a worker thread via `anyio.to_thread.run_sync` under a shared, bounded capacity limiter
-  (`argon2_max_concurrency`, default 4), so an auth burst can't stall the event loop or exhaust
-  memory. **Login is enumeration-safe**: it always pays exactly one Argon2 verify (against a fixed
-  dummy hash when the email is unknown) and returns an identical 401 whether the account is missing
-  or the password is wrong — no timing side-channel.
-- Emails send via Resend in background tasks. Without an API key, **development** writes the
-  rendered message to a gitignored `backend/.dev-mail/` outbox (how you get tokens locally) and logs
-  only the file path — the links are bearer credentials, so they stay out of the log stream; any
-  other environment logs that the mail was dropped. HTML templates exist for all three flows.
-- **The sign-in and register pages say what the app is.** Registration is open, so those pages are
-  the front door: both render one shared pitch panel beside the form — a headline, a sentence, and a
-  drawing of a dashboard built from markup rather than an image, since these are the eagerly loaded
-  public routes. The forms are unchanged. The panel follows the form in the DOM and is moved left
-  with CSS `order`, so it never precedes the fields for Tab or a screen reader; below `lg` it reads
-  underneath the form, which sits at the top of the page rather than centred in it.
-- Profile page: display name, password change, home-dashboard preference, and a paged active-session
-  panel. Sessions are titled by browser and platform ("Chrome on Windows") and show sign-in/last-active
-  times and the current-session marker; another session can be revoked without a follow-up GET.
-  Refresh is explicit. The coarse label is all that is recorded — no IP, no User-Agent string.
-- **Client state resets at every auth boundary** (login, logout, email verification, unauthenticated
-  startup): notifications, resource caches, and the dashboard store (fields, in-flight request
-  machinery) are all cleared. A shared session-generation counter guards every
-  async write in the **dashboard, auth, and notifications** stores — each captures the generation at
-  entry and drops its post-await write if a boundary crossed — so a prior account's in-flight response
-  can't repopulate the next account's state (dashboards, `user`, or notifications) in the same tab.
-  Only a 401 at startup means signed out; an unreachable server shows a retry. A sign-out whose
-  server call fails keeps the local reset and offers a retry, since the session may still be live.
-  Delayed 401 responses from a prior session cannot clear a newer sign-in.
-  Logout tears down the session view and SSE stream before its network round-trip.
+  offering a form, without consuming it; a verification link opened while signed in asks before
+  switching accounts. A resent verification link keeps the earlier ones working, and verifying
+  through any of them spends the rest (§10).
+- **No endpoint reveals whether an account exists** — login, registration, reset and
+  resend-verification answer identically for known and unknown addresses, in response and in
+  timing ([ADR-011](docs/adr/ADR-011-enumeration-safe-login.md), §11).
+- **Argon2 runs off the event loop** under a bounded limiter (`argon2_max_concurrency`, default 4)
+  ([ADR-010](docs/adr/ADR-010-argon2-off-event-loop.md)).
+- Emails send via Resend in background tasks. Without an API key, development writes the rendered
+  message to the gitignored `backend/.dev-mail/` outbox and logs only the file path; any other
+  environment logs that the mail was dropped. HTML templates exist for all three flows.
+- The sign-in and register pages share a pitch panel beside the form saying what the app is.
+- Profile page: display name, password change, home-dashboard preference, and a paged
+  active-session panel titled by browser and platform; another session can be revoked from it,
+  and refresh is explicit.
+- **Client state resets at every auth boundary**, and a session-generation counter drops any
+  in-flight response from the previous account
+  ([ADR-012](docs/adr/ADR-012-session-generation-guard.md)). Only a 401 means signed out; an
+  unreachable server shows a retry.
 
-**Dashboards & widgets**
-- Multiple dashboards per user; default "My Dashboard" created on registration. Listing page
-  with favorites, a create modal, and a **Trash** view (#40): delete moves the dashboard (with its
-  lists/events) to the owner's trash, restorable for 30 days with the deadline shown — and from an
-  **Undo** on the confirmation toast, for both dashboards and lists, so a misclick is recovered where
-  it happened rather than in the Trash view; the retention
-  reaper then purges the full cascade. Restore brings shares and children back intact. **Archive was
-  removed (2026-07-27)** — trash is the only put-away state, for dashboards and lists alike.
-- Editor: react-grid-layout drag/resize, saves with optimistic version. A 409 is resolved in the
-  client — re-read, replay the drag onto the server's layout, retry once — and only a second one
-  raises the conflict banner offering a reload; settings modal (rename; share as owner, or a read-only roster as editor).
-- **The canonical grid is 24 x 24 and both axes are hard bounds.** A board is one screen: row height
-  is derived so 24 rows and their gaps fill the room below the grid, and nothing — drag, resize,
-  collision push or server-side placement — may leave it. A gesture whose *result* would leave the
-  grid first tries re-seating the other widgets around it, since compaction settles upward and so
-  never finds room *beside* a widget; only when that fails does the gesture revert. A new widget
-  takes the largest box up to its default size that fits above its minimum: 4×4 cells for
-  clock/list/agenda, 8×8 for calendar. An unusable gap returns 409. Existing smaller widgets keep
-  their arrangement, but cannot shrink below their saved dimensions; enlarged dimensions become
-  the next save’s floor until the type minimum is reached. Overlap is rejected on the
-  write path too, so a client bug cannot store a board no client
-  can render back. Both counts are validated there and mirrored in the client, with
-  `test_grid_basis_coverage.py` failing the build on drift — changing either is a data migration,
-  since a coordinate is meaningless without its basis.
-- **The persisted layout is canonical; the stacked view is a derived projection.** Below 960px of
-  board — the width at which a default four-column widget falls under 150px, so a split screen
-  stacks for the same reason a phone does — the grid renders a computed one-column stack, each widget
-  capped under one phone screen, and layout events are ignored there (and on read-only dashboards),
-  so the projection can never overwrite the desktop arrangement. Editing one would need its own per-breakpoint persisted layout — not built.
-- **Layout saves are serialized and coalesced**: one PUT in flight at a time plus one latest-pending
-  layout, each send re-reading the version the previous save returned. Rapid drag/resize therefore
-  can't conflict with itself or install an older layout; a 409 means a *real* other-editor conflict.
-- **Dashboard mutations share one success/failure contract**: store actions never throw —
-  value-producers resolve `T | null`, void ones resolve `boolean`, and the store owns the error
-  toast. Dialogs close, inputs clear, and navigation happen only on a truthy result, so a failed
-  create/rename/widget-add/share-add keeps the user's input instead of discarding it.
-- Calendar day cells (widget and page) fill every pill row they have room for and put "+N" on the
-  date's line; narrow cells show titles without times, cut with a fade rather than "…", and a
-  month widget cell too short for a pill under its date folds into one line of date,
-  first title and "+N". Widget cells link to the full calendar at that local date and dashboard.
-  Every week of the month stays in view; that grid never scrolls. Below 460px wide the week view
-  lists one row per day, up to four events and "+N", and the list scrolls. A multi-day all-day event reads as its date
-  range ("Sep 23 - Sep 27"), not "All day".
+**Dashboards & widgets** — [FDR-002](docs/fdr/FDR-002-dashboards-and-layout.md),
+[FDR-003](docs/fdr/FDR-003-widgets.md)
+- Multiple dashboards per user; a default "My Dashboard" is created on registration. The listing
+  page has favorites, a create modal and a **Trash** view: delete moves a dashboard and its lists
+  and events to the owner's trash, restorable for 30 days or from **Undo** on the toast, then
+  purged by the retention reaper ([ADR-007](docs/adr/ADR-007-soft-delete-boundary.md)).
+- Editor: react-grid-layout drag/resize, saved with an optimistic version. A 409 is resolved in the
+  client — re-read, replay the gesture, retry once — and only a second one raises the conflict
+  banner ([ADR-008](docs/adr/ADR-008-layout-version-occ.md)). Saves are serialized and coalesced,
+  so rapid gestures cannot conflict with themselves.
+- **The canonical grid is 24 x 24 and both axes are hard bounds**: a board is one screen, and
+  nothing — drag, resize, collision push or server placement — may leave it. Overlap and
+  out-of-bounds are rejected on the write path. A new widget takes the first free slot at up to
+  its default size, never below its type minimum (4×4, or 8×8 for calendar); no usable gap is a
+  409 ([ADR-009](docs/adr/ADR-009-canonical-layout-mobile-projection.md)).
+- **The stacked view is a derived projection.** Below 960px of board the grid renders a read-only
+  one-column stack, each widget capped under one phone screen; it can never be written back.
+- **Dashboard mutations share one success/failure contract**: store actions never throw, and
+  dialogs close only on a truthy result, so a failed write keeps the user's input.
 - Widget types: **list** (bind existing or auto-create), **clock**, **calendar**, **agenda**
-  (today/overdue/upcoming). Add-widget wizard picks type → resource where applicable.
+  (today/overdue/upcoming). A widget config change patches other tabs in place rather than
+  reloading them.
+- Calendar cells (widget and page) fill the pill rows they have room for and put "+N" on the
+  date's line; the month grid never scrolls, and below 460px the week view lists one row per day.
 
-**Sharing** (groups feature was removed — per-resource shares replaced it)
-- Dashboards are shared by **single-use invite link** carrying viewer/editor; owner = creator. There
-  is no user search — the owner mints a link and sends it themselves, so no one can discover who else
-  has an account. Codes are stored hashed, expire, are shown once, and can be revoked while unused;
-  the public `/invite/:code` page previews the dashboard and inviter, and accepting is a separate POST
-  so scanners can't burn a link.
-- Lists and calendar events inherit access from the dashboard that binds them; their `/shares`
-  endpoints are deliberate 409 stubs. Role change/unshare notifies affected users and cleans up
-  their preferences. **Every grant is a redeemed invite** — the direct grant-by-user-id endpoint
-  was removed, so access never appears without the recipient acting.
-- A member can **leave** a shared dashboard (card menu → Leave, `DELETE /{id}/membership`) — their
-  own share is removed, preferences cleaned up, and the feed records "you left". The owner cannot
-  leave; their exits are deleting the dashboard or **handing it to a member** (settings modal →
-  crown on a row, `POST /{id}/owner`), after which they stay on as an editor
-  ([FDR-004](docs/fdr/FDR-004-sharing-and-access.md)).
+**Sharing** — [FDR-004](docs/fdr/FDR-004-sharing-and-access.md)
+- Dashboards are shared by **single-use invite link** carrying viewer/editor; owner = creator.
+  There is no user search and no direct grant — every grant is a redeemed invite. Codes are stored
+  hashed, expire, are shown once and can be revoked while unused; accepting is a separate POST.
+- Lists and calendar events inherit access from the dashboard that binds them.
+- A member can **leave** a shared dashboard. The owner cannot; their exits are deleting it or
+  **handing it to a member**, after which they stay on as an editor.
 
-**Lists**
-- Master/detail lists UI with nested routes + mobile slide nav; items support check, due date,
-  priority, category, assignee, manual sort order. Delete moves a list to the trash in one action
-  (no archive-first gate) — it unbinds the widgets that showed it and is restorable for 30 days via
-  `GET /lists/trash` + `POST /lists/{id}/restore`. Items carry no tombstone — deleting one removes
-  the row, so it frees its quota at once (ADR-007).
-- **Drag-and-drop reorder** (dnd-kit) of items within a list and of lists in the sidebar, via
-  drag handles with keyboard support. Order persists through two transactional endpoints
-  (`PUT /lists/{id}/items/order`, `PUT /lists/order`) that renumber `sort_order` to `0..n-1`
-  under a row lock and require the submitted id set to match exactly (409 otherwise); DB CHECK
-  constraints keep `sort_order` nonnegative. Manual order is the only stored order. New lists
-  append last.
-- **Checked pile**: the detail page draws checked items in a collapsible
-  "Checked (N)" pile at the bottom, in the manual order like the active zone above it.
-  Display-only — `sort_order` is untouched, so unchecking returns an item to its remembered
-  place, and a drag in the active zone rebuilds the full id set around the pile (a row checked
-  or removed mid-drag resyncs instead of submitting a no-op). Per-device toggles (localStorage): pile on/off
-  per list (off = checked stay in place) and collapse state. The **add box dedupes against the
-  pile**: typing a checked item's name (or picking the suggestion) unchecks that row instead of
-  creating a duplicate; Escape dismisses the suggestions when a duplicate is wanted on purpose.
-  The list widget carries the same toggle on its progress row; with the pile on it shows only
-  unchecked rows plus a "Checked (N)" peek line (transient — re-collapses on remount, unlike the
-  page's remembered expand state). It renders the same add box, suggestions included, showing
-  fewer of them because the popup opens upward into a card that clips. The dedupe is deliberately
-  not preference-gated on either surface — an intentional duplicate goes through Escape.
-- The sidebar has an **Active/Trash** selector: Active is the default and is reorderable; Trash
-  lists deleted lists with their purge deadline and a Restore action, and is fetched only when
-  opened. The server renumbers the dashboard's live lists, so a reorder's submitted set must equal
-  that set. The dashboard `ListWidget` is deliberately not reorderable — it sits inside
-  react-grid-layout, whose own drag would conflict.
-- The hot list SSE events — reorder, plus item check/update — carry the new state (id order, or
-  the changed fields' values), so other clients patch their caches in place with no follow-up
-  GET. A refetch happens only if the payload is absent (older events) or the patched result
-  diverges from cache. Rarer events (create/delete) deliberately keep
-  invalidate-and-refetch: self-healing is worth more than bytes on cold paths. See
-  [FDR-008](docs/fdr/FDR-008-realtime-sse.md) / [ADR-006](docs/adr/ADR-006-rest-fetch-sse-patch.md).
+**Lists** — [FDR-005](docs/fdr/FDR-005-lists.md)
+- Master/detail UI with nested routes and mobile slide nav; items carry check, due date, priority,
+  category, assignee and a manual sort order, which is the only stored order.
+- Deleting a list moves it to the trash (30 days, restorable; the sidebar's **Active/Trash**
+  selector lists it). Deleting an item removes the row outright.
+- **Drag-and-drop reorder** of items and of lists, with keyboard support, through two
+  transactional renumber endpoints that 409 unless the submitted id set matches exactly. The
+  dashboard list widget is deliberately not reorderable.
+- **Checked pile**: checked items collect in a collapsible "Checked (N)" pile, display-only, so
+  unchecking returns an item to its place. The add box dedupes against the pile — typing a checked
+  item's name unchecks it; Escape dismisses the suggestion when a duplicate is wanted.
+- **A dashboard's lists load in one request** (`GET /lists/details`), shared by its list and
+  agenda widgets.
+- **List events carry their new state** — reorder, item check/update, item create and item delete
+  — so another client patches its cache with no follow-up GET. A client that does not hold the
+  list, or holds it stale, reads instead ([ADR-006](docs/adr/ADR-006-rest-fetch-sse-patch.md)).
 
-**Calendar**
-- Day/week/month views; full event editor (mobile-optimized) with weekly recurrence, duration
-  toolbar, all-day, timezones; per-occurrence overrides and cancellation. Occurrence expansion
-  over a required window (max 366 days).
-- **Delete is undoable, then recoverable.** The confirmation toast carries a Restore action backed
-  by `POST /calendar/events/{id}/restore`, which brings back recurrence, overrides and participants
-  rather than recreating the event. After the toast, a **Trash** view on the calendar panel lists
-  deleted events with their purge deadline, offering Restore and a confirmed Delete permanently
-  (ADR-007).
-- **Participants**: events can name the members they are about — toggle-chips in the editor
-  (fed by `GET /dashboards/{id}/members`, cached per dashboard and refreshed by the
-  `dashboard.share_*` events), colored initial-dots on cards and agenda rows, bare
-  micro-dots on month pills wide enough to keep them. Colors are hashed from the user id, zero
-  configuration. A label only: no notification, no access change; a member who leaves the
-  dashboard stays named, greyed "(former)" in the editor, keepable but not re-addable (FDR-006 §6).
-- **Day-dependent views refresh at local midnight.** A shared `useLocalDay()` hook re-renders at the
-  next local midnight (DST-safe) and on tab wake (visibility/focus); the calendar widget and page
-  re-derive "today" from it, and the agenda widget background-refetches on a day rollover — so an
-  always-on wall display never shows yesterday's agenda/highlights after midnight.
+**Calendar** — [FDR-006](docs/fdr/FDR-006-calendar-and-events.md)
+- Day/week/month views; a full event editor with weekly recurrence, all-day, timezones, and
+  per-occurrence overrides and cancellation.
+- Occurrences are expanded over a required window (max 366 days), which is a SQL predicate: a
+  finished or not-yet-started series never reaches Python, though one bounded by `count` alone
+  still loads. Expansion is budgeted twice: a single event past the budget is left out and
+  counted, and a whole listing past its budget answers 422 rather than truncating.
+- Occurrences are cached by covered interval per dashboard, so the page and both widgets share one
+  copy and fetch only the gaps.
+- **Delete is undoable, then recoverable**: Restore on the toast, then a Trash view with Restore
+  and Delete permanently.
+- **Participants**: an event can name the members it is about — a label only, with no
+  notification or access change. A member who leaves stays named as "(former)".
+- **Day-dependent views refresh at local midnight** and on tab wake (`useLocalDay()`).
 
-**Notifications & activity**
-- In-app inbox (unread-first, mark one/all read) with live SSE push; activity feed of the
-  caller's own events, keyset-paginated, filterable by category or event type. Everything logged is
-  readable back — nothing is withheld, and repetitive churn collapses into one row instead, which
-  opens to name the events underneath it. Live SSE appends are gated on the same predicate the
-  endpoint serves, so nothing shows that a refresh would take away; adjacent widget moves on one
-  dashboard collapse into a single counted row.
+**Notifications & activity** — [FDR-007](docs/fdr/FDR-007-notifications-and-activity.md)
+- In-app inbox (unread-first, mark one/all read) with live push.
+- Activity feed of the caller's own events, keyset-paginated, filterable by category or event
+  type. Repetitive churn collapses into one expandable row. A live append is gated on the same
+  predicate the endpoint serves.
 
-**Real-time (SSE)**
-- One multiplexed `EventSource('/api/sse')` per user; in-memory manager with bounded queues,
-  `connected` priming event carrying the activity log's high-water mark. A reconnect hands that
-  mark back as `?last_event_id=`, and the server resyncs only if the log moved past it — so a
-  deploy, during which no write can happen, costs no refetch at all. When a resync *is* needed the
-  frame names which entity types changed on dashboards the client can see, so it refetches only
-  those caches; an unknown or absent scope widens back to all of them. Frontend routes events to
-  Zustand stores / scoped-query resource caches with per-tab origin-id echo suppression
-  (FDR-008).
-- A client whose queue overflows keeps its stream: the backlog collapses into one in-place
-  `resync`, and frames arriving before it goes out are dropped as covered by the refetch it
-  orders — rather than the client staying connected and silently deaf.
-- A stream rejected with an HTTP error status (`readyState === CLOSED`, which `EventSource`
-  never retries) reconnects on jittered exponential backoff (1s → 30s cap, indefinitely) and
-  never logs anyone out; every fourth attempt probes `/auth/me`, so a genuinely signed-out tab
-  is discovered without a dead backend being mistaken for one. That path reconnects with its
-  mark on the query string, since a fresh `EventSource` sends no `Last-Event-ID` header; a tab
-  holding no mark still asks for the resync itself. The browser's own auto-retry is left alone.
-- **The UI admits when the stream is down** — an amber dot while reconnecting, on the sidebar
-  account avatar and on the mobile navigation button, since below `nav:` the sidebar is an overlay
-  and a phone is where a stream drops most. Only the degraded state is drawn: a dot that reads
-  green all day stops being read, and the failure worth surfacing is the app looking live while
-  receiving nothing. The dot is decorative; each surface carries its own wording (a `title` on the
-  account button, the `aria-label` on the mobile one). It reflects *your own* stream, not who else
-  is online — there is no presence feature. Raised on any `error`, including the below-HTTP drops
-  the browser retries itself, and cleared by the next `connected` frame.
-- Streams revalidate their session every 30s and end when it is revoked; revocation also drops
-  them in-process immediately (the drop is a latency optimisation, not the guarantee — the periodic
-  check is worker-agnostic and holds without it). Closes #8's authorization half: a revoked session
-  stops streaming within 30s and stops being accepted on requests immediately.
+**Real-time (SSE)** — [FDR-008](docs/fdr/FDR-008-realtime-sse.md)
+- One multiplexed `EventSource('/api/sse')` per tab, fanned out by user, with per-tab echo
+  suppression ([ADR-004](docs/adr/ADR-004-sse-over-websocket.md)). Fan-out reaches other processes
+  over a Valkey stream.
+- A reconnect hands back the activity log's high-water mark and is resynced only if the log moved
+  past it. A resync names which entity types changed, so the client refetches only those.
+- A client whose queue overflows keeps its stream; the backlog collapses into one `resync`.
+- A stream rejected with an HTTP error reconnects on jittered backoff (1s → 30s) and never logs
+  anyone out; every fourth attempt probes `/auth/me`.
+- An amber dot on the account avatar and the mobile navigation button shows a degraded stream, and
+  only then. There is no presence feature.
+- Streams revalidate their session every 30s and end when it is revoked.
 
-**UI primitives & accessibility** (#27)
-- All modals share one Radix-based `ui/Dialog` (focus trap, labelling, Escape, focus restore);
-  the confirm dialog is parameterized (`confirmLabel`/`tone`) so its button names the action.
-  The notification panel is a Radix Popover; dashboard-card actions live in a visible Radix
-  overflow menu (≥44px target); desktop hover-revealed row actions also reveal on keyboard
-  focus; toasts announce via a persistent `role="status"` live region.
+**UI primitives & accessibility**
+- All modals share one Radix-based `ui/Dialog`, and the confirm dialog takes `confirmLabel` and
+  `tone` so its button names the action. The notification panel is a Radix Popover; row
+  actions live in a visible overflow menu (≥44px target) and hover-revealed actions also reveal
+  on keyboard focus. Toasts announce through a persistent `role="status"` live region.
 - **Validation is attached to the field that failed**, not toasted: `ui/FormField` wires
-  `htmlFor` + `aria-invalid` + `aria-describedby` and renders the message in a `role="alert"` the
-  input points at, so it is announced on submit *and* again when focus reaches the offending
-  control, and it persists until fixed rather than expiring on a toast timer. Inline editors
-  (list name in the sidebar and on the detail page) validate in the editor for the same reason —
-  the page-level handlers no longer own an empty-name check they couldn't attach to anything.
-  Multi-field forms mark every failing field at once, so the form is fixed in one pass.
+  `aria-invalid` and `aria-describedby` to a `role="alert"` message, so it is announced on submit
+  and again when focus reaches the control, and persists until fixed rather than expiring on a
+  toast timer. Inline editors validate in the editor for the same reason. Multi-field forms mark
+  every failing field at once.
 
-**Performance shape**
-- **The calendar window is a SQL predicate, not a Python filter**: a one-off event is loaded only
-  if its own times overlap the requested window, and a recurring one only if `starts_at` precedes
-  the window and — where the rule carries `until` — `until + duration` follows it, read straight
-  from the JSONB. A finished or not-yet-started series never reaches Python. Series with a `count`
-  limit and no `until` still load unbounded, since finding their end means expanding the rule. The
-  window itself is capped at 366 days.
-- **Resource caches are bounded** (#24): `createScopedQuery` keeps the 32 most recently fetched
-  scopes and evicts the coldest, except entries with a mounted subscriber or a request in flight,
-  which are never evicted. Before this, a tab left open on the calendar accumulated one entry per
-  window scrolled to until logout.
-- **Occurrences are cached by interval, not by request window.** One store per dashboard tracks
-  which time ranges it has loaded and fetches only the gaps, so the calendar page, the calendar
-  widget and the agenda widget share one copy of any day they all show — where previously each
-  kept its own entry and refetched the overlap. Windows asked for in the same tick are coalesced
-  into a single request, which is what a dashboard does when its widgets mount together. Coverage
-  is capped at 366 days, dropping the ranges furthest from what is on screen.
-- **Widget config changes patch instead of reloading.** A `dashboard.updated` event whose
-  `changed_fields` is exactly `['widgets']` carries the new config, so other viewers patch that
-  widget in place — without touching `dashboard.version`, which only layout writes move and which
-  `PUT /layout` compares to detect a concurrent edit. Reloads that do still happen are debounced,
-  so dragging several widgets costs each other tab one GET rather than one per event.
-- **Sign-out resets are self-registering.** Resource caches register their own reset as they load,
-  and `stores/auth.ts` calls one `resetAllResourceData()`, so a cache added later cannot be left
-  out of the account boundary — a cache that never loaded holds nothing to clear.
+**Client data layer** — [ADR-005](docs/adr/ADR-005-two-layer-client-state.md)
+- Zustand stores for app and session state; `createScopedQuery` resource caches for lists,
+  calendar and agenda. Caches keep the 32 most recently fetched scopes and never evict one that
+  is mounted or in flight.
+- A mutation's response is applied, never refetched.
+- Resource caches register their own sign-out reset; `stores/auth.ts` calls one
+  `resetAllResourceData()`.
+- **The backend schema is the API contract**: `make contracts` generates the frontend's zod
+  schemas, CI fails on drift, and every response body and SSE frame is validated at the boundary
+  ([ADR-018](docs/adr/ADR-018-generated-validated-contracts.md)).
 
 **Infra / tooling**
-- Docker Compose dev + prod, Caddy in prod (behind a Cloudflare Tunnel), named volumes, health checks.
-- **Metrics at `/metrics`, in Prometheus exposition format, deliberately outside `/api`.** That
-  placement *is* the access control: Caddy proxies only `/api/*`, so a public `/metrics` request
-  falls through to the SPA and gets `index.html` — verified, zero series in the body — and the prod
-  backend publishes no port, leaving the Docker network as the only route in.
-  Built on `prometheus_client`, so the exposition, the label handling and the multiprocess path
-  are the library's rather than ours. Series: SSE connects / resyncs / overflow resyncs / lifetime
-  expiries, open streams (each browser tab is one, so this counts streams rather than people) and
-  deepest queue, retention sweeps plus the unix time of the last
-  successful one, rate-limit rejections, DB pool checked-out / size / overflow / limit, and
-  `http_responses_total{method,route,status_class}` — labelled by route *template*, never the raw
-  path, so a scanner cannot mint a series per URL. Beside it sit two unlabelled counters an alert
-  can actually be built on: `http_server_errors_total`, and `login_successes_total` as the
-  denominator that turns login failures into a share. The two shared-state failures are **gauges** —
-  `rate_limit_store_degraded` and `sse_fanout_degraded` — because each is a rare state rather than a
-  rate, and a counter first sampled at 1 reads as 0 under `increase()` for the whole outage it is
-  meant to expose; `sse_publish_failures_total` counts the frames siblings never received. Status counting is pure-ASGI middleware, never
-  `BaseHTTPMiddleware`, which reads a streaming response to completion and would buffer SSE; it
-  counts a crash on the way past, because the 500 for one is built above it and it would otherwise
-  see only the deliberate ones.
-  A Prometheus container joined to the `internal` network scrapes it every 15s at
-  `frontdashboard-backend:8000/metrics`. Two Grafana dashboards live in [`observability/`](observability/) —
-  an overview carrying the availability and latency SLIs, and an internals board grouped into rows for
-  pool and hashing, real-time, shared store state and process resources — with nineteen alert rules
-  beside them in Prometheus format, which is the one
-  Grafana's rule importer accepts. All three are loaded by hand through the Grafana UI rather than
-  reaching the deployment host, and `test_observability_coverage.py` fails the build if any names a
-  metric the code no longer registers. The connects-to-resyncs ratio is what says whether reconnect
-  marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads. Both
-  saturation gauges report the peak since the previous scrape rather than the instant value, so a
-  burst that opens and closes between two scrapes still counts. Transactional email is counted by
-  outcome because it is sent from a background task: a failed send answers 2xx and reaches no other
-  signal.
-- **The access log is real traffic only.** Probes outnumber it — the 60s container HEALTHCHECK and
-  the 15s scrape alone are ~7k lines a day, before the external uptime checks — and none of those
-  lines is evidence of anything while it answers: container health is in `docker inspect`, a
-  stalled scrape is Prometheus's own `up`, and a prober keeps history that can be alerted on. So a
-  filter on `uvicorn.access` drops `/api/health`, `/api/health/ready` and `/metrics` under status
-  400, and keeps every line at `LOG_LEVEL=debug`. A failing probe always logs — except above
-  `info`, where uvicorn emits no access lines at all, filter or not.
-- **Rejected auth attempts are counted by cause**, as `auth_failures_total{operation,reason}` —
-  both labels closed enumerations, so cardinality is bounded. It exists because `status_class`
-  collapses 401 and 403 into one `4xx` series, which makes "wrong password" and "unverified email,
-  check your inbox" indistinguishable: one is a security signal, the other a support one. Splitting
-  `unknown_user` from `bad_password` separates credential stuffing against a harvested list from a
-  targeted attack on accounts that exist — the distinction [ADR-011](docs/adr/ADR-011-enumeration-safe-login.md)
-  deliberately hides from the *response*, safe here only because the counts are aggregate and
-  `/metrics` is unreachable from outside. Failing goes through `auth_failure(...)`, which builds
-  the exception and counts it in one call; `test_auth_failure_coverage.py` fails the build on a
-  bare 401/403 raised anywhere in the auth layer. Expect `session`/`no_cookie` to dominate — every
-  logged-out tab mints one, so it is a baseline, not an alert.
-- **Argon2 saturation is visible as both a level and a distribution.** `argon2_in_flight`,
-  `argon2_waiting` and `argon2_limit` read straight off the capacity limiter at scrape time, so
-  occupancy is a ratio rather than a number needing `argon2_max_concurrency` remembered. The gauges
-  alone would lie by omission — saturation is bursty and a 15s scrape lands between bursts — so
-  `argon2_seconds{operation}` histograms every hash and verify including its wait for a slot. The
-  hash cost is near-constant, which makes everything above the p50 floor queueing.
-- **Scale is by replica; the container runs one worker.** Forked workers share a listening socket,
-  so one `/metrics` scrape reaches an arbitrary one and every counter reads as resetting — a replica
-  is its own scrape target and has no such problem. `WEB_CONCURRENCY` is therefore inert and only
-  logs a warning. The state a second process would have split is now shared: rate-limit buckets and
-  the SSE backplane both live in Valkey, so a worker's clients receive a sibling's writes. What is
-  left is routing rather than state — `container_name` pins the backend and `Caddyfile.prod` names
-  it statically, so `--scale` is refused rather than half-working (#21/#45). Migrations stay in the
-  container command, where `alembic/env.py`'s session-scoped advisory lock already serialises
-  replicas starting together.
-- **The frontend waits for the backend to start, not to be healthy.** Caddy resolves its upstream
-  per request, so container start is enough; waiting on health stalled every restart and served
-  nothing meanwhile, instead of the shell plus a 502 on `/api`.
-- **A failed load is visible rather than blank.** `index.html` is served `no-cache` so it can
-  never ask for bundles a deploy deleted; `/assets/*` sits outside the SPA fallback, so a missing
-  bundle 404s honestly instead of being handed HTML the browser fails to parse as a module, and
-  fingerprinted names cache for a year while the 404 itself is `no-store`. `index.html` also ships
-  static markup inside `#root` that a CSS delay reveals if the script never runs (React deletes it
-  on mount, and the CSP forbids inline script). An unknown URL renders a 404 page that names the
-  path rather than silently redirecting — a truncated reset or invite link is the usual way there.
-  See [ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md).
-- **Both production images run unprivileged** (uid 10001). Base images float on their tags, so a
-  rebuild takes each one's security patches on its own; they were pinned by digest until four sat
-  months behind, because nothing sends digest-only bumps and a rollback pulls a published image
-  rather than rebuilding. Every CI build passes `pull: true` so the layer cache cannot hold a build
-  to a stale base, and `uv` keeps a version tag — a tool, not a patched base, so a resolver change
-  should arrive as a reviewable bump. Caddy carries no Linux capability at
-  all: `:80` binds because `net.ipv4.ip_unprivileged_port_start` is 0, which the compose files set
-  explicitly rather than inherit from the daemon, so the port the tunnel points at never had to
-  move. CI asserts both images are non-root.
-- **Liveness and readiness are separate.** `GET /api/health` answers "the process is up" and touches
-  nothing, so a dependency outage can never look like a crashed process. `GET /api/health/ready` runs
-  a bounded `SELECT 1` and returns 503 when the database is unreachable, hung, or the pool is
-  exhausted — the container healthcheck uses this one, so a database outage shows as unhealthy.
-- **A scheduled reaper bounds every table that grows on its own.** Expired tokens and invites go,
-  as do sessions past either their idle or absolute window — the same two clocks the request path
-  refuses to authenticate against, so nothing collected here could still have been used; activity events and notifications —
-  the only tables that grow with usage rather than user count — are pruned past a 90-day horizon.
-  It runs under a Postgres advisory lock, so extra workers can each schedule it and exactly one
-  sweeps. Pruning history is safe for SSE because a reconnect is answered with a resync rather than
-  a replay; the mark it carries is only compared against the log's head, never read from history. It also purges **unverified signups past 30 days** — registration is
-  open to the internet, so abandoned ones accumulate; login 403s until an address is verified, so
-  such an account holds no content, and purging it frees an email the unique index would otherwise
-  reserve forever. Accounts that **do** own content are excluded **per user** rather than vetoing
-  the sweep — which matters because users predating email verification (2026-04-30, whose migration
-  did not backfill) read as unverified forever despite having been ordinary users. They recover by
-  logging in: the 403 redirects to the resend-verification page with their address prefilled.
-- **The connection pool is bounded** (10 connections: `db_pool_size` + `db_max_overflow`), with a
-  pool-acquire timeout, connection recycling, and a server-side `statement_timeout`. A request burst
-  fails fast instead of queueing without limit or opening connections until Postgres runs out of
-  memory. All of it is config.
-- **Production config fails fast**: `ENVIRONMENT` is a **required** validated enum (a prod deploy that
-  forgets it won't boot rather than silently running insecure), and production startup aborts on a
-  missing `resend_api_key` or an undeliverable `email_from`. Startup logs the active environment and cookie posture (`INFO` prod / `WARNING`
-  otherwise).
-- **Every mutating route is rate-limited**, not just the auth ones: `WRITE_LIMIT` (300/min) is
-  applied per route because slowapi's app-wide limit cannot see through included-router nesting,
-  and `test_rate_limit_coverage.py` fails the build if a route is added without one. Caddy caps
-  request bodies at 1MB.
-- **Per-creator quotas bound what rate limits deliberately do not — the total.** Dashboards, lists,
-  items and events each carry a ceiling per creator, checked on create only, and a series a ceiling
-  on edited occurrences that keeps it under the expansion budget, so an account over a
-  lowered cap keeps everything and simply adds nothing more. Counts include trashed rows, since
-  those hold storage until the reaper takes them and a live-only count would be bypassed by
-  deleting and recreating; caps sit far above plausible use while trashed rows retain storage
-  ([ADR-020](docs/adr/ADR-020-resource-quotas.md)) — though the trash view offers a
-  **permanent delete** that purges a dashboard or list and its cascade immediately, which is how
-  a full account reclaims its allowance. Refusals are visible as
-  `frontdashboard_quota_rejections_total`.
-- **Rate limits are per real client IP**: the limiter keys on Cloudflare's `CF-Connecting-IP` (the
-  origin is a non-public Cloudflare Tunnel, so it's authoritative), falling back to the peer address
-  in dev — so auth limits isolate per client instead of collapsing into the shared proxy IP. Buckets
-  live in **Valkey**, so a limit is the deployment's rather than one process's and a replica no longer
-  multiplies it. While it is unreachable they fall back to per-process buckets and recover on
-  their own, which keeps an outage from either 500ing every write or letting them through unbounded;
-  a bounded retry count is what stops that fallback costing seconds a write, since redis-py retries
-  ten times by default. Valkey is **bundled in the stack** — internal network, no published port —
-  so `REDIS_URL` defaults to it and a deploy sets nothing; set to an empty value it refuses to
-  start rather than degrading to per-process limits in silence.
-- **The backend schema is the API contract** ([ADR-018](docs/adr/ADR-018-generated-validated-contracts.md)):
-  `make contracts` exports FastAPI's OpenAPI document and generates the frontend's zod schemas into
-  `frontend/src/api/generated/contract.ts` (committed; CI fails on drift). Every response body is
-  validated at the network boundary, widgets are a discriminated union on `widget_type`, and SSE
-  frames validate against generated frame schemas — so a new backend event type or widget type is a
-  compile error in the client code that must handle it.
-- Calendar recurrence expansion is bounded by what a write accepts: an occurrence of a repeating
-  event lasts at most 31 days, and `count` and `interval` are capped, so one event's walk is
-  bounded. A stored event that still exceeds the expander's budget is left out of listings and
-  counted rather than failing them. A whole listing is bounded too — 20,000 occurrences kept,
-  200,000 candidates walked, and as many event rows and edited occurrences loaded — and past that it
-  answers 422 asking for a shorter window rather than truncating, since the per-event bounds and the
-  quotas multiply. Only the edits that can land in the window are loaded with it.
-- CI: the six cross-stack source guards run in Repo checks even for a one-sided change. Four
-  grouped jobs (each with a tight `timeout-minutes`, and docs-only changes skip the
-  workflow entirely), because Actions bills each job rounded up to a full minute and ten small
-  lanes cost double their compute — repo checks (actionlint, zizmor, prod Compose structure, alert rules,
-  osv-scanner over both lockfiles failing only on advisories the change introduces, contract drift), backend (Ruff, `ty`, deptry, pytest), frontend
-  (Biome, knip, `tsc`, Vitest), and an **images & smoke** job that builds both production images
-  and boots them together against a throwaway database — [docker-compose.smoke.yml](docker-compose.smoke.yml)
-  layered over the real prod Compose file, so a drift between it and the Caddy upstream fails here
-  rather than at deploy — and asserts the serving contract of
-  [ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md): readiness through the proxy,
-  `no-cache` on the document, an immutable JavaScript bundle, a 404 for a missing asset, SPA
-  fallback for an unknown path. Publishing to GHCR is gated on all of it, and those are the images
-  production pulls — there is no path that builds and pushes without passing them first. Backend tests build their
-  schema with `alembic upgrade head`, so **migrations run on every backend test run** and
-  `test_migrations.py` fails on ORM↔migration drift; `make test-unit` runs the Docker-free subset.
-  Pre-commit hooks incl. Conventional Commit enforcement; the PR title a squash merge keeps is
-  checked by eye. Dependabot is grouped and **monthly**, majors included: weekly churn was noise, and
-  batching keeps upgrades incremental rather than deferring them into one forced jump.
+- Docker Compose dev + prod; Caddy in prod behind a Cloudflare Tunnel; named volumes; health
+  checks. Valkey is bundled on the internal network with no published port.
+- **Scale is by replica; the container runs one worker.** Forked workers share a socket, so one
+  `/metrics` scrape reaches an arbitrary one and every counter reads as resetting.
+  `WEB_CONCURRENCY` is inert and logs a warning. Rate-limit buckets and the SSE backplane are
+  shared in Valkey; what remains is routing — `container_name` and a static Caddy upstream, so
+  `--scale` is refused rather than half-working. Migrations run in the container command under a
+  session-scoped advisory lock, which serialises replicas starting together.
+- **Metrics at `/metrics`, outside `/api`**, which is the access control: Caddy proxies only
+  `/api/*` and the backend publishes no port. Dashboards, alert rules and the reasoning behind
+  each series are in [observability/README.md](observability/README.md).
+- **The access log is real traffic only**: successful health and metrics probes are filtered out
+  at `info`; a failing probe always logs.
+- **Liveness and readiness are separate.** `GET /api/health` touches nothing, so a dependency
+  outage can never look like a crashed process. `GET /api/health/ready` runs a bounded `SELECT 1`
+  and returns 503 when the database is unreachable, hung, or the pool is exhausted; the container
+  healthcheck uses it.
+- **The frontend waits for the backend to start, not to be healthy** — Caddy resolves its
+  upstream per request, so a restart serves the shell plus a 502 on `/api` instead of nothing.
+- **A failed load is visible rather than blank**: `index.html` is `no-cache`, a missing asset
+  404s instead of falling back to HTML, and an unknown URL renders a 404 page
+  ([ADR-019](docs/adr/ADR-019-static-asset-serving-contract.md)).
+- **Both production images run unprivileged** (uid 10001); Caddy holds no Linux capability, and
+  `:80` binds because the compose files set `net.ipv4.ip_unprivileged_port_start` to 0 explicitly
+  rather than inheriting it, so the port the tunnel points at never had to move. CI asserts both
+  images are non-root. Base
+  images float on their tags and every CI build passes `pull: true`, so a rebuild takes security
+  patches — not pinned by digest, because nothing sends digest-only bumps and a rollback pulls a
+  published image rather than rebuilding. `uv` keeps a version
+  tag, since a resolver change should arrive as a reviewable bump.
+- **A scheduled reaper bounds every table that grows on its own**: expired tokens, invites and
+  sessions; activity events and notifications past 90 days; trashed rows past 30 days; and
+  unverified signups past 30 days that own no content. It runs under a Postgres advisory lock, so
+  exactly one process sweeps.
+- **The connection pool is bounded** (10 connections), with an acquire timeout, recycling and a
+  server-side `statement_timeout`, so a burst fails fast. All of it is config.
+- **Production config fails fast**: `ENVIRONMENT` is a required enum, and startup aborts on a
+  missing mail key or an undeliverable sender
+  ([ADR-014](docs/adr/ADR-014-fail-fast-prod-config.md)).
+- **Every mutating route is rate-limited** (`WRITE_LIMIT`, 300/min) per real client IP
+  (`CF-Connecting-IP`), with buckets
+  in Valkey and a per-process fallback while it is unreachable; Caddy caps bodies at 1MB
+  ([ADR-013](docs/adr/ADR-013-rate-limit-cf-connecting-ip.md)).
+- **Per-creator quotas bound the total** of dashboards, lists, items and events, checked on
+  create and counting trashed rows; the trash view's permanent delete reclaims the allowance.
+  Refusals are visible as `frontdashboard_quota_rejections_total`
+  ([ADR-020](docs/adr/ADR-020-resource-quotas.md)).
+- **CI** is four grouped jobs, each with a tight `timeout-minutes`, because Actions bills each
+  job rounded up to a full minute and ten small lanes cost double their compute: repo
+  checks (workflow lint, prod Compose structure, alert rules, dependency audit, contract drift,
+  and the six cross-stack source guards), backend, frontend, and **images & smoke**, which boots
+  both production images against a throwaway database, layered over the real prod Compose file so
+  a drift from the Caddy upstream fails there, and asserts the serving contract.
+  Publishing images is gated on all of it — there is no path that builds and pushes without
+  passing them first. Docs-only changes skip the workflow.
+- Backend tests build their schema with `alembic upgrade head`, so migrations run on every
+  backend test run; `make test-unit` is the Docker-free subset.
+- Dependabot is grouped and monthly, majors included: weekly churn was noise, and batching keeps
+  upgrades incremental.
 
 ## In flight
 
-- **Design-review remediation** (open work tracked in [docs/TODO.md](docs/TODO.md)): the
-  security-first phases are done — Phase 1 (security quick wins), Phase 2 (auth/session hardening,
-  incl. the 2026-07-17 follow-up security review), and Phase 3 (dashboard correctness) all shipped by
-  2026-07-20. The durable decisions from
-  these phases are captured in the [ADRs](docs/adr/INDEX.md) / [FDRs](docs/fdr/INDEX.md). **Phase 5
-  (infra/CI/ops) and the unscheduled backlog remain** — see [docs/TODO.md](docs/TODO.md).
+- The remediation backlog — infra/CI/ops and unscheduled triage — is tracked in
+  [docs/TODO.md](docs/TODO.md), not here.
 
 ## Deliberately deferred / known dead code
 
-- Remediation backlog (Phase 5 + unscheduled triage) — tracked in [docs/TODO.md](docs/TODO.md),
-  not here.
 - `CalendarReminder` model + table exist with **no** router/service usage — reserved schema for a
-  future "notify me N minutes before" feature, kept deliberately (see
-  [FDR-006](docs/fdr/FDR-006-calendar-and-events.md)), not dead code to remove.
+  future "notify me N minutes before" feature, kept deliberately
+  ([FDR-006](docs/fdr/FDR-006-calendar-and-events.md)), not dead code to remove.
 - Share principal types other than `user`, and share roles beyond viewer/editor, are
   intentionally not built.
