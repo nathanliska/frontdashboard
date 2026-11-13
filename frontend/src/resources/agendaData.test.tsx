@@ -3,7 +3,6 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CalendarOccurrence } from '../api/calendar'
 import type { ListDetail, ListItem, ListSummary } from '../api/lists'
-import { retireListDetailRequests } from '../api/lists'
 import type { SseEvent } from '../hooks/useSSE'
 import { bumpSessionGeneration } from '../stores/sessionGeneration'
 import { makeListItem as baseListItem, makeListSummary as baseListSummary } from '../test/fixtures'
@@ -49,7 +48,6 @@ vi.mock('../api/calendar', () => ({
 }))
 
 vi.mock('../api/lists', () => ({
-  retireListDetailRequests: vi.fn(),
   apiGetList,
   apiGetListDetails,
   apiGetLists,
@@ -553,7 +551,6 @@ describe("a dashboard's lists load once", () => {
     render(<ListProbe listId="list-2" />)
     await screen.findByText('list-2:Chores')
     expect(apiGetListDetails).toHaveBeenCalledTimes(2)
-    expect(retireListDetailRequests).toHaveBeenCalled()
   })
 
   it("appends someone else's new item to a held list and the agenda without a read", async () => {

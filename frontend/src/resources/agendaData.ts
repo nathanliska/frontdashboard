@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { CalendarOccurrence } from '../api/calendar'
 import type { CalendarEventParticipantResponse } from '../api/generated/contract'
-import { apiGetListDetails, type ListItem, type ListSummary } from '../api/lists'
+import type { ListItem, ListSummary } from '../api/lists'
 import { useLocalToday } from '../hooks/useLocalDay'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { addDays, dateKey, startOfDay } from '../utils/calendar/calendarUtils'
-
+import { fetchDashboardLists } from './dashboardListsBatch'
 import { resetOccurrences, useOccurrences } from './occurrenceStore'
 import { registerResourceReset } from './resetRegistry'
 import { createScopedQuery, type ScopedQueryState } from './scopedQuery'
@@ -197,7 +197,7 @@ async function fetchAgendaReminders(scope: AgendaScope): Promise<AgendaItem[]> {
   const todayKey = dateKey(startOfDay(new Date()))
   // One batch request, shared in flight with the list widgets, and it reads no client cache —
   // which is what keeps handler order in useSSE from mattering.
-  const details = await apiGetListDetails(scope.dashboardId)
+  const { lists: details } = await fetchDashboardLists(scope.dashboardId)
 
   return details.flatMap((detail) =>
     detail.items

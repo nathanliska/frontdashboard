@@ -24,7 +24,8 @@ type ScopedQueryEntry<Scope, Data> = {
   stale: boolean
   /** Counts writes to the entry, so a read can tell that one overtook it. */
   writes: number
-  /** A patch overtook the read in flight. Not `stale`: what is held is newer, only partial. */
+  /** The read in flight must be followed by another: a patch overtook it, or a caller joined
+   * it after an invalidate. Not `stale`, which says what is held cannot be patched. */
   owed: boolean
 }
 
@@ -147,6 +148,8 @@ export function createScopedQuery<Scope, Data>({
     // would make recency meaningless.
     touch(entry)
     if (entry.inFlight) {
+      // Asked for after an invalidate, so the read already out is older than the caller wants.
+      if (entry.stale) entry.owed = true
       return entry.inFlight
     }
 

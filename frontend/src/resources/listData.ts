@@ -7,7 +7,6 @@ import {
   apiDeleteItem,
   apiDeleteList,
   apiGetList,
-  apiGetListDetails,
   apiGetLists,
   apiReorderItems,
   apiReorderLists,
@@ -18,7 +17,6 @@ import {
   type ListItem,
   type ListSummary,
   type ListType,
-  retireListDetailRequests,
 } from '../api/lists'
 import type { ResourceEvent, SseEvent } from '../hooks/useSSE'
 import { useAuthStore } from '../stores/auth'
@@ -33,6 +31,11 @@ import {
   removeAgendaItemsForList,
   renameAgendaListEntries,
 } from './agendaData'
+import {
+  fetchDashboardLists,
+  markDashboardListsChanged,
+  resetDashboardListsBatch,
+} from './dashboardListsBatch'
 import { registerResourceReset } from './resetRegistry'
 import { createScopedQuery } from './scopedQuery'
 
@@ -76,19 +79,15 @@ function toSummary({ items: _items, ...summary }: ListDetail): ListSummary {
   return summary
 }
 
-// Counts list events, so a batch can tell that one arrived while it was in flight.
-let listEventEpoch = 0
-
 /**
  * Every list on a dashboard, seeding both caches on the way — but never over an entry that has
  * data, which may already carry patches newer than this response.
  */
 async function loadDashboardLists(dashboardId: string): Promise<ListDetail[]> {
   const generation = currentSessionGeneration()
-  const epoch = listEventEpoch
-  const lists = await apiGetListDetails(dashboardId)
+  const { lists, overtaken } = await fetchDashboardLists(dashboardId)
   // Seeding marks an entry fresh, which a response from before a sign-out or a list event is not.
-  if (generation !== currentSessionGeneration() || epoch !== listEventEpoch) return lists
+  if (overtaken || generation !== currentSessionGeneration()) return lists
   for (const list of lists) {
     if (!hasListDetail(list.id)) listDetailQuery.seed({ listId: list.id }, list)
   }
@@ -434,8 +433,7 @@ export function handleListResourceEvent(
   if (event.event_type !== 'resync' && !event.event_type.startsWith('list.')) return
 
   // A batch opened before this event predates it: it may not seed, and nobody new may join it.
-  listEventEpoch += 1
-  retireListDetailRequests()
+  markDashboardListsChanged()
 
   if (event.event_type === 'resync') {
     listSummariesQuery.invalidateWhere(() => true)
@@ -574,6 +572,7 @@ registerResourceReset(resetListData)
 
 export function __resetListDataForTests(): void {
   resetListData()
+  resetDashboardListsBatch()
 }
 
 export function __seedListDetailForTests(listId: string, detail: ListDetail): void {

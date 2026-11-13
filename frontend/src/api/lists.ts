@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { currentSessionGeneration } from '../stores/sessionGeneration'
 import { apiFetch } from './client'
 import {
   ListDetailResponse,
@@ -15,7 +14,6 @@ import type { ResourceAccessSummary, ResourceShare, ShareCreate, ShareUpdate } f
 
 const listDetailRequests = new Map<string, Promise<ListDetailResponse>>()
 const listSummaryRequests = new Map<string, Promise<ListResponse[]>>()
-const dashboardListDetailRequests = new Map<string, Promise<ListDetailResponse[]>>()
 
 export type {
   ListDetailResponse as ListDetail,
@@ -44,29 +42,11 @@ export async function apiGetLists(dashboardId?: string | null): Promise<ListResp
   return request
 }
 
+/** Every list on a dashboard with its items, in one request. */
 export async function apiGetListDetails(dashboardId: string): Promise<ListDetailResponse[]> {
-  // Every list on the dashboard with its items, one request. Single-flighted because the agenda
-  // and the list widgets both ask as a dashboard opens, and apart they each paid for it.
-  // Keyed by session too, so a request opened under one account is never handed to the next.
-  const key = `${currentSessionGeneration()}:${dashboardId}`
-  const existing = dashboardListDetailRequests.get(key)
-  if (existing) return existing
-
-  const request = (async () => {
-    const res = await apiFetch(`/api/lists/details?dashboard_id=${dashboardId}`)
-    if (!res.ok) throw await readError(res, 'Failed to load lists')
-    return parseJson(res, z.array(ListDetailResponse))
-  })().finally(() => {
-    if (dashboardListDetailRequests.get(key) === request) dashboardListDetailRequests.delete(key)
-  })
-
-  dashboardListDetailRequests.set(key, request)
-  return request
-}
-
-/** Stop handing out the open batch: a read begun after a change must not join one from before it. */
-export function retireListDetailRequests(): void {
-  dashboardListDetailRequests.clear()
+  const res = await apiFetch(`/api/lists/details?dashboard_id=${dashboardId}`)
+  if (!res.ok) throw await readError(res, 'Failed to load lists')
+  return parseJson(res, z.array(ListDetailResponse))
 }
 
 export async function apiGetList(id: string): Promise<ListDetailResponse> {
