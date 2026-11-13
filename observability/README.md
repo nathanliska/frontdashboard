@@ -63,6 +63,65 @@ it resolves against the code's own registry.
 nothing else can tell a healthy quiet rule from one whose scrape job was never added.
 `PublicProbeMissing` is that pattern; add one alongside the next exporter.
 
+## What is measured, and why
+
+- **Metrics at `/metrics`, in Prometheus exposition format, deliberately outside `/api`.** That
+  placement *is* the access control: Caddy proxies only `/api/*`, so a public `/metrics` request
+  falls through to the SPA and gets `index.html` — verified, zero series in the body — and the prod
+  backend publishes no port, leaving the Docker network as the only route in.
+  Built on `prometheus_client`, so the exposition, the label handling and the multiprocess path
+  are the library's rather than ours. Series: SSE connects / resyncs / overflow resyncs / lifetime
+  expiries, open streams (each browser tab is one, so this counts streams rather than people) and
+  deepest queue, retention sweeps plus the unix time of the last
+  successful one, rate-limit rejections, DB pool checked-out / size / overflow / limit, and
+  `http_responses_total{method,route,status_class}` — labelled by route *template*, never the raw
+  path, so a scanner cannot mint a series per URL. Beside it sit two unlabelled counters an alert
+  can actually be built on: `http_server_errors_total`, and `login_successes_total` as the
+  denominator that turns login failures into a share. The two shared-state failures are **gauges** —
+  `rate_limit_store_degraded` and `sse_fanout_degraded` — because each is a rare state rather than a
+  rate, and a counter first sampled at 1 reads as 0 under `increase()` for the whole outage it is
+  meant to expose; `sse_publish_failures_total` counts the frames siblings never received. Status counting is pure-ASGI middleware, never
+  `BaseHTTPMiddleware`, which reads a streaming response to completion and would buffer SSE; it
+  counts a crash on the way past, because the 500 for one is built above it and it would otherwise
+  see only the deliberate ones.
+  A Prometheus container joined to the `internal` network scrapes it every 15s at
+  `frontdashboard-backend:8000/metrics`. Two Grafana dashboards live in this directory —
+  an overview carrying the availability and latency SLIs, and an internals board grouped into rows for
+  pool and hashing, real-time, shared store state and process resources — with nineteen alert rules
+  beside them in Prometheus format, which is the one
+  Grafana's rule importer accepts. All three are loaded by hand through the Grafana UI rather than
+  reaching the deployment host, and `test_observability_coverage.py` fails the build if any names a
+  metric the code no longer registers. The connects-to-resyncs ratio is what says whether reconnect
+  marks are sparing anyone a refetch; the pool gauges are what a scaling decision reads. Both
+  saturation gauges report the peak since the previous scrape rather than the instant value, so a
+  burst that opens and closes between two scrapes still counts. Transactional email is counted by
+  outcome because it is sent from a background task: a failed send answers 2xx and reaches no other
+  signal.
+- **The access log is real traffic only.** Probes outnumber it — the 60s container HEALTHCHECK and
+  the 15s scrape alone are ~7k lines a day, before the external uptime checks — and none of those
+  lines is evidence of anything while it answers: container health is in `docker inspect`, a
+  stalled scrape is Prometheus's own `up`, and a prober keeps history that can be alerted on. So a
+  filter on `uvicorn.access` drops `/api/health`, `/api/health/ready` and `/metrics` under status
+  400, and keeps every line at `LOG_LEVEL=debug`. A failing probe always logs — except above
+  `info`, where uvicorn emits no access lines at all, filter or not.
+- **Rejected auth attempts are counted by cause**, as `auth_failures_total{operation,reason}` —
+  both labels closed enumerations, so cardinality is bounded. It exists because `status_class`
+  collapses 401 and 403 into one `4xx` series, which makes "wrong password" and "unverified email,
+  check your inbox" indistinguishable: one is a security signal, the other a support one. Splitting
+  `unknown_user` from `bad_password` separates credential stuffing against a harvested list from a
+  targeted attack on accounts that exist — the distinction [ADR-011](../docs/adr/ADR-011-enumeration-safe-login.md)
+  deliberately hides from the *response*, safe here only because the counts are aggregate and
+  `/metrics` is unreachable from outside. Failing goes through `auth_failure(...)`, which builds
+  the exception and counts it in one call; `test_auth_failure_coverage.py` fails the build on a
+  bare 401/403 raised anywhere in the auth layer. Expect `session`/`no_cookie` to dominate — every
+  logged-out tab mints one, so it is a baseline, not an alert.
+- **Argon2 saturation is visible as both a level and a distribution.** `argon2_in_flight`,
+  `argon2_waiting` and `argon2_limit` read straight off the capacity limiter at scrape time, so
+  occupancy is a ratio rather than a number needing `argon2_max_concurrency` remembered. The gauges
+  alone would lie by omission — saturation is bursty and a 15s scrape lands between bursts — so
+  `argon2_seconds{operation}` histograms every hash and verify including its wait for a slot. The
+  hash cost is near-constant, which makes everything above the p50 floor queueing.
+
 ## The Prometheus side
 
 Three things that live on the Prometheus host, none of which Grafana can hold.
