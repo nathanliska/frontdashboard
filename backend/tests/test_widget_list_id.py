@@ -1,12 +1,9 @@
-"""A list widget names its list in `list_id`, a real foreign key, alongside the older pair.
+"""A list widget names its list in `list_id`, a real foreign key.
 
-`resource_type` + `resource_id` cannot carry a foreign key, so nothing stopped a widget naming a
-list that was gone. The backfill under test is the migration's own statement, not a restatement.
+The pair it replaced could not carry one, so nothing stopped a widget naming a list that was gone.
 """
 
-import importlib.util
 import uuid
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,66 +15,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.dashboard import DashboardWidget
 from tests.helpers import add_widget, create_dashboard, create_list
 
-_MIGRATION = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "g2i4k6m8o0r2_add_dashboard_widgets_list_id.py"
-
-
-def _load_migration() -> Any:
-    spec = importlib.util.spec_from_file_location("_widget_list_id", _MIGRATION)
-    assert spec and spec.loader, f"cannot import {_MIGRATION}"
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _old_shape(dashboard_id: str, resource_id: uuid.UUID) -> DashboardWidget:
-    return DashboardWidget(
-        dashboard_id=uuid.UUID(dashboard_id),
-        widget_type="list",
-        config={},
-        resource_type="list",
-        resource_id=resource_id,
-    )
-
-
-async def test_backfill_fills_live_lists_and_leaves_the_rest_alone(auth_client: AsyncClient, db_session: AsyncSession) -> None:
-    dashboard = await create_dashboard(auth_client)
-    lst = await create_list(auth_client, dashboard["id"], name="Groceries")
-    trashed_list = await create_list(auth_client, dashboard["id"], name="Old")
-    bound = _old_shape(dashboard["id"], uuid.UUID(lst["id"]))
-    orphan = _old_shape(dashboard["id"], uuid.uuid4())
-    trashed = _old_shape(dashboard["id"], uuid.UUID(trashed_list["id"]))
-    db_session.add_all([bound, orphan, trashed])
-    await db_session.execute(text("UPDATE lists SET deleted_at = now() WHERE id = :id"), {"id": trashed_list["id"]})
-    await db_session.flush()
-
-    await db_session.execute(text(_load_migration().BACKFILL))
-
-    result = await db_session.execute(select(DashboardWidget.id, DashboardWidget.list_id))
-    rows = {widget_id: list_id for widget_id, list_id in result.all()}
-    assert rows[bound.id] == uuid.UUID(lst["id"])
-    # A NULL rather than a failed migration: the row keeps its old columns for a later cleanup.
-    assert rows[orphan.id] is None
-    # Keyed to a trashed list, the widget would vanish with the purge and strand its layout entry.
-    assert rows[trashed.id] is None
-
 
 async def test_list_id_must_name_a_real_list(auth_client: AsyncClient, db_session: AsyncSession) -> None:
     dashboard = await create_dashboard(auth_client)
-    widget = _old_shape(dashboard["id"], uuid.uuid4())
-    widget.list_id = widget.resource_id
-    db_session.add(widget)
+    db_session.add(
+        DashboardWidget(
+            dashboard_id=uuid.UUID(dashboard["id"]),
+            widget_type="list",
+            config={},
+            list_id=uuid.uuid4(),
+        )
+    )
 
     with pytest.raises(IntegrityError, match="fk_dashboard_widgets_list_id"):
         await db_session.flush()
-
-
-async def test_a_new_list_widget_carries_both_names_for_its_list(auth_client: AsyncClient) -> None:
-    dashboard = await create_dashboard(auth_client)
-
-    widget = (await add_widget(auth_client, dashboard["id"], "list", {"name": "Errands"}))["widgets"][-1]
-
-    assert widget["list_id"] is not None
-    assert widget["list_id"] == widget["resource_id"]
 
 
 async def test_a_widget_can_be_bound_by_list_id(auth_client: AsyncClient) -> None:
@@ -89,12 +40,12 @@ async def test_a_widget_can_be_bound_by_list_id(auth_client: AsyncClient) -> Non
 
     assert resp.status_code == 201, resp.text
     widget = resp.json()["widgets"][-1]
-    assert (widget["list_id"], widget["resource_id"], widget["resource_type"]) == (lst["id"], lst["id"], "list")
+    assert widget["list_id"] == lst["id"]
 
 
-async def test_two_different_lists_in_one_request_are_refused(auth_client: AsyncClient) -> None:
+async def test_the_retired_binding_fields_are_refused(auth_client: AsyncClient) -> None:
     dashboard = await create_dashboard(auth_client)
-    body = {"widget_type": "list", "list_id": str(uuid.uuid4()), "resource_id": str(uuid.uuid4()), "config": {}}
+    body = {"widget_type": "list", "resource_type": "list", "resource_id": str(uuid.uuid4()), "config": {}}
 
     resp = await auth_client.post(f"/api/dashboards/{dashboard['id']}/widgets", json=body)
 

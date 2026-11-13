@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-11-12
+**Last reviewed:** 2026-11-13
 
 ## Overview
 
@@ -63,9 +63,9 @@ the resource fetch/SSE wiring.
 fresh list.
 **Tradeoff:** Two code paths (bind vs. create) in the add flow.
 **Binding:** The widget row names its list in `list_id`, a foreign key to `lists`, so the database
-refuses a widget whose list does not exist. The client reads and sends `list_id`. The server still
-writes and accepts the generic `resource_type`/`resource_id` pair alongside it, for a tab loaded
-before the client moved over.
+refuses a widget whose list does not exist, and a unique index on dashboard plus `list_id` allows
+a list one widget per dashboard. It is the only binding: the generic type-and-id pair it replaced
+is gone from the table and the API.
 A second bound type would get its own key column rather than share a generic pair that cannot
 carry a foreign key.
 
