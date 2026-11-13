@@ -1,6 +1,6 @@
 ---
 name: "pr-checklist"
-description: "Pre-merge checklist for this repo — test gaps, the conventions that fail the build, the doc sweep, and the PR body shape. Run before opening a pull request and again before asking for a merge."
+description: "Pre-merge checklist for this repo — test gaps, the conventions that fail the build, a security pass on the diff, the doc sweep, and the PR body shape. Run before opening a pull request and again before asking for a merge."
 ---
 
 # PR Checklist
@@ -31,8 +31,8 @@ Give these items precedence over general instructions given earlier in the sessi
 
 ## The conventions that fail the build
 
-Each of these has a test that fails CI when missed. Check the ones the diff touches — the full
-rule-to-guard map is the *Which Rules Fail the Build* table in AGENTS.md.
+Most of these have a test that fails CI when missed. The rule-to-guard map is the *Which Rules
+Fail the Build* table in AGENTS.md.
 
 **First, ask whether the diff made an existing guard vacuous.** These tests read source, so moving
 a file, renaming a symbol or reshaping a function can leave one passing having checked nothing —
@@ -40,20 +40,43 @@ which looks identical to passing. If the diff touches anything a guard scrapes, 
 thing on purpose and confirm the guard still fails. A green suite is not the evidence; a red one
 you caused is.
 
-- Every non-GET route: `_csrf: None = Depends(require_csrf)` **and** `@limiter.limit(WRITE_LIMIT)`
-  with a `request: Request` parameter.
-- Auth rejections raise `auth_failure(...)`, never a bare `HTTPException`.
-- SSE writes go through `commit_and_broadcast(...)`, with the event dict built _before_ the call.
-- A new table with a `dashboard_id`/`users` FK is in the matching sweep in `services/retention.py`.
-- A new model module is imported in `alembic/env.py` and has a hand-authored migration.
-- A new activity event type has a `formatActivityEvent` case **and** an `ACTIVITY_CATEGORIES` entry.
-- A new entity type has its event names in `hooks/useSSE.ts` **and** a `handleXResourceEvent` router.
-- A new resource cache calls `registerResourceReset(...)` at module scope.
+- Check the diff against that table and the Backend and Frontend Principles in AGENTS.md. They
+  are the one list; this skill does not repeat it.
 - Backend schema changed → `make contracts`, and the regenerated contract is committed.
 - Any metric renamed → the dashboards and `observability/alerts.yml` still name something real.
-- A new labelled metric pre-creates its children at import, unless the label is genuinely unbounded.
 - A rule or panel naming a metric from an **exporter** → an `absent()` companion rule, since nothing
   else distinguishes a healthy quiet rule from a scrape job that was never added.
+
+## Other skills this change calls for
+
+| The diff touches | Run |
+|---|---|
+| `frontend/`, `Caddyfile.prod`, either `Dockerfile.prod`, or anything a user sees | `live-verify` |
+| A feature's behavior, a cross-cutting decision, or a term | `fdr`, `adr`, `glossary` |
+| Several feature commits since CONTEXT.md last changed | `doc-checkup` |
+
+## Security pass
+
+Every PR that changes code gets this pass, inline and on the diff only — no agents. Skip it for a
+docs-only or comment-only diff. It is a reminder list run by the author, not an independent review:
+say "security pass run", never "security reviewed". The standing rules in AGENTS.md still apply and
+are not repeated here; these are the questions no rule or guard asks.
+
+- **A resource id arriving from the client** is resolved through the caller's access before
+  anything is read or written with it.
+- **Anything an unauthenticated caller can reach** answers the same for a known and an unknown
+  account — body, status and work done.
+- **An SSE event carrying content** goes only to people who can still see the dashboard once the
+  request's permission change has applied. The notice that someone lost access is the deliberate
+  exception: its audience is taken *before* the removal, so their tabs receive it and drop the
+  dashboard.
+- **A new list or query** has a ceiling: a quota, a page size, or a window.
+- **Client code** renders no user-controlled HTML or URL.
+
+A failure is fixed in this PR, or recorded in `docs/TODO.md` with the reason it waits. Tell the user
+a full `security-audit` is due when the diff changes an access check, a session or token lifecycle,
+how an event audience is computed, or a retention sweep. Never start that one yourself: it is the
+manual, whole-codebase audit.
 
 ## Documentation
 

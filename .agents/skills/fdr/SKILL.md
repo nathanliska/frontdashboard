@@ -19,7 +19,8 @@ The failure mode is an FDR that drifts into being one of these, and then rots:
 - **Not a task list.** Deferred work belongs in [docs/TODO.md](../../../docs/TODO.md).
 - **Not an ADR.** Cross-cutting decisions live in [docs/adr/](../../../docs/adr/INDEX.md); the FDR
   cites them. A decision local to this feature stays here.
-- **Not a duplicate of CONTEXT.md**, which is the whole project's current-state snapshot.
+- **Not a duplicate of CONTEXT.md**, which is the whole project's current-state snapshot. A
+  behavior or reason with no other home goes here, and CONTEXT.md links to it.
 
 ## Before anything
 

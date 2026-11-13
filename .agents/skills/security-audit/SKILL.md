@@ -1,13 +1,15 @@
 ---
-name: "security-review"
-description: "Whole-codebase security audit — parallel agents across auth, abuse, data exposure and serving, then an adversarial pass that verifies every finding against the source. Use when asked for a security review or audit, before exposing a new surface, or after a change to auth, sharing, SSE fan-out or the retention sweeps."
+name: "security-audit"
+description: "Whole-codebase security audit — parallel agents across auth, abuse, data exposure and serving, then an adversarial pass that verifies every finding against the source. Manual: started by the user when asked for a security audit, never self-started."
+disable-model-invocation: true
 ---
 
-# Security Review
+# Security Audit
 
 A full-codebase audit. For the pending changes on a branch, Claude Code's built-in
 `/security-review` is the narrower tool — reach for this one when the question is about the whole
-system rather than a diff.
+system rather than a diff. It is manual: the user starts it. The per-PR check is the *Security
+pass* in `pr-checklist`.
 
 Two rules override anything an agent decides on its own:
 
@@ -34,8 +36,8 @@ Session resolution and expiry, cookie flags and the `__Host-` prefix, CSRF doubl
 `Origin` check, Argon2 parameters, invite and password-reset token lifecycles, share grants and
 role escalation, and IDOR anywhere a resource id arrives from the client.
 
-The traps: `role is None` means **owner**, so an `if role:` guard silently grants nothing to the
-creator or everything to a stranger — read `permissions.effective_role` before judging any caller.
+The traps: owner is a value `permissions.effective_role` returns for the creator, never the
+absence of a role, and a non-member is a 404 raised there — read it before judging any caller.
 Child resources must reach access through `load_dashboard_access` / `list_accessible_dashboard_ids`,
 which filter trashed dashboards; a direct query on a child table bypasses that.
 
@@ -47,7 +49,7 @@ Key files: `backend/app/auth/`, `backend/app/services/permissions.py`,
 ### Agent 2: Input Validation, Enumeration & Abuse
 
 Account enumeration through response bodies, status codes or timing on register, login, reset,
-verification, invite and share-by-email; rate-limit coverage and whether the limit key can be
+verification and invite; rate-limit coverage and whether the limit key can be
 spoofed through proxy headers; unbounded queries, pagination ceilings and other DoS vectors; mass
 assignment through request schemas; error messages that leak internals.
 
@@ -68,8 +70,10 @@ reaper; retention sweeps; credentials or tokens reaching logs; metric labels car
 unbounded cardinality.
 
 The traps: events are addressed with `dashboard_audience_user_ids(...)` and committed through
-`commit_and_broadcast(...)` — an audience computed before a permission change is a leak to whoever
-just lost access. A table with a `dashboard_id` or `users` foreign key that is missing from the
+`commit_and_broadcast(...)` — a content event addressed to an
+audience from before a permission change leaks to whoever just lost access. A removal notice is
+the deliberate exception: its audience is taken before the delete, so the removed user's tabs
+receive it and drop the dashboard. A table with a `dashboard_id` or `users` foreign key that is missing from the
 matching sweep in `services/retention.py` either outlives the purge or rolls back the whole tick,
 because none of those FKs cascade.
 
@@ -107,8 +111,9 @@ POSITIVE** or **NEEDS-MORE-INVESTIGATION**, then adds what the others missed. Di
 
 - Mitigations the auditors did not see — a dependency, middleware, or a database constraint.
 - The known good patterns below, which are design, not defects.
-- Permission edge cases at the owner/editor/viewer boundary, especially `role is None`.
-- Ordering: an event built after its commit, or an audience computed before a permission change.
+- Permission edge cases at the owner/editor/viewer boundary.
+- Ordering: an event built after its commit, or a content event addressed to an audience from
+  before a permission change.
 - Anything reachable before authentication, weighed against open registration.
 
 ## Phase 4: Report
@@ -125,7 +130,8 @@ the ADR, not merely observe the behavior:
 
 - `/shares` on lists and calendar events returns **409 by design** — those inherit access from the
   dashboard whose widget binds them. It is a deliberate stub, not a missing endpoint.
-- `role is None` is the **owner**, the most privileged case.
+- The owner holds no share row: `effective_role` resolves the creator to `owner` and raises 404
+  for a non-member.
 - One opaque session cookie resolved per request; no JWT, no refresh token, no `/auth/refresh`, no
   tokens in `localStorage` ([ADR-002](../../../docs/adr/ADR-002-httponly-cookie-csrf.md),
   [ADR-003](../../../docs/adr/ADR-003-first-class-sessions.md)).
