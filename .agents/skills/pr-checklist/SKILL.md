@@ -40,8 +40,21 @@ which looks identical to passing. If the diff touches anything a guard scrapes, 
 thing on purpose and confirm the guard still fails. A green suite is not the evidence; a red one
 you caused is.
 
-- Check the diff against that table and the Backend and Frontend Principles in AGENTS.md. They
-  are the one list; this skill does not repeat it.
+AGENTS.md holds the rules. A guarded one announces itself in CI; the rows below are the ones that
+fail **silently**, mapped from what a diff changed to what happens when the rule is missed.
+
+| The diff adds or changes | Rule in AGENTS.md | If missed |
+|---|---|---|
+| An entity type with SSE events | Frontend: event names and a `handleXResourceEvent` router | The UI goes stale with no error |
+| A resource cache | Frontend: `registerResourceReset` | The previous account's data survives sign-out |
+| A table with a `dashboard_id` or `users` foreign key | Backend: retention sweep and account deletion | Rows outlive the purge, or a deletion leaves them naming the tombstone |
+| A model module | Backend: import in `alembic/env.py`, hand-authored migration | The test schema is built without the table |
+| A route creating rows with no retention horizon | Backend: `assert_under_quota` | Unbounded growth per account |
+| A layout or widget write | Backend: row lock and `dashboard.version` bump | A concurrent edit goes undetected |
+| A mutation in the client | Frontend: apply the response, never refetch | A stray GET after every write |
+| A test that touches Postgres | Backend: the `test_database` fixture | It runs as a unit test, with no database |
+| A timer or other scheduled work | Frontend: cancelled in `test/setup.ts` | One test file's store leaks into the next |
+
 - Backend schema changed → `make contracts`, and the regenerated contract is committed.
 - Any metric renamed → the dashboards and `observability/alerts.yml` still name something real.
 - A rule or panel naming a metric from an **exporter** → an `absent()` companion rule, since nothing

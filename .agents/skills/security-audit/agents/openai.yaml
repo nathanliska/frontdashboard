@@ -1,0 +1,6 @@
+interface:
+  display_name: "Security Audit"
+  short_description: "Whole-codebase security audit, started by the user"
+
+policy:
+  allow_implicit_invocation: false
