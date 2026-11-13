@@ -455,36 +455,24 @@ export function handleListResourceEvent(
     // Only patch when the event carries the new values; otherwise fall through to
     // invalidate-and-refetch so an older/unknown payload still converges.
     if (affectedListId && listHandlerUpdatesAgenda(event) && values) {
-      // No data yet means nothing to patch, so count it as divergence up front: otherwise the event
-      // is neither applied nor recorded. A stale entry counts too, since the agenda is rebuilt from
-      // its list name and items below.
-      let diverged =
-        listDetailQuery.getState({ listId: affectedListId }).data === null ||
-        listDetailQuery.isStale({ listId: affectedListId })
-      if (!diverged) {
-        patchListDetailById(affectedListId, (detail) => {
-          if (!detail.items.some((item) => item.id === itemId)) {
-            diverged = true
-            return detail
-          }
-          return {
-            ...detail,
-            items: detail.items.map((item) =>
-              item.id === itemId ? { ...item, ...pickPatchableItemFields(values) } : item,
-            ),
-          }
-        })
-      }
-      if (diverged) {
-        listDetailQuery.invalidateWhere((scope) => scope.listId === affectedListId)
-        // Nothing here to rebuild the reminder from, so the agenda has to read it.
-        invalidateAgendaReminders(dashboardId)
-      } else {
-        const patched = listDetailQuery
-          .getState({ listId: affectedListId })
-          .data?.items.find((item) => item.id === itemId)
-        if (patched) patchAgendaFromListDetail(affectedListId, patched)
-      }
+      const scope = { listId: affectedListId }
+      const patched = listDetailQuery.patchOrInvalidate(scope, (detail) => {
+        // A stale entry is reloaded too: the agenda is rebuilt from its list name and items below.
+        if (listDetailQuery.isStale(scope)) return null
+        if (!detail.items.some((item) => item.id === itemId)) return null
+        return {
+          ...detail,
+          items: detail.items.map((item) =>
+            item.id === itemId ? { ...item, ...pickPatchableItemFields(values) } : item,
+          ),
+        }
+      })
+      const item = patched
+        ? listDetailQuery.getState(scope).data?.items.find((held) => held.id === itemId)
+        : null
+      if (item) patchAgendaFromListDetail(affectedListId, item)
+      // Nothing here to rebuild the reminder from, so the agenda has to read it.
+      if (!patched) invalidateAgendaReminders(dashboardId)
       // Early return skips the generic tail's shouldReloadSummaries check below. That's
       // only safe because shouldReloadSummaries is false for these two event types — if a
       // future summary-visible field is added to the patchable set, revisit this.
@@ -522,20 +510,10 @@ export function handleListResourceEvent(
   if (event.event_type === 'list.item.reordered') {
     const itemIds = event.payload.item_ids ?? null
     if (affectedListId && itemIds) {
-      // Same absent-cache hole as the item-update branch above: no data means nothing to
-      // patch, and patchListDetailById's no-op guard would otherwise swallow the event.
-      let diverged = listDetailQuery.getState({ listId: affectedListId }).data === null
-      if (!diverged) {
-        patchListDetailById(affectedListId, (detail) => {
-          const items = orderByIds(detail.items, itemIds)
-          if (!items) {
-            diverged = true
-            return detail
-          }
-          return { ...detail, items }
-        })
-      }
-      if (diverged) listDetailQuery.invalidateWhere((scope) => scope.listId === affectedListId)
+      listDetailQuery.patchOrInvalidate({ listId: affectedListId }, (detail) => {
+        const items = orderByIds(detail.items, itemIds)
+        return items && { ...detail, items }
+      })
     }
     return
   }
@@ -543,25 +521,7 @@ export function handleListResourceEvent(
   if (event.event_type === 'list.reordered') {
     const listIds = event.payload.list_ids ?? null
     if (dashboardId && listIds) {
-      // Same absent-cache hole: if the summaries cache has no data yet, updateWhere's
-      // `if (!state.data) return state` guard would otherwise no-op the updater and this
-      // event would be silently dropped instead of marking the entry stale.
-      let diverged = listSummariesQuery.getState({ dashboardId }).data === null
-      if (!diverged) {
-        listSummariesQuery.updateWhere(
-          (scope) => scope.dashboardId === dashboardId,
-          (state) => {
-            if (!state.data) return state
-            const ordered = orderByIds(state.data, listIds)
-            if (!ordered) {
-              diverged = true
-              return state
-            }
-            return { ...state, data: ordered }
-          },
-        )
-      }
-      if (diverged) listSummariesQuery.invalidateWhere((scope) => scope.dashboardId === dashboardId)
+      listSummariesQuery.patchOrInvalidate({ dashboardId }, (lists) => orderByIds(lists, listIds))
     }
     return
   }

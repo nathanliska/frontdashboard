@@ -22,6 +22,10 @@ type ScopedQueryEntry<Scope, Data> = {
   listeners: Set<() => void>
   inFlight: Promise<Data> | null
   stale: boolean
+  /** Counts writes to the entry, so a read can tell that one overtook it. */
+  writes: number
+  /** A patch overtook the read in flight. Not `stale`: what is held is newer, only partial. */
+  owed: boolean
 }
 
 type CreateScopedQueryOptions<Scope, Data> = {
@@ -97,6 +101,8 @@ export function createScopedQuery<Scope, Data>({
       listeners: new Set(),
       inFlight: null,
       stale: false,
+      writes: 0,
+      owed: false,
     }
     entries.set(key, entry)
     // The new entry is newest in iteration order, so it is never the one evicted here.
@@ -161,30 +167,65 @@ export function createScopedQuery<Scope, Data>({
       })
     }
 
-    entry.stale = false
-
-    const request = fetcher(entry.scope)
-      .then((data) => {
-        setState(entry, { data, loading: false, error: null })
-        return data
-      })
-      .catch((error) => {
-        const normalizedError = toError(error, fallbackErrorMessage)
-        setState(entry, {
-          data: entry.state.data,
-          loading: false,
-          error: normalizedError,
-        })
-        throw normalizedError
-      })
-      .finally(() => {
-        if (entry.inFlight === request) {
-          entry.inFlight = null
-        }
-      })
-
+    const request = read(entry)
     entry.inFlight = request
     return request
+  }
+
+  // A throw before the promise exists becomes a rejection, so `read` never settles in the same
+  // step that started it and `fetch` can record it as in flight first.
+  function callFetcher(scope: Scope): Promise<Data> {
+    try {
+      return fetcher(scope)
+    } catch (error) {
+      return Promise.reject(error)
+    }
+  }
+
+  /** Read a scope until the answer is known to be no older than what the entry holds.
+   *
+   * A read is overtaken when the entry is written while it is out. Its answer may predate that
+   * write, so it is dropped rather than applied — see ADR-006.
+   */
+  async function read(entry: ScopedQueryEntry<Scope, Data>): Promise<Data> {
+    let writes = entry.writes
+    try {
+      for (;;) {
+        writes = entry.writes
+        entry.stale = false
+        entry.owed = false
+        const data = await callFetcher(entry.scope)
+        const overtaken = entry.writes !== writes
+        // Read again: a patch is partial, and an invalidate mid-flight is newer than this read.
+        // Nobody watching an invalidated scope means the next mount reads it instead.
+        if (entry.owed || (entry.stale && entry.listeners.size > 0)) {
+          if (!overtaken) setState(entry, { data, loading: false, error: null })
+          continue
+        }
+        // Cleared before notifying, so a listener that reads again starts a new request.
+        entry.inFlight = null
+        if (overtaken && entry.state.data !== null) {
+          // Overtaken by a seed, which is authoritative: keep it.
+          setState(entry, { ...entry.state, loading: false })
+          return entry.state.data
+        }
+        setState(entry, { data, loading: false, error: null })
+        return data
+      }
+    } catch (error) {
+      entry.inFlight = null
+      const held = entry.state.data
+      // The read a patch was owed never came, so the next mount has to make it.
+      if (entry.owed) entry.stale = true
+      // A seed needs no read, so the failure of one it overtook is not shown.
+      if (entry.writes !== writes && !entry.stale && held !== null) {
+        setState(entry, { data: held, loading: false, error: null })
+        return held
+      }
+      const normalizedError = toError(error, fallbackErrorMessage)
+      setState(entry, { data: held, loading: false, error: normalizedError })
+      throw normalizedError
+    }
   }
 
   async function fetchIfStale(scope: Scope): Promise<Data> {
@@ -226,8 +267,32 @@ export function createScopedQuery<Scope, Data>({
       // Leaves `stale` alone: a patch writes part of an entry, not authoritative full data, so
       // only fetch() may clear it. Clearing here would discard an invalidate whose fetch was
       // skipped for lack of listeners, losing that update until a resync.
-      setState(entry, updater(entry.state, entry.scope))
+      const next = updater(entry.state, entry.scope)
+      if (next.data !== entry.state.data || next.error !== entry.state.error) {
+        entry.writes += 1
+        // A patch is partial, so a read it overtakes is owed again.
+        if (entry.inFlight) entry.owed = true
+      }
+      setState(entry, next)
     }
+  }
+
+  /**
+   * Patch what a scope holds, or invalidate it when it holds nothing or `patch` declines with null.
+   *
+   * An event that cannot be applied still has to be recorded, or a read already in flight would
+   * settle as current. Returns whether it patched.
+   */
+  function patchOrInvalidate(scope: Scope, patch: (data: Data) => Data | null): boolean {
+    const { key, state } = ensureEntry(scope)
+    const next = state.data === null ? null : patch(state.data)
+    const isScope = (candidate: Scope) => getKey(candidate) === key
+    if (next === null) {
+      invalidateWhere(isScope)
+      return false
+    }
+    updateWhere(isScope, (current) => ({ ...current, data: next }))
+    return true
   }
 
   // For data the client holds in full without fetching, such as a row it just created. Unlike a
@@ -235,6 +300,8 @@ export function createScopedQuery<Scope, Data>({
   function seed(scope: Scope, data: Data): void {
     const entry = ensureEntry(scope)
     entry.stale = false
+    entry.owed = false
+    entry.writes += 1
     setState(entry, { data, loading: false, error: null })
   }
 
@@ -296,6 +363,7 @@ export function createScopedQuery<Scope, Data>({
     getState,
     invalidateWhere,
     isStale,
+    patchOrInvalidate,
     reset,
     seed,
     updateWhere,

@@ -299,15 +299,9 @@ describe('list.item.checked / list.item.updated patching', () => {
       await firstFetch
     })
 
-    // The in-flight GET resolved with pre-event data (item "a" still unchecked) — this
-    // is the silent-loss scenario: the event raced the fetch and lost.
-    expect(screen.getByTestId('item-a')).toHaveTextContent('false|a')
-
-    unmount()
-    render(<ItemsProbe listId="list-1" />)
-
-    // The divergence must have marked the entry stale, so a later remount triggers a second GET
-    // that converges the client.
+    // The in-flight GET answered from before the event, so the cache reads again on its own —
+    // no remount, and no second event, is needed to converge.
     await waitFor(() => expect(apiGetList).toHaveBeenCalledTimes(2))
+    unmount()
   })
 })
