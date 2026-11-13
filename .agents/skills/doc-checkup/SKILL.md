@@ -1,6 +1,6 @@
 ---
 name: doc-checkup
-description: Use when docs may have drifted from the code — after a run of feature commits, before relying on the ADRs/FDRs, or when CONTEXT.md, an ADR, an FDR, the glossary, or docs/TODO.md looks stale.
+description: "Audit the repo docs for drift against the code and against each other, and report proposed edits without applying them. Use after several feature PRs have merged since CONTEXT.md last changed, before relying on an ADR or FDR for a decision, or when a doc looks stale."
 ---
 
 # Doc checkup — drift audit (propose-only)
@@ -48,6 +48,9 @@ The doc system:
    removed, and their surviving rules belong in the root file's Backend/Frontend Principles.
 7. **Link check** — relative doc links in AGENTS.md, CONTEXT.md, README.md, the skills under
    `.agents/skills/`, and the ADR/FDR indexes resolve.
+8. **Docs against each other** — a reason stated in CONTEXT.md with no ADR, FDR or runbook that
+   holds it; an ADR and an FDR that disagree; a fact recorded in only one place that is not its
+   owner. Grep a distinctive phrase from each claim across `docs/` rather than rereading every file.
 
 ## Output
 

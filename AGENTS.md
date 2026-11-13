@@ -21,7 +21,8 @@ bites belongs here, in the relevant ADR/FDR, or in a comment at the code it gove
 - [docs/runbooks/](docs/runbooks/) — operational procedures for the day something is broken. Prose
   aimed at a person under pressure, not architecture; the *why* still belongs in an ADR/FDR.
 - `.agents/skills/**` — workflow skills. Use them when the task names one or clearly matches one,
-  especially `live-verify`, `doc-checkup` and `security-review`.
+  especially `live-verify` and `doc-checkup`. `security-audit` is the manual whole-codebase audit;
+  the per-PR security pass lives in `pr-checklist`.
 
 ## Project Status
 
