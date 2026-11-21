@@ -1,6 +1,6 @@
 # ADR-005: Two-Layer Client State — Zustand Stores + Scoped-Query Caches
 
-**Date:** 2026-07-20
+**Date:** 2026-07-20 (amended 2026-11-21 — calendar occurrences named as a separate interval cache)
 
 ## Context
 
@@ -19,16 +19,18 @@ ergonomic imperative access the app/session state wants.
 
 Use **two layers**:
 
-1. **Zustand `stores/`** for app/session state (`auth`, `dashboards`, `notifications`, `toast`,
-   `confirm`, `ui`).
+1. **Zustand `stores/`** for app/session state (`auth`, `dashboard`, `notifications`, `connection`,
+   `toast`, `confirm`, `ui`).
 2. **`resources/*` backed by `resources/scopedQuery.ts`** — a `useSyncExternalStore` cache keyed by
-   scope — for lists, calendar occurrences, and agenda, via `useQuery` / `invalidateWhere` /
+   scope — for lists, agenda reminders, members and sessions, via `useQuery` / `invalidateWhere` /
    `updateWhere`.
+   Calendar occurrences sit beside it in `resources/occurrenceStore.ts`, a cache indexed by the
+   time intervals it has loaded, which a per-scope cache cannot express.
 
-Convention: **don't put list/calendar data in a Zustand store**; use `createScopedQuery`. Read state
-reactively with `useStore(selector)` inside components; use `useStore.getState()`/`setState()` in
-store actions, resources, and utils. Cross-store reads/writes (e.g. dashboard store → `useAuthStore`)
-are normal ([AGENTS.md](../../AGENTS.md)).
+Convention: **don't put list/calendar data in a Zustand store**; it belongs in `resources/*`. Read
+state reactively with `useStore(selector)` inside components; use `useStore.getState()`/`setState()`
+in store actions, resources, and utils. Cross-store reads/writes (e.g. dashboard store →
+`useAuthStore`) are normal ([AGENTS.md](../../AGENTS.md)).
 
 ## Consequences
 

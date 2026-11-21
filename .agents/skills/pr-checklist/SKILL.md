@@ -50,7 +50,7 @@ fail **silently**, mapped from what a diff changed to what happens when the rule
 | A table with a `dashboard_id` or `users` foreign key | Backend: retention sweep and account deletion | Rows outlive the purge, or a deletion leaves them naming the tombstone |
 | A model module | Backend: import in `alembic/env.py`, hand-authored migration | The test schema is built without the table |
 | A route creating rows with no retention horizon | Backend: `assert_under_quota` | Unbounded growth per account |
-| A layout or widget write | Backend: row lock and `dashboard.version` bump | A concurrent edit goes undetected |
+| A write that changes the layout (a save, a widget add or remove) | Backend: row lock and `dashboard.version` bump | A concurrent edit goes undetected |
 | A mutation in the client | Frontend: apply the response, never refetch | A stray GET after every write |
 | A test that touches Postgres | Backend: the `test_database` fixture | It runs as a unit test, with no database |
 | A timer or other scheduled work | Frontend: cancelled in `test/setup.ts` | One test file's store leaks into the next |

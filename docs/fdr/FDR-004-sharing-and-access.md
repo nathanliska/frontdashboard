@@ -1,7 +1,7 @@
 # FDR-004: Sharing & Access
 
 **Status:** Active
-**Last reviewed:** 2026-09-16
+**Last reviewed:** 2026-11-21
 
 ## Overview
 
@@ -18,7 +18,7 @@ bound to that dashboard inherit the same access. This replaced an earlier groups
   or not; accepting is a separate POST that consumes the code and grants the share. Codes expire, can
   be revoked while unused, and are shown to the minter exactly once.
 - **Children inherit.** Lists and calendar events are visible to exactly the people who can see the
-  dashboard whose widget binds them. They have no independent sharing UI.
+  dashboard they belong to. They have no independent sharing UI.
 - **Unshare and role change.** Access can be revoked or changed; affected users are notified and their
   preferences (e.g. home dashboard) are cleaned up.
 - **Leaving.** A member can shed their own access at any time — viewer or editor alike, since leaving
@@ -56,10 +56,10 @@ client requesting `owner` is rejected at the input boundary.
 
 ### 3. Children inherit; their `/shares` endpoints are 409 stubs
 
-**Decision:** Lists and calendar events resolve access through the binding dashboard
+**Decision:** Lists and calendar events resolve access through the parent dashboard
 (`load_dashboard_access` / `list_accessible_dashboard_ids`); their own `/shares` endpoints
 deliberately return 409.
-**Why:** Sharing at the dashboard level keeps a bound resource exactly as shared as its dashboard —
+**Why:** Sharing at the dashboard level keeps a child resource exactly as shared as its dashboard —
 no confusing "list shared more widely than the board it's on." See ADR-001.
 **Tradeoff:** You can't share a single list independently of its dashboard. The access helpers also
 own the trashed-dashboard filter, so child tables must never be queried directly for access.

@@ -78,7 +78,7 @@ _Last updated: 2026-11-13_
 - Dashboards are shared by **single-use invite link** carrying viewer/editor; owner = creator.
   There is no user search and no direct grant — every grant is a redeemed invite. Codes are stored
   hashed, expire, are shown once and can be revoked while unused; accepting is a separate POST.
-- Lists and calendar events inherit access from the dashboard that binds them.
+- Lists and calendar events inherit access from the dashboard they belong to.
 - A member can **leave** a shared dashboard. The owner cannot; their exits are deleting it or
   **handing it to a member**, after which they stay on as an editor.
 
@@ -145,9 +145,9 @@ _Last updated: 2026-11-13_
   every failing field at once.
 
 **Client data layer** — [ADR-005](docs/adr/ADR-005-two-layer-client-state.md)
-- Zustand stores for app and session state; `createScopedQuery` resource caches for lists,
-  calendar and agenda. Caches keep the 32 most recently fetched scopes and never evict one that
-  is mounted or in flight.
+- Zustand stores for app and session state; `createScopedQuery` resource caches for lists and
+  agenda, and an interval cache for calendar occurrences. A scoped cache keeps the 32 most
+  recently fetched scopes and never evicts one that is mounted or in flight.
 - A mutation's response is applied, never refetched.
 - Resource caches register their own sign-out reset; `stores/auth.ts` calls one
   `resetAllResourceData()`.

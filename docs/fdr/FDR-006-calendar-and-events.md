@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-11-13
+**Last reviewed:** 2026-11-21
 
 ## Overview
 
@@ -207,7 +207,7 @@ editing and deleting are never gated.
 
 ## Access
 
-Events inherit access from the dashboard whose widget binds them (owner / editor / viewer). Their own
+Events inherit access from the dashboard they belong to (owner / editor / viewer). Their own
 `/shares` endpoints are 409 stubs. See [FDR-004](FDR-004-sharing-and-access.md).
 
 ## Open Questions

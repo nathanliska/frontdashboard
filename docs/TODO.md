@@ -68,10 +68,10 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
   **Postgres is the ceiling:** each replica opens its own pool, so 10N against a default
   `max_connections` of 100 caps this near 8 replicas — anything automatic wants PgBouncer first.
   Not scheduled; the trigger is the first replica rather than a date. *(Medium)*
-- **#39 — Extract use cases from the dashboard router.** ~1,200 lines coupling validation, authz,
-  persistence, activity, notification and SSE, repeating the same transaction/broadcast dance per
-  handler. Worth doing as the deletion it implies — one unit of work plus a staged outbox, routers as
-  thin adapters — not as a speculative layer. *(Large)*
+- **#39 — Extract use cases from the dashboard routers.** Three routers, split by concern, whose
+  handlers still couple validation, authz, persistence, activity, notification and SSE and repeat
+  the same transaction/broadcast dance. Worth doing as the deletion it implies — one unit of work
+  plus a staged outbox, routers as thin adapters — not as a speculative layer. *(Large)*
 - **#64 — Move the rate limiter off its synchronous Redis client.** slowapi's storage is a
   synchronous client called per rate-limited request, so with the store unreachable the connect cost is
   paid on the event loop rather than beside it

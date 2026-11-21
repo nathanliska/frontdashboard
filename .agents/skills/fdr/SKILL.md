@@ -74,7 +74,7 @@ Cite any new ADR in `Related`. Citations flow FDR → ADR; the ADR never lists i
 ## Writing quality
 
 - Behavior belongs in the present indicative: "a viewer sees the layout but emits no writes".
-- Prefer the invariant to the mechanism. "Access is inherited from the binding dashboard" survives a
+- Prefer the invariant to the mechanism. "Access is inherited from the parent dashboard" survives a
   refactor; "`load_dashboard_access` is called in the router" does not.
 - Coined a term? Add it to [docs/GLOSSARY.md](../../../docs/GLOSSARY.md) in the same change and link
   it back here.

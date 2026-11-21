@@ -21,8 +21,8 @@ creator is the **owner** (represented by the *absence* of a share row, not a rol
 users hold a `viewer` or `editor` role.
 
 Only **dashboards** are shared directly. Lists and calendar events **inherit** access from the
-dashboard whose widget binds them — their own `/shares` endpoints are deliberate 409 stubs. Access
-for a child resource is resolved through the binding dashboard
+dashboard they belong to — their own `/shares` endpoints are deliberate 409 stubs. Access
+for a child resource is resolved through the parent dashboard
 (`load_dashboard_access` / `list_accessible_dashboard_ids`), which also filters trashed dashboards.
 
 `PrincipalType` currently has only `user`; `ShareRole` only `viewer`/`editor`. Both are modelled as
@@ -51,7 +51,7 @@ therefore a migration that drops one CHECK and one FK, not a redesign.
 
 - **Simple mental model**: "I shared this dashboard with Alice as editor." No group indirection.
 - **Inheritance keeps child sharing coherent**: a list is visible to exactly the people who can see
-  the dashboard binding it — you can't create a list more or less shared than its dashboard. The
+  its dashboard — you can't create a list more or less shared than its dashboard. The
   cost is that you can't share a single list independently of its dashboard.
 - **Owner is stored as no row, resolved as a role**: the grant table holds nothing for the creator,
   but `permissions.effective_role` returns `EffectiveRole.owner` rather than `None`. The storable

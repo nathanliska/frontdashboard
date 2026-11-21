@@ -39,9 +39,8 @@ type CreateScopedQueryOptions<Scope, Data> = {
 
 /** Cached scopes kept per query before the coldest are dropped.
  *
- * Unbounded, a tab left open on the calendar grows one entry per window scrolled to. 32 covers a
- * year of windows plus every dashboard's lists; past that the coldest are worth less than the
- * memory.
+ * Unbounded, a tab left open grows one entry per list and dashboard it visits; past 32 the coldest
+ * are worth less than the memory.
  */
 const DEFAULT_MAX_CACHED_SCOPES = 32
 

@@ -67,7 +67,7 @@ in the abstract) are not defined here.
 
 **ResourceShare** — The row granting a user access to a resource (`resource_type`, `resource_id`, `principal_type`, `principal_id`, `role`, `granted_by`). The unit of sharing after groups were removed. See [ADR-001](adr/ADR-001-per-resource-sharing.md).
 
-**Inherited access** — Lists and calendar events derive their access from the dashboard whose widget binds them; they have no independent sharing. Their `/shares` endpoints are 409 stubs. See [FDR-004](fdr/FDR-004-sharing-and-access.md).
+**Inherited access** — Lists and calendar events derive their access from the dashboard they belong to; they have no independent sharing. Their `/shares` endpoints are 409 stubs. See [FDR-004](fdr/FDR-004-sharing-and-access.md).
 
 **Principal** — The subject of a share. `PrincipalType` is currently only `user`.
 
@@ -121,9 +121,9 @@ the reaper at the retention horizon. See [ADR-007](adr/ADR-007-soft-delete-bound
 
 **Argon2 limiter** — The bounded capacity limiter (`argon2_max_concurrency`) under which password hashing runs off the event loop. See [ADR-010](adr/ADR-010-argon2-off-event-loop.md).
 
-**scopedQuery** — The frontend `useSyncExternalStore` cache (keyed by scope) backing list/calendar/agenda data, via `useQuery` / `invalidateWhere` / `updateWhere`. List/calendar data lives here, not in a Zustand store. See [ADR-005](adr/ADR-005-two-layer-client-state.md).
+**scopedQuery** — The frontend `useSyncExternalStore` cache (keyed by scope) backing list, agenda, member and session data, via `useQuery` / `invalidateWhere` / `updateWhere`. Calendar occurrences use their own interval cache (`occurrenceStore`) beside it. Resource data lives in `resources/*`, not in a Zustand store. See [ADR-005](adr/ADR-005-two-layer-client-state.md).
 
-**Zustand store** — Where singular app/session state lives (`auth`, `dashboards`, `notifications`, `toast`, `confirm`, `ui`). One of the two client state layers. See [ADR-005](adr/ADR-005-two-layer-client-state.md).
+**Zustand store** — Where singular app/session state lives (`auth`, `dashboard`, `notifications`, `connection`, `toast`, `confirm`, `ui`). One of the two client state layers. See [ADR-005](adr/ADR-005-two-layer-client-state.md).
 
 **origin client id / echo suppression** — Every mutation carries the tab's per-load `X-Client-Id`; the SSE payload echoes it back as `origin_client_id`, and the issuing tab skips frames carrying its own stamp — its mutation response already applied the change. A pure comparison, stamped centrally in `apiFetch`. See [ADR-006](adr/ADR-006-rest-fetch-sse-patch.md), [FDR-008](fdr/FDR-008-realtime-sse.md).
 

@@ -18,8 +18,10 @@ Give each dashboard a monotonically increasing **`version` integer** and use opt
 control:
 
 - `PUT /layout` compares the client's version against the server's; a mismatch returns **409**.
-- Layout/widget writes take the dashboard **row lock** (`lock_for_update=True`) *and* bump
-  `dashboard.version`.
+- A write that changes the layout — a layout save, or adding or removing a widget — takes the
+  dashboard **row lock** (`lock_for_update=True`) *and* bumps `dashboard.version`. A widget config
+  patch changes no layout and does neither: advancing the version from a config event would let
+  a client holding a stale layout save it as current.
 - On the client, layout saves are **serialized and coalesced**: one PUT in flight plus one
   latest-pending layout, each send re-reading the version the previous save returned. A 409 therefore
   means a *real* other-editor conflict, never self-contention.
@@ -36,8 +38,8 @@ control:
   made your next drag conflict.
 - **Self-conflicts are engineered out client-side**: serialize-plus-coalesce guarantees rapid
   drag/resize can't 409 against itself or install a stale layout — so every 409 is meaningful.
-- **The version is load-bearing, not decorative**: any layout/widget write must bump it under the row
-  lock, or the OCC check goes blind.
+- **The version is load-bearing, not decorative**: any write that changes the layout must bump it
+  under the row lock, or the OCC check goes blind.
 - **The retry merges; the banner still doesn't**: the rebase overlays this client's items onto the
   server's layout by widget id, which it must — `PUT /layout` replaces the array wholesale and never
   checks it against the widget set, so posting a stale array would strip a widget the other editor

@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-11-13
+**Last reviewed:** 2026-11-21
 
 ## Overview
 
@@ -12,8 +12,8 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
 
 ## Behavior
 
-- **Add-widget wizard.** Pick a type, then — for types that bind a resource — pick or create the
-  resource it shows.
+- **Add-widget wizard.** Pick a type, then — for a list — pick or create the list it shows, or —
+  for a calendar — pick its view.
 - **List widget.** Shows a list; on add, bind an existing list or auto-create a new one. Deliberately
   **not** drag-reorderable inside the grid (its own drag would fight react-grid-layout's).
 - **Clock widget.** Shows the current time. No bound resource.
@@ -32,16 +32,18 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
   it lists one row per day, as tall as its events up to four and a "+N", and the list scrolls.
 - **Agenda widget.** Shows today / overdue / upcoming items; background-refetches on a day rollover.
   Its reminders come from `GET /lists/details` — one dashboard-scoped batch of every list with its
-  items — rather than composing summaries plus one detail request per list client-side (#17, closed
-  2026-07-26). The batch fetcher reads no client cache, so SSE handler order is not load-bearing.
+  items — rather than composing summaries plus one detail request per list client-side. The batch
+  always reads the network, never a client cache, so SSE handler order is not load-bearing.
   Someone else's item add, check, edit or delete patches the reminders from the event; only a change
   the event cannot describe, or one to a list this tab does not hold, reads the batch again.
 - **Lists load once per dashboard.** A list widget's first load, the agenda and the add-widget
   list picker all share that one batch while it is in flight, and it fills the list caches without
   overwriting an entry already loaded. So a dashboard opens on one list request however many list
   widgets it has, and a list bound from a picker that loaded the batch needs no fetch. A batch that
-  a list event overtakes fills nothing and is not shared further, since it predates the change. A
-  refetch of one held list still asks for that list alone.
+  a list event overtakes seeds no list cache, since it predates the change; its callers still
+  receive it, and re-read if the event marked them stale. A caller that asks after the event makes
+  the batch read again, and that newer answer is what everyone waiting receives and what seeds the
+  caches. A refetch of one held list still asks for that list alone.
 - Widgets update live: a change to the underlying list or calendar patches the widget in place via
   SSE rather than requiring a manual refresh.
 
@@ -49,11 +51,12 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
 
 ### 1. Four fixed widget types, bound to resources where relevant
 
-**Decision:** `WidgetType` is `'calendar' | 'agenda' | 'list' | 'clock'`. List/calendar/agenda bind a
-resource; clock doesn't.
+**Decision:** `WidgetType` is `'calendar' | 'agenda' | 'list' | 'clock'`. Only the list widget binds
+a resource row (`list_id`); calendar and agenda show the dashboard's own events and lists, and clock
+binds nothing.
 **Why:** A small, explicit set keeps the add-wizard, renderer, and resource wiring tractable.
 **Tradeoff:** Adding a type is a cross-cutting change — it touches the `WidgetType` union, the
-`WidgetRenderer` switch, the add-widget type step (plus a picker step if it binds a resource), and
+`WidgetRenderer` switch, the add-widget type step (plus a step of its own if it needs one), and
 the resource fetch/SSE wiring.
 
 ### 2. List widget can bind-or-create on add
