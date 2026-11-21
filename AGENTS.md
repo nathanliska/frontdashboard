@@ -141,7 +141,7 @@ make audit       # dependency CVE audit (osv-scanner, both lockfiles)
   consumers keep serving without it. `REDIS_URL`, `redis://` and redis-py keep their names on
   purpose: they name the protocol. Don't "fix" that.
 - **Sharing**: dashboards are shared with users (viewer/editor, owner = creator); lists and
-  calendar events **inherit** access from the dashboard whose widget binds them, so their
+  calendar events **inherit** access from the dashboard they belong to, so their
   `/shares` endpoints are deliberate 409 stubs.
 - **Delete boundary**: dashboards, lists and calendar events are recoverable; list items and
   widgets are removed outright. Every tombstone has an endpoint that clears it
@@ -203,8 +203,9 @@ nothing (`empty_parameter_set_mark = "fail_at_collect"`), router sources are enu
 - `log_event(...)` and `stage_notification(...)` only `db.add` — the unit of work owns the single
   commit. Usually that is the route; a route may instead hand a whole unit to a background task
   that opens its own session, as the retention reaper and `services/auth_email.py` do.
-- Layout and widget writes need the dashboard row lock and a `dashboard.version` bump;
-  `PUT /layout` compares client against server version and 409s on mismatch.
+- A write that changes `dashboard.layout` — a layout save, adding or removing a widget — needs the
+  dashboard row lock and a `dashboard.version` bump; `PUT /layout` 409s on a version mismatch. A
+  widget config patch takes neither ([FDR-003 §5](docs/fdr/FDR-003-widgets.md)).
 - Adding a table with a `dashboard_id` or `users` foreign key means adding it to the matching
   sweep in `services/retention.py`, and deciding in `services/accounts.py` whether an account
   deletion removes its rows or leaves them naming the tombstone. Most of those FKs don't cascade,
@@ -218,7 +219,8 @@ nothing (`empty_parameter_set_mark = "fail_at_collect"`), router sources are enu
 ## Frontend Principles
 
 - Zustand `stores/` hold app and session state; list, calendar and agenda data live in
-  `resources/*` on top of `createScopedQuery`. Don't put resource data in a store.
+  `resources/*` — on `createScopedQuery`, or `occurrenceStore` for calendar occurrences. Don't put
+  resource data in a store.
 - A mutation's response is the truth — apply it, never refetch it. A GET right after your own
   successful write is a bug. The sanctioned refetches are 409 divergence, server-derived data the
   client cannot compute, and someone else's change arriving via a non-echo SSE event.

@@ -6,7 +6,7 @@ A self-hosted dashboard app that acts as a private household operating system. S
 
 ## Features
 
-- **Dashboards** — multiple per user, customizable widget layouts, favorites, archiving
+- **Dashboards** — multiple per user, customizable widget layouts, favorites, a 30-day trash
 - **Sharing** — share a dashboard with other users (viewer/editor); lists and events on it
   inherit access
 - **Lists** — checklists, grocery lists, and todos with real-time sync

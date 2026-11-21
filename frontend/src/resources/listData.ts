@@ -432,7 +432,8 @@ export function handleListResourceEvent(
 ): void {
   if (event.event_type !== 'resync' && !event.event_type.startsWith('list.')) return
 
-  // A batch opened before this event predates it: it may not seed, and nobody new may join it.
+  // A batch opened before this event predates it: it may not seed, and a caller joining it now
+  // is owed a newer read.
   markDashboardListsChanged()
 
   if (event.event_type === 'resync') {

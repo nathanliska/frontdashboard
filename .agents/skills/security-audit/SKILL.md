@@ -72,7 +72,7 @@ Design decisions, not vulnerabilities. A finding that contradicts one of these n
 the ADR, not merely observe the behavior:
 
 - `/shares` on lists and calendar events returns **409 by design** — those inherit access from the
-  dashboard whose widget binds them. It is a deliberate stub, not a missing endpoint.
+  dashboard they belong to. It is a deliberate stub, not a missing endpoint.
 - The owner holds no share row: `effective_role` resolves the creator to `owner` and raises 404
   for a non-member.
 - One opaque session cookie resolved per request; no JWT, no refresh token, no `/auth/refresh`, no

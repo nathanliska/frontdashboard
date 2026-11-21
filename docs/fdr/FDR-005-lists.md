@@ -1,7 +1,7 @@
 # FDR-005: Lists
 
 **Status:** Active
-**Last reviewed:** 2026-11-12
+**Last reviewed:** 2026-11-21
 
 ## Overview
 
@@ -117,7 +117,7 @@ deleting are never gated.
 
 ## Access
 
-Lists inherit access from the dashboard whose widget binds them (owner / editor / viewer). Their own
+Lists inherit access from the dashboard they belong to (owner / editor / viewer). Their own
 `/shares` endpoints are 409 stubs. See [FDR-004](FDR-004-sharing-and-access.md).
 
 ## Related
