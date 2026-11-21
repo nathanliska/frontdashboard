@@ -11,7 +11,7 @@ from app.database import get_db
 from app.limiter import WRITE_LIMIT, limiter
 from app.models.dashboard import Dashboard
 from app.models.list import List, ListItem
-from app.models.share import EffectiveRole, ResourceShare, ResourceType
+from app.models.share import EffectiveRole, ResourceShare
 from app.models.user import User
 from app.schemas.lists import (
     ItemReorder,
@@ -28,7 +28,7 @@ from app.schemas.lists import (
 from app.schemas.shares import ResourceAccessResponse
 from app.services import permissions
 from app.services.activity import EventType, build_event_message
-from app.services.dashboard_widgets import remove_resource_widgets
+from app.services.dashboard_widgets import remove_list_widgets
 from app.services.quota import assert_under_quota, limit_message
 from app.services.retention import purge_list
 from app.services.shares import (
@@ -457,7 +457,7 @@ async def delete_list(
     # an add can commit a widget on this list after the unbind below has already looked.
     lst, dashboard, shares, role = await _get_list_access(list_id, current_user, db, lock_dashboard=True)
     permissions.assert_can_edit(role)
-    await remove_resource_widgets(ResourceType.list.value, lst.id, db)
+    await remove_list_widgets(lst.id, db)
 
     event_message = await build_event_message(
         db,

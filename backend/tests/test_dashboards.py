@@ -283,7 +283,7 @@ async def test_dashboard_favorites_are_per_user_preferences(auth_client: AsyncCl
 
 
 async def test_deleting_a_list_strips_its_widget_from_every_layout(auth_client: AsyncClient) -> None:
-    """Deleting the resource has to take the widget bound to it (`remove_resource_widgets`).
+    """Deleting the resource has to take the widget bound to it (`remove_list_widgets`).
 
     A widget left behind pointing at a deleted list renders as a permanent error tile, and a
     layout entry left behind reserves grid space for a widget that no longer exists. Only the
@@ -299,7 +299,7 @@ async def test_deleting_a_list_strips_its_widget_from_every_layout(auth_client: 
     version_before = after_clock["version"]
     assert {item["i"] for item in after_clock["layout"]} == {list_widget["id"], clock_widget_id}
 
-    delete_resp = await auth_client.delete(f"/api/lists/{list_widget['resource_id']}")
+    delete_resp = await auth_client.delete(f"/api/lists/{list_widget['list_id']}")
     assert delete_resp.status_code == 204, delete_resp.text
 
     detail = (await auth_client.get(f"/api/dashboards/{dashboard['id']}")).json()
@@ -319,11 +319,10 @@ async def test_widget_lifecycle_creates_list_resource(auth_client: AsyncClient) 
     assert len(payload["widgets"]) == 1
     widget = payload["widgets"][0]
     assert widget["widget_type"] == "list"
-    assert widget["resource_type"] == "list"
-    assert widget["resource_id"] is not None
+    assert widget["list_id"] is not None
     assert payload["layout"][0]["i"] == widget["id"]
 
-    list_resp = await auth_client.get(f"/api/lists/{widget['resource_id']}")
+    list_resp = await auth_client.get(f"/api/lists/{widget['list_id']}")
     assert list_resp.status_code == 200
     assert list_resp.json()["name"] == "Errands"
 
@@ -375,7 +374,7 @@ async def test_widget_add_returns_the_list_it_created(auth_client: AsyncClient) 
     bound = await create_list(auth_client, dashboard["id"], name="Groceries")
     resp = await auth_client.post(
         f"/api/dashboards/{dashboard['id']}/widgets",
-        json={"widget_type": "list", "resource_id": bound["id"], "config": {}},
+        json={"widget_type": "list", "list_id": bound["id"], "config": {}},
     )
     assert resp.status_code == 201, resp.text
     assert resp.json()["created_list"] is None
@@ -400,7 +399,7 @@ async def test_widget_created_list_appends_last_after_reorder(auth_client: Async
     widget = add_resp["widgets"][0]
 
     lists = (await auth_client.get(f"/api/lists?dashboard_id={dashboard['id']}")).json()
-    assert lists[-1]["id"] == widget["resource_id"]
+    assert lists[-1]["id"] == widget["list_id"]
     assert lists[-1]["sort_order"] == max(item["sort_order"] for item in lists)
     assert lists[-1]["sort_order"] == 2
 
@@ -732,7 +731,7 @@ async def test_binding_the_same_list_twice_is_a_conflict(auth_client: AsyncClien
     dashboard = await create_dashboard(auth_client, name="Bind Twice")
     lst = await create_list(auth_client, dashboard["id"], name="Bound")
 
-    payload = {"widget_type": "list", "resource_type": "list", "resource_id": lst["id"]}
+    payload = {"widget_type": "list", "list_id": lst["id"]}
     first = await auth_client.post(f"/api/dashboards/{dashboard['id']}/widgets", json=payload)
     assert first.status_code == 201
 

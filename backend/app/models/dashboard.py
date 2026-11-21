@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,32 +28,21 @@ class DashboardWidget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_dashboard_widgets_dashboard_id", "dashboard_id"),
         Index("ix_dashboard_widgets_list_id", "list_id"),
-        # "which dashboards show this list?" — the reverse lookup share cleanup and delete paths run.
-        Index("ix_dashboard_widgets_resource", "resource_type", "resource_id", "dashboard_id"),
-        # One widget per resource per dashboard. The add path still checks first to return a friendly
+        # One widget per list per dashboard. The add path still checks first to return a friendly
         # 409, but the read-before-insert races itself under concurrent adds; this is the guarantee.
         Index(
-            "uq_dashboard_widgets_resource_binding",
+            "uq_dashboard_widgets_list",
             "dashboard_id",
-            "resource_type",
-            "resource_id",
+            "list_id",
             unique=True,
-            postgresql_where=text("resource_type IS NOT NULL AND resource_id IS NOT NULL"),
-        ),
-        # A widget binds a resource or it does not; half a binding is not a state the app can read.
-        CheckConstraint(
-            "(resource_type IS NULL) = (resource_id IS NULL)",
-            name="ck_dashboard_widgets_resource_pair",
+            postgresql_where=text("list_id IS NOT NULL"),
         ),
     )
 
     dashboard_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dashboards.id", ondelete="CASCADE"), nullable=False)
     widget_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    widget_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
-    resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    # The list a list widget shows, written alongside the pair above. Cascades as a backstop only:
+    # The list a list widget shows. Cascades as a backstop only:
     # trashing a list unbinds its widgets first, so their layout entries go with them.
     list_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

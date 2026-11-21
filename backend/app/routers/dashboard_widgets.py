@@ -14,7 +14,6 @@ from app.limiter import WRITE_LIMIT, limiter
 from app.models.activity import ChangedField
 from app.models.dashboard import DashboardWidget
 from app.models.list import List
-from app.models.share import ResourceType
 from app.models.user import User
 from app.schemas.dashboards import (
     WIDGET_CONFIG_MODELS,
@@ -81,19 +80,17 @@ async def add_widget(
     # exclude_unset so omitted fields stay absent rather than landing as explicit nulls; extras
     # survive because every config model is extra="allow".
     widget_config = body.config.model_dump(exclude_unset=True)
-    resource_type: str | None = None
-    resource_id: uuid.UUID | None = None
+    list_id: uuid.UUID | None = None
     created_list: List | None = None
 
-    # A schema fact: only ListWidgetCreate carries resource fields, and they are a 422 on any
-    # other variant (extra="forbid").
+    # A schema fact: only ListWidgetCreate carries `list_id`, and it is a 422 on any other
+    # variant (extra="forbid").
     if isinstance(body, ListWidgetCreate):
-        resource_type = ResourceType.list.value
-        resource_id, created_list, widget_config = await bind_list_widget(
+        list_id, created_list, widget_config = await bind_list_widget(
             db,
             dashboard=dashboard,
             current_user=current_user,
-            resource_id=body.list_id or body.resource_id,
+            list_id=body.list_id,
             widget_config=widget_config,
         )
 
@@ -101,9 +98,7 @@ async def add_widget(
         dashboard_id=dashboard.id,
         widget_type=body.widget_type,
         config=widget_config,
-        resource_type=resource_type,
-        resource_id=resource_id,
-        list_id=resource_id,
+        list_id=list_id,
     )
     db.add(widget)
     try:
@@ -147,8 +142,7 @@ async def add_widget(
         payload={
             "widget_id": str(widget.id),
             "widget_type": widget.widget_type,
-            "resource_type": widget.resource_type,
-            "resource_id": str(widget.resource_id) if widget.resource_id else None,
+            "list_id": str(widget.list_id) if widget.list_id else None,
             # Add and remove are the same event type with the same changed_fields, so the feed
             # cannot tell them apart without this.
             "widget_action": "added",
