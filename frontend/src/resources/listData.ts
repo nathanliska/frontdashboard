@@ -232,7 +232,7 @@ export async function updateListName(id: string, name: string): Promise<void> {
       updated_at: updated.updated_at,
     }))
     // Each agenda reminder displays its list's name, so a rename has to reach them too.
-    renameAgendaListEntries(id, updated.name)
+    renameAgendaListEntries(updated.dashboard_id, id, updated.name)
   } catch (error) {
     toast.error('Failed to rename list.')
     throw error instanceof Error ? error : new Error('Failed to rename list.')
@@ -284,10 +284,8 @@ export async function addListItem(listId: string, text: string): Promise<void> {
       ...list,
       item_count: list.item_count + 1,
     }))
-    // A new item carries no due date, so this derives to "not on the agenda" and is a no-op
-    // today. It runs anyway so the agenda stays correct by construction if creation ever gains
-    // one, rather than silently dropping it.
-    patchAgendaFromListDetail(listId, item)
+    // Only a due date puts an item on the agenda, so one created without has nothing to add.
+    if (item.due_date) patchAgendaFromListDetail(listId, item)
   } catch (error) {
     // Say what the server said — a refusal the caller can act on (a quota, say) is useless as
     // "Failed to add item".
@@ -341,7 +339,7 @@ export async function deleteListItem(listId: string, itemId: string): Promise<vo
       items: detail.items.filter((item) => item.id !== itemId),
       item_count: Math.max(0, detail.item_count - 1),
     }))
-    removeAgendaItems([itemId])
+    removeAgendaItems([itemId], listDetailQuery.getState({ listId }).data?.dashboard_id)
     patchListSummaryById(listId, (list) => ({
       ...list,
       item_count: Math.max(0, list.item_count - 1),
@@ -533,7 +531,7 @@ export function handleListResourceEvent(
   if (event.event_type === 'list.item.deleted' && affectedListId) {
     const itemId = event.entity_id
     // A reminder is keyed by its item, so the agenda needs no list data to drop one.
-    removeAgendaItems([itemId])
+    removeAgendaItems([itemId], event.payload.dashboard_id)
     const held = listDetailQuery.getState({ listId: affectedListId }).data
     if (held?.items.some((item) => item.id === itemId)) {
       patchListDetailById(affectedListId, (detail) => ({

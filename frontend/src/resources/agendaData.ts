@@ -92,6 +92,25 @@ function listItemToAgendaItem(
   }
 }
 
+/**
+ * Patch the reminders a dashboard holds, or every dashboard's when the caller cannot say which.
+ * One whose first load is still out holds nothing to patch, so it is marked stale instead: that
+ * response may predate this change.
+ */
+function patchReminders(
+  dashboardId: string | null,
+  patch: (reminders: AgendaItem[]) => AgendaItem[],
+): void {
+  const matches = (scope: AgendaScope) => !dashboardId || scope.dashboardId === dashboardId
+  agendaRemindersQuery.invalidateWhere((scope) => {
+    const { data, loading } = agendaRemindersQuery.getState(scope)
+    return matches(scope) && data === null && loading
+  })
+  agendaRemindersQuery.updateWhere(matches, (state) =>
+    state.data ? { ...state, data: patch(state.data) } : state,
+  )
+}
+
 /** Re-derive one item's agenda entry from a mutation response, in place of a refetch.
  *
  * This runs the *same* `listItemToAgendaItem` the fetcher runs, over the same shape the fetcher
@@ -112,48 +131,32 @@ export function applyAgendaItemUpdate(
   const next = listItemToAgendaItem(item, list, dateKey(startOfDay(new Date())))
   const entryId = `reminder:${item.id}`
 
-  agendaRemindersQuery.updateWhere(
-    (scope) => scope.dashboardId === dashboardId,
-    (state) => {
-      if (!state.data) return state
-      const without = state.data.filter((entry) => entry.id !== entryId)
-      return { ...state, data: next ? [...without, next] : without }
-    },
-  )
+  patchReminders(dashboardId, (reminders) => {
+    const without = reminders.filter((entry) => entry.id !== entryId)
+    return next ? [...without, next] : without
+  })
 }
 
 /** Drop agenda entries whose items no longer exist.
  *
- * Deliberately unscoped: reminder entry ids are `reminder:<itemId>` and an item belongs to exactly
- * one list, which belongs to exactly one dashboard, so a match can only occur in the one scope
- * that holds it. Sweeping every scope means the caller does not have to know the dashboard — and
- * `deleteList` genuinely does not, since a list can be trashed from the sidebar without its detail
- * ever being loaded.
+ * The dashboard is optional: a reminder's id names its item, which lives on exactly one dashboard,
+ * so sweeping every scope removes nothing it should not. Naming it spares the others a re-read.
  */
-export function removeAgendaItems(itemIds: string[]): void {
+export function removeAgendaItems(itemIds: string[], dashboardId: string | null = null): void {
   const doomed = new Set(itemIds.map((id) => `reminder:${id}`))
-  agendaRemindersQuery.updateWhere(
-    () => true,
-    (state) => {
-      if (!state.data) return state
-      return { ...state, data: state.data.filter((entry) => !doomed.has(entry.id)) }
-    },
-  )
+  patchReminders(dashboardId, (reminders) => reminders.filter((entry) => !doomed.has(entry.id)))
 }
 
 /** Rename a list's agenda entries — each reminder carries its list's name for display. */
-export function renameAgendaListEntries(listId: string, listName: string): void {
-  agendaRemindersQuery.updateWhere(
-    () => true,
-    (state) => {
-      if (!state.data) return state
-      return {
-        ...state,
-        data: state.data.map((entry) =>
-          entry.type === 'reminder' && entry.listId === listId ? { ...entry, listName } : entry,
-        ),
-      }
-    },
+export function renameAgendaListEntries(
+  dashboardId: string,
+  listId: string,
+  listName: string,
+): void {
+  patchReminders(dashboardId, (reminders) =>
+    reminders.map((entry) =>
+      entry.type === 'reminder' && entry.listId === listId ? { ...entry, listName } : entry,
+    ),
   )
 }
 
@@ -181,15 +184,8 @@ export function listHandlerUpdatesAgenda(event: SseEvent): boolean {
 
 /** Drop every agenda entry belonging to a list, for a list that was trashed or deleted. */
 export function removeAgendaItemsForList(listId: string): void {
-  agendaRemindersQuery.updateWhere(
-    () => true,
-    (state) => {
-      if (!state.data) return state
-      return {
-        ...state,
-        data: state.data.filter((entry) => entry.type !== 'reminder' || entry.listId !== listId),
-      }
-    },
+  patchReminders(null, (reminders) =>
+    reminders.filter((entry) => entry.type !== 'reminder' || entry.listId !== listId),
   )
 }
 
