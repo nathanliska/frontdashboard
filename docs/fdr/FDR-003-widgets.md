@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-11-21
+**Last reviewed:** 2026-11-22
 
 ## Overview
 
@@ -36,16 +36,16 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
   always reads the network, never a client cache, so SSE handler order is not load-bearing.
   Someone else's item add, check, edit or delete patches the reminders from the event; only a change
   the event cannot describe, or one to a list this tab does not hold, reads the batch again. So
-  does any change, this tab's own included, that lands while the reminders' first load is still
-  out: that response may predate it.
+  does a patch, this tab's own included, that lands while the reminders are being read: that
+  response may predate it, so it is never shown.
 - **Lists load once per dashboard.** A list widget's first load, the agenda and the add-widget
   list picker all share that one batch while it is in flight, and it fills the list caches without
   overwriting an entry already loaded. So a dashboard opens on one list request however many list
   widgets it has, and a list bound from a picker that loaded the batch needs no fetch. A batch that
-  a list event overtakes seeds no list cache, since it predates the change; its callers still
-  receive it, and re-read if the event marked them stale. A caller that asks after the event makes
-  the batch read again, and that newer answer is what everyone waiting receives and what seeds the
-  caches. A refetch of one held list still asks for that list alone.
+  a list event or this tab's own write overtakes seeds no list cache, since it predates the change;
+  its callers still receive it, and re-read if the change reached them. A caller that asks after it
+  makes the batch read again, and that newer answer is what everyone waiting receives and what
+  seeds the caches. A refetch of one held list still asks for that list alone.
 - Widgets update live: a change to the underlying list or calendar patches the widget in place via
   SSE rather than requiring a manual refresh.
 

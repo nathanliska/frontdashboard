@@ -101,6 +101,9 @@ function ListProbe() {
 describe('listData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Clearing keeps queued responses, so one a failed test left unread would leak into the next.
+    apiGetLists.mockReset()
+    apiGetList.mockReset()
     __resetListDataForTests()
     signIn()
   })
@@ -282,5 +285,41 @@ describe('listData', () => {
 
     await expect(addListItem('list-1', 'Buy eggs')).rejects.toThrow()
     expect(toastError).toHaveBeenCalledWith('You have reached the limit of 3 list items.')
+  })
+
+  it('reads the sidebar again when our own rename lands while its first load is in flight', async () => {
+    const firstLoad = deferred<ListSummary[]>()
+    apiGetLists
+      .mockReturnValueOnce(firstLoad.promise)
+      .mockResolvedValueOnce([makeListSummary({ name: 'Weekend groceries' })])
+    apiGetList.mockResolvedValueOnce(makeListDetail())
+    apiUpdateList.mockResolvedValueOnce(makeListSummary({ name: 'Weekend groceries' }))
+
+    render(<ListProbe />)
+    await act(async () => {
+      await updateListName('list-1', 'Weekend groceries')
+    })
+    await act(async () => firstLoad.resolve([makeListSummary()]))
+
+    await screen.findByText('Weekend groceries')
+    expect(apiGetLists).toHaveBeenCalledTimes(2)
+  })
+
+  it("leaves another dashboard's first load alone when our own rename lands", async () => {
+    const firstLoad = deferred<ListSummary[]>()
+    apiGetLists.mockReturnValueOnce(firstLoad.promise)
+    apiGetList.mockResolvedValueOnce(makeListDetail())
+    apiUpdateList.mockResolvedValueOnce(
+      makeListSummary({ dashboard_id: 'dash-2', name: 'Weekend groceries' }),
+    )
+
+    render(<ListProbe />)
+    await act(async () => {
+      await updateListName('list-1', 'Weekend groceries')
+    })
+    await act(async () => firstLoad.resolve([makeListSummary()]))
+
+    await screen.findByText('Groceries')
+    expect(apiGetLists).toHaveBeenCalledTimes(1)
   })
 })

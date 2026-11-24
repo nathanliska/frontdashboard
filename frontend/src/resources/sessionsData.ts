@@ -35,8 +35,10 @@ export async function revokeOtherSession(id: string): Promise<void> {
   }
   if (generation !== currentSessionGeneration()) return
   revoked.add(id)
+  // Only pages showing the row: a write makes a read in flight run again, and the fetcher already
+  // filters `revoked` from any page that arrives later.
   sessionsQuery.updateWhere(
-    () => true,
+    (scope) => Boolean(sessionsQuery.getState(scope).data?.items.some((item) => item.id === id)),
     (state) =>
       state.data
         ? {

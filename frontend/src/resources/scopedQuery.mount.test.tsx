@@ -271,16 +271,20 @@ describe('scopedQuery changes during an in-flight read', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
-  it('does not count a patch that changed nothing', async () => {
+  it('drops the answer of a read that a write overtook, even one that changed nothing', async () => {
     const { fetcher, query, scope, settle } = setup()
     void query.fetch(scope)
+    await settle('v1')
+    void query.fetch(scope, { background: true })
     query.updateWhere(
       () => true,
       (state) => state,
     )
-    await settle('v1')
-
+    await settle('older')
     expect(query.getState(scope).data).toBe('v1')
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    await settle('v2')
+
+    expect(query.getState(scope).data).toBe('v2')
+    expect(fetcher).toHaveBeenCalledTimes(3)
   })
 })

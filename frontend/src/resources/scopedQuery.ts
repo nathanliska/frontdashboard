@@ -22,7 +22,7 @@ type ScopedQueryEntry<Scope, Data> = {
   listeners: Set<() => void>
   inFlight: Promise<Data> | null
   stale: boolean
-  /** Counts writes to the entry, so a read can tell that one overtook it. */
+  /** Counts seeds, and patches made during a read, so the read can tell one overtook it. */
   writes: number
   /** The read in flight must be followed by another: a patch overtook it, or a caller joined
    * it after an invalidate. Not `stale`, which says what is held cannot be patched. */
@@ -266,16 +266,16 @@ export function createScopedQuery<Scope, Data>({
     // listener is arbitrary component code that may re-enter the cache and reorder it mid-loop.
     for (const entry of [...entries.values()]) {
       if (!predicate(entry.scope)) continue
+      // A write overtakes any read out, whether or not there was anything to patch: that read's
+      // answer may predate it.
+      if (entry.inFlight) {
+        entry.writes += 1
+        entry.owed = true
+      }
       // Leaves `stale` alone: a patch writes part of an entry, not authoritative full data, so
       // only fetch() may clear it. Clearing here would discard an invalidate whose fetch was
       // skipped for lack of listeners, losing that update until a resync.
-      const next = updater(entry.state, entry.scope)
-      if (next.data !== entry.state.data || next.error !== entry.state.error) {
-        entry.writes += 1
-        // A patch is partial, so a read it overtakes is owed again.
-        if (entry.inFlight) entry.owed = true
-      }
-      setState(entry, next)
+      setState(entry, updater(entry.state, entry.scope))
     }
   }
 

@@ -185,7 +185,7 @@ describe('ListsLayout / ListDetailPage', () => {
     fireEvent.click(screen.getByTitle('Confirm move to trash'))
 
     await waitFor(() => {
-      expect(vi.mocked(deleteList)).toHaveBeenCalledWith('list-1')
+      expect(vi.mocked(deleteList)).toHaveBeenCalledWith('list-1', 'dash-1')
     })
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('/lists?dashboard_id=dash-1')
@@ -217,7 +217,7 @@ describe('ListsLayout / ListDetailPage', () => {
     fireEvent.click(screen.getByTitle('Confirm move to trash'))
 
     await waitFor(() => {
-      expect(vi.mocked(deleteList)).toHaveBeenCalledWith('list-1')
+      expect(vi.mocked(deleteList)).toHaveBeenCalledWith('list-1', 'dash-1')
     })
     expect(screen.getByTestId('location')).toHaveTextContent('/lists/list-1?dashboard_id=dash-1')
   })
