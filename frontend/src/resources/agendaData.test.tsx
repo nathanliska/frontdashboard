@@ -114,8 +114,8 @@ function makeListDetail(overrides: Partial<ListDetail> = {}): ListDetail {
   return { ...makeListSummary(), items: [makeListItem()], ...overrides }
 }
 
-function AgendaProbe() {
-  const { data, loading, error } = useAgendaItems('dash-1')
+function AgendaProbe({ dashboardId = 'dash-1' }: { dashboardId?: string }) {
+  const { data, loading, error } = useAgendaItems(dashboardId)
 
   return (
     <div>
@@ -165,6 +165,8 @@ function makeCalendarUpdatedEvent(): SseEvent {
 describe('agendaData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Drops queued `Once` answers too, so one failing test cannot feed the next.
+    apiGetListDetails.mockReset()
     resetAgendaData()
     __resetListDataForTests()
   })
@@ -414,6 +416,66 @@ describe('agendaData', () => {
     first.unmount()
     render(<AgendaProbe />)
     await waitFor(() => expect(apiGetListDetails).toHaveBeenCalledTimes(2))
+  })
+
+  it('reads the reminders again when our own check lands while their first load is in flight', async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    let resolve: (lists: ListDetail[]) => void = () => {}
+    apiGetListDetails
+      .mockReturnValueOnce(new Promise<ListDetail[]>((r) => (resolve = r)))
+      .mockResolvedValueOnce([makeListDetail({ items: [makeListItem({ checked: true })] })])
+    __seedListDetailForTests('list-1', makeListDetail())
+    apiUpdateItem.mockResolvedValueOnce(makeListItem({ checked: true }))
+    render(<AgendaProbe />)
+
+    await act(async () => {
+      await updateListItem('list-1', 'item-1', { checked: true })
+    })
+    act(() => {
+      const event = makeListItemCheckedEvent()
+      handleListResourceEvent(event, { isOwnEcho: true })
+      handleAgendaResourceEvent(event, { isOwnEcho: true })
+    })
+    // The server read the lists before the check committed.
+    await act(async () => {
+      resolve([makeListDetail()])
+    })
+
+    await waitFor(() => expect(apiGetListDetails).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
+  })
+
+  it('leaves failed reminders alone after our own check: no load is out to distrust', async () => {
+    apiListOccurrences.mockResolvedValue([makeOccurrence()])
+    apiGetListDetails.mockRejectedValueOnce(new Error('offline'))
+    __seedListDetailForTests('list-1', makeListDetail())
+    apiUpdateItem.mockResolvedValueOnce(makeListItem({ checked: true }))
+    render(<AgendaProbe />)
+    await waitFor(() => expect(screen.getByTestId('agenda-error')).not.toHaveTextContent('none'))
+
+    await act(async () => {
+      await updateListItem('list-1', 'item-1', { checked: true })
+    })
+
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
+  })
+
+  it("leaves another dashboard's first load alone when our own check lands", async () => {
+    apiListOccurrences.mockResolvedValue([])
+    let resolve: (lists: ListDetail[]) => void = () => {}
+    apiGetListDetails.mockReturnValueOnce(new Promise<ListDetail[]>((r) => (resolve = r)))
+    __seedListDetailForTests('list-1', makeListDetail())
+    apiUpdateItem.mockResolvedValueOnce(makeListItem({ checked: true }))
+    render(<AgendaProbe dashboardId="dash-2" />)
+
+    await act(async () => {
+      await updateListItem('list-1', 'item-1', { checked: true })
+    })
+    await act(async () => {
+      resolve([])
+    })
+
+    expect(apiGetListDetails).toHaveBeenCalledTimes(1)
   })
 
   it('reads the reminders again rather than rebuild one from a list it knows is out of date', async () => {

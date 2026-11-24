@@ -35,7 +35,9 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
   items — rather than composing summaries plus one detail request per list client-side. The batch
   always reads the network, never a client cache, so SSE handler order is not load-bearing.
   Someone else's item add, check, edit or delete patches the reminders from the event; only a change
-  the event cannot describe, or one to a list this tab does not hold, reads the batch again.
+  the event cannot describe, or one to a list this tab does not hold, reads the batch again. So
+  does any change, this tab's own included, that lands while the reminders' first load is still
+  out: that response may predate it.
 - **Lists load once per dashboard.** A list widget's first load, the agenda and the add-widget
   list picker all share that one batch while it is in flight, and it fills the list caches without
   overwriting an entry already loaded. So a dashboard opens on one list request however many list
