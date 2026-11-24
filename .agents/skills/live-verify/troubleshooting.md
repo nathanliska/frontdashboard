@@ -39,3 +39,23 @@ between them; without all of that the item never gets `react-draggable-dragging`
 which reads exactly like a broken feature. dnd-kit's keyboard path announces into the
 `aria-live` region — useful to confirm pickup, though driving the *move* step this way has not been
 made to work. Prefer asserting on the network log over the rendered position.
+
+## Checking a hover style
+
+Headless Chrome reports `(hover: none)`, and Tailwind wraps every `hover:` and `group-hover:` variant
+in `@media (hover: hover)`. So a hovered element computes its base style, and a hover check passes
+against broken code. Copy those rules out of their media block into a sheet appended last, then
+`hover` the element and read `getComputedStyle`:
+
+```js
+const css = []
+const walk = (rules) => { for (const r of rules) {
+  if (r instanceof CSSMediaRule && /hover:\s*hover/.test(r.conditionText)) for (const inner of r.cssRules) css.push(inner.cssText)
+  else if (r.cssRules) walk(r.cssRules)
+} }
+for (const sheet of document.styleSheets) walk(sheet.cssRules)
+const style = document.createElement('style'); style.textContent = css.join('\n'); document.head.append(style)
+```
+
+Prove the method before trusting it: put the old classes back on the same element and watch the
+hover tone return.
