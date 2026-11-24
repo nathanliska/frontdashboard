@@ -32,6 +32,20 @@ beforeEach(() => {
   } as never)
 })
 
+it('leaves the selected day without a hover tone, which would hide it under the pointer', async () => {
+  useDashboardStore.setState({ loadSummaries: () => Promise.resolve() })
+  render(
+    <MemoryRouter initialEntries={['/calendar?dashboard_id=wanted&date=2028-02-29']}>
+      <CalendarPage />
+    </MemoryRouter>,
+  )
+  // jsdom resolves no cascade, so the class list is the mechanism to assert on.
+  const tile = async (name: RegExp) =>
+    (await screen.findByRole('button', { name })).firstElementChild
+  expect(await tile(/February 29.*Show day/)).not.toHaveClass('group-hover:border-zinc-700')
+  expect(await tile(/February 28.*Show day/)).toHaveClass('group-hover:border-zinc-700')
+})
+
 it('keeps the requested date and waits for dashboard selection before fetching', async () => {
   let finish!: () => void
   useDashboardStore.setState({

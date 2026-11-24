@@ -1,4 +1,4 @@
-"""The global IntegrityError -> 409 translation (finding #26).
+"""The global IntegrityError -> 409 translation.
 
 Every write is schema-validated before it reaches the database, so a constraint violation that
 escapes route-level handling means two requests disagreed about current state — a conflict the

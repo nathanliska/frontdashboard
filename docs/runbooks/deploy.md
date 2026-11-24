@@ -58,6 +58,10 @@ only once it starts failing. To confirm one is running rather than silenced, rea
 or set `LOG_LEVEL=debug` and update the stack to see every line again. Raising it to `warning`
 instead is the wrong lever: uvicorn writes access lines at info, so that silences the failures too.
 
+**A failing readiness check names its cause** on the line just before its `503`, e.g.
+`readiness: database check failed: ConnectionRefusedError: …` or `… timed out (limit 3.0s)`. Read
+it before the container is replaced — its logs go with it.
+
 Then from outside, over HTTPS: the document served `no-cache`, the bundle it names answering
 `200 text/javascript`, a deleted asset answering `404` rather than the SPA fallback, and
 `/api/health/ready` answering `200`. All `GET`/`HEAD` — never write to production.

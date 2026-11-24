@@ -18,7 +18,7 @@ class NotificationResponse(BaseModel):
 
 
 class NotificationPageResponse(BaseModel):
-    """One page of the notification list (finding #22).
+    """One page of the notification list.
 
     `next_cursor` is opaque to the client — it encodes the compound sort position (unread
     section, created_at, id) server-side, so the client never re-derives the ordering rules.

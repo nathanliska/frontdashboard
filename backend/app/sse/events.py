@@ -112,8 +112,8 @@ async def build_notification_sse_dicts(db: AsyncSession, notifications: Sequence
 
     One flush covers the whole batch and nothing more is needed: every serialised Notification
     field is assigned in Python at staging (id is a client-side uuid4, created_at is set by
-    stage_notification), so the per-notification `db.refresh` this used to do was one SELECT per
-    share member of the dashboard being broadcast to, fetching nothing new (finding #25).
+    stage_notification), so a per-notification `db.refresh` would cost one SELECT per share
+    member of the dashboard being broadcast to and fetch nothing new.
     """
     if not notifications:
         return []

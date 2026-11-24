@@ -136,7 +136,7 @@ class DashboardSummary(BaseModel):
 
 
 class TrashedDashboardSummary(BaseModel):
-    """A dashboard in the owner's trash (finding #40): enough to recognise it and restore it."""
+    """A dashboard in the owner's trash: enough to recognise it and restore it."""
 
     id: uuid.UUID
     name: str
@@ -281,7 +281,7 @@ class ListWidgetCreate(_WidgetCreateBase):
 
 # Mirrors the response union: `widget_type` discriminates, and each variant carries its own typed
 # config — so "clock widgets cannot bind a resource" and "unknown widget type" are schema facts
-# (422 at the boundary) rather than router checks (finding #14).
+# (422 at the boundary) rather than router checks.
 WidgetCreate = Annotated[
     ClockWidgetCreate | CalendarWidgetCreate | ListWidgetCreate | AgendaWidgetCreate,
     Field(discriminator="widget_type"),

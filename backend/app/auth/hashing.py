@@ -9,13 +9,13 @@ from app.metrics import ARGON2_SECONDS
 _ph = PasswordHasher()
 
 # Verified against on the login miss path so an unknown email pays the same Argon2 cost as a
-# real one — closes the user-enumeration timing oracle (finding #43). Uses `_ph`, so its verify
+# real one — closes the user-enumeration timing oracle. Uses `_ph`, so its verify
 # cost always matches real hashes.
 _DUMMY_HASH = _ph.hash("frontdashboard-login-timing-equalizer")
 
 # One shared limiter bounds peak concurrent Argon2 work (each op ~64 MiB, and parallelism=4
 # already saturates a few cores at low N). When full, further auth requests queue instead of
-# stalling the event loop (finding #13).
+# stalling the event loop.
 argon2_limiter = anyio.CapacityLimiter(settings.argon2_max_concurrency)
 
 

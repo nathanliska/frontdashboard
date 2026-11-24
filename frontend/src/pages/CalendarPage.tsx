@@ -349,7 +349,9 @@ export function CalendarPage() {
                       <div
                         className={cn(
                           'flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border p-0.5 sm:p-1 transition-colors',
-                          'group-hover:border-zinc-700 group-hover:bg-zinc-900/80',
+                          // A hover variant outranks the selected tone, and the pointer is still on
+                          // the day it just picked — so the selection would only show once it left.
+                          !isSelected && 'group-hover:border-zinc-700 group-hover:bg-zinc-900/80',
                           'group-focus-visible:border-zinc-400 group-focus-visible:ring-1 group-focus-visible:ring-zinc-400/40',
                           !inMonth && 'opacity-45',
                           dayCellTone({ isToday, isSelected }),

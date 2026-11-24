@@ -1,4 +1,4 @@
-"""Retention sweep tests — see finding #38.
+"""Retention sweep tests.
 
 Every case runs in the savepoint `db_session`, so the deletes are exercised against
 a real Postgres and rolled back. The sweep must delete only provably-inert rows and

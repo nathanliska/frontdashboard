@@ -103,7 +103,8 @@ nothing else can tell a healthy quiet rule from one whose scrape job was never a
   stalled scrape is Prometheus's own `up`, and a prober keeps history that can be alerted on. So a
   filter on `uvicorn.access` drops `/api/health`, `/api/health/ready` and `/metrics` under status
   400, and keeps every line at `LOG_LEVEL=debug`. A failing probe always logs — except above
-  `info`, where uvicorn emits no access lines at all, filter or not.
+  `info`, where uvicorn emits no access lines at all, filter or not. A failing readiness check also
+  logs its cause — a timeout, or the driver's error — as an app warning, which survives `warning`.
 - **Rejected auth attempts are counted by cause**, as `auth_failures_total{operation,reason}` —
   both labels closed enumerations, so cardinality is bounded. It exists because `status_class`
   collapses 401 and 403 into one `4xx` series, which makes "wrong password" and "unverified email,

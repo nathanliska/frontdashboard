@@ -1,12 +1,10 @@
-"""Delivery-path tests for outgoing mail (finding #42).
+"""Delivery-path tests for outgoing mail.
 
 The property under test is not "does mail send" but "where does a live credential end up". A
 verification or reset URL is a bearer credential for the account, so the interesting assertions are
 negative: it must not reach the log stream, and it must not be written anywhere outside development.
 """
 
-import logging
-from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -25,20 +23,6 @@ def outbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(email_service.settings, "dev_mail_dir", str(directory))
     monkeypatch.setattr(email_service.settings, "resend_api_key", None)
     return directory
-
-
-@pytest.fixture
-def logs(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> Iterator[pytest.LogCaptureFixture]:
-    """Capture records from the "app" logger tree.
-
-    `caplog` listens at the root, but `app.main` sets `propagate = False` on "app" so application
-    output goes through its own handler. Once anything has imported `app.main` — which the rest of
-    the suite does — a plain `caplog` here captures nothing. These tests are about what does and
-    does not reach the log, so an empty capture would make every negative assertion vacuous.
-    """
-    monkeypatch.setattr(logging.getLogger("app"), "propagate", True)
-    with caplog.at_level(logging.DEBUG, logger="app"):
-        yield caplog
 
 
 async def test_development_writes_the_message_to_the_outbox(outbox: Path, monkeypatch: pytest.MonkeyPatch, logs: pytest.LogCaptureFixture) -> None:

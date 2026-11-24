@@ -58,9 +58,9 @@ _MIGRATION_LOCK_KEY = 0x66D0_DA5B
 
 
 def do_run_migrations(connection) -> None:  # type: ignore[type-arg]
-    # Serialize concurrent upgrade runs (finding #33): every API container executes
-    # `alembic upgrade head` before serving, so a restart mid-deploy — or a second container
-    # coming up during one — used to race the same DDL against itself. With the lock, the loser
+    # Serialize concurrent upgrade runs: every API container executes `alembic upgrade head`
+    # before serving, so a restart mid-deploy — or a second container coming up during one —
+    # would race the same DDL against itself. With the lock, the loser
     # waits, then finds the schema already at head and applies nothing.
     connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": _MIGRATION_LOCK_KEY})
     # The execute above autobegins a transaction; end it before alembic manages its own, or the
