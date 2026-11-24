@@ -26,11 +26,11 @@ import { confirm } from '../stores/confirm'
 import { useDashboardStore } from '../stores/dashboard'
 import {
   buildEventUpdateFromDraft,
+  buildScheduleFromDraft,
   type CalendarEditorDraft,
   createCalendarEditorDraftFromEvent,
   createDefaultCalendarEditorDraft,
   type EditorMode,
-  toRecurrenceUntilIso,
 } from '../utils/calendar/calendarEditorDraftUtils'
 import {
   CALENDAR_WEEKDAY_LABELS,
@@ -184,36 +184,21 @@ export function CalendarPage() {
       const trimmedTitle = draft.title.trim()
       if (!trimmedTitle || !effectiveActiveDashboardId || !editorSession) return
 
-      const recurrence =
-        draft.recurrenceMode === 'none'
-          ? null
-          : {
-              frequency: draft.recurrenceMode,
-              interval: Number(draft.recurrenceInterval) || 1,
-              until: draft.recurrenceEndsOn
-                ? toRecurrenceUntilIso(draft.recurrenceEndsOn)
-                : undefined,
-              ...(draft.recurrenceMode === 'weekly'
-                ? { by_weekday: [...draft.recurrenceWeekdays].sort((a, b) => a - b) }
-                : {}),
-            }
-
       try {
         if (editorSession.mode === 'edit' && editorSession.eventId) {
           await updateCalendarEvent(
             editorSession.eventId,
-            buildEventUpdateFromDraft(draft, recurrence, DEFAULT_TIMEZONE),
+            buildEventUpdateFromDraft(draft, editorSession.initialDraft, DEFAULT_TIMEZONE),
           )
         } else {
+          const { recurrence, ...schedule } = buildScheduleFromDraft(draft)
           await createCalendarEvent({
             dashboard_id: effectiveActiveDashboardId,
             title: trimmedTitle,
             description: draft.description.trim() || undefined,
             location: draft.eventLocation.trim() || undefined,
-            starts_at: new Date(draft.startsAt).toISOString(),
-            ends_at: new Date(draft.endsAt).toISOString(),
+            ...schedule,
             timezone: DEFAULT_TIMEZONE,
-            all_day: draft.allDay,
             recurrence: recurrence ?? undefined,
             participants: draft.participants,
           })

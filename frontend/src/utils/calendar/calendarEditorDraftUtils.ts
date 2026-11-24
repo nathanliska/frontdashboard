@@ -195,7 +195,7 @@ function deriveRecurrenceEndDate(startsAt: string, recurrence: RecurrenceRule): 
   return toLocalDateInput(date.toISOString())
 }
 
-export function toRecurrenceUntilIso(value: string): string {
+function toRecurrenceUntilIso(value: string): string {
   return new Date(`${value}T23:59:59`).toISOString()
 }
 
@@ -331,27 +331,54 @@ function toLocalDateTimeInput(value: string): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+/** The recurrence rule a draft describes, or null when it does not repeat. */
+function buildRecurrenceFromDraft(
+  draft: CalendarEditorDraft,
+): UpdateCalendarEventInput['recurrence'] {
+  if (draft.recurrenceMode === 'none') return null
+  return {
+    frequency: draft.recurrenceMode,
+    interval: Number(draft.recurrenceInterval) || 1,
+    until: draft.recurrenceEndsOn ? toRecurrenceUntilIso(draft.recurrenceEndsOn) : undefined,
+    ...(draft.recurrenceMode === 'weekly'
+      ? { by_weekday: [...draft.recurrenceWeekdays].sort((a, b) => a - b) }
+      : {}),
+  }
+}
+
+/** The schedule a draft describes — one builder for create and edit, so the two cannot drift. */
+export function buildScheduleFromDraft(draft: CalendarEditorDraft) {
+  // The editor writes all-day bounds as its own midnights, whatever time was stored.
+  const startsAt = draft.allDay ? `${draft.startsAt.slice(0, 10)}T00:00` : draft.startsAt
+  const endsAt = draft.allDay
+    ? exclusiveAllDayEnd(inclusiveAllDayEndDate(draft.startsAt, draft.endsAt))
+    : draft.endsAt
+  return {
+    starts_at: new Date(startsAt).toISOString(),
+    ends_at: new Date(endsAt).toISOString(),
+    all_day: draft.allDay,
+    recurrence: buildRecurrenceFromDraft(draft),
+  }
+}
+
 /**
- * The PATCH body for an edited event.
+ * The PATCH body for an edited event, with its schedule and zone only if that changed (FDR-006).
  *
- * Beside `createCalendarEditorDraftFromEvent` because it is that function's inverse, and the pair
- * has to agree on how an empty field round-trips. `null` is the only way to say "clear this" —
- * `JSON.stringify` drops `undefined`, which the server reads as "leave unchanged".
+ * `null` is the only way to say "clear this": `JSON.stringify` drops `undefined`, which the server
+ * reads as "leave unchanged".
  */
 export function buildEventUpdateFromDraft(
   draft: CalendarEditorDraft,
-  recurrence: UpdateCalendarEventInput['recurrence'],
+  initial: CalendarEditorDraft,
   timezone: string,
 ): UpdateCalendarEventInput {
+  const schedule = buildScheduleFromDraft(draft)
+  const rescheduled = JSON.stringify(schedule) !== JSON.stringify(buildScheduleFromDraft(initial))
   return {
     title: draft.title.trim(),
     description: draft.description.trim() || null,
     location: draft.eventLocation.trim() || null,
-    starts_at: new Date(draft.startsAt).toISOString(),
-    ends_at: new Date(draft.endsAt).toISOString(),
-    timezone,
-    all_day: draft.allDay,
-    recurrence,
+    ...(rescheduled && { ...schedule, timezone }),
     participants: draft.participants,
   }
 }

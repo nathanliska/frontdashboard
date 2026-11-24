@@ -91,11 +91,56 @@ describe('buildEventUpdateFromDraft', () => {
   }
 
   it('sends the entered values', () => {
-    const body = buildEventUpdateFromDraft(draft(), null, 'Europe/London')
+    const body = buildEventUpdateFromDraft(draft(), draft(), 'Europe/London')
 
     expect(body.description).toBe('Bring the referral')
     expect(body.location).toBe('12 High Street')
+  })
+
+  const weekly = draft({ recurrenceMode: 'weekly', recurrenceWeekdays: [0, 2] })
+
+  it.each<[string, Partial<CalendarEditorDraft>]>([
+    ['start', { startsAt: '2026-04-13T10:59' }],
+    ['end', { endsAt: '2026-04-13T12:31' }],
+    ['all-day', { allDay: true }],
+    ['frequency', { recurrenceMode: 'none' }],
+    ['interval', { recurrenceInterval: '2' }],
+    ['weekdays', { recurrenceWeekdays: [0, 3] }],
+    ['repeat end', { recurrenceEndsOn: '2026-05-01' }],
+  ])('sends the whole schedule and the zone when the %s changes', (_, change) => {
+    const body = buildEventUpdateFromDraft({ ...weekly, ...change }, weekly, 'Europe/London')
+
+    expect(Object.keys(body)).toEqual(
+      expect.arrayContaining(['starts_at', 'ends_at', 'all_day', 'recurrence', 'timezone']),
+    )
     expect(body.timezone).toBe('Europe/London')
+  })
+
+  it('leaves the schedule out when an all-day start was moved and put back', () => {
+    const original = draft({
+      allDay: true,
+      startsAt: '2026-04-13T05:00',
+      endsAt: '2026-04-14T05:00',
+    })
+    // The date field rewrites the time to midnight.
+    const body = buildEventUpdateFromDraft(
+      { ...original, startsAt: '2026-04-13T00:00' },
+      original,
+      'Europe/London',
+    )
+
+    expect(body).not.toHaveProperty('timezone')
+  })
+
+  it('leaves the schedule out when only the order of the weekdays differs', () => {
+    const body = buildEventUpdateFromDraft(
+      { ...weekly, recurrenceWeekdays: [2, 0] },
+      weekly,
+      'Europe/London',
+    )
+
+    expect(body).not.toHaveProperty('timezone')
+    expect(body).not.toHaveProperty('recurrence')
   })
 
   it('sends null for a cleared location and description, never undefined', () => {
@@ -103,7 +148,7 @@ describe('buildEventUpdateFromDraft', () => {
     // absent key as "leave unchanged" — making the old value impossible to remove.
     const body = buildEventUpdateFromDraft(
       draft({ eventLocation: '', description: '' }),
-      null,
+      draft(),
       'UTC',
     )
 
@@ -115,7 +160,7 @@ describe('buildEventUpdateFromDraft', () => {
   })
 
   it('treats whitespace as cleared', () => {
-    const body = buildEventUpdateFromDraft(draft({ eventLocation: '   ' }), null, 'UTC')
+    const body = buildEventUpdateFromDraft(draft({ eventLocation: '   ' }), draft(), 'UTC')
 
     expect(body.location).toBeNull()
   })
