@@ -83,9 +83,8 @@ a few sentences — if it needs more, the reasoning belongs in an ADR/FDR and th
 - **#67 — Place an all-day event on its own timezone's days.** Its bounds are midnights in the
   event's zone, but the grid, the agenda and every label read them on the viewer's clock, so a
   one-day event made in New York spans two days for a member in Europe. Consistent today, just in
-  the viewer's terms; fixing it means placement, badges and labels move together. Validate zone
-  names against `zoneinfo.available_timezones()` first: the backend accepts `posixrules` and
-  `localtime`, which a browser's date formatter throws on. *(Medium, FDR-006)*
+  the viewer's terms; fixing it means placement, badges and labels move together. Stored zone names
+  are ones a browser can format ([FDR-006](fdr/FDR-006-calendar-and-events.md)). *(Medium, FDR-006)*
 - **#16◐ — Make calendar work proportional to the requested window.** The router no longer loads
   every event on every accessible dashboard. Remaining, and only worth it if a calendar is ever
   actually slow: series with a `count` limit and no `until` still load unbounded, since finding their

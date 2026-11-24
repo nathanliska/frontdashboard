@@ -66,8 +66,11 @@ export const CalendarWidgetResponse = z.object({ config: CalendarWidgetConfig, c
 export type ClockWidgetConfig = z.infer<typeof ClockWidgetConfig>;
 export const ClockWidgetConfig = z.object({ timezone: z.string().nullable() }).partial().catchall(z.unknown());
 
+export type ClockWidgetConfigInput = z.infer<typeof ClockWidgetConfigInput>;
+export const ClockWidgetConfigInput = z.object({ timezone: z.string().min(1).max(100).nullable() }).partial().catchall(z.unknown());
+
 export type ClockWidgetCreate = z.infer<typeof ClockWidgetCreate>;
-export const ClockWidgetCreate = z.strictObject({ config: ClockWidgetConfig.optional(), widget_type: z.literal("clock") });
+export const ClockWidgetCreate = z.strictObject({ config: ClockWidgetConfigInput.optional(), widget_type: z.literal("clock") });
 
 export type ClockWidgetResponse = z.infer<typeof ClockWidgetResponse>;
 export const ClockWidgetResponse = z.object({ config: ClockWidgetConfig, created_at: z.iso.datetime(), dashboard_id: z.uuid(), id: z.uuid(), list_id: z.uuid().nullable().optional(), updated_at: z.iso.datetime(), widget_type: z.literal("clock") }).catchall(z.unknown());

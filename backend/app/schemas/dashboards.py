@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapte
 
 from app.schemas.common import PatchModel
 from app.schemas.lists import ListResponse
+from app.schemas.timezones import TimeZoneName
 
 DASHBOARD_NAME_MAX_LENGTH = 100
 DashboardName = Annotated[
@@ -65,6 +66,16 @@ class ClockWidgetConfig(BaseModel):
     timezone: str | None = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class ClockWidgetConfigInput(ClockWidgetConfig):
+    """What a client may write; reads keep the lenient parent.
+
+    A zone saved before this check still loads its dashboard, and the widget treats a zone it cannot
+    format as unset.
+    """
+
+    timezone: TimeZoneName | None = None
 
 
 class ClockWidgetResponse(_WidgetResponseBase):
@@ -250,7 +261,7 @@ class _WidgetCreateBase(BaseModel):
 
 class ClockWidgetCreate(_WidgetCreateBase):
     widget_type: Literal["clock"]
-    config: ClockWidgetConfig = Field(default_factory=ClockWidgetConfig)
+    config: ClockWidgetConfigInput = Field(default_factory=ClockWidgetConfigInput)
 
 
 class CalendarWidgetCreate(_WidgetCreateBase):
@@ -291,7 +302,7 @@ WidgetCreate = Annotated[
 # row — and an unvalidated config would pass the write, then fail response validation on every later
 # read.
 WIDGET_CONFIG_MODELS: dict[str, type[BaseModel]] = {
-    "clock": ClockWidgetConfig,
+    "clock": ClockWidgetConfigInput,
     "calendar": CalendarWidgetConfig,
     "list": ListWidgetConfig,
     "agenda": AgendaWidgetConfig,
