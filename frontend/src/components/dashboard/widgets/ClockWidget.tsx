@@ -1,8 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ClockWidgetConfig } from '../../../api/dashboards'
 
 function now() {
   return new Date()
+}
+
+/** The zone, or undefined when this browser cannot format it — the same as none being set. */
+function usableTimezone(timeZone: string | undefined): string | undefined {
+  if (!timeZone) return undefined
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone })
+    return timeZone
+  } catch {
+    // Saved before the server checked names, or newer than this browser's zone data.
+    return undefined
+  }
 }
 
 function formatTime(
@@ -25,7 +37,10 @@ export function ClockWidget({
   isSharedDashboard: boolean
 }) {
   const [date, setDate] = useState(now)
-  const configuredTimezone = config.timezone || undefined
+  const configuredTimezone = useMemo(
+    () => usableTimezone(config.timezone || undefined),
+    [config.timezone],
+  )
   const sharedTimezone = isSharedDashboard ? (configuredTimezone ?? 'UTC') : undefined
   const sharedLocale = isSharedDashboard ? 'en-US' : undefined
 

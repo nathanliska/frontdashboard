@@ -1,7 +1,7 @@
 # FDR-003: Widgets
 
 **Status:** Active
-**Last reviewed:** 2026-11-22
+**Last reviewed:** 2026-11-24
 
 ## Overview
 
@@ -16,7 +16,9 @@ widget does and how a widget binds to (or creates) a resource. The grid and layo
   for a calendar — pick its view.
 - **List widget.** Shows a list; on add, bind an existing list or auto-create a new one. Deliberately
   **not** drag-reorderable inside the grid (its own drag would fight react-grid-layout's).
-- **Clock widget.** Shows the current time. No bound resource.
+- **Clock widget.** Shows the current time. No bound resource. On a shared dashboard it shows one
+  saved zone for everyone, UTC when none is set; a zone the browser cannot format reads as unset
+  rather than breaking the dashboard. Which names it accepts is [FDR-006](FDR-006-calendar-and-events.md)'s rule.
 - **Calendar widget.** Shows a calendar view of events. Re-derives "today" at local midnight so an
   always-on display doesn't stick on yesterday. Week/month day cells link to the full calendar at
   the selected local date and dashboard. The whole day is keyboard-accessible and exposes its date

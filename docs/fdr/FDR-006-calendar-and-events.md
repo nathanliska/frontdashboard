@@ -1,7 +1,7 @@
 # FDR-006: Calendar & Events
 
 **Status:** Active
-**Last reviewed:** 2026-11-21
+**Last reviewed:** 2026-11-24
 
 ## Overview
 
@@ -21,6 +21,11 @@ are surfaced on dashboards via the calendar and agenda widgets ([FDR-003](FDR-00
   candidates or overrides, and a stored event that trips that is left out of the listing and
   counted (`frontdashboard_calendar_expansion_skips_total`) rather than failing the shared
   calendar. Unrepresentable date or timezone arithmetic is refused the same way.
+- **Zone names.** Every field that stores one — an event, an occurrence override, a clock widget
+  ([FDR-003](FDR-003-widgets.md)) — takes only names on the `tzdata` package's list, so every host
+  gives the same answer, and the legacy names browsers still send are on it. Host files that load
+  but are not zones (`localtime`, `posixrules`) and the `Factory` placeholder are refused: a
+  browser's date formatter throws on them.
 - **Bounded responses.** One listing may keep 20,000 occurrences and walk 200,000 candidates to find
   them; it also loads at most that many event rows and edited occurrences, and only the edits that
   can land in the window. Past any of those it answers 422 asking for a shorter window or a single
