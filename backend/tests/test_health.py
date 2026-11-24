@@ -2,8 +2,10 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import asyncpg
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.exc import OperationalError
 
 import app.main as main_module
 import app.routers.health as health_module
@@ -42,18 +44,35 @@ async def test_readiness_reports_ready_against_a_live_database(
     assert response.json() == {"status": "ready", "database": True}
 
 
-async def test_readiness_fails_when_the_database_is_unreachable(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("error", "cause"),
+    [
+        (ConnectionRefusedError("connection refused"), "ConnectionRefusedError: connection refused"),
+        # What a wrong password really raises: asyncpg's own error, neither SQLAlchemy's nor an OSError.
+        (asyncpg.InvalidPasswordError("password authentication failed"), "InvalidPasswordError: password authentication failed"),
+        # A statement on a held connection is wrapped; logged as the driver's error, since
+        # SQLAlchemy's wrapper would add the SQL and a docs link.
+        (OperationalError("SELECT 1", None, RuntimeError("terminating connection")), "RuntimeError: terminating connection"),
+    ],
+)
+async def test_readiness_fails_when_the_database_is_unreachable(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, logs: pytest.LogCaptureFixture, error: Exception, cause: str
+) -> None:
     def _refuse() -> None:
-        raise OSError("connection refused")
+        raise error
 
     monkeypatch.setattr(health_module, "engine", SimpleNamespace(connect=_refuse))
 
     response = await client.get("/api/health/ready")
     assert response.status_code == 503
+    # The body is public, so the cause appears only in the log.
     assert response.json() == {"status": "unavailable", "database": False}
+    assert [(r.levelname, r.getMessage()) for r in logs.records] == [("WARNING", f"readiness: database check failed: {cause}")]
 
 
-async def test_readiness_is_bounded_when_the_database_hangs(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_readiness_is_bounded_when_the_database_hangs(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, logs: pytest.LogCaptureFixture
+) -> None:
     class _HangingConnect:
         async def __aenter__(self) -> None:
             await asyncio.sleep(60)
@@ -69,6 +88,7 @@ async def test_readiness_is_bounded_when_the_database_hangs(client: AsyncClient,
     response = await client.get("/api/health/ready")
     assert response.status_code == 503
     assert response.json()["database"] is False
+    assert [r.getMessage() for r in logs.records] == ["readiness: database check timed out (limit 0.05s)"]
 
 
 async def test_lifespan_disposes_database_engine(monkeypatch: pytest.MonkeyPatch) -> None:

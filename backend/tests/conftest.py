@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import uuid
 from collections.abc import AsyncGenerator, Generator
@@ -302,3 +303,17 @@ async def accounts(client: AsyncClient) -> AsyncGenerator[MemberFactory]:
 
     yield register
     await asyncio.gather(*(c.aclose() for c in clients), return_exceptions=True)
+
+
+@pytest.fixture
+def logs(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> Generator[pytest.LogCaptureFixture]:
+    """Capture records from the "app" logger tree.
+
+    `caplog` listens at the root, but `app.main` sets `propagate = False` on "app" so application
+    output goes through its own handler. Once anything has imported `app.main` — which the rest of
+    the suite does — a plain `caplog` captures nothing, and every negative assertion on the log
+    passes vacuously.
+    """
+    monkeypatch.setattr(logging.getLogger("app"), "propagate", True)
+    with caplog.at_level(logging.DEBUG, logger="app"):
+        yield caplog
