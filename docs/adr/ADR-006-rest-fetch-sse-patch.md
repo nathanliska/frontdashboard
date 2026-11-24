@@ -1,6 +1,6 @@
 # ADR-006: REST for Initial Fetch, SSE for Incremental Patch
 
-**Date:** 2026-07-20 (amended 2026-08-09, 2026-11-12, 2026-11-13)
+**Date:** 2026-07-20 (amended 2026-08-09, 2026-11-12, 2026-11-13, 2026-11-22)
 
 ## Context
 
@@ -41,13 +41,17 @@ Every resource does an **initial REST fetch**; **SSE events then patch caches in
 - **A lost mutation response leaves the issuing tab stale**: its echo is suppressed regardless,
   so recovery waits for the retried action, the next foreign event, or a resync. Accepted — a
   per-mutation registry could not close the window either, and cost bookkeeping at every call site.
-- **A read never overwrites a change that overtook it.** Each cache entry counts its writes, and
-  a fetch applies its answer only if the count has not moved since it started. Overtaken by a
-  patch, which is partial, the read is issued again at once and the patched state stays on screen
-  meanwhile. Overtaken by a seed, which is authoritative, the answer is dropped and nothing more
-  is read. Invalidated mid-flight, the answer is applied and a mounted scope reads again, while
-  an unmounted one waits for its next mount. A caller that joins a read already out, after an
-  invalidate, is owed one newer than it. A failed read is never retried on its own. This is
-  the cache layer's job, not each event handler's.
+- **A read never overwrites a change that overtook it.** A patch overtakes every read out on the
+  entries it targets, whether or not it found anything to change there: that read may predate it.
+  The answer is dropped and the read is issued again at once, while the screen keeps the patched
+  state, or keeps loading on a first load. So a patch targets the narrowest scope it can, since
+  each loading entry it matches costs a read, and a list write also marks every dashboard batch
+  still out as old, so none of them seeds anything. Overtaken by a seed, which is authoritative, the
+  answer is dropped and nothing more is read. Invalidated mid-flight, the answer is applied and a
+  mounted scope reads again, while an unmounted one waits for its next mount. A caller that joins
+  a read already out, after an invalidate, is owed one newer than it. A failed read is never
+  retried on its own: a first load is left with its error. Changes arriving faster than a read
+  returns keep a first load loading until one read gets through. This is the cache layer's job,
+  not each event handler's.
 - **Payload shape is part of the contract**: hot events must carry enough to patch; changing a
   payload to omit a field silently forces the divergence-refetch fallback.

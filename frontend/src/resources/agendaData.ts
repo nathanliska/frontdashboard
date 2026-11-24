@@ -92,20 +92,12 @@ function listItemToAgendaItem(
   }
 }
 
-/**
- * Patch the reminders a dashboard holds, or every dashboard's when the caller cannot say which.
- * One whose first load is still out holds nothing to patch, so it is marked stale instead: that
- * response may predate this change.
- */
+/** Patch the reminders a dashboard holds, or every dashboard's when the caller cannot say which. */
 function patchReminders(
   dashboardId: string | null,
   patch: (reminders: AgendaItem[]) => AgendaItem[],
 ): void {
   const matches = (scope: AgendaScope) => !dashboardId || scope.dashboardId === dashboardId
-  agendaRemindersQuery.invalidateWhere((scope) => {
-    const { data, loading } = agendaRemindersQuery.getState(scope)
-    return matches(scope) && data === null && loading
-  })
   agendaRemindersQuery.updateWhere(matches, (state) =>
     state.data ? { ...state, data: patch(state.data) } : state,
   )
@@ -183,8 +175,8 @@ export function listHandlerUpdatesAgenda(event: SseEvent): boolean {
 }
 
 /** Drop every agenda entry belonging to a list, for a list that was trashed or deleted. */
-export function removeAgendaItemsForList(listId: string): void {
-  patchReminders(null, (reminders) =>
+export function removeAgendaItemsForList(dashboardId: string | null, listId: string): void {
+  patchReminders(dashboardId, (reminders) =>
     reminders.filter((entry) => entry.type !== 'reminder' || entry.listId !== listId),
   )
 }

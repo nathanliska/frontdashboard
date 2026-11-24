@@ -158,7 +158,7 @@ describe('deleting a list', () => {
     fireEvent.click(await screen.findByTitle('Move to trash'))
     fireEvent.click(await screen.findByTitle('Confirm move to trash'))
 
-    await waitFor(() => expect(deleteList).toHaveBeenCalledWith('groceries'))
+    await waitFor(() => expect(deleteList).toHaveBeenCalledWith('groceries', 'dash-1'))
 
     // Assert on the action the toast carries, not the message: the recovery path is the feature,
     // and the toast reads almost identically with or without it.

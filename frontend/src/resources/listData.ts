@@ -86,7 +86,7 @@ function toSummary({ items: _items, ...summary }: ListDetail): ListSummary {
 async function loadDashboardLists(dashboardId: string): Promise<ListDetail[]> {
   const generation = currentSessionGeneration()
   const { lists, overtaken } = await fetchDashboardLists(dashboardId)
-  // Seeding marks an entry fresh, which a response from before a sign-out or a list event is not.
+  // Seeding marks an entry fresh, which a response from before a sign-out or a list change is not.
   if (overtaken || generation !== currentSessionGeneration()) return lists
   for (const list of lists) {
     if (!hasListDetail(list.id)) listDetailQuery.seed({ listId: list.id }, list)
@@ -122,12 +122,14 @@ function getAffectedListId(event: SseEvent): string | null {
   return event.payload.list_id ?? null
 }
 
+/** Patch a list's summary on its dashboard, or on every one when that is not known. */
 function patchListSummaryById(
   listId: string,
   updater: (list: ListSummary) => ListSummary | null,
+  dashboardId: string | null | undefined = listDetailQuery.getState({ listId }).data?.dashboard_id,
 ): void {
   listSummariesQuery.updateWhere(
-    () => true,
+    (scope) => !dashboardId || scope.dashboardId === dashboardId,
     (state) => {
       if (!state.data?.some((list) => list.id === listId)) return state
 
@@ -163,8 +165,8 @@ function patchListDetailById(
   )
 }
 
-function removeListFromCaches(listId: string): void {
-  patchListSummaryById(listId, () => null)
+function removeListFromCaches(listId: string, dashboardId?: string | null): void {
+  patchListSummaryById(listId, () => null, dashboardId)
   listDetailQuery.updateWhere(
     (scope) => scope.listId === listId,
     () => ({
@@ -210,6 +212,7 @@ export async function createList(
 
 /** Puts a list this client just created into both caches, so opening it fetches nothing. */
 export function applyCreatedList(list: ListSummary): void {
+  markDashboardListsChanged()
   listSummariesQuery.updateWhere(
     (scope) => scope.dashboardId === list.dashboard_id,
     (state) => ({
@@ -225,7 +228,8 @@ export function applyCreatedList(list: ListSummary): void {
 export async function updateListName(id: string, name: string): Promise<void> {
   try {
     const updated = await apiUpdateList(id, { name })
-    patchListSummaryById(id, () => updated)
+    markDashboardListsChanged()
+    patchListSummaryById(id, () => updated, updated.dashboard_id)
     patchListDetailById(id, (detail) => ({
       ...detail,
       name: updated.name,
@@ -239,11 +243,12 @@ export async function updateListName(id: string, name: string): Promise<void> {
   }
 }
 
-export async function deleteList(id: string): Promise<void> {
+export async function deleteList(id: string, dashboardId: string | null): Promise<void> {
   try {
     await apiDeleteList(id)
-    removeListFromCaches(id)
-    removeAgendaItemsForList(id)
+    markDashboardListsChanged()
+    removeListFromCaches(id, dashboardId)
+    removeAgendaItemsForList(dashboardId, id)
   } catch (error) {
     toast.error('Failed to move list to trash.')
     throw error instanceof Error ? error : new Error('Failed to move list to trash.')
@@ -253,6 +258,7 @@ export async function deleteList(id: string): Promise<void> {
 export async function restoreList(id: string, dashboardId: string): Promise<ListSummary | null> {
   try {
     const restored = await apiRestoreList(id)
+    markDashboardListsChanged()
     // The response is the restored row, so the summaries cache is patched from it rather than
     // refetched; the SSE echo for our own mutation is suppressed.
     listSummariesQuery.updateWhere(
@@ -275,6 +281,7 @@ export async function restoreList(id: string, dashboardId: string): Promise<List
 export async function addListItem(listId: string, text: string): Promise<void> {
   try {
     const item = await apiCreateItem(listId, text)
+    markDashboardListsChanged()
     patchListDetailById(listId, (detail) => ({
       ...detail,
       items: [...detail.items, item],
@@ -315,6 +322,8 @@ export async function updateListItem(
 ): Promise<void> {
   try {
     const item: ListItem = await apiUpdateItem(listId, itemId, body)
+    markDashboardListsChanged()
+    const held = listDetailQuery.getState({ listId }).data?.items.find((i) => i.id === itemId)
     patchListDetailById(listId, (detail) => ({
       ...detail,
       items: detail.items.map((current) => (current.id === itemId ? item : current)),
@@ -322,7 +331,7 @@ export async function updateListItem(
     // The agenda derives its reminders from these same items with a pure transform, so applying
     // the response here is what lets its SSE echo be ignored instead of triggering a refetch.
     // Read after the patch so the detail is the post-mutation one.
-    patchAgendaFromListDetail(listId, item)
+    if (item.due_date || !held || held.due_date) patchAgendaFromListDetail(listId, item)
   } catch (error) {
     toast.error(body.text != null ? 'Failed to rename item.' : 'Failed to update item.')
     // Always rethrow: a swallowed failure made the add box's restore path clear the user's
@@ -334,6 +343,7 @@ export async function updateListItem(
 export async function deleteListItem(listId: string, itemId: string): Promise<void> {
   try {
     await apiDeleteItem(listId, itemId)
+    markDashboardListsChanged()
     patchListDetailById(listId, (detail) => ({
       ...detail,
       items: detail.items.filter((item) => item.id !== itemId),
@@ -359,6 +369,7 @@ export async function reorderListItems(listId: string, orderedIds: string[]): Pr
 
   try {
     await apiReorderItems(listId, orderedIds)
+    markDashboardListsChanged()
   } catch (error) {
     if (previous) {
       patchListDetailById(listId, (detail) => ({ ...detail, items: previous }))
@@ -386,6 +397,7 @@ export async function reorderLists(dashboardId: string, orderedIds: string[]): P
 
   try {
     await apiReorderLists(dashboardId, orderedIds)
+    markDashboardListsChanged()
   } catch (error) {
     if (previous) {
       listSummariesQuery.updateWhere(
@@ -524,7 +536,7 @@ export function handleListResourceEvent(
   }
 
   if (event.event_type === 'list.deleted' && affectedListId) {
-    removeListFromCaches(affectedListId)
+    removeListFromCaches(affectedListId, dashboardId)
     return
   }
 

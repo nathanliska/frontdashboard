@@ -169,7 +169,7 @@ export function ListsLayout() {
     // came from, which may not be the one on screen by then.
     const fromDashboardId = effectiveDashboardId
     try {
-      await deleteList(deleteListId)
+      await deleteList(deleteListId, fromDashboardId)
       // The trash gained a row; refresh it only if the user has it open (or has looked).
       if (trash !== EMPTY_TRASH) void loadTrash()
       if (listId === deleteListId) {
