@@ -1,4 +1,4 @@
-"""Upsert semantics for `create_share` (finding #19).
+"""Upsert semantics for `create_share`.
 
 Granting a share that already exists is a supported operation, not an error — the route re-grants
 at the new role. It used to be implemented as a SELECT followed by an INSERT, which races with

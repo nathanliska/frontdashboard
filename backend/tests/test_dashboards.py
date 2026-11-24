@@ -726,7 +726,7 @@ async def test_binding_the_same_list_twice_is_a_conflict(auth_client: AsyncClien
     This exercises the friendly pre-check. The race window behind it (two adds interleaving past
     the check) lands on uq_dashboard_widgets_resource_binding and is translated to the same 409
     by add_widget's IntegrityError handler; the constraint itself is pinned in
-    test_schema_invariants.py (finding #26).
+    test_schema_invariants.py.
     """
     dashboard = await create_dashboard(auth_client, name="Bind Twice")
     lst = await create_list(auth_client, dashboard["id"], name="Bound")

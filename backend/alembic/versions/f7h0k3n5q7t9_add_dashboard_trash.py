@@ -1,4 +1,4 @@
-"""Add dashboards.deleted_at — the trash lifecycle (finding #40).
+"""Add dashboards.deleted_at — the trash lifecycle.
 
 DELETE stops being permanent: it stamps deleted_at, the dashboard disappears from every listing
 and access path, and the reaper purges it (children included) after the retention window. NULL

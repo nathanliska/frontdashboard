@@ -1,4 +1,4 @@
-"""Unit tests for the widget response discriminated union (finding #23, slice 1).
+"""Unit tests for the widget response discriminated union.
 
 No DB fixtures are used here, so these are auto-marked `unit` and run under
 `pytest -m unit` with no Docker/Postgres required.
@@ -113,7 +113,7 @@ def test_unknown_widget_type_raises_validation_error() -> None:
         adapter.validate_python(payload)
 
 
-# ── Create / layout write-side schema facts (finding #14) ────────────────────────────────────────
+# ── Create / layout write-side schema facts ────────────────────────────────────────────────────
 
 create_adapter: TypeAdapter[WidgetCreate] = TypeAdapter(WidgetCreate)
 

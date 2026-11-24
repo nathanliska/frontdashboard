@@ -27,28 +27,28 @@ class Settings(BaseSettings):
     # emailed token — but they are bearer credentials, so not an unbounded one.
     dashboard_invite_expire_hours: int = 168
     # Peak concurrent Argon2 hash/verify operations (each ~64 MiB). Bounds memory under an
-    # auth burst; excess auth requests queue while the event loop stays responsive (finding #13).
+    # auth burst; excess auth requests queue while the event loop stays responsive.
     argon2_max_concurrency: int = 4
     frontend_base_url: str = "http://localhost:5173"
     resend_api_key: str | None = None
     email_from: str = "FrontDashboard <noreply@frontdashboard.local>"
-    # Where development parks outgoing mail when there is no API key (finding #42). Relative to the
+    # Where development parks outgoing mail when there is no API key. Relative to the
     # backend working directory, which is bind-mounted in dev, so the files land on the host.
     dev_mail_dir: str = ".dev-mail"
-    # Background retention sweep of expired auth rows (finding #38).
+    # Background retention sweep of expired auth rows.
     reaper_enabled: bool = True
     reaper_interval_hours: int = 6
     # How long trashed dashboards (and lingering soft-deleted lists/items/events) stay
-    # restorable before the reaper purges them for real (finding #40).
+    # restorable before the reaper purges them for real.
     trash_retention_days: int = 30
-    # How long activity and notification history is kept (finding #38). These are the only two
+    # How long activity and notification history is kept. These are the only two
     # tables that grow with usage rather than with the number of users, so without a horizon they
     # grow forever. 90 days is well past the point anyone scrolls back to.
     history_retention_days: int = 90
     # How long an unverified signup is kept before the reaper purges it. Such an account holds no
     # content, and otherwise reserves its email address forever (FDR-001).
     unverified_retention_days: int = 30
-    # Connection pool bounds (finding #37). Postgres costs roughly 5-10 MiB per backend
+    # Connection pool bounds. Postgres costs roughly 5-10 MiB per backend
     # connection, so an unbounded pool turns a request burst into database memory pressure.
     # size + overflow is the ceiling on concurrent connections from one worker.
     db_pool_size: int = 5

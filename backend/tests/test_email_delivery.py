@@ -1,4 +1,4 @@
-"""Delivery-path tests for outgoing mail (finding #42).
+"""Delivery-path tests for outgoing mail.
 
 The property under test is not "does mail send" but "where does a live credential end up". A
 verification or reset URL is a bearer credential for the account, so the interesting assertions are
